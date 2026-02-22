@@ -89,6 +89,14 @@
 #include <Inventor/fields/SoSFVec4d.h>
 #include <Inventor/fields/SoSFVec4i32.h>
 #include <Inventor/fields/SoSFVec4s.h>
+#include <Inventor/fields/SoSFVec2b.h>
+#include <Inventor/fields/SoSFVec3b.h>
+#include <Inventor/fields/SoSFVec4b.h>
+#include <Inventor/fields/SoSFVec4ub.h>
+#include <Inventor/fields/SoSFVec4us.h>
+#include <Inventor/fields/SoSFVec4ui32.h>
+#include <Inventor/fields/SoSFPath.h>
+#include <Inventor/fields/SoSFEngine.h>
 #include <Inventor/fields/SoSFBox2d.h>
 #include <Inventor/fields/SoSFBox2f.h>
 #include <Inventor/fields/SoSFBox2i32.h>
@@ -258,6 +266,35 @@ int main()
     TEST_SF_INITIALIZED("SoSFVec4d",    SoSFVec4d)
     TEST_SF_INITIALIZED("SoSFVec4i32",  SoSFVec4i32)
     TEST_SF_INITIALIZED("SoSFVec4s",    SoSFVec4s)
+
+    // -----------------------------------------------------------------------
+    // Byte/unsigned-integer SoSFVec variants: class initialized + set/get
+    // Baseline: src/fields/SoSFVec2b.cpp, SoSFVec3b.cpp, SoSFVec4b.cpp,
+    //           SoSFVec4ub.cpp, SoSFVec4us.cpp, SoSFVec4ui32.cpp
+    // -----------------------------------------------------------------------
+    TEST_SF_INITIALIZED("SoSFVec2b",    SoSFVec2b)
+    TEST_SF_INITIALIZED("SoSFVec3b",    SoSFVec3b)
+    TEST_SF_INITIALIZED("SoSFVec4b",    SoSFVec4b)
+
+    // SoSFVec4ub: class initialized + set/get (mirroring upstream initialized test)
+    runner.startTest("SoSFVec4ub initialized and set/get");
+    {
+        SoSFVec4ub field;
+        field.setValue(1, 2, 3, 4);
+        bool pass = (field.getTypeId() != SoType::badType()) &&
+                    (field.getValue() == SbVec4ub(1, 2, 3, 4));
+        runner.endTest(pass, pass ? "" : "SoSFVec4ub set/get failed");
+    }
+
+    TEST_SF_INITIALIZED("SoSFVec4us",   SoSFVec4us)
+    TEST_SF_INITIALIZED("SoSFVec4ui32", SoSFVec4ui32)
+
+    // -----------------------------------------------------------------------
+    // SoSFPath / SoSFEngine: class initialized
+    // Baseline: src/fields/SoSFPath.cpp, SoSFEngine.cpp
+    // -----------------------------------------------------------------------
+    TEST_SF_INITIALIZED("SoSFPath",     SoSFPath)
+    TEST_SF_INITIALIZED("SoSFEngine",   SoSFEngine)
 
     // -----------------------------------------------------------------------
     // SoSFBox2/3 variant types: class initialized

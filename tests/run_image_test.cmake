@@ -88,6 +88,8 @@ if(UNIX AND NOT APPLE)
         endif()
     endif()
     set(ENV{COIN_GLX_PIXMAP_DIRECT_RENDERING} "1")
+    set(ENV{COIN_FULL_INDIRECT_RENDERING} "1")
+    set(ENV{COIN_GLXGLUE_NO_PBUFFERS} "1")
 endif()
 
 # Set data directory for tests that load .iv files

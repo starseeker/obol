@@ -77,6 +77,10 @@
 #include <Inventor/SbString.h>
 #include <Inventor/SbPlane.h>
 #include <Inventor/SbLine.h>
+#include <Inventor/SbSphere.h>
+#include <Inventor/SbCylinder.h>
+#include <Inventor/SbColor4f.h>
+#include <Inventor/SbBox2i32.h>
 #include <Inventor/SbViewVolume.h>
 #include <Inventor/SbImage.h>
 
@@ -636,6 +640,90 @@ int main()
         for (int i = 0; i < 4 && pass; ++i)
             pass = (fooData[i] == barData[i]);
         runner.endTest(pass, pass ? "" : "SbImage copy construct values differ");
+    }
+
+    // -----------------------------------------------------------------------
+    // SbLine: construction and getClosestPoint
+    // -----------------------------------------------------------------------
+    runner.startTest("SbLine getClosestPoint");
+    {
+        // Line along X axis at origin
+        SbLine line(SbVec3f(0.0f, 0.0f, 0.0f), SbVec3f(1.0f, 0.0f, 0.0f));
+        SbVec3f closest = line.getClosestPoint(SbVec3f(3.0f, 5.0f, 0.0f));
+        bool pass = (closest[0] == 3.0f) &&
+                    (fabsf(closest[1]) < 1e-5f) &&
+                    (fabsf(closest[2]) < 1e-5f);
+        runner.endTest(pass, pass ? "" : "SbLine::getClosestPoint returned wrong point");
+    }
+
+    runner.startTest("SbLine getClosestPoints between two lines");
+    {
+        // Two parallel lines offset in Y – they never meet; getClosestPoints returns FALSE
+        SbLine lineA(SbVec3f(0,0,0), SbVec3f(1,0,0));
+        SbLine lineB(SbVec3f(0,1,0), SbVec3f(1,1,0));
+        SbVec3f ptA, ptB;
+        // parallel lines: getClosestPoints returns FALSE
+        SbBool ok = lineA.getClosestPoints(lineB, ptA, ptB);
+        runner.endTest(!ok, !ok ? "" : "SbLine::getClosestPoints should return FALSE for parallel lines");
+    }
+
+    // -----------------------------------------------------------------------
+    // SbSphere: construction, setCenter/setRadius, pointInside
+    // -----------------------------------------------------------------------
+    runner.startTest("SbSphere pointInside");
+    {
+        SbSphere sphere(SbVec3f(0.0f, 0.0f, 0.0f), 2.0f);
+        bool inside  = sphere.pointInside(SbVec3f(1.0f, 0.0f, 0.0f));
+        bool outside = sphere.pointInside(SbVec3f(3.0f, 0.0f, 0.0f));
+        bool pass = inside && !outside;
+        runner.endTest(pass, pass ? "" : "SbSphere::pointInside gave wrong result");
+    }
+
+    runner.startTest("SbSphere getRadius setRadius");
+    {
+        SbSphere sphere;
+        sphere.setCenter(SbVec3f(1.0f, 2.0f, 3.0f));
+        sphere.setRadius(5.0f);
+        bool pass = (sphere.getRadius() == 5.0f) &&
+                    (sphere.getCenter() == SbVec3f(1.0f, 2.0f, 3.0f));
+        runner.endTest(pass, pass ? "" : "SbSphere set/get radius/center failed");
+    }
+
+    // -----------------------------------------------------------------------
+    // SbCylinder: construction and getRadius
+    // -----------------------------------------------------------------------
+    runner.startTest("SbCylinder getRadius");
+    {
+        SbLine axis(SbVec3f(0,0,0), SbVec3f(0,1,0));
+        SbCylinder cyl(axis, 3.0f);
+        bool pass = (cyl.getRadius() == 3.0f);
+        runner.endTest(pass, pass ? "" : "SbCylinder getRadius returned wrong value");
+    }
+
+    // -----------------------------------------------------------------------
+    // SbColor4f: construction and set/get round-trip
+    // -----------------------------------------------------------------------
+    runner.startTest("SbColor4f set/get round-trip");
+    {
+        SbColor4f c(0.5f, 0.25f, 0.75f, 0.9f);
+        bool pass = (fabsf(c[0] - 0.5f)  < 1e-5f) &&
+                    (fabsf(c[1] - 0.25f) < 1e-5f) &&
+                    (fabsf(c[2] - 0.75f) < 1e-5f) &&
+                    (fabsf(c[3] - 0.9f)  < 1e-5f);
+        runner.endTest(pass, pass ? "" : "SbColor4f construction/get failed");
+    }
+
+    // -----------------------------------------------------------------------
+    // SbBox2i32: getSize
+    // Baseline: src/base/SbBox2i32.cpp COIN_TEST_SUITE (checkSize)
+    // -----------------------------------------------------------------------
+    runner.startTest("SbBox2i32 getSize");
+    {
+        SbVec2i32 minPt(1, 2), maxPt(3, 4);
+        SbBox2i32 box(minPt, maxPt);
+        SbVec2i32 diff = maxPt - minPt;
+        bool pass = (box.getSize() == diff);
+        runner.endTest(pass, pass ? "" : "SbBox2i32 getSize incorrect");
     }
 
     return runner.getSummary();

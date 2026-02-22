@@ -399,6 +399,40 @@ int main()
     }
 
     // -----------------------------------------------------------------------
+    // Camera default field values
+    // Baseline: SoCamera base class documented defaults
+    // -----------------------------------------------------------------------
+    runner.startTest("SoPerspectiveCamera default nearDistance");
+    {
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera;
+        cam->ref();
+        // Default nearDistance is 1.0
+        bool pass = (cam->nearDistance.getValue() == 1.0f);
+        cam->unref();
+        runner.endTest(pass, pass ? "" : "SoPerspectiveCamera nearDistance default != 1.0");
+    }
+
+    runner.startTest("SoPerspectiveCamera default farDistance");
+    {
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera;
+        cam->ref();
+        // Default farDistance is 10.0
+        bool pass = (cam->farDistance.getValue() == 10.0f);
+        cam->unref();
+        runner.endTest(pass, pass ? "" : "SoPerspectiveCamera farDistance default != 10.0");
+    }
+
+    runner.startTest("SoOrthographicCamera default height");
+    {
+        SoOrthographicCamera* cam = new SoOrthographicCamera;
+        cam->ref();
+        // Default height is 2.0
+        bool pass = (cam->height.getValue() == 2.0f);
+        cam->unref();
+        runner.endTest(pass, pass ? "" : "SoOrthographicCamera height default != 2.0");
+    }
+
+    // -----------------------------------------------------------------------
     // SoSwitch: whichChild default value
     // -----------------------------------------------------------------------
     runner.startTest("SoSwitch default whichChild");

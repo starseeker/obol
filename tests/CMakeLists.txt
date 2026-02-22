@@ -105,9 +105,7 @@ add_subdirectory(nodes)
 add_subdirectory(io)
 add_subdirectory(sensors)
 add_subdirectory(engines)
-
-# Placeholder subdirectories for future tests:
-#   add_subdirectory(rendering)
+add_subdirectory(rendering)
 
 # -----------------------------------------------------------------------
 # Image comparison utilities
