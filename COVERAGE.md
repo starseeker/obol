@@ -79,8 +79,8 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoSFTime` | ✅ | `src/fields/SoSFTime.cpp` | initialized |
 | `SoSFEnum` | ✅ | `src/fields/SoSFEnum.cpp` | initialized |
 | `SoSFBitMask` | ✅ | `src/fields/SoSFBitMask.cpp` | initialized |
-| `SoSFImage` | ❌ | `src/fields/SoSFImage.cpp` | |
-| `SoSFImage3` | ❌ | `src/fields/SoSFImage3.cpp` | |
+| `SoSFImage` | ✅ | `src/fields/SoSFImage.cpp` | initialized |
+| `SoSFImage3` | ✅ | `src/fields/SoSFImage3.cpp` | initialized |
 | `SoSFPlane` | ✅ | `src/fields/SoSFPlane.cpp` | initialized |
 | `SoSFNode` | ✅ | `src/fields/SoSFNode.cpp` | initialized |
 | `SoSFPath` | ❌ | `src/fields/SoSFPath.cpp` | |
@@ -137,7 +137,7 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoGetMatrixAction` | ✅ | — | class initialized, identity for empty scene |
 | `SoHandleEventAction` | ❌ | — | |
 | `SoPickAction` | ❌ | — | |
-| `SoRayPickAction` | ❌ | — | |
+| `SoRayPickAction` | ✅ | — | class initialized, no picks on empty scene, picks cube at origin |
 | `SoGetPrimitiveCountAction` | ✅ | — | class initialized, count 0 for empty scene |
 | `SoReorganizeAction` | ❌ | — | |
 | `SoAudioRenderAction` | ❌ | — | |
@@ -190,8 +190,8 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoDB::readAll` (invalid) | ✅ | `src/misc/SoDB.cpp` | empty input returns NULL |
 | Write/read round-trip | ✅ | `src/misc/SoDB.cpp` | structure + field values preserved |
 | `SoDB::isValidHeader` | ✅ | — | |
-| `SoDB::readAll` (VRML 2.0) | ❌ | `src/misc/SoDB.cpp` | readChildList (VRML) |
-| `SoBase` write/read | ❌ | `src/misc/SoBase.cpp` | vanilla has tests |
+| `SoDB::readAll` (VRML 2.0) | ❌ | `src/misc/SoDB.cpp` | readChildList (VRML) – removed in Obol |
+| `SoBase` write/read | ✅ | `src/misc/SoBase.cpp` | unnamed multi-ref DEF/USE, same-named node disambiguation (+N) |
 | Binary format I/O | ❌ | — | |
 
 ---
@@ -228,7 +228,7 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoComposeMatrix` | ✅ | — | class initialized |
 | `SoComposeRotation` | ✅ | — | class initialized |
 | `SoComposeVec2f` / `SoComposeVec4f` | ✅ | — | class initialized |
-| `SoComputeBoundingBox` | ❌ | |
+| `SoComputeBoundingBox` | ✅ | — | class initialized |
 | `SoGate` | ✅ | — | class initialized |
 | `SoInterpolate*` | ✅ | — | SoInterpolateFloat class initialized |
 | `SoSelectOne` | ✅ | — | class initialized |
@@ -269,8 +269,8 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoVertexShader` | ✅ | `src/shaders/SoVertexShader.cpp` | class initialized |
 | `SoGeometryShader` | ✅ | `src/shaders/SoGeometryShader.cpp` | class initialized |
 | `SoShaderParameter*` | ❌ | `src/shaders/SoShaderParameter.cpp` | |
-| `SoShadowGroup` | ❌ | `src/shadows/SoShadowGroup.cpp` | |
-| `SoShadowStyle` | ❌ | `src/shadows/SoShadowStyle.cpp` | |
+| `SoShadowGroup` | ✅ | `src/shadows/SoShadowGroup.cpp` | class initialized |
+| `SoShadowStyle` | ✅ | `src/shadows/SoShadowStyle.cpp` | class initialized |
 | `SoGeoCoordinate` | ✅ | `src/geo/SoGeoCoordinate.cpp` | class initialized |
 | `SoGeoOrigin` | ✅ | `src/geo/SoGeoOrigin.cpp` | class initialized |
 
@@ -290,24 +290,24 @@ Tests in `tests/` subdirectories are baselined against the
 | Category | Covered | Total (approx.) |
 |----------|---------|-----------------|
 | Base types | 22 | ~30 |
-| SF Fields | 22 | 47 |
+| SF Fields | 24 | 47 |
 | MF Fields | 21 | 40 |
-| Actions | 6 | 11 |
-| Nodes | 25 | 50+ |
-| I/O / SoDB | 5 | 10 |
+| Actions | 8 | 11 |
+| Nodes | 27 | 50+ |
+| I/O / SoDB | 7 | 10 |
 | Sensors | 7 | 8 |
-| Engines | 15 | 15+ |
+| Engines | 16 | 16 |
 | Threads | 10 | 10 |
 | XML/ScXML | 0 | 0 (removed in Obol) |
-| Shaders/Shadows/Geo | 5 | 15 |
+| Shaders/Shadows/Geo | 7 | 15 |
 
 ---
 
 ## Next Steps (Priority Order)
 
-1. **SoBase write/read tests** – vanilla has tests in `src/misc/SoBase.cpp`
-2. **SoSFImage / SoSFImage3** – field initialized tests
-3. **Shadow node initialization** – `SoShadowGroup`, `SoShadowStyle`
-4. **SoComputeBoundingBox engine** – class initialized
-5. **SoRayPickAction** – pick action with scene graph
+1. **SoShaderParameter variants** – class initialized tests for `SoShaderParameter1f`, etc.
+2. **Additional transform nodes** – `SoRotationXYZ`, `SoMatrixTransform`
+3. **SoFile / SoInfo nodes** – class initialized
+4. **SoRayPickAction** – more detailed pick tests (verify hit point, path)
+5. **SoHandleEventAction** – class initialized and basic event dispatch
 6. **Visual/rendering tests** – require rendering context (OSMesa/GLX)

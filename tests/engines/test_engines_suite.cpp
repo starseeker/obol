@@ -63,6 +63,7 @@
 #include <Inventor/engines/SoSelectOne.h>
 #include <Inventor/engines/SoCounter.h>
 #include <Inventor/engines/SoTimeCounter.h>
+#include <Inventor/engines/SoComputeBoundingBox.h>
 #include <Inventor/fields/SoSFFloat.h>
 #include <Inventor/fields/SoSFVec3f.h>
 #include <Inventor/fields/SoMFFloat.h>
@@ -320,6 +321,18 @@ int main()
         bool pass = (eng->getTypeId() != SoType::badType());
         eng->unref();
         runner.endTest(pass, pass ? "" : "SoTimeCounter has bad type");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoComputeBoundingBox: class type check
+    // -----------------------------------------------------------------------
+    runner.startTest("SoComputeBoundingBox class initialized");
+    {
+        SoComputeBoundingBox* eng = new SoComputeBoundingBox;
+        eng->ref();
+        bool pass = (eng->getTypeId() != SoType::badType());
+        eng->unref();
+        runner.endTest(pass, pass ? "" : "SoComputeBoundingBox has bad type");
     }
 
     return runner.getSummary();

@@ -78,6 +78,8 @@
 #include <Inventor/fields/SoSFPlane.h>
 #include <Inventor/fields/SoSFNode.h>
 #include <Inventor/fields/SoSFTrigger.h>
+#include <Inventor/fields/SoSFImage.h>
+#include <Inventor/fields/SoSFImage3.h>
 #include <Inventor/SoType.h>
 #include <Inventor/SbName.h>
 
@@ -219,6 +221,13 @@ int main()
     TEST_SF_INITIALIZED("SoSFPlane",     SoSFPlane)
     TEST_SF_INITIALIZED("SoSFNode",      SoSFNode)
     TEST_SF_INITIALIZED("SoSFTrigger",   SoSFTrigger)
+
+    // -----------------------------------------------------------------------
+    // SoSFImage / SoSFImage3: class initialized
+    // Baseline: src/fields/SoSFImage.cpp, SoSFImage3.cpp COIN_TEST_SUITE
+    // -----------------------------------------------------------------------
+    TEST_SF_INITIALIZED("SoSFImage",     SoSFImage)
+    TEST_SF_INITIALIZED("SoSFImage3",    SoSFImage3)
 
     return runner.getSummary();
 }

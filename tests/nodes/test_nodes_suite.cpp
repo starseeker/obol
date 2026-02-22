@@ -77,6 +77,8 @@
 #include <Inventor/nodes/SoGeometryShader.h>
 #include <Inventor/nodes/SoGeoOrigin.h>
 #include <Inventor/nodes/SoGeoCoordinate.h>
+#include <Inventor/annex/FXViz/nodes/SoShadowGroup.h>
+#include <Inventor/annex/FXViz/nodes/SoShadowStyle.h>
 
 using namespace SimpleTest;
 
@@ -463,6 +465,28 @@ int main()
         bool pass = (geo->getTypeId() != SoType::badType());
         geo->unref();
         runner.endTest(pass, pass ? "" : "SoGeoCoordinate has bad type");
+    }
+
+    // -----------------------------------------------------------------------
+    // Shadow nodes: class initialized
+    // Baseline: src/shadows/SoShadowGroup.cpp, SoShadowStyle.cpp COIN_TEST_SUITE
+    // -----------------------------------------------------------------------
+    runner.startTest("SoShadowGroup class initialized");
+    {
+        SoShadowGroup* node = new SoShadowGroup;
+        node->ref();
+        bool pass = (node->getTypeId() != SoType::badType());
+        node->unref();
+        runner.endTest(pass, pass ? "" : "SoShadowGroup has bad type");
+    }
+
+    runner.startTest("SoShadowStyle class initialized");
+    {
+        SoShadowStyle* node = new SoShadowStyle;
+        node->ref();
+        bool pass = (node->getTypeId() != SoType::badType());
+        node->unref();
+        runner.endTest(pass, pass ? "" : "SoShadowStyle has bad type");
     }
 
     return runner.getSummary();

@@ -48,6 +48,7 @@
 #include <Inventor/SoInput.h>
 #include <Inventor/SoOutput.h>
 #include <Inventor/SbTime.h>
+#include <Inventor/SbName.h>
 #include <Inventor/fields/SoSFTime.h>
 #include <Inventor/actions/SoWriteAction.h>
 #include <Inventor/nodes/SoSeparator.h>
@@ -226,9 +227,72 @@ int main()
             "SoDB::isValidHeader returned unexpected results");
     }
 
-    // Note: SoDB::readAll with invalid/garbage input can crash in the Obol
-    // limited-mode (context manager is NULL). readAll tests with expected
-    // failures are deferred until full context management is in place.
+    // -----------------------------------------------------------------------
+    // SoBase write/read: name disambiguation for multiply-referenced nodes
+    // Baseline: src/misc/SoBase.cpp COIN_TEST_SUITE (checkWriteWithMultiref)
+    //
+    // When multiple nodes share the same name and are referenced more than
+    // once, the writer must append "+N" suffixes so that DEF labels are
+    // unique and USE back-references work correctly.
+    // -----------------------------------------------------------------------
+    runner.startTest("SoBase write unnamed multi-ref node uses DEF/USE");
+    {
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+
+        // Same unnamed node added at two places -> must be written as DEF/USE
+        SoSeparator* shared = new SoSeparator;
+        root->addChild(shared);
+        root->addChild(shared); // second reference
+
+        char* buf = nullptr; size_t bsz = 0;
+        writeNode(root, &buf, &bsz);
+        root->unref();
+
+        bool hasDef = buf && std::strstr(buf, "DEF") != nullptr;
+        bool hasUse = buf && std::strstr(buf, "USE") != nullptr;
+
+        std::free(buf);
+        bool pass = hasDef && hasUse;
+        runner.endTest(pass, pass ? "" :
+            "Unnamed multi-ref node should produce DEF/USE in output");
+    }
+
+    runner.startTest("SoBase write same-named multi-ref nodes disambiguates names");
+    {
+        // Build a scene where two distinct same-named nodes are added at
+        // multiple locations, mirroring the vanilla checkWriteWithMultiref
+        // test structure.  The writer must suffix duplicate names with "+N"
+        // so that each DEF label is unique.
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+
+        SoSeparator* n1 = new SoSeparator;
+        SoSeparator* n2 = new SoSeparator;
+        n1->setName(SbName("MyNode"));
+        n2->setName(SbName("MyNode")); // same name, different object
+
+        // Reference n1 twice and n2 twice so both need DEF/USE treatment
+        root->addChild(n1);
+        root->addChild(n1); // USE n1
+        root->addChild(n2);
+        root->addChild(n2); // USE n2
+
+        char* buf = nullptr; size_t bsz = 0;
+        writeNode(root, &buf, &bsz);
+        root->unref();
+
+        // Both "MyNode" and a disambiguation suffix ("+") must appear
+        bool hasMyNode  = buf && std::strstr(buf, "MyNode") != nullptr;
+        bool hasPlus    = buf && std::strstr(buf, "+") != nullptr;
+        bool hasDef     = buf && std::strstr(buf, "DEF") != nullptr;
+        bool hasUse     = buf && std::strstr(buf, "USE") != nullptr;
+
+        std::free(buf);
+        bool pass = hasMyNode && hasPlus && hasDef && hasUse;
+        runner.endTest(pass, pass ? "" :
+            "Same-named multi-ref nodes should produce disambiguation ('+N') in output");
+    }
 
     return runner.getSummary();
 }

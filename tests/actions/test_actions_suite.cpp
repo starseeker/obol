@@ -54,6 +54,7 @@
 #include <Inventor/actions/SoWriteAction.h>
 #include <Inventor/actions/SoGetMatrixAction.h>
 #include <Inventor/actions/SoGetPrimitiveCountAction.h>
+#include <Inventor/actions/SoRayPickAction.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoSwitch.h>
 #include <Inventor/nodes/SoCube.h>
@@ -298,6 +299,49 @@ int main()
         root->unref();
         runner.endTest(pass, pass ? "" :
             "SoGetPrimitiveCountAction should count 0 triangles for empty scene");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoRayPickAction: class initialized and basic ray cast
+    // -----------------------------------------------------------------------
+    runner.startTest("SoRayPickAction class initialized");
+    {
+        SoRayPickAction rpa(SbViewportRegion(100, 100));
+        bool pass = (rpa.getTypeId() != SoType::badType());
+        runner.endTest(pass, pass ? "" : "SoRayPickAction has bad type");
+    }
+
+    runner.startTest("SoRayPickAction no picks on empty scene");
+    {
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+
+        SoRayPickAction rpa(SbViewportRegion(100, 100));
+        // Aim ray from (0,0,10) pointing in -Z direction
+        rpa.setRay(SbVec3f(0.0f, 0.0f, 10.0f), SbVec3f(0.0f, 0.0f, -1.0f));
+        rpa.apply(root);
+
+        bool pass = (rpa.getPickedPoint() == nullptr);
+        root->unref();
+        runner.endTest(pass, pass ? "" :
+            "SoRayPickAction should find no pick in an empty scene");
+    }
+
+    runner.startTest("SoRayPickAction picks cube at origin");
+    {
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+        root->addChild(new SoCube); // 2x2x2 centred at origin
+
+        SoRayPickAction rpa(SbViewportRegion(100, 100));
+        // Aim ray from (0,0,10) pointing straight in -Z; should hit the cube
+        rpa.setRay(SbVec3f(0.0f, 0.0f, 10.0f), SbVec3f(0.0f, 0.0f, -1.0f));
+        rpa.apply(root);
+
+        bool pass = (rpa.getPickedPoint() != nullptr);
+        root->unref();
+        runner.endTest(pass, pass ? "" :
+            "SoRayPickAction should pick the cube at origin");
     }
 
     return runner.getSummary();
