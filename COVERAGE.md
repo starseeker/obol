@@ -135,7 +135,7 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoWriteAction` | ✅ | `src/actions/SoWriteAction.cpp` | DEF/USE naming for multi-ref nodes |
 | `SoSearchAction` | ✅ | — | find by name, find by type |
 | `SoGetBoundingBoxAction` | ✅ | — | unit cube bounds |
-| `SoGLRenderAction` | ❌ | — | needs rendering context |
+| `SoGLRenderAction` | ✅ | — | visual regression tests in `tests/rendering/`; 6 scenes covering primitives, materials, lighting, transforms, cameras, draw styles |
 | `SoGetMatrixAction` | ✅ | — | class initialized, identity for empty scene |
 | `SoHandleEventAction` | ✅ | — | class initialized, dispatch on empty scene (not handled), no crash |
 | `SoPickAction` | ❌ | — | base class; tested via SoRayPickAction |
@@ -310,6 +310,38 @@ Tests in `tests/` subdirectories are baselined against the
 
 ---
 
+## Visual Rendering (`tests/rendering/`)
+
+Visual regression tests that render scenes with `SoOffscreenRenderer` and compare
+pixel output against PNG control images.  Control images are generated from Obol + GLX
+(treated as equivalent to vanilla upstream for non-text geometry rendering).
+Tests run with both OSMesa and GLX backends; per-test RMSE thresholds accommodate
+the small rendering differences between backends.
+
+| Test | Tests | Backend | Scene / Properties Verified |
+|------|-------|---------|------------------------------|
+| `render_primitives` | ✅ | GLX + OSMesa | `SoGLRenderAction`: SoSphere, SoCube, SoCone, SoCylinder, all 4 in 2×2 grid with distinct colours |
+| `render_materials` | ✅ | GLX + OSMesa | `SoMaterial`: matte → mirror shininess gradient + emissive sphere |
+| `render_lighting` | ✅ | GLX + OSMesa | `SoDirectionalLight`, `SoPointLight`, `SoSpotLight` – 3 spheres lit individually |
+| `render_transforms` | ✅ | GLX + OSMesa | `SoTranslation`, `SoRotation`, `SoScale` – 3×3 grid showing each transform type |
+| `render_cameras` | ✅ | GLX + OSMesa | `SoPerspectiveCamera` vs `SoOrthographicCamera` – same depth scene, two renders |
+| `render_drawstyle` | ✅ | GLX + OSMesa | `SoDrawStyle`: FILLED, LINES, POINTS modes of a low-res icosphere |
+
+**Infrastructure:**
+- `tests/rendering/CMakeLists.txt` – backend-aware build macro (OSMesa or GLX)
+- `tests/rendering/generate_controls.sh` – regenerate control images via GLX
+- `tests/rendering/rgb_to_png_py.py` – stdlib-only RGB→PNG converter (no libpng needed)
+- `tests/run_image_test.cmake` – CTest driver (xvfb-run for GLX; per-test RMSE thresholds)
+- `tests/control_images/render_*_control.png` – stored PNG control images
+
+**Notes:**
+- Text rendering (`SoText2`, `SoText3`) is intentionally deferred due to font
+  differences between vanilla Coin (FreeType) and Obol (Profont).
+- OSMesa vs GLX differences are expected (RMSE 1–8); thresholds set at 2× maximum
+  observed difference to catch real regressions while tolerating backend variation.
+
+---
+
 ## Summary
 
 | Category | Covered | Total (approx.) |
@@ -326,13 +358,16 @@ Tests in `tests/` subdirectories are baselined against the
 | XML/ScXML | 0 | 0 (removed in Obol) |
 | Shaders/Shadows/Geo | 16 | 16 |
 | Draggers | 1 (partial) | 20+ |
+| Visual rendering | 6 | ~10 |
 
 ---
 
 ## Next Steps (Priority Order)
 
-1. **Visual/rendering tests** – require rendering context (OSMesa/GLX); SoGLRenderAction, texture upload, font rendering
-2. **SoText2 / SoText3** – class initialized; actual text rendering needs a rendering context
+1. **SoText2 / SoText3 visual rendering** – defer until font strategy is decided
+   (vanilla uses FreeType; Obol uses Profont – direct pixel comparison is impractical
+   without a shared font baseline)
+2. **Texture upload visual test** – `SoTexture2` with a procedural checkerboard texture
 3. **SoMFVec byte/unsigned variants** – `SoMFVec2b`, `SoMFVec3b`, `SoMFVec4b/ub/ui32/us`
 4. **SoSFPath / SoSFEngine / SoMFPath / SoMFEngine** – class initialized
 5. **Dragger deep-copy test** – needs rendering context for dragger construction

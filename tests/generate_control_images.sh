@@ -69,8 +69,10 @@ if [ ! -f "$RGB_TO_PNG" ]; then
     exit 1
 fi
 
-# Coin offscreen rendering config
+# Coin offscreen rendering config for Xvfb compatibility
 export COIN_GLX_PIXMAP_DIRECT_RENDERING=1
+export COIN_FULL_INDIRECT_RENDERING=1
+export COIN_GLXGLUE_NO_PBUFFERS=1
 
 # Start Xvfb if DISPLAY is not set
 XVFB_PID=""
