@@ -117,6 +117,8 @@ gen_control render_transforms  render_transforms
 gen_control render_cameras     render_cameras
 gen_control render_drawstyle   render_drawstyle
 gen_control render_texture     render_texture
+gen_control render_text2       render_text2
+gen_control render_text3       render_text3
 
 echo ""
 echo "=== Done – control images in $CONTROL_DIR ==="
