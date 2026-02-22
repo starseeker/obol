@@ -2,7 +2,7 @@
 
 This file tracks which Coin APIs have tests and which still need coverage.
 Tests in `tests/` subdirectories are baselined against the
-`coin_vanilla` reference implementation (`COIN_TEST_SUITE` blocks).
+`upstream` reference implementation (`COIN_TEST_SUITE` blocks).
 
 ---
 
@@ -10,7 +10,7 @@ Tests in `tests/` subdirectories are baselined against the
 
 | Symbol | Meaning |
 |--------|---------|
-| ✅ | Tests written and baselined against coin_vanilla |
+| ✅ | Tests written and baselined against upstream |
 | 🔶 | Tests written but no vanilla baseline (API behavior tested) |
 | ❌ | No tests yet |
 

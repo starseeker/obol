@@ -34,7 +34,7 @@
  * @file test_nodes_suite.cpp
  * @brief Tests for Coin3D SoNode subclasses.
  *
- * Baselined against coin_vanilla COIN_TEST_SUITE blocks.
+ * Baselined against upstream COIN_TEST_SUITE blocks.
  *
  * Vanilla sources:
  *   src/nodes/SoAnnotation.cpp - initialized (getTypeId, ref/unref)

@@ -34,7 +34,7 @@
  * @file test_mf_fields.cpp
  * @brief Tests for Coin3D multi-value (SoMF*) field types.
  *
- * Baselined against coin_vanilla COIN_TEST_SUITE blocks.
+ * Baselined against upstream COIN_TEST_SUITE blocks.
  *
  * Vanilla sources (all have "initialized" test verifying getTypeId + getNum == 0):
  *   src/fields/SoMFFloat.cpp, SoMFInt32.cpp, SoMFVec3f.cpp, SoMFString.cpp,

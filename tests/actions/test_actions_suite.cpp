@@ -34,7 +34,7 @@
  * @file test_actions_suite.cpp
  * @brief Tests for Coin3D action classes.
  *
- * Baselined against coin_vanilla COIN_TEST_SUITE blocks.
+ * Baselined against upstream COIN_TEST_SUITE blocks.
  *
  * Vanilla sources:
  *   src/actions/SoCallbackAction.cpp - callbackall (SoCallbackAction::setCallbackAll)

@@ -34,7 +34,7 @@
  * @file test_sb_types.cpp
  * @brief Tests for Coin3D base types (SbVec*, SbBox*, SbMatrix, etc.)
  *
- * Tests are baselined against coin_vanilla COIN_TEST_SUITE blocks to verify
+ * Tests are baselined against upstream COIN_TEST_SUITE blocks to verify
  * that behavior is consistent between vanilla Coin and this implementation.
  *
  * Vanilla sources covering these tests:

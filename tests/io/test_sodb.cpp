@@ -34,7 +34,7 @@
  * @file test_sodb.cpp
  * @brief Tests for SoDB, SoInput/SoOutput, and related I/O APIs.
  *
- * Baselined against coin_vanilla COIN_TEST_SUITE blocks.
+ * Baselined against upstream COIN_TEST_SUITE blocks.
  *
  * Vanilla sources:
  *   src/misc/SoDB.cpp  - globalRealTimeField, readChildList (IV 2.1),

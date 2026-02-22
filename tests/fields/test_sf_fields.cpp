@@ -34,7 +34,7 @@
  * @file test_sf_fields.cpp
  * @brief Tests for Coin3D single-value (SoSF*) field types.
  *
- * Baselined against coin_vanilla COIN_TEST_SUITE blocks.
+ * Baselined against upstream COIN_TEST_SUITE blocks.
  *
  * Vanilla sources:
  *   src/fields/SoSFBool.cpp   - initialized, textinput
