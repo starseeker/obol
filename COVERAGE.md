@@ -24,7 +24,7 @@ Tests in `tests/` subdirectories are baselined against the
 | `SbVec2f` | ✅ | (via SbBox2f) | Covered through box tests |
 | `SbVec3d` | ✅ | `src/base/SbVec3d.cpp` | fromString |
 | `SbVec3s` | ✅ | `src/base/SbVec3s.cpp` | fromString, fromInvalidString |
-| `SbVec3us` | ❌ | `src/base/SbVec3us.cpp` | |
+| `SbVec3us` | ✅ | `src/base/SbVec3us.cpp` | construction, getValue, setValue round-trip |
 | `SbVec4f` | ✅ | `src/base/SbVec4f.cpp` | normalize already-normalized |
 | `SbBox2f` | ✅ | `src/base/SbBox2f.cpp` | getSize, getClosestPoint (outside, center) |
 | `SbBox2d` | ✅ | `src/base/SbBox2d.cpp` | getSize, getClosestPoint |
@@ -50,7 +50,7 @@ Tests in `tests/` subdirectories are baselined against the
 | `SbLine` | ✅ | — | getClosestPoint, getClosestPoints (parallel lines) |
 | `SbSphere` | ✅ | — | pointInside, getRadius/setRadius, setCenter |
 | `SbCylinder` | ✅ | — | construction, getRadius |
-| `SbHeap` | ❌ | `src/base/heap.cpp` | |
+| `SbHeap` | ✅ | `src/base/heap.cpp` | min_heap, max_heap, heap_add, heap_remove, heap_update |
 
 ---
 
@@ -141,8 +141,8 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoPickAction` | ❌ | — | base class; tested via SoRayPickAction |
 | `SoRayPickAction` | ✅ | — | class initialized, no picks on empty scene, picks cube at origin, pick point on cube surface + path |
 | `SoGetPrimitiveCountAction` | ✅ | — | class initialized, count 0 for empty scene |
-| `SoReorganizeAction` | ❌ | — | |
-| `SoAudioRenderAction` | ❌ | — | |
+| `SoReorganizeAction` | ✅ | — | class initialized (type registered) |
+| `SoAudioRenderAction` | ❌ | — | removed from Obol |
 
 ---
 
@@ -217,7 +217,7 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoDB::isValidHeader` | ✅ | — | |
 | `SoDB::readAll` (VRML 2.0) | ❌ | `src/misc/SoDB.cpp` | readChildList (VRML) – removed in Obol |
 | `SoBase` write/read | ✅ | `src/misc/SoBase.cpp` | unnamed multi-ref DEF/USE, same-named node disambiguation (+N) |
-| Binary format I/O | ❌ | — | |
+| Binary format I/O | ✅ | — | binary write produces `#Inventor V2.1 binary` header; binary output non-empty |
 
 ---
 
@@ -234,7 +234,7 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoOneShotSensor` | 🔶 | type check, schedule/unschedule |
 | `SoIdleSensor` | 🔶 | schedule/unschedule |
 | `SoPathSensor` | 🔶 | attach/detach |
-| `SoDataSensor` | ❌ | |
+| `SoDataSensor` | ✅ | — | class initialized (via SoFieldSensor); getTriggerField, getTriggerPathFlag, setTriggerPathFlag |
 
 ---
 
@@ -347,13 +347,13 @@ the small rendering differences between backends.
 
 | Category | Covered | Total (approx.) |
 |----------|---------|-----------------|
-| Base types | 26 | ~30 |
+| Base types | 28 | ~30 |
 | SF Fields | 53 | 53 |
 | MF Fields | 41 | 41 |
-| Actions | 10 | 11 |
+| Actions | 11 | 11 |
 | Nodes | 74 | 75+ |
-| I/O / SoDB | 7 | 10 |
-| Sensors | 7 | 8 |
+| I/O / SoDB | 9 | 10 |
+| Sensors | 8 | 8 |
 | Engines | 16 | 16 |
 | Threads | 10 | 10 |
 | XML/ScXML | 0 | 0 (removed in Obol) |
@@ -369,6 +369,6 @@ the small rendering differences between backends.
    (vanilla uses FreeType; Obol uses Profont – direct pixel comparison is impractical
    without a shared font baseline)
 2. **Dragger deep-copy test** – needs rendering context for dragger construction; other dragger types still need coverage
-3. **SoDB / I/O** – binary format I/O, `SoDB::readAll` (VRML 2.0 path removed in Obol)
-4. **SoDataSensor** – class initialized and value-change callback
-5. **SbHeap** – `src/base/heap.cpp` has upstream test baseline; verify Obol still passes
+3. **SoDB / I/O** – `SoDB::readAll` (VRML 2.0 path removed in Obol); binary read-back round-trip (currently crashes – needs investigation)
+4. **SoAudioRenderAction** – removed from Obol; no coverage needed
+5. **SoPickAction** – base class tested indirectly via SoRayPickAction
