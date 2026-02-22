@@ -365,10 +365,9 @@ the small rendering differences between backends.
 
 ## Next Steps (Priority Order)
 
-1. **SoText2 / SoText3 visual rendering** – defer until font strategy is decided
+1. **SoDB / I/O** – `SoDB::readAll` (VRML 2.0 path removed in Obol); binary read-back round-trip (currently crashes – needs investigation)
+2. **Dragger deep-copy test** – needs rendering context for dragger construction; other dragger types still need coverage
+3. **SoText2 / SoText3 visual rendering** – defer until font strategy is decided
    (vanilla uses FreeType; Obol uses Profont – direct pixel comparison is impractical
    without a shared font baseline)
-2. **Dragger deep-copy test** – needs rendering context for dragger construction; other dragger types still need coverage
-3. **SoDB / I/O** – `SoDB::readAll` (VRML 2.0 path removed in Obol); binary read-back round-trip (currently crashes – needs investigation)
-4. **SoAudioRenderAction** – removed from Obol; no coverage needed
-5. **SoPickAction** – base class tested indirectly via SoRayPickAction
+
