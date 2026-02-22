@@ -426,7 +426,7 @@ if(PNG_FOUND)
 else()
     set(_gen_controls_deps image_comparator)
 endif()
-add_custom_target(generate_controls
+add_custom_target(generate_mentor_controls
     COMMAND ${CMAKE_COMMAND} -E env BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR} 
             ${CMAKE_CURRENT_SOURCE_DIR}/generate_control_images.sh
     DEPENDS 
