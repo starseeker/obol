@@ -80,6 +80,23 @@
 #include <Inventor/fields/SoSFTrigger.h>
 #include <Inventor/fields/SoSFImage.h>
 #include <Inventor/fields/SoSFImage3.h>
+#include <Inventor/fields/SoSFVec2d.h>
+#include <Inventor/fields/SoSFVec2i32.h>
+#include <Inventor/fields/SoSFVec2s.h>
+#include <Inventor/fields/SoSFVec3d.h>
+#include <Inventor/fields/SoSFVec3i32.h>
+#include <Inventor/fields/SoSFVec3s.h>
+#include <Inventor/fields/SoSFVec4d.h>
+#include <Inventor/fields/SoSFVec4i32.h>
+#include <Inventor/fields/SoSFVec4s.h>
+#include <Inventor/fields/SoSFBox2d.h>
+#include <Inventor/fields/SoSFBox2f.h>
+#include <Inventor/fields/SoSFBox2i32.h>
+#include <Inventor/fields/SoSFBox2s.h>
+#include <Inventor/fields/SoSFBox3d.h>
+#include <Inventor/fields/SoSFBox3f.h>
+#include <Inventor/fields/SoSFBox3i32.h>
+#include <Inventor/fields/SoSFBox3s.h>
 #include <Inventor/SoType.h>
 #include <Inventor/SbName.h>
 
@@ -228,6 +245,31 @@ int main()
     // -----------------------------------------------------------------------
     TEST_SF_INITIALIZED("SoSFImage",     SoSFImage)
     TEST_SF_INITIALIZED("SoSFImage3",    SoSFImage3)
+
+    // -----------------------------------------------------------------------
+    // SoSFVec2/3/4 variant types: class initialized
+    // -----------------------------------------------------------------------
+    TEST_SF_INITIALIZED("SoSFVec2d",    SoSFVec2d)
+    TEST_SF_INITIALIZED("SoSFVec2i32",  SoSFVec2i32)
+    TEST_SF_INITIALIZED("SoSFVec2s",    SoSFVec2s)
+    TEST_SF_INITIALIZED("SoSFVec3d",    SoSFVec3d)
+    TEST_SF_INITIALIZED("SoSFVec3i32",  SoSFVec3i32)
+    TEST_SF_INITIALIZED("SoSFVec3s",    SoSFVec3s)
+    TEST_SF_INITIALIZED("SoSFVec4d",    SoSFVec4d)
+    TEST_SF_INITIALIZED("SoSFVec4i32",  SoSFVec4i32)
+    TEST_SF_INITIALIZED("SoSFVec4s",    SoSFVec4s)
+
+    // -----------------------------------------------------------------------
+    // SoSFBox2/3 variant types: class initialized
+    // -----------------------------------------------------------------------
+    TEST_SF_INITIALIZED("SoSFBox2d",    SoSFBox2d)
+    TEST_SF_INITIALIZED("SoSFBox2f",    SoSFBox2f)
+    TEST_SF_INITIALIZED("SoSFBox2i32",  SoSFBox2i32)
+    TEST_SF_INITIALIZED("SoSFBox2s",    SoSFBox2s)
+    TEST_SF_INITIALIZED("SoSFBox3d",    SoSFBox3d)
+    TEST_SF_INITIALIZED("SoSFBox3f",    SoSFBox3f)
+    TEST_SF_INITIALIZED("SoSFBox3i32",  SoSFBox3i32)
+    TEST_SF_INITIALIZED("SoSFBox3s",    SoSFBox3s)
 
     return runner.getSummary();
 }

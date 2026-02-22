@@ -48,6 +48,8 @@
 #include <Inventor/SoOutput.h>
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/SoType.h>
+#include <Inventor/SoPickedPoint.h>
+#include <Inventor/SoPath.h>
 #include <Inventor/actions/SoCallbackAction.h>
 #include <Inventor/actions/SoSearchAction.h>
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
@@ -55,6 +57,8 @@
 #include <Inventor/actions/SoGetMatrixAction.h>
 #include <Inventor/actions/SoGetPrimitiveCountAction.h>
 #include <Inventor/actions/SoRayPickAction.h>
+#include <Inventor/actions/SoHandleEventAction.h>
+#include <Inventor/events/SoMouseButtonEvent.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoSwitch.h>
 #include <Inventor/nodes/SoCube.h>
@@ -342,6 +346,66 @@ int main()
         root->unref();
         runner.endTest(pass, pass ? "" :
             "SoRayPickAction should pick the cube at origin");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoRayPickAction: verify pick returns sensible intersection point and path
+    // -----------------------------------------------------------------------
+    runner.startTest("SoRayPickAction pick point is on cube surface");
+    {
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+        SoCube* cube = new SoCube; // 2x2x2 at origin, front face at z=+1
+        root->addChild(cube);
+
+        SoRayPickAction rpa(SbViewportRegion(100, 100));
+        rpa.setRay(SbVec3f(0.0f, 0.0f, 10.0f), SbVec3f(0.0f, 0.0f, -1.0f));
+        rpa.apply(root);
+
+        SoPickedPoint* pp = rpa.getPickedPoint();
+        bool pass = false;
+        if (pp != nullptr) {
+            // The ray hits the front face of the cube at z = +1.0
+            SbVec3f pt = pp->getPoint();
+            pass = (fabsf(pt[2] - 1.0f) < 0.01f);
+
+            // The pick path should end at the cube node
+            SoPath* path = pp->getPath();
+            pass = pass && (path != nullptr) &&
+                   (path->getTail() == cube);
+        }
+        root->unref();
+        runner.endTest(pass, pass ? "" :
+            "SoRayPickAction pick point should be on front face of cube (z~=1)");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoHandleEventAction: class initialized and basic dispatch
+    // -----------------------------------------------------------------------
+    runner.startTest("SoHandleEventAction class initialized");
+    {
+        SoHandleEventAction hea(SbViewportRegion(100, 100));
+        bool pass = (hea.getTypeId() != SoType::badType());
+        runner.endTest(pass, pass ? "" : "SoHandleEventAction has bad type");
+    }
+
+    runner.startTest("SoHandleEventAction dispatch on empty scene does not crash");
+    {
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+
+        SoMouseButtonEvent ev;
+        ev.setButton(SoMouseButtonEvent::BUTTON1);
+        ev.setState(SoButtonEvent::DOWN);
+
+        SoHandleEventAction hea(SbViewportRegion(100, 100));
+        hea.setEvent(&ev);
+        hea.apply(root); // should complete without crash; not handled
+
+        bool pass = !hea.isHandled();
+        root->unref();
+        runner.endTest(pass, pass ? "" :
+            "SoHandleEventAction should not be handled for empty scene");
     }
 
     return runner.getSummary();

@@ -52,8 +52,17 @@
 #include <Inventor/fields/SoMFUInt32.h>
 #include <Inventor/fields/SoMFUShort.h>
 #include <Inventor/fields/SoMFVec2f.h>
+#include <Inventor/fields/SoMFVec2d.h>
+#include <Inventor/fields/SoMFVec2i32.h>
+#include <Inventor/fields/SoMFVec2s.h>
 #include <Inventor/fields/SoMFVec3f.h>
+#include <Inventor/fields/SoMFVec3d.h>
+#include <Inventor/fields/SoMFVec3i32.h>
+#include <Inventor/fields/SoMFVec3s.h>
 #include <Inventor/fields/SoMFVec4f.h>
+#include <Inventor/fields/SoMFVec4d.h>
+#include <Inventor/fields/SoMFVec4i32.h>
+#include <Inventor/fields/SoMFVec4s.h>
 #include <Inventor/fields/SoMFColor.h>
 #include <Inventor/fields/SoMFColorRGBA.h>
 #include <Inventor/fields/SoMFString.h>
@@ -194,6 +203,19 @@ int main()
     TEST_MF_INITIALIZED("SoMFEnum",      SoMFEnum)
     TEST_MF_INITIALIZED("SoMFBitMask",   SoMFBitMask)
     TEST_MF_INITIALIZED("SoMFNode",      SoMFNode)
+
+    // -----------------------------------------------------------------------
+    // SoMFVec2/3/4 variant types: class initialized with zero elements
+    // -----------------------------------------------------------------------
+    TEST_MF_INITIALIZED("SoMFVec2d",    SoMFVec2d)
+    TEST_MF_INITIALIZED("SoMFVec2i32",  SoMFVec2i32)
+    TEST_MF_INITIALIZED("SoMFVec2s",    SoMFVec2s)
+    TEST_MF_INITIALIZED("SoMFVec3d",    SoMFVec3d)
+    TEST_MF_INITIALIZED("SoMFVec3i32",  SoMFVec3i32)
+    TEST_MF_INITIALIZED("SoMFVec3s",    SoMFVec3s)
+    TEST_MF_INITIALIZED("SoMFVec4d",    SoMFVec4d)
+    TEST_MF_INITIALIZED("SoMFVec4i32",  SoMFVec4i32)
+    TEST_MF_INITIALIZED("SoMFVec4s",    SoMFVec4s)
 
     return runner.getSummary();
 }

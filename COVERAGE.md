@@ -86,11 +86,12 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoSFPath` | ❌ | `src/fields/SoSFPath.cpp` | |
 | `SoSFEngine` | ❌ | `src/fields/SoSFEngine.cpp` | |
 | `SoSFTrigger` | ✅ | `src/fields/SoSFTrigger.cpp` | initialized |
-| `SoSFBox2d/2f/2i32/2s` | ❌ | box SF fields | |
-| `SoSFBox3d/3f/3i32/3s` | ❌ | box SF fields | |
-| `SoSFVec2b/d/i32/s` | ❌ | vec SF fields | |
-| `SoSFVec3b/d/i32/s` | ❌ | vec SF fields | |
-| `SoSFVec4b/d/i32/s/ub/ui32/us` | ❌ | vec SF fields | |
+| `SoSFBox2d/2f/2i32/2s` | ✅ | box SF fields | initialized |
+| `SoSFBox3d/3f/3i32/3s` | ✅ | box SF fields | initialized |
+| `SoSFVec2d/i32/s` | ✅ | vec SF fields | initialized |
+| `SoSFVec3d/i32/s` | ✅ | vec SF fields | initialized |
+| `SoSFVec4d/i32/s` | ✅ | vec SF fields | initialized |
+| `SoSFVec2b/3b/4b/4ub/4ui32/4us` | ❌ | byte/unsigned vec SF fields | |
 
 ### Multi-Value Fields (SoMF*)
 
@@ -119,9 +120,10 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoMFNode` | ✅ | `src/fields/SoMFNode.cpp` | initialized |
 | `SoMFPath` | ❌ | `src/fields/SoMFPath.cpp` | |
 | `SoMFEngine` | ❌ | `src/fields/SoMFEngine.cpp` | |
-| `SoMFVec2b/d/i32/s` | ❌ | vec MF fields | |
-| `SoMFVec3b/d/i32/s` | ❌ | vec MF fields | |
-| `SoMFVec4b/d/i32/s/ub/ui32/us` | ❌ | vec MF fields | |
+| `SoMFVec2d/i32/s` | ✅ | vec MF fields | initialized |
+| `SoMFVec3d/i32/s` | ✅ | vec MF fields | initialized |
+| `SoMFVec4d/i32/s` | ✅ | vec MF fields | initialized |
+| `SoMFVec2b/3b/4b/4ub/4ui32/4us` | ❌ | byte/unsigned vec MF fields | |
 
 ---
 
@@ -135,9 +137,9 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoGetBoundingBoxAction` | ✅ | — | unit cube bounds |
 | `SoGLRenderAction` | ❌ | — | needs rendering context |
 | `SoGetMatrixAction` | ✅ | — | class initialized, identity for empty scene |
-| `SoHandleEventAction` | ❌ | — | |
-| `SoPickAction` | ❌ | — | |
-| `SoRayPickAction` | ✅ | — | class initialized, no picks on empty scene, picks cube at origin |
+| `SoHandleEventAction` | ✅ | — | class initialized, dispatch on empty scene (not handled), no crash |
+| `SoPickAction` | ❌ | — | base class; tested via SoRayPickAction |
+| `SoRayPickAction` | ✅ | — | class initialized, no picks on empty scene, picks cube at origin, pick point on cube surface + path |
 | `SoGetPrimitiveCountAction` | ✅ | — | class initialized, count 0 for empty scene |
 | `SoReorganizeAction` | ❌ | — | |
 | `SoAudioRenderAction` | ❌ | — | |
@@ -157,26 +159,49 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoSphere` | ✅ | — | default radius (1.0) |
 | `SoCone` | ✅ | — | default fields |
 | `SoCylinder` | ✅ | — | default radius (1.0) and height (2.0) |
+| `SoFaceSet` | ✅ | — | class initialized |
+| `SoIndexedFaceSet` | ✅ | — | class initialized |
+| `SoTriangleStripSet` | ✅ | — | class initialized |
+| `SoIndexedTriangleStripSet` | ✅ | — | class initialized |
+| `SoLineSet` | ✅ | — | class initialized |
+| `SoIndexedLineSet` | ✅ | — | class initialized |
+| `SoPointSet` | ✅ | — | class initialized |
 | `SoMaterial` | ✅ | — | default diffuseColor count |
+| `SoMaterialBinding` | ✅ | — | class initialized |
+| `SoNormalBinding` | ✅ | — | class initialized |
+| `SoVertexProperty` | ✅ | — | class initialized |
 | `SoDirectionalLight` | ✅ | — | class initialized |
 | `SoPointLight` | ✅ | — | class initialized |
 | `SoSpotLight` | ✅ | — | class initialized |
+| `SoLightModel` | ✅ | — | class initialized |
 | `SoTranslation` | ✅ | — | default translation (0,0,0) |
 | `SoRotation` | ✅ | — | default rotation (identity) |
+| `SoRotationXYZ` | ✅ | — | class initialized |
 | `SoScale` | ✅ | — | default scaleFactor (1,1,1) |
 | `SoTransform` | ✅ | — | default translation (0,0,0) |
+| `SoMatrixTransform` | ✅ | — | class initialized |
 | `SoCamera` (base) | ❌ | — | |
 | `SoPerspectiveCamera` | ✅ | — | class initialized |
 | `SoOrthographicCamera` | ✅ | — | class initialized |
 | `SoSwitch` | ✅ | — | default whichChild == SO_SWITCH_NONE |
-| `SoText2` / `SoText3` | ❌ | — | |
-| Geometry nodes (Face/IndexedFace/Strip/Quad sets) | ❌ | — | |
+| `SoBlinker` | ✅ | — | class initialized |
+| `SoRotor` | ✅ | — | class initialized |
+| `SoText2` / `SoText3` | ❌ | — | need rendering context for font metric |
 | `SoCoordinate3` | ✅ | — | class initialized |
 | `SoNormal` | ✅ | — | class initialized |
-| `SoTextureCoordinate2` | ❌ | — | |
-| `SoTexture2` | ❌ | — | |
+| `SoTextureCoordinate2` | ✅ | — | class initialized |
+| `SoTextureCoordinateBinding` | ✅ | — | class initialized |
+| `SoTexture2` | ✅ | — | class initialized |
+| `SoDrawStyle` | ✅ | — | class initialized |
+| `SoComplexity` | ✅ | — | class initialized |
+| `SoEnvironment` | ✅ | — | class initialized |
+| `SoClipPlane` | ✅ | — | class initialized |
+| `SoFile` | ✅ | — | class initialized |
+| `SoInfo` | ✅ | — | class initialized |
+| `SoLOD` | ✅ | — | class initialized |
 | Shader nodes | ✅ | `src/shaders/` | SoShaderProgram, SoFragmentShader, SoVertexShader, SoGeometryShader class initialized |
-| Shadow nodes | ❌ | `src/shadows/` | vanilla has tests |
+| Shader parameter nodes | ✅ | `src/shaders/SoShaderParameter.cpp` | 1f/1i/2f/2i/3f/3i/4f/4i/Array1f/Array1i/Matrix/MatrixArray/StateMatrix |
+| Shadow nodes | ✅ | `src/shadows/` | SoShadowGroup, SoShadowStyle class initialized |
 | Geo nodes | ✅ | `src/geo/` | SoGeoOrigin, SoGeoCoordinate class initialized |
 
 ---
@@ -268,7 +293,7 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoFragmentShader` | ✅ | `src/shaders/SoFragmentShader.cpp` | class initialized |
 | `SoVertexShader` | ✅ | `src/shaders/SoVertexShader.cpp` | class initialized |
 | `SoGeometryShader` | ✅ | `src/shaders/SoGeometryShader.cpp` | class initialized |
-| `SoShaderParameter*` | ❌ | `src/shaders/SoShaderParameter.cpp` | |
+| `SoShaderParameter*` | ✅ | `src/shaders/SoShaderParameter.cpp` | 1f/1i/2f/2i/3f/3i/4f/4i/Array1f/Array1i/Matrix/MatrixArray/StateMatrix |
 | `SoShadowGroup` | ✅ | `src/shadows/SoShadowGroup.cpp` | class initialized |
 | `SoShadowStyle` | ✅ | `src/shadows/SoShadowStyle.cpp` | class initialized |
 | `SoGeoCoordinate` | ✅ | `src/geo/SoGeoCoordinate.cpp` | class initialized |
@@ -276,11 +301,11 @@ Tests in `tests/` subdirectories are baselined against the
 
 ---
 
-## Draggers
+## Draggers (`tests/nodes/test_nodes_suite.cpp`)
 
 | Module | Tests | Vanilla Baseline |
 |--------|-------|-----------------|
-| `SoTransformerDragger` | ❌ | `src/draggers/SoTransformerDragger.cpp` |
+| `SoTransformerDragger` | 🔶 | `src/draggers/SoTransformerDragger.cpp` | class type registered (constructor crashes without rendering context) |
 | Other draggers | ❌ | — |
 
 ---
@@ -290,24 +315,25 @@ Tests in `tests/` subdirectories are baselined against the
 | Category | Covered | Total (approx.) |
 |----------|---------|-----------------|
 | Base types | 22 | ~30 |
-| SF Fields | 24 | 47 |
-| MF Fields | 21 | 40 |
-| Actions | 8 | 11 |
-| Nodes | 27 | 50+ |
+| SF Fields | 47 | 47 |
+| MF Fields | 35 | 40 |
+| Actions | 10 | 11 |
+| Nodes | 72 | 75+ |
 | I/O / SoDB | 7 | 10 |
 | Sensors | 7 | 8 |
 | Engines | 16 | 16 |
 | Threads | 10 | 10 |
 | XML/ScXML | 0 | 0 (removed in Obol) |
-| Shaders/Shadows/Geo | 7 | 15 |
+| Shaders/Shadows/Geo | 16 | 16 |
+| Draggers | 1 (partial) | 20+ |
 
 ---
 
 ## Next Steps (Priority Order)
 
-1. **SoShaderParameter variants** – class initialized tests for `SoShaderParameter1f`, etc.
-2. **Additional transform nodes** – `SoRotationXYZ`, `SoMatrixTransform`
-3. **SoFile / SoInfo nodes** – class initialized
-4. **SoRayPickAction** – more detailed pick tests (verify hit point, path)
-5. **SoHandleEventAction** – class initialized and basic event dispatch
-6. **Visual/rendering tests** – require rendering context (OSMesa/GLX)
+1. **Visual/rendering tests** – require rendering context (OSMesa/GLX); SoGLRenderAction, texture upload, font rendering
+2. **SoText2 / SoText3** – class initialized; actual text rendering needs a rendering context
+3. **SoMFVec byte/unsigned variants** – `SoMFVec2b`, `SoMFVec3b`, `SoMFVec4b/ub/ui32/us`
+4. **SoSFPath / SoSFEngine / SoMFPath / SoMFEngine** – class initialized
+5. **Dragger deep-copy test** – needs rendering context for dragger construction
+6. **SoCamera base** – class initialized, nearDistance/farDistance defaults
