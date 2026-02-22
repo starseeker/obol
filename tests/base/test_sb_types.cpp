@@ -58,6 +58,7 @@
 #include <Inventor/SbVec3f.h>
 #include <Inventor/SbVec3d.h>
 #include <Inventor/SbVec3s.h>
+#include <Inventor/SbVec3us.h>
 #include <Inventor/SbVec4f.h>
 #include <Inventor/SbBox2f.h>
 #include <Inventor/SbBox2d.h>
@@ -83,6 +84,7 @@
 #include <Inventor/SbBox2i32.h>
 #include <Inventor/SbViewVolume.h>
 #include <Inventor/SbImage.h>
+#include "base/heap.h"
 
 #include <cmath>
 #include <cstring>
@@ -724,6 +726,137 @@ int main()
         SbVec2i32 diff = maxPt - minPt;
         bool pass = (box.getSize() == diff);
         runner.endTest(pass, pass ? "" : "SbBox2i32 getSize incorrect");
+    }
+
+    // -----------------------------------------------------------------------
+    // SbVec3us: construction and get/setValue round-trip
+    // Baseline: src/base/SbVec3us.cpp (COIN_TEST_SUITE block is empty;
+    //           API behavior test)
+    // -----------------------------------------------------------------------
+    runner.startTest("SbVec3us construction and getValue");
+    {
+        SbVec3us v(1, 2, 3);
+        unsigned short x, y, z;
+        v.getValue(x, y, z);
+        bool pass = (x == 1) && (y == 2) && (z == 3);
+        runner.endTest(pass, pass ? "" : "SbVec3us getValue returned wrong values");
+    }
+
+    runner.startTest("SbVec3us setValue round-trip");
+    {
+        SbVec3us v;
+        v.setValue(10, 20, 30);
+        const unsigned short* p = v.getValue();
+        bool pass = (p[0] == 10) && (p[1] == 20) && (p[2] == 30);
+        runner.endTest(pass, pass ? "" : "SbVec3us setValue/getValue mismatch");
+    }
+
+    // -----------------------------------------------------------------------
+    // SbHeap (cc_heap): min-heap and max-heap ordering
+    // Baseline: src/base/heap.cpp COIN_TEST_SUITE
+    // -----------------------------------------------------------------------
+    {
+        struct MockVal { double x; };
+
+        // Named functions used as callbacks avoid repeated cast patterns
+        struct HeapCb {
+            static void print(void* v, SbString& str) {
+                MockVal* mv = static_cast<MockVal*>(v);
+                char buf[32];
+                snprintf(buf, sizeof(buf), "%g", mv->x);
+                str += buf;
+            }
+            static int min_cmp(void* lhs, void* rhs) {
+                return static_cast<MockVal*>(lhs)->x < static_cast<MockVal*>(rhs)->x ? 1 : 0;
+            }
+            static int max_cmp(void* lhs, void* rhs) {
+                return static_cast<MockVal*>(lhs)->x > static_cast<MockVal*>(rhs)->x ? 1 : 0;
+            }
+        };
+
+        auto* pprint   = reinterpret_cast<cc_heap_print_cb*>(&HeapCb::print);
+        auto* pmin_cmp = reinterpret_cast<cc_heap_compare_cb*>(&HeapCb::min_cmp);
+        auto* pmax_cmp = reinterpret_cast<cc_heap_compare_cb*>(&HeapCb::max_cmp);
+
+        runner.startTest("SbHeap min_heap ordering");
+        {
+            MockVal val[] = {{3},{2},{1},{15},{5},{4},{45}};
+            cc_heap* heap = cc_heap_construct(256, pmin_cmp, TRUE);
+            for (auto& v : val) cc_heap_add(heap, &v);
+            SbString result;
+            cc_heap_print(heap, pprint, result, FALSE);
+            cc_heap_destruct(heap);
+            SbString expected("1 3 2 15 5 4 45 ");
+            bool pass = (result == expected);
+            runner.endTest(pass, pass ? "" :
+                std::string("min_heap mismatch: got '") + result.getString() +
+                "' expected '" + expected.getString() + "'");
+        }
+
+        runner.startTest("SbHeap max_heap ordering");
+        {
+            MockVal val[] = {{3},{2},{1},{15},{5},{4},{45}};
+            cc_heap* heap = cc_heap_construct(256, pmax_cmp, TRUE);
+            for (auto& v : val) cc_heap_add(heap, &v);
+            SbString result;
+            cc_heap_print(heap, pprint, result, FALSE);
+            cc_heap_destruct(heap);
+            SbString expected("45 5 15 2 3 1 4 ");
+            bool pass = (result == expected);
+            runner.endTest(pass, pass ? "" :
+                std::string("max_heap mismatch: got '") + result.getString() +
+                "' expected '" + expected.getString() + "'");
+        }
+
+        runner.startTest("SbHeap heap_add");
+        {
+            MockVal val[] = {{3},{2},{1},{15},{5},{4},{45}};
+            cc_heap* heap = cc_heap_construct(256, pmin_cmp, TRUE);
+            for (auto& v : val) cc_heap_add(heap, &v);
+            MockVal extra = {12};
+            cc_heap_add(heap, &extra);
+            SbString result;
+            cc_heap_print(heap, pprint, result, FALSE);
+            cc_heap_destruct(heap);
+            SbString expected("1 3 2 12 5 4 45 15 ");
+            bool pass = (result == expected);
+            runner.endTest(pass, pass ? "" :
+                std::string("heap_add mismatch: got '") + result.getString() +
+                "' expected '" + expected.getString() + "'");
+        }
+
+        runner.startTest("SbHeap heap_remove");
+        {
+            MockVal val[] = {{3},{2},{1},{15},{5},{4},{45}};
+            cc_heap* heap = cc_heap_construct(256, pmin_cmp, TRUE);
+            for (auto& v : val) cc_heap_add(heap, &v);
+            cc_heap_remove(heap, &val[3]); // remove 15
+            SbString result;
+            cc_heap_print(heap, pprint, result, FALSE);
+            cc_heap_destruct(heap);
+            SbString expected("1 3 2 45 5 4 ");
+            bool pass = (result == expected);
+            runner.endTest(pass, pass ? "" :
+                std::string("heap_remove mismatch: got '") + result.getString() +
+                "' expected '" + expected.getString() + "'");
+        }
+
+        runner.startTest("SbHeap heap_update");
+        {
+            MockVal val[] = {{3},{2},{1},{15},{5},{4},{45}};
+            cc_heap* heap = cc_heap_construct(256, pmin_cmp, TRUE);
+            for (auto& v : val) cc_heap_add(heap, &v);
+            val[3].x = 1; // change 15 -> 1
+            cc_heap_update(heap, &val[3]);
+            SbString result;
+            cc_heap_print(heap, pprint, result, FALSE);
+            cc_heap_destruct(heap);
+            SbString expected("1 1 2 3 5 4 45 ");
+            bool pass = (result == expected);
+            runner.endTest(pass, pass ? "" :
+                std::string("heap_update mismatch: got '") + result.getString() +
+                "' expected '" + expected.getString() + "'");
+        }
     }
 
     return runner.getSummary();

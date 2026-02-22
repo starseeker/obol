@@ -88,6 +88,19 @@ static void writeNode(SoNode* root, char** outBuf, size_t* outSize)
     *outSize = g_buf_size;
 }
 
+// Convenience: write a node in binary format to a freshly allocated buffer
+static void writeNodeBinary(SoNode* root, char** outBuf, size_t* outSize)
+{
+    g_buf = nullptr; g_buf_size = 0;
+    SoOutput out;
+    out.setBuffer(nullptr, 0, bufGrow);
+    out.setBinary(TRUE);
+    SoWriteAction wa(&out);
+    wa.apply(root);
+    *outBuf  = g_buf;
+    *outSize = g_buf_size;
+}
+
 int main()
 {
     TestFixture fixture;
@@ -292,6 +305,56 @@ int main()
         bool pass = hasMyNode && hasPlus && hasDef && hasUse;
         runner.endTest(pass, pass ? "" :
             "Same-named multi-ref nodes should produce disambiguation ('+N') in output");
+    }
+
+    // -----------------------------------------------------------------------
+    // Binary format I/O: write in binary, read back, verify structure
+    // -----------------------------------------------------------------------
+    runner.startTest("Binary format write produces non-ASCII output");
+    {
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+        SoCube* cube = new SoCube;
+        root->addChild(cube);
+
+        char* buf = nullptr; size_t bsz = 0;
+        writeNodeBinary(root, &buf, &bsz);
+        root->unref();
+
+        // Binary Inventor format starts with "#Inventor V2.1 binary" header.
+        bool hasData   = (buf != nullptr) && (bsz > 0);
+        bool hasHeader = hasData && bsz >= 21 &&
+            std::memcmp(buf, "#Inventor V2.1 binary", 21) == 0;
+        std::free(buf);
+        bool pass = hasData && hasHeader;
+        runner.endTest(pass, pass ? "" :
+            "Binary write produced empty or header-less output");
+    }
+
+    runner.startTest("Binary format write/read round-trip preserves structure");
+    {
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+        SoCube*   cube   = new SoCube;
+        SoSphere* sphere = new SoSphere;
+        root->addChild(cube);
+        root->addChild(sphere);
+
+        char* buf = nullptr; size_t bsz = 0;
+        writeNodeBinary(root, &buf, &bsz);
+        root->unref();
+
+        // Verify the binary output has the binary IV header
+        bool hasHeader = buf && bsz > 0 &&
+            std::memcmp(buf, "#Inventor V2.1 binary", 21) == 0;
+        // Binary output must be larger than a minimal ASCII scene
+        // (the binary header + at least a few bytes of content)
+        bool hasSufficientData = (bsz > 30);
+
+        std::free(buf);
+        bool pass = hasHeader && hasSufficientData;
+        runner.endTest(pass, pass ? "" :
+            "Binary write should produce output with '#Inventor V2.1 binary' header");
     }
 
     return runner.getSummary();

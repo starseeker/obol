@@ -58,6 +58,7 @@
 #include <Inventor/actions/SoGetPrimitiveCountAction.h>
 #include <Inventor/actions/SoRayPickAction.h>
 #include <Inventor/actions/SoHandleEventAction.h>
+#include <Inventor/actions/SoReorganizeAction.h>
 #include <Inventor/events/SoMouseButtonEvent.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoSwitch.h>
@@ -406,6 +407,16 @@ int main()
         root->unref();
         runner.endTest(pass, pass ? "" :
             "SoHandleEventAction should not be handled for empty scene");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoReorganizeAction: class initialized (type registered)
+    // -----------------------------------------------------------------------
+    runner.startTest("SoReorganizeAction class initialized");
+    {
+        SoReorganizeAction ra;
+        bool pass = (ra.getTypeId() != SoType::badType());
+        runner.endTest(pass, pass ? "" : "SoReorganizeAction has bad type");
     }
 
     return runner.getSummary();
