@@ -85,6 +85,14 @@ add_rendering_test(render_drawstyle)
 add_rendering_test(render_texture)
 add_rendering_test(render_text2)
 add_rendering_test(render_text3)
+# Moved from top-level SIMPLE_TESTS: these need a rendering context to run
+add_rendering_test(render_gradient)
+add_rendering_test(render_colored_cube)
+add_rendering_test(render_coordinates)
+add_rendering_test(render_scene)
+# Validation tests: do their own pixel analysis; registered directly with CTest
+add_rendering_test(render_sphere_position)
+add_rendering_test(render_checker_texture)
 
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
@@ -157,6 +165,33 @@ add_rendering_image_test(render_texture    RMSE_THRESHOLD 15.0)
 # Higher RMSE threshold to accommodate subpixel differences between platforms.
 add_rendering_image_test(render_text2      RMSE_THRESHOLD 20.0)
 add_rendering_image_test(render_text3      RMSE_THRESHOLD 20.0)
+# Output-only tests (active once control images are generated):
+add_rendering_image_test(render_gradient    RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_colored_cube RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_coordinates RMSE_THRESHOLD 10.0)
+add_rendering_image_test(render_scene       RMSE_THRESHOLD 15.0)
+
+# ---- Validation tests: run unconditionally, check exit code only -------------
+# These tests perform their own pixel analysis and return 0/1 directly.
+# run_rendering_test.cmake wraps with xvfb-run when DISPLAY is not set.
+#
+# Two timeouts are intentional:
+#   -DTEST_TIMEOUT  passed into the script for the execute_process() call so
+#                   the child executable is killed if it hangs.
+#   TIMEOUT property  the outer CTest timeout that covers cmake script startup
+#                     overhead as well as the subprocess; set to the same value.
+foreach(_vtest render_sphere_position render_checker_texture)
+    add_test(
+        NAME ${_vtest}
+        COMMAND "${CMAKE_COMMAND}"
+            -DEXECUTABLE=$<TARGET_FILE:${_vtest}>
+            -DTEST_TIMEOUT=${IMAGE_COMPARISON_TEST_TIMEOUT}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/run_rendering_test.cmake"
+    )
+    set_tests_properties(${_vtest} PROPERTIES
+        TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
+    )
+endforeach()
 
 # ---- Custom target: generate control images ----------------------------------
 # Runs all rendering tests with GLX (via Xvfb) and converts the .rgb output to
@@ -173,6 +208,7 @@ if(PNG_FOUND)
             render_primitives render_materials render_lighting
             render_transforms render_cameras render_drawstyle
             render_texture render_text2 render_text3
+            render_gradient render_colored_cube render_coordinates render_scene
         COMMENT "Generating PNG control images for rendering regression tests"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
