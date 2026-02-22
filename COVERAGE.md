@@ -28,7 +28,7 @@ Tests in `tests/` subdirectories are baselined against the
 | `SbVec4f` | ✅ | `src/base/SbVec4f.cpp` | normalize already-normalized |
 | `SbBox2f` | ✅ | `src/base/SbBox2f.cpp` | getSize, getClosestPoint (outside, center) |
 | `SbBox2d` | ✅ | `src/base/SbBox2d.cpp` | getSize, getClosestPoint |
-| `SbBox2i32` | ❌ | `src/base/SbBox2i32.cpp` | |
+| `SbBox2i32` | ✅ | `src/base/SbBox2i32.cpp` | getSize |
 | `SbBox2s` | ✅ | `src/base/SbBox2s.cpp` | getSize |
 | `SbBox3f` | ✅ | `src/base/SbBox3f.cpp` | getClosestPoint (outside, center) |
 | `SbBox3d` | ✅ | `src/base/SbBox3d.cpp` | getClosestPoint |
@@ -46,10 +46,10 @@ Tests in `tests/` subdirectories are baselined against the
 | `SbViewVolume` | ✅ | `src/base/SbViewVolume.cpp` | ortho/perspective intersection |
 | `SbImage` | ✅ | `src/base/SbImage.cpp` | copyConstruct |
 | `SbColor` | 🔶 | (in test_base.cpp) | HSV conversion |
-| `SbColor4f` | ❌ | — | |
-| `SbLine` | ❌ | — | |
-| `SbSphere` | ❌ | — | |
-| `SbCylinder` | ❌ | — | |
+| `SbColor4f` | ✅ | — | construction, set/get round-trip |
+| `SbLine` | ✅ | — | getClosestPoint, getClosestPoints (parallel lines) |
+| `SbSphere` | ✅ | — | pointInside, getRadius/setRadius, setCenter |
+| `SbCylinder` | ✅ | — | construction, getRadius |
 | `SbHeap` | ❌ | `src/base/heap.cpp` | |
 
 ---
@@ -83,15 +83,15 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoSFImage3` | ✅ | `src/fields/SoSFImage3.cpp` | initialized |
 | `SoSFPlane` | ✅ | `src/fields/SoSFPlane.cpp` | initialized |
 | `SoSFNode` | ✅ | `src/fields/SoSFNode.cpp` | initialized |
-| `SoSFPath` | ❌ | `src/fields/SoSFPath.cpp` | |
-| `SoSFEngine` | ❌ | `src/fields/SoSFEngine.cpp` | |
+| `SoSFPath` | ✅ | `src/fields/SoSFPath.cpp` | initialized |
+| `SoSFEngine` | ✅ | `src/fields/SoSFEngine.cpp` | initialized |
 | `SoSFTrigger` | ✅ | `src/fields/SoSFTrigger.cpp` | initialized |
 | `SoSFBox2d/2f/2i32/2s` | ✅ | box SF fields | initialized |
 | `SoSFBox3d/3f/3i32/3s` | ✅ | box SF fields | initialized |
 | `SoSFVec2d/i32/s` | ✅ | vec SF fields | initialized |
 | `SoSFVec3d/i32/s` | ✅ | vec SF fields | initialized |
 | `SoSFVec4d/i32/s` | ✅ | vec SF fields | initialized |
-| `SoSFVec2b/3b/4b/4ub/4ui32/4us` | ❌ | byte/unsigned vec SF fields | |
+| `SoSFVec2b/3b/4b/4ub/4ui32/4us` | ✅ | `src/fields/SoSFVec2b.cpp` et al. | initialized; SoSFVec4ub also set/get |
 
 ### Multi-Value Fields (SoMF*)
 
@@ -118,12 +118,12 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoMFEnum` | ✅ | `src/fields/SoMFEnum.cpp` | initialized |
 | `SoMFBitMask` | ✅ | `src/fields/SoMFBitMask.cpp` | initialized |
 | `SoMFNode` | ✅ | `src/fields/SoMFNode.cpp` | initialized |
-| `SoMFPath` | ❌ | `src/fields/SoMFPath.cpp` | |
-| `SoMFEngine` | ❌ | `src/fields/SoMFEngine.cpp` | |
+| `SoMFPath` | ✅ | `src/fields/SoMFPath.cpp` | initialized |
+| `SoMFEngine` | ✅ | `src/fields/SoMFEngine.cpp` | initialized |
 | `SoMFVec2d/i32/s` | ✅ | vec MF fields | initialized |
 | `SoMFVec3d/i32/s` | ✅ | vec MF fields | initialized |
 | `SoMFVec4d/i32/s` | ✅ | vec MF fields | initialized |
-| `SoMFVec2b/3b/4b/4ub/4ui32/4us` | ❌ | byte/unsigned vec MF fields | |
+| `SoMFVec2b/3b/4b/4ub/4ui32/4us` | ✅ | `src/fields/SoMFVec2b.cpp` et al. | initialized |
 
 ---
 
@@ -135,7 +135,7 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoWriteAction` | ✅ | `src/actions/SoWriteAction.cpp` | DEF/USE naming for multi-ref nodes |
 | `SoSearchAction` | ✅ | — | find by name, find by type |
 | `SoGetBoundingBoxAction` | ✅ | — | unit cube bounds |
-| `SoGLRenderAction` | ✅ | — | visual regression tests in `tests/rendering/`; 6 scenes covering primitives, materials, lighting, transforms, cameras, draw styles |
+| `SoGLRenderAction` | ✅ | — | visual regression tests in `tests/rendering/`; 7 scenes covering primitives, materials, lighting, transforms, cameras, draw styles, texture mapping |
 | `SoGetMatrixAction` | ✅ | — | class initialized, identity for empty scene |
 | `SoHandleEventAction` | ✅ | — | class initialized, dispatch on empty scene (not handled), no crash |
 | `SoPickAction` | ❌ | — | base class; tested via SoRayPickAction |
@@ -180,9 +180,9 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoScale` | ✅ | — | default scaleFactor (1,1,1) |
 | `SoTransform` | ✅ | — | default translation (0,0,0) |
 | `SoMatrixTransform` | ✅ | — | class initialized |
-| `SoCamera` (base) | ❌ | — | |
-| `SoPerspectiveCamera` | ✅ | — | class initialized |
-| `SoOrthographicCamera` | ✅ | — | class initialized |
+| `SoCamera` (base) | 🔶 | — | default fields tested via SoPerspectiveCamera/SoOrthographicCamera |
+| `SoPerspectiveCamera` | ✅ | — | class initialized, nearDistance/farDistance defaults |
+| `SoOrthographicCamera` | ✅ | — | class initialized, height default |
 | `SoSwitch` | ✅ | — | default whichChild == SO_SWITCH_NONE |
 | `SoBlinker` | ✅ | — | class initialized |
 | `SoRotor` | ✅ | — | class initialized |
@@ -326,11 +326,12 @@ the small rendering differences between backends.
 | `render_transforms` | ✅ | GLX + OSMesa | `SoTranslation`, `SoRotation`, `SoScale` – 3×3 grid showing each transform type |
 | `render_cameras` | ✅ | GLX + OSMesa | `SoPerspectiveCamera` vs `SoOrthographicCamera` – same depth scene, two renders |
 | `render_drawstyle` | ✅ | GLX + OSMesa | `SoDrawStyle`: FILLED, LINES, POINTS modes of a low-res icosphere |
+| `render_texture` | ✅ | GLX + OSMesa | `SoTexture2`: procedural 8×8 checker (red/white) mapped onto a sphere, untextured sphere as reference |
 
 **Infrastructure:**
 - `tests/rendering/CMakeLists.txt` – backend-aware build macro (OSMesa or GLX)
 - `tests/rendering/generate_controls.sh` – regenerate control images via GLX
-- `tests/rendering/rgb_to_png_py.py` – stdlib-only RGB→PNG converter (no libpng needed)
+- `tests/rendering/rgb_to_png_py.py` – stdlib-only RGB→PNG converter (fallback; real builds use `rgb_to_png` via libpng)
 - `tests/run_image_test.cmake` – CTest driver (xvfb-run for GLX; per-test RMSE thresholds)
 - `tests/control_images/render_*_control.png` – stored PNG control images
 
@@ -346,11 +347,11 @@ the small rendering differences between backends.
 
 | Category | Covered | Total (approx.) |
 |----------|---------|-----------------|
-| Base types | 22 | ~30 |
-| SF Fields | 47 | 47 |
-| MF Fields | 35 | 40 |
+| Base types | 26 | ~30 |
+| SF Fields | 53 | 53 |
+| MF Fields | 41 | 41 |
 | Actions | 10 | 11 |
-| Nodes | 72 | 75+ |
+| Nodes | 74 | 75+ |
 | I/O / SoDB | 7 | 10 |
 | Sensors | 7 | 8 |
 | Engines | 16 | 16 |
@@ -358,7 +359,7 @@ the small rendering differences between backends.
 | XML/ScXML | 0 | 0 (removed in Obol) |
 | Shaders/Shadows/Geo | 16 | 16 |
 | Draggers | 1 (partial) | 20+ |
-| Visual rendering | 6 | ~10 |
+| Visual rendering | 7 | ~10 |
 
 ---
 
@@ -367,8 +368,7 @@ the small rendering differences between backends.
 1. **SoText2 / SoText3 visual rendering** – defer until font strategy is decided
    (vanilla uses FreeType; Obol uses Profont – direct pixel comparison is impractical
    without a shared font baseline)
-2. **Texture upload visual test** – `SoTexture2` with a procedural checkerboard texture
-3. **SoMFVec byte/unsigned variants** – `SoMFVec2b`, `SoMFVec3b`, `SoMFVec4b/ub/ui32/us`
-4. **SoSFPath / SoSFEngine / SoMFPath / SoMFEngine** – class initialized
-5. **Dragger deep-copy test** – needs rendering context for dragger construction
-6. **SoCamera base** – class initialized, nearDistance/farDistance defaults
+2. **Dragger deep-copy test** – needs rendering context for dragger construction; other dragger types still need coverage
+3. **SoDB / I/O** – binary format I/O, `SoDB::readAll` (VRML 2.0 path removed in Obol)
+4. **SoDataSensor** – class initialized and value-change callback
+5. **SbHeap** – `src/base/heap.cpp` has upstream test baseline; verify Obol still passes

@@ -63,6 +63,14 @@
 #include <Inventor/fields/SoMFVec4d.h>
 #include <Inventor/fields/SoMFVec4i32.h>
 #include <Inventor/fields/SoMFVec4s.h>
+#include <Inventor/fields/SoMFVec2b.h>
+#include <Inventor/fields/SoMFVec3b.h>
+#include <Inventor/fields/SoMFVec4b.h>
+#include <Inventor/fields/SoMFVec4ub.h>
+#include <Inventor/fields/SoMFVec4us.h>
+#include <Inventor/fields/SoMFVec4ui32.h>
+#include <Inventor/fields/SoMFPath.h>
+#include <Inventor/fields/SoMFEngine.h>
 #include <Inventor/fields/SoMFColor.h>
 #include <Inventor/fields/SoMFColorRGBA.h>
 #include <Inventor/fields/SoMFString.h>
@@ -216,6 +224,25 @@ int main()
     TEST_MF_INITIALIZED("SoMFVec4d",    SoMFVec4d)
     TEST_MF_INITIALIZED("SoMFVec4i32",  SoMFVec4i32)
     TEST_MF_INITIALIZED("SoMFVec4s",    SoMFVec4s)
+
+    // -----------------------------------------------------------------------
+    // Byte/unsigned-integer SoMFVec variants: class initialized
+    // Baseline: src/fields/SoMFVec2b.cpp, SoMFVec3b.cpp, SoMFVec4b.cpp,
+    //           SoMFVec4ub.cpp, SoMFVec4us.cpp, SoMFVec4ui32.cpp
+    // -----------------------------------------------------------------------
+    TEST_MF_INITIALIZED("SoMFVec2b",    SoMFVec2b)
+    TEST_MF_INITIALIZED("SoMFVec3b",    SoMFVec3b)
+    TEST_MF_INITIALIZED("SoMFVec4b",    SoMFVec4b)
+    TEST_MF_INITIALIZED("SoMFVec4ub",   SoMFVec4ub)
+    TEST_MF_INITIALIZED("SoMFVec4us",   SoMFVec4us)
+    TEST_MF_INITIALIZED("SoMFVec4ui32", SoMFVec4ui32)
+
+    // -----------------------------------------------------------------------
+    // SoMFPath / SoMFEngine: class initialized
+    // Baseline: src/fields/SoMFPath.cpp, SoMFEngine.cpp
+    // -----------------------------------------------------------------------
+    TEST_MF_INITIALIZED("SoMFPath",     SoMFPath)
+    TEST_MF_INITIALIZED("SoMFEngine",   SoMFEngine)
 
     return runner.getSummary();
 }

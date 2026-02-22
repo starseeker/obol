@@ -82,6 +82,7 @@ add_rendering_test(render_lighting)
 add_rendering_test(render_transforms)
 add_rendering_test(render_cameras)
 add_rendering_test(render_drawstyle)
+add_rendering_test(render_texture)
 
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
@@ -149,6 +150,7 @@ add_rendering_image_test(render_lighting)                         # < 2.0 RMSE, 
 add_rendering_image_test(render_transforms RMSE_THRESHOLD 10.0)
 add_rendering_image_test(render_cameras    RMSE_THRESHOLD 10.0)
 add_rendering_image_test(render_drawstyle  RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_texture    RMSE_THRESHOLD 15.0)
 
 # ---- Custom target: generate control images ----------------------------------
 # Runs all rendering tests with GLX (via Xvfb) and converts the .rgb output to
@@ -164,6 +166,7 @@ if(PNG_FOUND)
             image_comparator rgb_to_png
             render_primitives render_materials render_lighting
             render_transforms render_cameras render_drawstyle
+            render_texture
         COMMENT "Generating PNG control images for rendering regression tests"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
