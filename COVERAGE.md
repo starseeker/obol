@@ -22,29 +22,29 @@ Tests in `tests/` subdirectories are baselined against the
 |-------|-------|-----------------|-------|
 | `SbVec3f` | ✅ | `src/base/SbVec3f.cpp` | toString, fromString, fromString invalid |
 | `SbVec2f` | ✅ | (via SbBox2f) | Covered through box tests |
-| `SbVec3d` | ❌ | `src/base/SbVec3d.cpp` | |
-| `SbVec3s` | ❌ | `src/base/SbVec3s.cpp` | |
+| `SbVec3d` | ✅ | `src/base/SbVec3d.cpp` | fromString |
+| `SbVec3s` | ✅ | `src/base/SbVec3s.cpp` | fromString, fromInvalidString |
 | `SbVec3us` | ❌ | `src/base/SbVec3us.cpp` | |
-| `SbVec4f` | ❌ | `src/base/SbVec4f.cpp` | |
+| `SbVec4f` | ✅ | `src/base/SbVec4f.cpp` | normalize already-normalized |
 | `SbBox2f` | ✅ | `src/base/SbBox2f.cpp` | getSize, getClosestPoint (outside, center) |
-| `SbBox2d` | ❌ | `src/base/SbBox2d.cpp` | |
+| `SbBox2d` | ✅ | `src/base/SbBox2d.cpp` | getSize, getClosestPoint |
 | `SbBox2i32` | ❌ | `src/base/SbBox2i32.cpp` | |
-| `SbBox2s` | ❌ | `src/base/SbBox2s.cpp` | |
+| `SbBox2s` | ✅ | `src/base/SbBox2s.cpp` | getSize |
 | `SbBox3f` | ✅ | `src/base/SbBox3f.cpp` | getClosestPoint (outside, center) |
-| `SbBox3d` | ❌ | `src/base/SbBox3d.cpp` | |
+| `SbBox3d` | ✅ | `src/base/SbBox3d.cpp` | getClosestPoint |
 | `SbBox3i32` | ✅ | `src/base/SbBox3i32.cpp` | getSize, getClosestPoint |
-| `SbBox3s` | ❌ | `src/base/SbBox3s.cpp` | |
+| `SbBox3s` | ✅ | `src/base/SbBox3s.cpp` | getSize, getClosestPoint |
 | `SbByteBuffer` | ✅ | `src/base/SbByteBuffer.cpp` | pushUnique, pushOnEmpty |
 | `SbBSPTree` | ✅ | `src/base/SbBSPTree.cpp` | add/find/remove points |
 | `SbMatrix` | ✅ | `src/base/SbMatrix.cpp` | construct from SbDPMatrix |
 | `SbDPMatrix` | ✅ | `src/base/SbDPMatrix.cpp` | construct from SbMatrix |
-| `SbDPRotation` | ❌ | `src/base/SbDPRotation.cpp` | |
-| `SbDPPlane` | ❌ | `src/base/SbDPPlane.cpp` | |
+| `SbDPRotation` | ✅ | `src/base/SbDPRotation.cpp` | construct from axis/angle |
+| `SbDPPlane` | ✅ | `src/base/SbDPPlane.cpp` | plane-plane intersection sign correct |
 | `SbRotation` | ✅ | `src/base/SbRotation.cpp` | fromString valid/invalid |
 | `SbString` | ✅ | `src/base/SbString.cpp` | operator+ (all three forms) |
 | `SbPlane` | ✅ | `src/base/SbPlane.cpp` | plane-plane intersection |
 | `SbViewVolume` | ✅ | `src/base/SbViewVolume.cpp` | ortho/perspective intersection |
-| `SbImage` | ❌ | `src/base/SbImage.cpp` | |
+| `SbImage` | ✅ | `src/base/SbImage.cpp` | copyConstruct |
 | `SbColor` | 🔶 | (in test_base.cpp) | HSV conversion |
 | `SbColor4f` | ❌ | — | |
 | `SbLine` | ❌ | — | |
@@ -71,26 +71,27 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoSFVec3f` | ✅ | `src/fields/SoSFVec3f.cpp` | initialized, set/get round-trip |
 | `SoSFVec4f` | ✅ | `src/fields/SoSFVec4f.cpp` | initialized |
 | `SoSFColor` | ✅ | `src/fields/SoSFColor.cpp` | initialized, set/get round-trip |
-| `SoSFColorRGBA` | ❌ | `src/fields/SoSFColorRGBA.cpp` | |
+| `SoSFColorRGBA` | ✅ | `src/fields/SoSFColorRGBA.cpp` | initialized |
 | `SoSFString` | ✅ | `src/fields/SoSFString.cpp` | initialized, set/get round-trip |
 | `SoSFRotation` | ✅ | `src/fields/SoSFRotation.cpp` | initialized |
 | `SoSFMatrix` | ✅ | `src/fields/SoSFMatrix.cpp` | initialized |
 | `SoSFName` | ✅ | `src/fields/SoSFName.cpp` | initialized |
 | `SoSFTime` | ✅ | `src/fields/SoSFTime.cpp` | initialized |
-| `SoSFEnum` | ❌ | `src/fields/SoSFEnum.cpp` | |
-| `SoSFBitMask` | ❌ | `src/fields/SoSFBitMask.cpp` | |
-| `SoSFImage` | ❌ | `src/fields/SoSFImage.cpp` | |
-| `SoSFImage3` | ❌ | `src/fields/SoSFImage3.cpp` | |
-| `SoSFPlane` | ❌ | `src/fields/SoSFPlane.cpp` | |
-| `SoSFNode` | ❌ | `src/fields/SoSFNode.cpp` | |
+| `SoSFEnum` | ✅ | `src/fields/SoSFEnum.cpp` | initialized |
+| `SoSFBitMask` | ✅ | `src/fields/SoSFBitMask.cpp` | initialized |
+| `SoSFImage` | ✅ | `src/fields/SoSFImage.cpp` | initialized |
+| `SoSFImage3` | ✅ | `src/fields/SoSFImage3.cpp` | initialized |
+| `SoSFPlane` | ✅ | `src/fields/SoSFPlane.cpp` | initialized |
+| `SoSFNode` | ✅ | `src/fields/SoSFNode.cpp` | initialized |
 | `SoSFPath` | ❌ | `src/fields/SoSFPath.cpp` | |
 | `SoSFEngine` | ❌ | `src/fields/SoSFEngine.cpp` | |
-| `SoSFTrigger` | ❌ | `src/fields/SoSFTrigger.cpp` | |
-| `SoSFBox2d/2f/2i32/2s` | ❌ | box SF fields | |
-| `SoSFBox3d/3f/3i32/3s` | ❌ | box SF fields | |
-| `SoSFVec2b/d/i32/s` | ❌ | vec SF fields | |
-| `SoSFVec3b/d/i32/s` | ❌ | vec SF fields | |
-| `SoSFVec4b/d/i32/s/ub/ui32/us` | ❌ | vec SF fields | |
+| `SoSFTrigger` | ✅ | `src/fields/SoSFTrigger.cpp` | initialized |
+| `SoSFBox2d/2f/2i32/2s` | ✅ | box SF fields | initialized |
+| `SoSFBox3d/3f/3i32/3s` | ✅ | box SF fields | initialized |
+| `SoSFVec2d/i32/s` | ✅ | vec SF fields | initialized |
+| `SoSFVec3d/i32/s` | ✅ | vec SF fields | initialized |
+| `SoSFVec4d/i32/s` | ✅ | vec SF fields | initialized |
+| `SoSFVec2b/3b/4b/4ub/4ui32/4us` | ❌ | byte/unsigned vec SF fields | |
 
 ### Multi-Value Fields (SoMF*)
 
@@ -113,15 +114,16 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoMFName` | ✅ | `src/fields/SoMFName.cpp` | initialized |
 | `SoMFTime` | ✅ | `src/fields/SoMFTime.cpp` | initialized |
 | `SoMFPlane` | ✅ | `src/fields/SoMFPlane.cpp` | initialized |
-| `SoMFColorRGBA` | ❌ | `src/fields/SoMFColorRGBA.cpp` | |
-| `SoMFEnum` | ❌ | `src/fields/SoMFEnum.cpp` | |
-| `SoMFBitMask` | ❌ | `src/fields/SoMFBitMask.cpp` | |
-| `SoMFNode` | ❌ | `src/fields/SoMFNode.cpp` | |
+| `SoMFColorRGBA` | ✅ | `src/fields/SoMFColorRGBA.cpp` | initialized |
+| `SoMFEnum` | ✅ | `src/fields/SoMFEnum.cpp` | initialized |
+| `SoMFBitMask` | ✅ | `src/fields/SoMFBitMask.cpp` | initialized |
+| `SoMFNode` | ✅ | `src/fields/SoMFNode.cpp` | initialized |
 | `SoMFPath` | ❌ | `src/fields/SoMFPath.cpp` | |
 | `SoMFEngine` | ❌ | `src/fields/SoMFEngine.cpp` | |
-| `SoMFVec2b/d/i32/s` | ❌ | vec MF fields | |
-| `SoMFVec3b/d/i32/s` | ❌ | vec MF fields | |
-| `SoMFVec4b/d/i32/s/ub/ui32/us` | ❌ | vec MF fields | |
+| `SoMFVec2d/i32/s` | ✅ | vec MF fields | initialized |
+| `SoMFVec3d/i32/s` | ✅ | vec MF fields | initialized |
+| `SoMFVec4d/i32/s` | ✅ | vec MF fields | initialized |
+| `SoMFVec2b/3b/4b/4ub/4ui32/4us` | ❌ | byte/unsigned vec MF fields | |
 
 ---
 
@@ -134,11 +136,11 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoSearchAction` | ✅ | — | find by name, find by type |
 | `SoGetBoundingBoxAction` | ✅ | — | unit cube bounds |
 | `SoGLRenderAction` | ❌ | — | needs rendering context |
-| `SoGetMatrixAction` | ❌ | — | |
-| `SoHandleEventAction` | ❌ | — | |
-| `SoPickAction` | ❌ | — | |
-| `SoRayPickAction` | ❌ | — | |
-| `SoGetPrimitiveCountAction` | ❌ | — | |
+| `SoGetMatrixAction` | ✅ | — | class initialized, identity for empty scene |
+| `SoHandleEventAction` | ✅ | — | class initialized, dispatch on empty scene (not handled), no crash |
+| `SoPickAction` | ❌ | — | base class; tested via SoRayPickAction |
+| `SoRayPickAction` | ✅ | — | class initialized, no picks on empty scene, picks cube at origin, pick point on cube surface + path |
+| `SoGetPrimitiveCountAction` | ✅ | — | class initialized, count 0 for empty scene |
 | `SoReorganizeAction` | ❌ | — | |
 | `SoAudioRenderAction` | ❌ | — | |
 
@@ -156,28 +158,51 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoCube` | ✅ | — | default field values (2x2x2) |
 | `SoSphere` | ✅ | — | default radius (1.0) |
 | `SoCone` | ✅ | — | default fields |
-| `SoCylinder` | ❌ | — | |
+| `SoCylinder` | ✅ | — | default radius (1.0) and height (2.0) |
+| `SoFaceSet` | ✅ | — | class initialized |
+| `SoIndexedFaceSet` | ✅ | — | class initialized |
+| `SoTriangleStripSet` | ✅ | — | class initialized |
+| `SoIndexedTriangleStripSet` | ✅ | — | class initialized |
+| `SoLineSet` | ✅ | — | class initialized |
+| `SoIndexedLineSet` | ✅ | — | class initialized |
+| `SoPointSet` | ✅ | — | class initialized |
 | `SoMaterial` | ✅ | — | default diffuseColor count |
-| `SoDirectionalLight` | ❌ | — | |
-| `SoPointLight` | ❌ | — | |
-| `SoSpotLight` | ❌ | — | |
-| `SoTranslation` | ❌ | — | |
-| `SoRotation` | ❌ | — | |
-| `SoScale` | ❌ | — | |
-| `SoTransform` | ❌ | — | |
+| `SoMaterialBinding` | ✅ | — | class initialized |
+| `SoNormalBinding` | ✅ | — | class initialized |
+| `SoVertexProperty` | ✅ | — | class initialized |
+| `SoDirectionalLight` | ✅ | — | class initialized |
+| `SoPointLight` | ✅ | — | class initialized |
+| `SoSpotLight` | ✅ | — | class initialized |
+| `SoLightModel` | ✅ | — | class initialized |
+| `SoTranslation` | ✅ | — | default translation (0,0,0) |
+| `SoRotation` | ✅ | — | default rotation (identity) |
+| `SoRotationXYZ` | ✅ | — | class initialized |
+| `SoScale` | ✅ | — | default scaleFactor (1,1,1) |
+| `SoTransform` | ✅ | — | default translation (0,0,0) |
+| `SoMatrixTransform` | ✅ | — | class initialized |
 | `SoCamera` (base) | ❌ | — | |
-| `SoPerspectiveCamera` | ❌ | — | |
-| `SoOrthographicCamera` | ❌ | — | |
-| `SoSwitch` | ❌ | — | (covered indirectly via actions tests) |
-| `SoText2` / `SoText3` | ❌ | — | |
-| Geometry nodes (Face/IndexedFace/Strip/Quad sets) | ❌ | — | |
-| `SoCoordinate3` | ❌ | — | |
-| `SoNormal` | ❌ | — | |
-| `SoTextureCoordinate2` | ❌ | — | |
-| `SoTexture2` | ❌ | — | |
-| Shader nodes | ❌ | `src/shaders/` | vanilla has tests |
-| Shadow nodes | ❌ | `src/shadows/` | vanilla has tests |
-| Geo nodes | ❌ | `src/geo/` | vanilla has tests |
+| `SoPerspectiveCamera` | ✅ | — | class initialized |
+| `SoOrthographicCamera` | ✅ | — | class initialized |
+| `SoSwitch` | ✅ | — | default whichChild == SO_SWITCH_NONE |
+| `SoBlinker` | ✅ | — | class initialized |
+| `SoRotor` | ✅ | — | class initialized |
+| `SoText2` / `SoText3` | ❌ | — | need rendering context for font metric |
+| `SoCoordinate3` | ✅ | — | class initialized |
+| `SoNormal` | ✅ | — | class initialized |
+| `SoTextureCoordinate2` | ✅ | — | class initialized |
+| `SoTextureCoordinateBinding` | ✅ | — | class initialized |
+| `SoTexture2` | ✅ | — | class initialized |
+| `SoDrawStyle` | ✅ | — | class initialized |
+| `SoComplexity` | ✅ | — | class initialized |
+| `SoEnvironment` | ✅ | — | class initialized |
+| `SoClipPlane` | ✅ | — | class initialized |
+| `SoFile` | ✅ | — | class initialized |
+| `SoInfo` | ✅ | — | class initialized |
+| `SoLOD` | ✅ | — | class initialized |
+| Shader nodes | ✅ | `src/shaders/` | SoShaderProgram, SoFragmentShader, SoVertexShader, SoGeometryShader class initialized |
+| Shader parameter nodes | ✅ | `src/shaders/SoShaderParameter.cpp` | 1f/1i/2f/2i/3f/3i/4f/4i/Array1f/Array1i/Matrix/MatrixArray/StateMatrix |
+| Shadow nodes | ✅ | `src/shadows/` | SoShadowGroup, SoShadowStyle class initialized |
+| Geo nodes | ✅ | `src/geo/` | SoGeoOrigin, SoGeoCoordinate class initialized |
 
 ---
 
@@ -190,8 +215,8 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoDB::readAll` (invalid) | ✅ | `src/misc/SoDB.cpp` | empty input returns NULL |
 | Write/read round-trip | ✅ | `src/misc/SoDB.cpp` | structure + field values preserved |
 | `SoDB::isValidHeader` | ✅ | — | |
-| `SoDB::readAll` (VRML 2.0) | ❌ | `src/misc/SoDB.cpp` | readChildList (VRML) |
-| `SoBase` write/read | ❌ | `src/misc/SoBase.cpp` | vanilla has tests |
+| `SoDB::readAll` (VRML 2.0) | ❌ | `src/misc/SoDB.cpp` | readChildList (VRML) – removed in Obol |
+| `SoBase` write/read | ✅ | `src/misc/SoBase.cpp` | unnamed multi-ref DEF/USE, same-named node disambiguation (+N) |
 | Binary format I/O | ❌ | — | |
 
 ---
@@ -207,8 +232,8 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoTimerSensor` | 🔶 | schedule/unschedule |
 | `SoAlarmSensor` | 🔶 | schedule/unschedule |
 | `SoOneShotSensor` | 🔶 | type check, schedule/unschedule |
-| `SoIdleSensor` | ❌ | |
-| `SoPathSensor` | ❌ | |
+| `SoIdleSensor` | 🔶 | schedule/unschedule |
+| `SoPathSensor` | 🔶 | attach/detach |
 | `SoDataSensor` | ❌ | |
 
 ---
@@ -225,15 +250,15 @@ Tests in `tests/` subdirectories are baselined against the
 | `SoBoolOperation` | 🔶 | class initialized |
 | `SoElapsedTime` | 🔶 | class initialized |
 | `SoConcatenate` | 🔶 | class initialized |
-| `SoComposeMatrix` | ❌ | |
-| `SoComposeRotation` | ❌ | |
-| `SoComposeVec2f` / `SoComposeVec4f` | ❌ | |
-| `SoComputeBoundingBox` | ❌ | |
-| `SoGate` | ❌ | |
-| `SoInterpolate*` | ❌ | |
-| `SoSelectOne` | ❌ | |
-| `SoTimeCounter` | ❌ | |
-| `SoCounter` | ❌ | |
+| `SoComposeMatrix` | ✅ | — | class initialized |
+| `SoComposeRotation` | ✅ | — | class initialized |
+| `SoComposeVec2f` / `SoComposeVec4f` | ✅ | — | class initialized |
+| `SoComputeBoundingBox` | ✅ | — | class initialized |
+| `SoGate` | ✅ | — | class initialized |
+| `SoInterpolate*` | ✅ | — | SoInterpolateFloat class initialized |
+| `SoSelectOne` | ✅ | — | class initialized |
+| `SoTimeCounter` | ✅ | — | class initialized |
+| `SoCounter` | ✅ | — | class initialized |
 
 ---
 
@@ -254,38 +279,33 @@ Tests in `tests/` subdirectories are baselined against the
 
 ---
 
-## XML / ScXML (`tests/` – not yet organised)
+## XML / ScXML
 
-| Module | Tests | Vanilla Baseline |
-|--------|-------|-----------------|
-| `xml/document.cpp` | ❌ | `src/xml/document.cpp` |
-| `scxml/SbStringConvert` | ❌ | `src/scxml/SbStringConvert.cpp` |
-| `scxml/ScXMLMinimumEvaluator` | ❌ | `src/scxml/ScXMLMinimumEvaluator.cpp` |
-| `soscxml/ScXMLCoinEvaluator` | ❌ | `src/soscxml/ScXMLCoinEvaluator.cpp` |
+*Not tested – Obol has removed all XML/VRML/ScXML logic.*
 
 ---
 
-## Shaders / Shadows / Geo (`tests/` – not yet organised)
+## Shaders / Shadows / Geo (`tests/nodes/test_nodes_suite.cpp`)
 
 | Module | Tests | Vanilla Baseline |
 |--------|-------|-----------------|
-| `SoShaderProgram` | ❌ | `src/shaders/SoShaderProgram.cpp` |
-| `SoFragmentShader` | ❌ | `src/shaders/SoFragmentShader.cpp` |
-| `SoVertexShader` | ❌ | `src/shaders/SoVertexShader.cpp` |
-| `SoGeometryShader` | ❌ | `src/shaders/SoGeometryShader.cpp` |
-| `SoShaderParameter*` | ❌ | `src/shaders/SoShaderParameter.cpp` |
-| `SoShadowGroup` | ❌ | `src/shadows/SoShadowGroup.cpp` |
-| `SoShadowStyle` | ❌ | `src/shadows/SoShadowStyle.cpp` |
-| `SoGeoCoordinate` | ❌ | `src/geo/SoGeoCoordinate.cpp` |
-| `SoGeoOrigin` | ❌ | `src/geo/SoGeoOrigin.cpp` |
+| `SoShaderProgram` | ✅ | `src/shaders/SoShaderProgram.cpp` | class initialized |
+| `SoFragmentShader` | ✅ | `src/shaders/SoFragmentShader.cpp` | class initialized |
+| `SoVertexShader` | ✅ | `src/shaders/SoVertexShader.cpp` | class initialized |
+| `SoGeometryShader` | ✅ | `src/shaders/SoGeometryShader.cpp` | class initialized |
+| `SoShaderParameter*` | ✅ | `src/shaders/SoShaderParameter.cpp` | 1f/1i/2f/2i/3f/3i/4f/4i/Array1f/Array1i/Matrix/MatrixArray/StateMatrix |
+| `SoShadowGroup` | ✅ | `src/shadows/SoShadowGroup.cpp` | class initialized |
+| `SoShadowStyle` | ✅ | `src/shadows/SoShadowStyle.cpp` | class initialized |
+| `SoGeoCoordinate` | ✅ | `src/geo/SoGeoCoordinate.cpp` | class initialized |
+| `SoGeoOrigin` | ✅ | `src/geo/SoGeoOrigin.cpp` | class initialized |
 
 ---
 
-## Draggers
+## Draggers (`tests/nodes/test_nodes_suite.cpp`)
 
 | Module | Tests | Vanilla Baseline |
 |--------|-------|-----------------|
-| `SoTransformerDragger` | ❌ | `src/draggers/SoTransformerDragger.cpp` |
+| `SoTransformerDragger` | 🔶 | `src/draggers/SoTransformerDragger.cpp` | class type registered (constructor crashes without rendering context) |
 | Other draggers | ❌ | — |
 
 ---
@@ -294,27 +314,26 @@ Tests in `tests/` subdirectories are baselined against the
 
 | Category | Covered | Total (approx.) |
 |----------|---------|-----------------|
-| Base types | 12 | ~30 |
-| SF Fields | 16 | 47 |
-| MF Fields | 17 | 40 |
-| Actions | 4 | 11 |
-| Nodes | 9 | 50+ |
-| I/O / SoDB | 5 | 10 |
-| Sensors | 5 | 8 |
-| Engines | 6 | 15+ |
+| Base types | 22 | ~30 |
+| SF Fields | 47 | 47 |
+| MF Fields | 35 | 40 |
+| Actions | 10 | 11 |
+| Nodes | 72 | 75+ |
+| I/O / SoDB | 7 | 10 |
+| Sensors | 7 | 8 |
+| Engines | 16 | 16 |
 | Threads | 10 | 10 |
-| XML/ScXML | 0 | 4 |
-| Shaders/Shadows/Geo | 0 | 15 |
+| XML/ScXML | 0 | 0 (removed in Obol) |
+| Shaders/Shadows/Geo | 16 | 16 |
+| Draggers | 1 (partial) | 20+ |
 
 ---
 
 ## Next Steps (Priority Order)
 
-1. **SoBase write/read tests** – vanilla has tests in `src/misc/SoBase.cpp`
-2. **Remaining SbVec/SbBox variants** – `SbVec3d`, `SbVec4f`, `SbBox2d`, `SbBox3d`, etc.
-3. **SoSFBool extended** – more text-input edge cases from vanilla
-4. **VRML 2.0 read tests** – `SoDB::readAll` with VRML content
-5. **Shader node initialization** – vanilla has COIN_TEST_SUITE blocks
-6. **Shadow node initialization** – vanilla has COIN_TEST_SUITE blocks
-7. **Geo node initialization** – vanilla has COIN_TEST_SUITE blocks
-8. **Visual/rendering tests** – require rendering context (OSMesa/GLX)
+1. **Visual/rendering tests** – require rendering context (OSMesa/GLX); SoGLRenderAction, texture upload, font rendering
+2. **SoText2 / SoText3** – class initialized; actual text rendering needs a rendering context
+3. **SoMFVec byte/unsigned variants** – `SoMFVec2b`, `SoMFVec3b`, `SoMFVec4b/ub/ui32/us`
+4. **SoSFPath / SoSFEngine / SoMFPath / SoMFEngine** – class initialized
+5. **Dragger deep-copy test** – needs rendering context for dragger construction
+6. **SoCamera base** – class initialized, nearDistance/farDistance defaults

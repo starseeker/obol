@@ -47,13 +47,25 @@
 #include <Inventor/SoInput.h>
 #include <Inventor/SoOutput.h>
 #include <Inventor/SbViewportRegion.h>
+#include <Inventor/SoType.h>
+#include <Inventor/SoPickedPoint.h>
+#include <Inventor/SoPath.h>
 #include <Inventor/actions/SoCallbackAction.h>
 #include <Inventor/actions/SoSearchAction.h>
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
 #include <Inventor/actions/SoWriteAction.h>
+#include <Inventor/actions/SoGetMatrixAction.h>
+#include <Inventor/actions/SoGetPrimitiveCountAction.h>
+#include <Inventor/actions/SoRayPickAction.h>
+#include <Inventor/actions/SoHandleEventAction.h>
+#include <Inventor/events/SoMouseButtonEvent.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoSwitch.h>
 #include <Inventor/nodes/SoCube.h>
+#include <Inventor/nodes/SoSphere.h>
+#include <Inventor/nodes/SoTranslation.h>
+#include <Inventor/SbVec3f.h>
+#include <Inventor/SbMatrix.h>
 
 #include <cstring>
 #include <cstdlib>
@@ -240,6 +252,160 @@ int main()
         root->unref();
         runner.endTest(pass, pass ? "" :
             "SoGetBoundingBoxAction unit cube returned wrong bounds");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoGetMatrixAction: identity matrix for empty separator
+    // -----------------------------------------------------------------------
+    runner.startTest("SoGetMatrixAction identity for empty separator");
+    {
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+
+        SoGetMatrixAction gma(SbViewportRegion(100, 100));
+        gma.apply(root);
+
+        SbMatrix mat = gma.getMatrix();
+        SbMatrix identity = SbMatrix::identity();
+        bool pass = (mat == identity);
+        root->unref();
+        runner.endTest(pass, pass ? "" :
+            "SoGetMatrixAction did not return identity for empty scene");
+    }
+
+    runner.startTest("SoGetMatrixAction class initialized");
+    {
+        SoGetMatrixAction gma(SbViewportRegion(100, 100));
+        bool pass = (gma.getTypeId() != SoType::badType());
+        runner.endTest(pass, pass ? "" : "SoGetMatrixAction has bad type");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoGetPrimitiveCountAction: count primitives in a scene
+    // -----------------------------------------------------------------------
+    runner.startTest("SoGetPrimitiveCountAction class initialized");
+    {
+        SoGetPrimitiveCountAction gpca(SbViewportRegion(100, 100));
+        bool pass = (gpca.getTypeId() != SoType::badType());
+        runner.endTest(pass, pass ? "" : "SoGetPrimitiveCountAction has bad type");
+    }
+
+    runner.startTest("SoGetPrimitiveCountAction empty scene");
+    {
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+
+        SoGetPrimitiveCountAction gpca(SbViewportRegion(100, 100));
+        gpca.apply(root);
+
+        // Empty scene: no triangles, no lines, no points
+        bool pass = (gpca.getTriangleCount() == 0);
+        root->unref();
+        runner.endTest(pass, pass ? "" :
+            "SoGetPrimitiveCountAction should count 0 triangles for empty scene");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoRayPickAction: class initialized and basic ray cast
+    // -----------------------------------------------------------------------
+    runner.startTest("SoRayPickAction class initialized");
+    {
+        SoRayPickAction rpa(SbViewportRegion(100, 100));
+        bool pass = (rpa.getTypeId() != SoType::badType());
+        runner.endTest(pass, pass ? "" : "SoRayPickAction has bad type");
+    }
+
+    runner.startTest("SoRayPickAction no picks on empty scene");
+    {
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+
+        SoRayPickAction rpa(SbViewportRegion(100, 100));
+        // Aim ray from (0,0,10) pointing in -Z direction
+        rpa.setRay(SbVec3f(0.0f, 0.0f, 10.0f), SbVec3f(0.0f, 0.0f, -1.0f));
+        rpa.apply(root);
+
+        bool pass = (rpa.getPickedPoint() == nullptr);
+        root->unref();
+        runner.endTest(pass, pass ? "" :
+            "SoRayPickAction should find no pick in an empty scene");
+    }
+
+    runner.startTest("SoRayPickAction picks cube at origin");
+    {
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+        root->addChild(new SoCube); // 2x2x2 centred at origin
+
+        SoRayPickAction rpa(SbViewportRegion(100, 100));
+        // Aim ray from (0,0,10) pointing straight in -Z; should hit the cube
+        rpa.setRay(SbVec3f(0.0f, 0.0f, 10.0f), SbVec3f(0.0f, 0.0f, -1.0f));
+        rpa.apply(root);
+
+        bool pass = (rpa.getPickedPoint() != nullptr);
+        root->unref();
+        runner.endTest(pass, pass ? "" :
+            "SoRayPickAction should pick the cube at origin");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoRayPickAction: verify pick returns sensible intersection point and path
+    // -----------------------------------------------------------------------
+    runner.startTest("SoRayPickAction pick point is on cube surface");
+    {
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+        SoCube* cube = new SoCube; // 2x2x2 at origin, front face at z=+1
+        root->addChild(cube);
+
+        SoRayPickAction rpa(SbViewportRegion(100, 100));
+        rpa.setRay(SbVec3f(0.0f, 0.0f, 10.0f), SbVec3f(0.0f, 0.0f, -1.0f));
+        rpa.apply(root);
+
+        SoPickedPoint* pp = rpa.getPickedPoint();
+        bool pass = false;
+        if (pp != nullptr) {
+            // The ray hits the front face of the cube at z = +1.0
+            SbVec3f pt = pp->getPoint();
+            pass = (fabsf(pt[2] - 1.0f) < 0.01f);
+
+            // The pick path should end at the cube node
+            SoPath* path = pp->getPath();
+            pass = pass && (path != nullptr) &&
+                   (path->getTail() == cube);
+        }
+        root->unref();
+        runner.endTest(pass, pass ? "" :
+            "SoRayPickAction pick point should be on front face of cube (z~=1)");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoHandleEventAction: class initialized and basic dispatch
+    // -----------------------------------------------------------------------
+    runner.startTest("SoHandleEventAction class initialized");
+    {
+        SoHandleEventAction hea(SbViewportRegion(100, 100));
+        bool pass = (hea.getTypeId() != SoType::badType());
+        runner.endTest(pass, pass ? "" : "SoHandleEventAction has bad type");
+    }
+
+    runner.startTest("SoHandleEventAction dispatch on empty scene does not crash");
+    {
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+
+        SoMouseButtonEvent ev;
+        ev.setButton(SoMouseButtonEvent::BUTTON1);
+        ev.setState(SoButtonEvent::DOWN);
+
+        SoHandleEventAction hea(SbViewportRegion(100, 100));
+        hea.setEvent(&ev);
+        hea.apply(root); // should complete without crash; not handled
+
+        bool pass = !hea.isHandled();
+        root->unref();
+        runner.endTest(pass, pass ? "" :
+            "SoHandleEventAction should not be handled for empty scene");
     }
 
     return runner.getSummary();
