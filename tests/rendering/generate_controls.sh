@@ -129,5 +129,10 @@ gen_control render_texture_transform render_texture_transform
 gen_control render_depth_buffer      render_depth_buffer
 gen_control render_alpha_test        render_alpha_test
 
+# Shadow rendering: GLX context management issues in CI environments prevent
+# shadow shader compilation via SoShadowGroup; use OSMesa to generate this
+# control image (COIN3D_USE_OSMESA=ON build required).
+gen_control render_shadow            render_shadow
+
 echo ""
 echo "=== Done – control images in $CONTROL_DIR ==="
