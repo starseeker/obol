@@ -402,10 +402,23 @@ The HTML report breaks coverage down by:
 - **Function coverage** – which functions were called
 - **Branch coverage** – which conditional branches (if/else, switch cases) were taken
 
+### Baseline metrics (captured 2026-02-23)
+
+| Metric | Hit | Total | Percentage |
+|--------|----:|------:|----------:|
+| Lines (`src/` only) | 27,572 | 87,284 | **31.6 %** |
+| Functions (`src/` only) | 6,560 | 16,102 | **40.7 %** |
+| Lines (all project files) | 36,056 | 97,507 | **37.0 %** |
+
+See `COVERAGE_PLAN.md` for per-subsystem breakdown, the top files by uncovered lines,
+and a prioritised plan to reach ≥ 70 % line coverage.
+
 Focus areas for improving coverage:
-- `src/draggers/` – constructor/destructor paths require a rendering context
-- `src/manips/` – manipulator state-machine code
-- `src/misc/SoDB*.cpp` – edge cases in I/O paths (binary round-trip, error recovery)
+- `src/draggers/` (17 %) – constructor/destructor paths require a rendering context
+- `src/manips/` (4 %) – manipulator state-machine code; built on draggers
+- `src/shadows/` (11 %) – `SoShadowGroup` render path
+- `src/shapenodes/` (30 %) – `SoIndexedFaceSet`, `SoIndexedLineSet`, `SoQuadMesh` render paths
+- `src/rendering/` (31 %) – `SoGLRenderAction` and `SoOffscreenRenderer` edge cases
 
 ---
 

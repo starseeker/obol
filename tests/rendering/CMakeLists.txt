@@ -98,6 +98,11 @@ add_rendering_test(render_line_set)
 add_rendering_test(render_switch_visibility)
 add_rendering_test(render_vertex_colors)
 add_rendering_test(render_clip_plane)
+add_rendering_test(render_indexed_face_set)
+add_rendering_test(render_quad_mesh)
+add_rendering_test(render_indexed_line_set)
+add_rendering_test(render_lod)
+add_rendering_test(render_point_set)
 
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
@@ -187,7 +192,9 @@ add_rendering_image_test(render_scene       RMSE_THRESHOLD 15.0)
 #                     overhead as well as the subprocess; set to the same value.
 foreach(_vtest render_sphere_position render_checker_texture
                render_face_set render_line_set render_switch_visibility
-               render_vertex_colors render_clip_plane)
+               render_vertex_colors render_clip_plane
+               render_indexed_face_set render_quad_mesh render_indexed_line_set
+               render_lod render_point_set)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"

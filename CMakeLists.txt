@@ -519,11 +519,14 @@ if(COIN_COVERAGE AND LCOV_EXECUTABLE AND GENHTML_EXECUTABLE)
         --zerocounters
         --directory "${CMAKE_BINARY_DIR}"
 
-    # 2. Run all registered tests
-    COMMAND ${CMAKE_CTEST_COMMAND}
-        --build-config "$<CONFIG>"
-        --output-on-failure
-        --timeout 120
+    # 2. Run all registered tests; continue even if some tests fail so that
+    #    coverage data is captured from passing tests.  A CMake script wrapper
+    #    is used to execute ctest and suppress its non-zero exit code.
+    COMMAND ${CMAKE_COMMAND}
+        -DCTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+        -DBUILD_CONFIG=$<CONFIG>
+        -DTEST_TIMEOUT=120
+        -P "${CMAKE_CURRENT_LIST_DIR}/cmake/run_tests_for_coverage.cmake"
 
     # 3. Capture coverage data
     COMMAND ${LCOV_EXECUTABLE}
