@@ -46,7 +46,7 @@
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Build a minimal scene: camera + light + dragger
+// Build a minimal scene: camera + light + cube (for dragger to surround) + dragger
 static SoSeparator *buildDraggerScene(SoDragger *dragger)
 {
     SoSeparator *root = new SoSeparator;
@@ -56,10 +56,19 @@ static SoSeparator *buildDraggerScene(SoDragger *dragger)
     SoDirectionalLight *light = new SoDirectionalLight;
     light->direction.setValue(-1.0f, -1.5f, -1.0f);
     root->addChild(light);
+    // Add a cube so the dragger's SoSurroundScale has geometry to measure
+    SoSeparator *objSep = new SoSeparator;
+    SoMaterial *mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.5f, 0.7f, 0.5f);
+    objSep->addChild(mat);
+    objSep->addChild(new SoCube);
+    root->addChild(objSep);
     root->addChild(dragger);
     SbViewportRegion vp(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+    // viewAll positions camera and sets near/far; leave as-is to keep the
+    // scene in the view frustum (multiplying position afterwards pushes
+    // objects outside the far clip plane)
     cam->viewAll(root, vp);
-    cam->position.setValue(cam->position.getValue() * 3.0f);
     root->unrefNoDelete(); // caller takes ownership; ref only needed for viewAll
     return root;
 }
@@ -156,7 +165,8 @@ static bool testManipInteraction(SoTransformManip *manip,
 
     SbViewportRegion viewport(DEFAULT_WIDTH, DEFAULT_HEIGHT);
     cam->viewAll(root, viewport);
-    cam->position.setValue(cam->position.getValue() * 3.0f);
+    // Do not move camera after viewAll - moving it without re-running viewAll
+    // can push geometry outside the near/far clip planes
 
     // Render before attaching manip
     if (!renderScene(root, basepath, name)) {
