@@ -1572,8 +1572,8 @@ SoShadowGroupP::setVertexShader(SoState * state)
     else {
       this->vertexshader->parameter.setNum(0);
     }
-#if 0 // for debugging
-    fprintf(stderr,"new vertex program: %s\n",
+#if 1 // for debugging
+    fprintf(stderr,"new vertex program:\n%s\n",
             gen.getShaderProgram().getString());
 #endif
   }
@@ -1832,6 +1832,8 @@ SoShadowGroupP::setFragmentShader(SoState * state)
   gen.addMainStatement("color = vec3(clamp(color.r, 0.0, 1.0), clamp(color.g, 0.0, 1.0), clamp(color.b, 0.0, 1.0));");
   gen.addMainStatement("if (coin_light_model != 0) { color *= texcolor.rgb; color += scolor; }\n"
                        "else color = mydiffuse.rgb * texcolor.rgb;\n");
+  // DEBUG: override with hardcoded red to verify shader runs at all
+  gen.addMainStatement("color = vec3(1.0, 0.0, 0.0);");
 
   int32_t fogType = this->getFog(state);
 
@@ -1996,8 +1998,8 @@ SoShadowGroupP::setFragmentShader(SoState * state)
     this->fragmentshader->sourceProgram = gen.getShaderProgram();
     this->fragmentshader->sourceType = SoShaderObject::GLSL_PROGRAM;
 
-#if 0 // for debugging
-    fprintf(stderr,"new fragment program: %s\n",
+#if 1 // for debugging
+    fprintf(stderr,"new fragment program:\n%s\n",
             gen.getShaderProgram().getString());
 #endif // debugging
 
@@ -2191,10 +2193,41 @@ SoShadowGroupP::GLRender(SoGLRenderAction * action, const SbBool inpath)
   }
   this->shaderprogram->GLRender(action);
 
+  // Diagnose: check current shader program and GL state
+  {
+    GLint curfb = 0, curprog = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING_EXT, &curfb);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &curprog);
+    GLint vp[4] = {0,0,0,0};
+    glGetIntegerv(GL_VIEWPORT, vp);
+    GLenum glerr = glGetError();
+    fprintf(stderr, "DIAG pre-render: framebuffer=%d prog=%d viewport=[%d,%d,%d,%d] glerr=0x%x\n",
+            curfb, curprog, vp[0], vp[1], vp[2], vp[3], glerr);
+  }
+
   SoShapeStyleElement::setShadowsRendering(state, TRUE);
+  // DEBUG: Check if disabling depth test allows rendering
+  glDisable(GL_DEPTH_TEST);
   if (inpath) PUBLIC(this)->SoSeparator::GLRenderInPath(action);
   else PUBLIC(this)->SoSeparator::GLRenderBelowPath(action);
+  glEnable(GL_DEPTH_TEST);
   SoShapeStyleElement::setShadowsRendering(state, FALSE);
+  // Diagnose: check what happened to the rendering
+  {
+    GLint curfb = 0; glGetIntegerv(GL_FRAMEBUFFER_BINDING_EXT, &curfb);
+    const cc_glglue * g2 = cc_glglue_instance(SoGLCacheContextElement::get(state));
+    // Read from FBO #1 (current)
+    unsigned char px1[3]={0,0,0}; glReadPixels(128,240,1,1,GL_RGB,GL_UNSIGNED_BYTE,px1);
+    GLenum err1 = glGetError();
+    // Unbind FBO and read from native OSMesa buffer
+    cc_glglue_glBindFramebuffer(g2, GL_FRAMEBUFFER_EXT, 0);
+    glReadBuffer(GL_FRONT);  // OSMesa is single-buffered, uses GL_FRONT
+    unsigned char px0[3]={0,0,0}; glReadPixels(128,240,1,1,GL_RGB,GL_UNSIGNED_BYTE,px0);
+    GLenum err0 = glGetError();
+    cc_glglue_glBindFramebuffer(g2, GL_FRAMEBUFFER_EXT, curfb);
+    fprintf(stderr,"DIAG: fbo1_y240=(%d,%d,%d) err=0x%x ; native_y240=(%d,%d,%d) err=0x%x\n",
+            px1[0],px1[1],px1[2],err1, px0[0],px0[1],px0[2],err0);
+  }
   state->pop();
 }
 

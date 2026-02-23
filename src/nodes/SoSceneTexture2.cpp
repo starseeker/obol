@@ -842,6 +842,8 @@ SoSceneTexture2P::updateFrameBuffer(SoState * state, const float COIN_UNUSED_ARG
   // store current framebuffer
   GLint oldfb;
   glGetIntegerv( GL_FRAMEBUFFER_BINDING_EXT, &oldfb );
+  fprintf(stderr, "FBO DIAG: updateFrameBuffer oldfb=%d fbo_frameBuffer=%d\n",
+          oldfb, (int)fbodata->fbo_frameBuffer);
 
   // set up framebuffer for rendering
   cc_glglue_glBindFramebuffer(glue, GL_FRAMEBUFFER_EXT, fbodata->fbo_frameBuffer);

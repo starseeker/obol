@@ -166,11 +166,53 @@ SoSphere::GLRender(SoGLRenderAction * action)
   if (doTextures) flags |= SOGL_NEED_TEXCOORDS;
   else if (do3DTextures) flags |= SOGL_NEED_3DTEXCOORDS;
 
+  // Diagnostic: check depth before/after rendering
+  {
+    GLint curfb = 0; glGetIntegerv(GL_FRAMEBUFFER_BINDING_EXT, &curfb);
+    GLint curprog = 0; glGetIntegerv(GL_CURRENT_PROGRAM, &curprog);
+    GLboolean dtest = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean depthmask = GL_TRUE; glGetBooleanv(GL_DEPTH_WRITEMASK, &depthmask);
+    GLint vp[4]={0,0,0,0}; glGetIntegerv(GL_VIEWPORT,vp);
+    // Dump projection matrix
+    float proj[16], mv[16];
+    glGetFloatv(GL_PROJECTION_MATRIX, proj);
+    glGetFloatv(GL_MODELVIEW_MATRIX, mv);
+    // Transform sphere center (0,0,0 in world, but translated to 0,1.2,0 by parent)
+    // In MV space: sphere center = mv * (0,1.2,0,1)
+    float sx = mv[0]*0+mv[4]*1.2f+mv[8]*0+mv[12];
+    float sy = mv[1]*0+mv[5]*1.2f+mv[9]*0+mv[13];
+    float sz = mv[2]*0+mv[6]*1.2f+mv[10]*0+mv[14];
+    float sw = mv[3]*0+mv[7]*1.2f+mv[11]*0+mv[15];
+    // clip space
+    float cx = proj[0]*sx+proj[4]*sy+proj[8]*sz+proj[12]*sw;
+    float cy = proj[1]*sx+proj[5]*sy+proj[9]*sz+proj[13]*sw;
+    float cz = proj[2]*sx+proj[6]*sy+proj[10]*sz+proj[14]*sw;
+    float cw = proj[3]*sx+proj[7]*sy+proj[11]*sz+proj[15]*sw;
+    fprintf(stderr, "SoSphere(main): fb=%d prog=%d dtest=%d dmask=%d vp=[%d,%d,%d,%d] eye=(%.2f,%.2f,%.2f) clip=(%.2f,%.2f,%.2f,%.2f) ndc=(%.2f,%.2f,%.2f)\n",
+            curfb, curprog, (int)dtest, (int)depthmask, vp[0],vp[1],vp[2],vp[3],
+            sx,sy,sz, cx,cy,cz,cw, cx/cw, cy/cw, cz/cw);
+  }
+
   sogl_render_sphere(this->radius.getValue(),
                      (int)(SPHERE_NUM_SLICES * complexity),
                      (int)(SPHERE_NUM_STACKS * complexity),
                      &mb,
                      flags, state);
+
+  // Diagnostic: check depth after rendering
+  {
+    float depth_after = -1.0f;
+    GLint vp[4]={0,0,0,0}; glGetIntegerv(GL_VIEWPORT,vp);
+    if (vp[2]>=129 && vp[3]>=129) {
+      int px_x = (int)(vp[2]*0.5f), px_y = (int)(vp[3]*0.5f);
+      glReadPixels(px_x, px_y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &depth_after);
+      unsigned char px[3] = {0,0,0};
+      glReadPixels(px_x, px_y, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, px);
+      GLenum glerr = glGetError();
+      fprintf(stderr, "SoSphere: depth_after=%f color=(%d,%d,%d) glerr=0x%x\n",
+              depth_after, px[0], px[1], px[2], glerr);
+    }
+  }
 }
 
 // Documented in superclass.
