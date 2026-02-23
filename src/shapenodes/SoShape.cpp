@@ -539,11 +539,6 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
   const SoShapeStyleElement * shapestyle = SoShapeStyleElement::get(state);
   unsigned int shapestyleflags = shapestyle->getFlags();
 
-  fprintf(stderr, "shouldGLRender: %s flags=0x%x SHADOWMAP=%d SHADOWS=%d\n",
-          this->getTypeId().getName().getString(), shapestyleflags,
-          (shapestyleflags & SoShapeStyleElement::SHADOWMAP) ? 1 : 0,
-          (shapestyleflags & SoShapeStyleElement::SHADOWS) ? 1 : 0);
-
   if (shapestyleflags & SoShapeStyleElement::INVISIBLE)
     return FALSE;
 
@@ -552,10 +547,6 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
       SbBox3f projbox = PRIVATE(this)->bboxcache->getProjectedBox();
       SbBool culled = SoCullElement::cullTest(state, projbox);
       if (culled) {
-        fprintf(stderr, "CULL: shape %s culled bbox=[%g %g %g, %g %g %g]\n",
-                this->getTypeId().getName().getString(),
-                projbox.getMin()[0], projbox.getMin()[1], projbox.getMin()[2],
-                projbox.getMax()[0], projbox.getMax()[1], projbox.getMax()[2]);
         return FALSE;
       }
     }
