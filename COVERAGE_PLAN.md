@@ -83,16 +83,22 @@ lines-uncovered gain.
 These render a scene or exercise well-understood APIs and can be written quickly
 as self-validating rendering tests.
 
-| Priority | Test to add | Subsystem(s) improved | Estimated gain |
-|----------|-------------|----------------------|----------------|
-| 1 | **`render_indexed_face_set`** — large `SoIndexedFaceSet` scene with normals, texture coords, `SoCoordinate3`, `SoNormal`, `SoTextureCoordinate2` | `shapenodes`, `bundles`, `elements` | +300 lines |
-| 2 | **`render_quad_mesh`** — `SoQuadMesh` grid with per-vertex material binding | `shapenodes`, `nodes` | +300 lines |
-| 3 | **`render_indexed_line_set`** — `SoIndexedLineSet` multi-segment polylines | `shapenodes` | +350 lines |
-| 4 | **`render_point_set`** — `SoPointSet` + `SoVertexProperty` large point cloud | `shapenodes`, `nodes` | +180 lines |
-| 5 | **`render_lod`** — `SoLOD` and `SoLevelOfDetail` switching between representations | `nodes` | +250 lines |
-| 6 | **`render_scene_texture`** — `SoSceneTexture2` offscreen render-to-texture | `nodes`, `rendering` | +570 lines |
-| 7 | **`render_shadow`** — `SoShadowGroup` + `SoShadowStyle` with a casting sphere | `shadows` | +1,000 lines |
-| 8 | **`render_array_multiple_copy`** — `SoArray` and `SoMultipleCopy` instanced geometry | `nodes` | +180 lines |
+| Priority | Test to add | Subsystem(s) improved | Estimated gain | Status |
+|----------|-------------|----------------------|----------------|--------|
+| 1 | **`render_indexed_face_set`** — large `SoIndexedFaceSet` scene with normals, texture coords, `SoCoordinate3`, `SoNormal`, `SoTextureCoordinate2` | `shapenodes`, `bundles`, `elements` | +300 lines | ✅ Done |
+| 2 | **`render_quad_mesh`** — `SoQuadMesh` grid with per-vertex material binding | `shapenodes`, `nodes` | +300 lines | ✅ Done |
+| 3 | **`render_indexed_line_set`** — `SoIndexedLineSet` multi-segment polylines | `shapenodes` | +350 lines | ✅ Done |
+| 4 | **`render_point_set`** — `SoPointSet` + `SoVertexProperty` large point cloud | `shapenodes`, `nodes` | +180 lines | ✅ Done |
+| 5 | **`render_lod`** — `SoLOD` and `SoLevelOfDetail` switching between representations | `nodes` | +250 lines | ✅ Done |
+| 6 | **`render_scene_texture`** — `SoSceneTexture2` offscreen render-to-texture | `nodes`, `rendering` | +570 lines | ✅ Done |
+| 7 | **`render_shadow`** — `SoShadowGroup` + `SoShadowStyle` with a casting sphere | `shadows` | +1,000 lines | ✅ Done |
+| 8 | **`render_array_multiple_copy`** — `SoArray` and `SoMultipleCopy` instanced geometry | `nodes` | +180 lines | ✅ Done |
+
+> **Note on control images (Tier 1):** Control images for all Tier 1 tests were generated with
+> the bundled OSMesa backend.  PNG control images are stored in `tests/control_images/` and
+> registered as image-comparison regression tests in `tests/rendering/CMakeLists.txt`.  libpng
+> is now built from `external/libpng` (no system `libpng-dev` required); `rgb_to_png` and
+> `image_comparator` are always built with full PNG support.
 
 ### Tier 2 — Medium impact, medium effort (~5–8 % gain)
 
@@ -124,7 +130,7 @@ Require slightly more complex scenes or specific conditions:
 |----------|------|-------------------|
 | 21 | `draggers/` (16 % line coverage) | Need display + event simulation; start with simple draggers (`SoTranslatePlaneDragger`) | ✅ Done (`tests/draggers/test_draggers.cpp`) |
 | 22 | `manips/` (4 %) | Built on draggers; test manipulator attach/detach lifecycle | ✅ Done (`tests/manips/test_manips.cpp`) |
-| 23 | `rendering/SoOffscreenRenderer.cpp` (26 %) | Test getBuffer(), getViewportRegion(), multiple renders with same renderer |
+| 23 | `rendering/SoOffscreenRenderer.cpp` (26 %) | Test getBuffer(), getViewportRegion(), multiple renders with same renderer | ✅ Done (`tests/rendering/render_offscreen.cpp`) |
 | 24 | `glue/gl.cpp` (45 %) | Exercises GL entry-point dispatch; covered by rendering tests, diminishing returns |
 | 25 | `io/SoInput.cpp` + `SoOutput.cpp` | Add edge cases: binary read, nested files, invalid inputs |
 | 26 | `fonts/` (34 %) | SoText2 / SoText3 visual tests once font baseline settled |

@@ -114,6 +114,7 @@ add_rendering_test(render_texture_transform)
 add_rendering_test(render_depth_buffer)
 add_rendering_test(render_alpha_test)
 add_rendering_test(render_draggers)
+add_rendering_test(render_offscreen)
 
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
@@ -207,6 +208,16 @@ add_rendering_image_test(render_alpha_test       RMSE_THRESHOLD 20.0)
 # High RMSE threshold to allow for shadow/lighting variation across drivers.
 add_rendering_image_test(render_shadow           RMSE_THRESHOLD 25.0)
 
+# Tier 1 tests: control images generated with OSMesa backend.
+# These tests render shape/mesh primitives with various attribute bindings.
+add_rendering_image_test(render_indexed_face_set  RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_quad_mesh         RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_indexed_line_set  RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_point_set         RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_lod               RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_scene_texture     RMSE_THRESHOLD 25.0)
+add_rendering_image_test(render_array_multiple_copy RMSE_THRESHOLD 20.0)
+
 # ---- Validation tests: run unconditionally, check exit code only -------------
 # These tests perform their own pixel analysis and return 0/1 directly.
 # run_rendering_test.cmake wraps with xvfb-run when DISPLAY is not set.
@@ -225,7 +236,7 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_shape_hints render_environment render_texture3
                render_bump_map render_texture_transform
                render_depth_buffer render_alpha_test
-               render_draggers)
+               render_draggers render_offscreen)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"
