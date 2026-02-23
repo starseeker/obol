@@ -2118,11 +2118,8 @@ SoShadowGroupP::shader_enable_cb(void * closure,
 bool
 SoShadowGroupP::supported(const cc_glglue * glue, SbString& reason)
 {
-  // GL_MESAX_texture_float is Mesa's equivalent of GL_ARB_texture_float and
-  // provides the same floating-point texture functionality.  Accept either.
   const bool has_texfloat =
-    SoGLDriverDatabase::isSupported(glue, "GL_ARB_texture_float") ||
-    SoGLDriverDatabase::isSupported(glue, "GL_MESAX_texture_float");
+    SoGLDriverDatabase::isSupported(glue, "GL_ARB_texture_float");
 
   const bool supported =
     cc_glglue_glversion_matches_at_least(glue, 2, 0, 0) &&
