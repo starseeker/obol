@@ -203,18 +203,6 @@ elseif (O2_COMPILER_FLAG)
   target_compile_options(osmesa PRIVATE "-O2")
 endif ()
 
-# GCC's auto-vectoriser generates incorrect AoS byte-interleaving code when
-# it vectorises the interpolate_colors() inner loop while the function is
-# inlined into the large _swrast_write_rgba_span() context.  The symptom is
-# the blue channel of every affected pixel being set to the red channel value
-# (the B=R rendering anomaly).  Disabling tree-vectorisation for s_span.c
-# alone is sufficient to eliminate the bug while leaving the rest of the
-# rasteriser fully optimised.
-if (CMAKE_C_COMPILER_ID MATCHES "GNU")
-  set_source_files_properties(swrast/s_span.c
-    PROPERTIES COMPILE_FLAGS "-fno-tree-vectorize")
-endif ()
-
 # Local Variables:
 # tab-width: 8
 # mode: cmake
