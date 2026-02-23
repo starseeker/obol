@@ -103,6 +103,9 @@ add_rendering_test(render_quad_mesh)
 add_rendering_test(render_indexed_line_set)
 add_rendering_test(render_lod)
 add_rendering_test(render_point_set)
+add_rendering_test(render_scene_texture)
+add_rendering_test(render_shadow)
+add_rendering_test(render_array_multiple_copy)
 
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
@@ -194,7 +197,8 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_face_set render_line_set render_switch_visibility
                render_vertex_colors render_clip_plane
                render_indexed_face_set render_quad_mesh render_indexed_line_set
-               render_lod render_point_set)
+               render_lod render_point_set
+               render_scene_texture render_shadow render_array_multiple_copy)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"

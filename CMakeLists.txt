@@ -362,9 +362,13 @@ else()
 endif()
 
 if(COIN3D_USE_OSMESA)
-  # starseeker/osmesa backend - use starseeker/osmesa headers (MGL mangling is automatic when USE_MGL_NAMESPACE is defined)
+  # starseeker/osmesa backend - use starseeker/osmesa headers only.
+  # OSMesa's gl.h already includes OSMesa/glext.h, so no system glext needed.
+  # Mixing system GL/glext.h with OSMesa's MGL-mangled headers causes symbol
+  # conflicts that corrupt the heap at runtime.
   set(SIM_INCLUDE_GL_H "#include <OSMesa/osmesa.h>
   #include <OSMesa/gl.h>")
+  set(SIM_INCLUDE_GLEXT_H "/* OSMesa/gl.h already includes OSMesa/glext.h - system GL/glext.h must NOT be included */")
   message(STATUS "Using starseeker/osmesa headers for GL with automatic MGL name mangling")
 else()
   # System OpenGL backend
@@ -375,13 +379,13 @@ else()
   else()
     set(SIM_INCLUDE_GL_H "#error \"don't know how to include gl.h header\"")
   endif()
-endif()
-if(HAVE_GL_GLEXT_H)
-  set(SIM_INCLUDE_GLEXT_H "#include <GL/glext.h>")
-elseif(HAVE_OPENGL_GLEXT_H)
-  set(SIM_INCLUDE_GLEXT_H "#include <OpenGL/glext.h>")
-else()
-  set(SIM_INCLUDE_GLEXT_H "/* #include <GL/glext.h> - not found on system */")
+  if(HAVE_GL_GLEXT_H)
+    set(SIM_INCLUDE_GLEXT_H "#include <GL/glext.h>")
+  elseif(HAVE_OPENGL_GLEXT_H)
+    set(SIM_INCLUDE_GLEXT_H "#include <OpenGL/glext.h>")
+  else()
+    set(SIM_INCLUDE_GLEXT_H "/* #include <GL/glext.h> - not found on system */")
+  endif()
 endif()
 
 # Essential function checks only (simplified for modern C++)

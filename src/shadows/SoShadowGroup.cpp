@@ -2118,17 +2118,23 @@ SoShadowGroupP::shader_enable_cb(void * closure,
 bool
 SoShadowGroupP::supported(const cc_glglue * glue, SbString& reason)
 {
+  // GL_MESAX_texture_float is Mesa's equivalent of GL_ARB_texture_float and
+  // provides the same floating-point texture functionality.  Accept either.
+  const bool has_texfloat =
+    SoGLDriverDatabase::isSupported(glue, "GL_ARB_texture_float") ||
+    SoGLDriverDatabase::isSupported(glue, "GL_MESAX_texture_float");
+
   const bool supported =
     cc_glglue_glversion_matches_at_least(glue, 2, 0, 0) &&
     SoGLDriverDatabase::isSupported(glue, SO_GL_FRAMEBUFFER_OBJECT) &&
-    SoGLDriverDatabase::isSupported(glue, "GL_ARB_texture_float");
+    has_texfloat;
 
   if (supported) { return true; }
 
   reason = "Unable to render shadows.";
   if (!SoGLDriverDatabase::isSupported(glue, SO_GL_FRAMEBUFFER_OBJECT)) reason += " Frame buffer objects not supported.";
   if (!cc_glglue_glversion_matches_at_least(glue, 2, 0, 0)) reason += " OpenGL version < 2.0.";
-  if (!SoGLDriverDatabase::isSupported(glue, "GL_ARB_texture_float")) reason += " Floating point textures not supported.";
+  if (!has_texfloat) reason += " Floating point textures not supported.";
 
   return false;
 }
