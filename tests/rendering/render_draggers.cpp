@@ -106,9 +106,9 @@ static bool testDraggerInteraction(SoDragger *dragger,
         return false;
     }
 
-    // Simulate a mouse drag across the centre of the viewport.
+    // Simulate a mouse drag across the center of the viewport.
     // These coordinates land on the dragger's geometry (which sits roughly
-    // at the viewport centre after viewAll()).
+    // at the viewport center after viewAll()).
     int cx = DEFAULT_WIDTH  / 2;
     int cy = DEFAULT_HEIGHT / 2;
     simulateMouseDrag(root, viewport,
