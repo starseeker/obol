@@ -100,6 +100,8 @@ add_subdirectory(io)
 add_subdirectory(sensors)
 add_subdirectory(engines)
 add_subdirectory(rendering)
+add_subdirectory(draggers)
+add_subdirectory(manips)
 
 # -----------------------------------------------------------------------
 # Image comparison utilities

@@ -122,8 +122,8 @@ Require slightly more complex scenes or specific conditions:
 
 | Priority | Area | Reason / approach |
 |----------|------|-------------------|
-| 21 | `draggers/` (16 % line coverage) | Need display + event simulation; start with simple draggers (`SoTranslatePlaneDragger`) |
-| 22 | `manips/` (4 %) | Built on draggers; test manipulator attach/detach lifecycle |
+| 21 | `draggers/` (16 % line coverage) | Need display + event simulation; start with simple draggers (`SoTranslatePlaneDragger`) | ✅ Done (`tests/draggers/test_draggers.cpp`) |
+| 22 | `manips/` (4 %) | Built on draggers; test manipulator attach/detach lifecycle | ✅ Done (`tests/manips/test_manips.cpp`) |
 | 23 | `rendering/SoOffscreenRenderer.cpp` (26 %) | Test getBuffer(), getViewportRegion(), multiple renders with same renderer |
 | 24 | `glue/gl.cpp` (45 %) | Exercises GL entry-point dispatch; covered by rendering tests, diminishing returns |
 | 25 | `io/SoInput.cpp` + `SoOutput.cpp` | Add edge cases: binary read, nested files, invalid inputs |
