@@ -177,10 +177,11 @@ public:
   }
   
   SbString & vsprintf(const char * formatstr, va_list args) {
-    // Determine required size
+    // Determine required size using a copy so that args remains valid
+    // for the actual formatting call below.
     va_list args_copy;
     va_copy(args_copy, args);
-    int size = std::vsnprintf(nullptr, 0, formatstr, args);
+    int size = std::vsnprintf(nullptr, 0, formatstr, args_copy);
     va_end(args_copy);
     
     if (size > 0) {

@@ -201,6 +201,10 @@ add_rendering_image_test(render_bump_map         RMSE_THRESHOLD 20.0)
 add_rendering_image_test(render_texture_transform RMSE_THRESHOLD 20.0)
 add_rendering_image_test(render_depth_buffer     RMSE_THRESHOLD 20.0)
 add_rendering_image_test(render_alpha_test       RMSE_THRESHOLD 20.0)
+# Shadow rendering: control image generated with OSMesa backend (GLX context
+# management issues prevent shadow shader compilation in CI GLX environments).
+# High RMSE threshold to allow for shadow/lighting variation across drivers.
+add_rendering_image_test(render_shadow           RMSE_THRESHOLD 25.0)
 
 # ---- Validation tests: run unconditionally, check exit code only -------------
 # These tests perform their own pixel analysis and return 0/1 directly.
@@ -251,6 +255,7 @@ if(PNG_FOUND)
             render_shape_hints render_environment render_texture3
             render_bump_map render_texture_transform
             render_depth_buffer render_alpha_test
+            render_shadow
         COMMENT "Generating PNG control images for rendering regression tests"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
