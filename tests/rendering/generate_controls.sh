@@ -120,5 +120,14 @@ gen_control render_texture     render_texture
 gen_control render_text2       render_text2
 gen_control render_text3       render_text3
 
+# Tier 2: rendered with OSMesa backend (noted for future GLX revisit)
+gen_control render_shape_hints       render_shape_hints
+gen_control render_environment       render_environment
+gen_control render_texture3          render_texture3
+gen_control render_bump_map          render_bump_map
+gen_control render_texture_transform render_texture_transform
+gen_control render_depth_buffer      render_depth_buffer
+gen_control render_alpha_test        render_alpha_test
+
 echo ""
 echo "=== Done – control images in $CONTROL_DIR ==="
