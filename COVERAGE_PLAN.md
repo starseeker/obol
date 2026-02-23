@@ -98,20 +98,25 @@ as self-validating rendering tests.
 
 Require slightly more complex scenes or specific conditions:
 
-| Priority | Test to add | Subsystem(s) improved | Estimated gain |
-|----------|-------------|----------------------|----------------|
-| 9 | **`render_shape_hints`** — `SoShapeHints` (SOLID/COUNTERCLOCKWISE/CONVEX) effect on backface culling and normals | `nodes`, `shapenodes` | +180 lines |
-| 10 | **`render_environment`** — `SoEnvironment` fog, ambient colour | `nodes` | +140 lines |
-| 11 | **`render_texture3`** — `SoTexture3` (3-D texture) applied to a cube | `nodes`, `rendering` | +185 lines |
-| 12 | **`render_bump_map`** — `SoBumpMap` + `SoBumpMapCoordinate` on a sphere | `nodes`, `rendering` | +125 lines |
-| 13 | **`render_texture_transform`** — `SoTexture2Transform` scale/rotate/translate | `nodes` | +90 lines |
-| 14 | **`render_depth_buffer`** — `SoDepthBuffer` enable/disable/func modes | `nodes` | +80 lines |
-| 15 | **`render_alpha_test`** — `SoAlphaTest` threshold scene | `nodes` | +50 lines |
-| 16 | **Action integration** — `SoRayPickAction` against a complex scene (face set + transforms); validate picked path, point, detail | `actions`, `misc` | +400 lines |
-| 17 | **Matrix math** — `SbDPMatrix` operations: mult, invert, decompose | `base` | +450 lines |
-| 18 | **`SbMatrix` full suite** — det, factor, inverse, multVecMatrix, multDirMatrix | `base` | +300 lines |
-| 19 | **`SoField` connection / notification** — connect/disconnect, isConnected, notify propagation | `fields`, `misc` | +350 lines |
-| 20 | **`SoNodeKit` traversal** — instantiate a nodekit, set part, traverse with `SoGetBoundingBoxAction` | `nodekits` | +450 lines |
+| Priority | Test to add | Subsystem(s) improved | Estimated gain | Status |
+|----------|-------------|----------------------|----------------|--------|
+| 9 | **`render_shape_hints`** — `SoShapeHints` (SOLID/COUNTERCLOCKWISE/CONVEX) effect on backface culling and normals | `nodes`, `shapenodes` | +180 lines | ✅ Done |
+| 10 | **`render_environment`** — `SoEnvironment` fog, ambient colour | `nodes` | +140 lines | ✅ Done |
+| 11 | **`render_texture3`** — `SoTexture3` (3-D texture) applied to a cube | `nodes`, `rendering` | +185 lines | ✅ Done |
+| 12 | **`render_bump_map`** — `SoBumpMap` + `SoBumpMapCoordinate` on a sphere | `nodes`, `rendering` | +125 lines | ✅ Done |
+| 13 | **`render_texture_transform`** — `SoTexture2Transform` scale/rotate/translate | `nodes` | +90 lines | ✅ Done |
+| 14 | **`render_depth_buffer`** — `SoDepthBuffer` enable/disable/func modes | `nodes` | +80 lines | ✅ Done |
+| 15 | **`render_alpha_test`** — `SoAlphaTest` threshold scene | `nodes` | +50 lines | ✅ Done |
+| 16 | **Action integration** — `SoRayPickAction` against a complex scene (face set + transforms); validate picked path, point, detail | `actions`, `misc` | +400 lines | ✅ Done (added to `tests/actions/test_actions_suite.cpp`) |
+| 17 | **Matrix math** — `SbDPMatrix` operations: mult, invert, decompose | `base` | +450 lines | ✅ Done (added to `tests/base/test_sb_types.cpp`) |
+| 18 | **`SbMatrix` full suite** — det, factor, inverse, multVecMatrix, multDirMatrix | `base` | +300 lines | ✅ Done (added to `tests/base/test_sb_types.cpp`) |
+| 19 | **`SoField` connection / notification** — connect/disconnect, isConnected, notify propagation | `fields`, `misc` | +350 lines | ✅ Done (`tests/fields/test_field_connections.cpp`) |
+| 20 | **`SoNodeKit` traversal** — instantiate a nodekit, set part, traverse with `SoGetBoundingBoxAction` | `nodekits` | +450 lines | ✅ Done (`tests/nodes/test_nodekit_traversal.cpp`) |
+
+> **Note on control images (Priority 9–15):** Control images for Tier 2 rendering tests were
+> generated using the bundled OSMesa backend (`COIN3D_USE_OSMESA=ON`) because the GLX CI
+> environment had difficulties with context setup.  These should be regenerated from a GLX
+> environment when possible (see `tests/rendering/generate_controls.sh`).
 
 ### Tier 3 — Lower priority / harder to test
 

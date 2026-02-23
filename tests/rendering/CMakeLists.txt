@@ -106,6 +106,13 @@ add_rendering_test(render_point_set)
 add_rendering_test(render_scene_texture)
 add_rendering_test(render_shadow)
 add_rendering_test(render_array_multiple_copy)
+add_rendering_test(render_shape_hints)
+add_rendering_test(render_environment)
+add_rendering_test(render_texture3)
+add_rendering_test(render_bump_map)
+add_rendering_test(render_texture_transform)
+add_rendering_test(render_depth_buffer)
+add_rendering_test(render_alpha_test)
 
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
@@ -184,6 +191,17 @@ add_rendering_image_test(render_colored_cube RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_coordinates RMSE_THRESHOLD 10.0)
 add_rendering_image_test(render_scene       RMSE_THRESHOLD 15.0)
 
+# Tier 2 tests: control images generated with OSMesa backend.
+# Higher thresholds because these images were produced with OSMesa and may
+# show small differences vs GLX renders on some drivers.
+add_rendering_image_test(render_shape_hints      RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_environment      RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_texture3         RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_bump_map         RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_texture_transform RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_depth_buffer     RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_alpha_test       RMSE_THRESHOLD 20.0)
+
 # ---- Validation tests: run unconditionally, check exit code only -------------
 # These tests perform their own pixel analysis and return 0/1 directly.
 # run_rendering_test.cmake wraps with xvfb-run when DISPLAY is not set.
@@ -198,7 +216,10 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_vertex_colors render_clip_plane
                render_indexed_face_set render_quad_mesh render_indexed_line_set
                render_lod render_point_set
-               render_scene_texture render_shadow render_array_multiple_copy)
+               render_scene_texture render_shadow render_array_multiple_copy
+               render_shape_hints render_environment render_texture3
+               render_bump_map render_texture_transform
+               render_depth_buffer render_alpha_test)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"
@@ -227,6 +248,9 @@ if(PNG_FOUND)
             render_transforms render_cameras render_drawstyle
             render_texture render_text2 render_text3
             render_gradient render_colored_cube render_coordinates render_scene
+            render_shape_hints render_environment render_texture3
+            render_bump_map render_texture_transform
+            render_depth_buffer render_alpha_test
         COMMENT "Generating PNG control images for rendering regression tests"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
