@@ -42,6 +42,13 @@
  *       replaceNode (attach) / replaceManip (detach) lifecycle
  *       SoSearchAction traversal
  *
+ * Complex manips (previously crashing due to SbString::vsprintf va_list bug):
+ *   - SoHandleBoxManip:    instantiation, type, getDragger (SoHandleBoxDragger)
+ *   - SoTabBoxManip:       instantiation, type, getDragger (SoTabBoxDragger)
+ *   - SoTransformBoxManip: instantiation, type, getDragger
+ *   - SoTransformerManip:  instantiation, type, getDragger
+ *   - SoCenterballManip:   instantiation, type, getDragger, replaceNode/replaceManip
+ *
  * Subsystems improved: manips (Tier 3, COVERAGE_PLAN.md item 22)
  */
 
@@ -57,9 +64,19 @@
 #include <Inventor/draggers/SoDragger.h>
 #include <Inventor/draggers/SoTrackballDragger.h>
 #include <Inventor/draggers/SoJackDragger.h>
+#include <Inventor/draggers/SoHandleBoxDragger.h>
+#include <Inventor/draggers/SoTabBoxDragger.h>
+#include <Inventor/draggers/SoTransformBoxDragger.h>
+#include <Inventor/draggers/SoTransformerDragger.h>
+#include <Inventor/draggers/SoCenterballDragger.h>
 #include <Inventor/manips/SoTransformManip.h>
 #include <Inventor/manips/SoTrackballManip.h>
 #include <Inventor/manips/SoJackManip.h>
+#include <Inventor/manips/SoHandleBoxManip.h>
+#include <Inventor/manips/SoTabBoxManip.h>
+#include <Inventor/manips/SoTransformBoxManip.h>
+#include <Inventor/manips/SoTransformerManip.h>
+#include <Inventor/manips/SoCenterballManip.h>
 #include <Inventor/misc/SoChildList.h>
 
 #include <cmath>
@@ -328,6 +345,275 @@ int main()
         root->unref();
         runner.endTest(pass, pass ? "" :
             "SoJackManip replaceManip(null) failed or no SoTransform found after detach");
+    }
+
+    // =======================================================================
+    // Complex manips (previously crashing due to SbString::vsprintf bug)
+    // =======================================================================
+
+    // -----------------------------------------------------------------------
+    // SoHandleBoxManip: instantiation and type check
+    // -----------------------------------------------------------------------
+    runner.startTest("SoHandleBoxManip: instantiation and type check");
+    {
+        SoHandleBoxManip *m = new SoHandleBoxManip;
+        m->ref();
+        bool pass = (m->getTypeId() != SoType::badType()) &&
+                    m->isOfType(SoTransformManip::getClassTypeId());
+        m->unref();
+        runner.endTest(pass, pass ? "" : "SoHandleBoxManip bad type or not SoTransformManip subtype");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoHandleBoxManip: getDragger returns a SoHandleBoxDragger
+    // -----------------------------------------------------------------------
+    runner.startTest("SoHandleBoxManip: getDragger returns SoHandleBoxDragger");
+    {
+        SoHandleBoxManip *m = new SoHandleBoxManip;
+        m->ref();
+        SoDragger *d = m->getDragger();
+        bool pass = (d != nullptr) &&
+                    d->isOfType(SoHandleBoxDragger::getClassTypeId());
+        m->unref();
+        runner.endTest(pass, pass ? "" : "SoHandleBoxManip getDragger is not SoHandleBoxDragger");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoTabBoxManip: instantiation and type check
+    // -----------------------------------------------------------------------
+    runner.startTest("SoTabBoxManip: instantiation and type check");
+    {
+        SoTabBoxManip *m = new SoTabBoxManip;
+        m->ref();
+        bool pass = (m->getTypeId() != SoType::badType()) &&
+                    m->isOfType(SoTransformManip::getClassTypeId());
+        m->unref();
+        runner.endTest(pass, pass ? "" : "SoTabBoxManip bad type or not SoTransformManip subtype");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoTabBoxManip: getDragger returns a SoTabBoxDragger
+    // -----------------------------------------------------------------------
+    runner.startTest("SoTabBoxManip: getDragger returns SoTabBoxDragger");
+    {
+        SoTabBoxManip *m = new SoTabBoxManip;
+        m->ref();
+        SoDragger *d = m->getDragger();
+        bool pass = (d != nullptr) &&
+                    d->isOfType(SoTabBoxDragger::getClassTypeId());
+        m->unref();
+        runner.endTest(pass, pass ? "" : "SoTabBoxManip getDragger is not SoTabBoxDragger");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoTransformBoxManip: instantiation and type check
+    // -----------------------------------------------------------------------
+    runner.startTest("SoTransformBoxManip: instantiation and type check");
+    {
+        SoTransformBoxManip *m = new SoTransformBoxManip;
+        m->ref();
+        bool pass = (m->getTypeId() != SoType::badType()) &&
+                    m->isOfType(SoTransformManip::getClassTypeId());
+        m->unref();
+        runner.endTest(pass, pass ? "" : "SoTransformBoxManip bad type or not SoTransformManip subtype");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoTransformBoxManip: getDragger returns a SoTransformBoxDragger
+    // -----------------------------------------------------------------------
+    runner.startTest("SoTransformBoxManip: getDragger returns SoTransformBoxDragger");
+    {
+        SoTransformBoxManip *m = new SoTransformBoxManip;
+        m->ref();
+        SoDragger *d = m->getDragger();
+        bool pass = (d != nullptr) &&
+                    d->isOfType(SoTransformBoxDragger::getClassTypeId());
+        m->unref();
+        runner.endTest(pass, pass ? "" : "SoTransformBoxManip getDragger is not SoTransformBoxDragger");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoTransformerManip: instantiation and type check
+    // -----------------------------------------------------------------------
+    runner.startTest("SoTransformerManip: instantiation and type check");
+    {
+        SoTransformerManip *m = new SoTransformerManip;
+        m->ref();
+        bool pass = (m->getTypeId() != SoType::badType()) &&
+                    m->isOfType(SoTransformManip::getClassTypeId());
+        m->unref();
+        runner.endTest(pass, pass ? "" : "SoTransformerManip bad type or not SoTransformManip subtype");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoTransformerManip: getDragger returns a SoTransformerDragger
+    // -----------------------------------------------------------------------
+    runner.startTest("SoTransformerManip: getDragger returns SoTransformerDragger");
+    {
+        SoTransformerManip *m = new SoTransformerManip;
+        m->ref();
+        SoDragger *d = m->getDragger();
+        bool pass = (d != nullptr) &&
+                    d->isOfType(SoTransformerDragger::getClassTypeId());
+        m->unref();
+        runner.endTest(pass, pass ? "" : "SoTransformerManip getDragger is not SoTransformerDragger");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoCenterballManip: instantiation and type check
+    // -----------------------------------------------------------------------
+    runner.startTest("SoCenterballManip: instantiation and type check");
+    {
+        SoCenterballManip *m = new SoCenterballManip;
+        m->ref();
+        bool pass = (m->getTypeId() != SoType::badType()) &&
+                    m->isOfType(SoTransformManip::getClassTypeId());
+        m->unref();
+        runner.endTest(pass, pass ? "" : "SoCenterballManip bad type or not SoTransformManip subtype");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoCenterballManip: getDragger returns a SoCenterballDragger
+    // -----------------------------------------------------------------------
+    runner.startTest("SoCenterballManip: getDragger returns SoCenterballDragger");
+    {
+        SoCenterballManip *m = new SoCenterballManip;
+        m->ref();
+        SoDragger *d = m->getDragger();
+        bool pass = (d != nullptr) &&
+                    d->isOfType(SoCenterballDragger::getClassTypeId());
+        m->unref();
+        runner.endTest(pass, pass ? "" : "SoCenterballManip getDragger is not SoCenterballDragger");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoCenterballManip: translation field set/get
+    // -----------------------------------------------------------------------
+    runner.startTest("SoCenterballManip: translation field set/get");
+    {
+        SoCenterballManip *m = new SoCenterballManip;
+        m->ref();
+        m->translation.setValue(4.0f, 5.0f, 6.0f);
+        SbVec3f t = m->translation.getValue();
+        bool pass = (fabsf(t[0] - 4.0f) < 1e-5f) &&
+                    (fabsf(t[1] - 5.0f) < 1e-5f) &&
+                    (fabsf(t[2] - 6.0f) < 1e-5f);
+        m->unref();
+        runner.endTest(pass, pass ? "" : "SoCenterballManip translation set/get failed");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoHandleBoxManip: replaceNode attaches manip to scene graph
+    // -----------------------------------------------------------------------
+    runner.startTest("SoHandleBoxManip: replaceNode attaches to scene graph");
+    {
+        SoSeparator *root = new SoSeparator;
+        root->ref();
+
+        SoTransform *xf = new SoTransform;
+        xf->translation.setValue(2.0f, 0.0f, 0.0f);
+        root->addChild(xf);
+
+        SoSearchAction sa;
+        sa.setType(SoTransform::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        SoPath *path = sa.getPath();
+
+        bool pass = false;
+        if (path != nullptr) {
+            SoHandleBoxManip *manip = new SoHandleBoxManip;
+            manip->ref();
+            SbBool ok = manip->replaceNode(path);
+            if (ok) {
+                SbVec3f t = manip->translation.getValue();
+                pass = (fabsf(t[0] - 2.0f) < 1e-4f);
+            }
+            manip->unref();
+        }
+        root->unref();
+        runner.endTest(pass, pass ? "" : "SoHandleBoxManip replaceNode failed");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoTransformBoxManip: replaceManip detaches from scene graph
+    // -----------------------------------------------------------------------
+    runner.startTest("SoTransformBoxManip: replaceManip detaches from scene graph");
+    {
+        SoSeparator *root = new SoSeparator;
+        root->ref();
+
+        SoTransformBoxManip *manip = new SoTransformBoxManip;
+        manip->translation.setValue(3.0f, 0.0f, 0.0f);
+        root->addChild(manip);
+
+        SoSearchAction sa;
+        sa.setType(SoTransformBoxManip::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        SoPath *mpath = sa.getPath();
+
+        bool pass = false;
+        if (mpath != nullptr) {
+            SbBool ok = manip->replaceManip(mpath, nullptr);
+            if (ok) {
+                SoSearchAction sa2;
+                sa2.setType(SoTransform::getClassTypeId());
+                sa2.setInterest(SoSearchAction::FIRST);
+                sa2.apply(root);
+                pass = (sa2.getPath() != nullptr);
+            }
+        }
+        root->unref();
+        runner.endTest(pass, pass ? "" : "SoTransformBoxManip replaceManip failed");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoSearchAction finds complex manips in a scene graph
+    // -----------------------------------------------------------------------
+    runner.startTest("SoSearchAction finds SoHandleBoxManip in scene graph");
+    {
+        SoSeparator *root = new SoSeparator;
+        root->ref();
+        SoHandleBoxManip *m = new SoHandleBoxManip;
+        root->addChild(m);
+        SoSearchAction sa;
+        sa.setType(SoHandleBoxManip::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        bool pass = (sa.getPath() != nullptr);
+        root->unref();
+        runner.endTest(pass, pass ? "" : "SoSearchAction did not find SoHandleBoxManip");
+    }
+
+    runner.startTest("SoSearchAction finds SoTransformerManip in scene graph");
+    {
+        SoSeparator *root = new SoSeparator;
+        root->ref();
+        SoTransformerManip *m = new SoTransformerManip;
+        root->addChild(m);
+        SoSearchAction sa;
+        sa.setType(SoTransformerManip::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        bool pass = (sa.getPath() != nullptr);
+        root->unref();
+        runner.endTest(pass, pass ? "" : "SoSearchAction did not find SoTransformerManip");
+    }
+
+    runner.startTest("SoSearchAction finds SoCenterballManip in scene graph");
+    {
+        SoSeparator *root = new SoSeparator;
+        root->ref();
+        SoCenterballManip *m = new SoCenterballManip;
+        root->addChild(m);
+        SoSearchAction sa;
+        sa.setType(SoCenterballManip::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        bool pass = (sa.getPath() != nullptr);
+        root->unref();
+        runner.endTest(pass, pass ? "" : "SoSearchAction did not find SoCenterballManip");
     }
 
     return runner.getSummary();
