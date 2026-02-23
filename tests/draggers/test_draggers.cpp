@@ -32,7 +32,7 @@
 
 /**
  * @file test_draggers.cpp
- * @brief Tests for simple Coin3D dragger classes.
+ * @brief Tests for Coin3D dragger classes.
  *
  * Exercises the dragger infrastructure without requiring a display or GL
  * context:
@@ -45,6 +45,15 @@
  *                          static matrix utilities (appendTranslation,
  *                          appendScale, appendRotation)
  *   - SoSearchAction traversal over a dragger-containing scene graph
+ *
+ * Complex draggers (previously crashing due to SbString::vsprintf va_list bug):
+ *   - SoHandleBoxDragger:   instantiation, type, scaleFactor/translation fields,
+ *                           nodekit catalog, callback registration
+ *   - SoTabBoxDragger:      instantiation, type, scaleFactor/translation fields,
+ *                           nodekit catalog, SoSearchAction traversal
+ *   - SoTransformBoxDragger: instantiation, type, rotation/translation/scaleFactor
+ *   - SoTransformerDragger: instantiation, type, fields, minDiscRotDot
+ *   - SoCenterballDragger:  instantiation, type, rotation/center fields
  *
  * Subsystems improved: draggers (Tier 3, COVERAGE_PLAN.md item 21)
  */
@@ -64,6 +73,12 @@
 #include <Inventor/draggers/SoTranslate2Dragger.h>
 #include <Inventor/draggers/SoScale1Dragger.h>
 #include <Inventor/draggers/SoRotateDiscDragger.h>
+#include <Inventor/draggers/SoHandleBoxDragger.h>
+#include <Inventor/draggers/SoTabBoxDragger.h>
+#include <Inventor/draggers/SoTransformBoxDragger.h>
+#include <Inventor/draggers/SoTransformerDragger.h>
+#include <Inventor/draggers/SoCenterballDragger.h>
+#include <Inventor/nodekits/SoNodekitCatalog.h>
 
 #include <cmath>
 
@@ -532,6 +547,348 @@ int main()
         bool pass = (cat != nullptr) && (cat->getNumEntries() > 0);
         d->unref();
         runner.endTest(pass, pass ? "" : "SoTranslate1Dragger nodekit catalog null or empty");
+    }
+
+    // =======================================================================
+    // Complex draggers (previously crashing due to SbString::vsprintf bug)
+    // =======================================================================
+
+    // -----------------------------------------------------------------------
+    // SoHandleBoxDragger: instantiation and type check
+    // -----------------------------------------------------------------------
+    runner.startTest("SoHandleBoxDragger: instantiation and type check");
+    {
+        SoHandleBoxDragger *d = new SoHandleBoxDragger;
+        d->ref();
+        bool pass = (d->getTypeId() != SoType::badType()) &&
+                    d->isOfType(SoDragger::getClassTypeId());
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoHandleBoxDragger bad type or not SoDragger subtype");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoHandleBoxDragger: scaleFactor field default is (1,1,1)
+    // -----------------------------------------------------------------------
+    runner.startTest("SoHandleBoxDragger: scaleFactor default is (1,1,1)");
+    {
+        SoHandleBoxDragger *d = new SoHandleBoxDragger;
+        d->ref();
+        SbVec3f sf = d->scaleFactor.getValue();
+        bool pass = (fabsf(sf[0] - 1.0f) < 1e-5f) &&
+                    (fabsf(sf[1] - 1.0f) < 1e-5f) &&
+                    (fabsf(sf[2] - 1.0f) < 1e-5f);
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoHandleBoxDragger default scaleFactor is not (1,1,1)");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoHandleBoxDragger: translation field default is (0,0,0)
+    // -----------------------------------------------------------------------
+    runner.startTest("SoHandleBoxDragger: translation default is (0,0,0)");
+    {
+        SoHandleBoxDragger *d = new SoHandleBoxDragger;
+        d->ref();
+        SbVec3f t = d->translation.getValue();
+        bool pass = (fabsf(t[0]) < 1e-5f) &&
+                    (fabsf(t[1]) < 1e-5f) &&
+                    (fabsf(t[2]) < 1e-5f);
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoHandleBoxDragger default translation is not (0,0,0)");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoHandleBoxDragger: nodekit catalog has expected parts
+    // -----------------------------------------------------------------------
+    runner.startTest("SoHandleBoxDragger: nodekit catalog has switch parts");
+    {
+        SoHandleBoxDragger *d = new SoHandleBoxDragger;
+        d->ref();
+        const SoNodekitCatalog *cat = d->getNodekitCatalog();
+        bool pass = (cat != nullptr) &&
+                    (cat->getPartNumber("translator1Switch") != SO_CATALOG_NAME_NOT_FOUND) &&
+                    (cat->getPartNumber("extruder1Switch")   != SO_CATALOG_NAME_NOT_FOUND) &&
+                    (cat->getPartNumber("uniform1Switch")    != SO_CATALOG_NAME_NOT_FOUND);
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoHandleBoxDragger catalog missing expected switch parts");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoHandleBoxDragger: set/get translation and scaleFactor fields
+    // -----------------------------------------------------------------------
+    runner.startTest("SoHandleBoxDragger: set/get translation and scaleFactor");
+    {
+        SoHandleBoxDragger *d = new SoHandleBoxDragger;
+        d->ref();
+        d->translation.setValue(1.0f, 2.0f, 3.0f);
+        d->scaleFactor.setValue(2.0f, 3.0f, 4.0f);
+        SbVec3f t  = d->translation.getValue();
+        SbVec3f sf = d->scaleFactor.getValue();
+        bool pass = (fabsf(t[0] - 1.0f) < 1e-5f) &&
+                    (fabsf(t[1] - 2.0f) < 1e-5f) &&
+                    (fabsf(t[2] - 3.0f) < 1e-5f) &&
+                    (fabsf(sf[0] - 2.0f) < 1e-5f) &&
+                    (fabsf(sf[1] - 3.0f) < 1e-5f) &&
+                    (fabsf(sf[2] - 4.0f) < 1e-5f);
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoHandleBoxDragger field set/get failed");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoHandleBoxDragger: callback registration does not crash
+    // -----------------------------------------------------------------------
+    runner.startTest("SoHandleBoxDragger: callback registration/removal");
+    {
+        SoHandleBoxDragger *d = new SoHandleBoxDragger;
+        d->ref();
+        s_start_count = 0;
+        d->addStartCallback(countStartCB, nullptr);
+        d->removeStartCallback(countStartCB, nullptr);
+        bool pass = (s_start_count == 0);
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoHandleBoxDragger callback registration crashed or misfired");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoTabBoxDragger: instantiation and type check
+    // -----------------------------------------------------------------------
+    runner.startTest("SoTabBoxDragger: instantiation and type check");
+    {
+        SoTabBoxDragger *d = new SoTabBoxDragger;
+        d->ref();
+        bool pass = (d->getTypeId() != SoType::badType()) &&
+                    d->isOfType(SoDragger::getClassTypeId());
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoTabBoxDragger bad type or not SoDragger subtype");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoTabBoxDragger: scaleFactor and translation fields default values
+    // -----------------------------------------------------------------------
+    runner.startTest("SoTabBoxDragger: default field values");
+    {
+        SoTabBoxDragger *d = new SoTabBoxDragger;
+        d->ref();
+        SbVec3f t  = d->translation.getValue();
+        SbVec3f sf = d->scaleFactor.getValue();
+        bool pass = (fabsf(t[0]) < 1e-5f) &&
+                    (fabsf(t[1]) < 1e-5f) &&
+                    (fabsf(t[2]) < 1e-5f) &&
+                    (fabsf(sf[0] - 1.0f) < 1e-5f) &&
+                    (fabsf(sf[1] - 1.0f) < 1e-5f) &&
+                    (fabsf(sf[2] - 1.0f) < 1e-5f);
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoTabBoxDragger default field values incorrect");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoTabBoxDragger: nodekit catalog includes tabPlane sub-draggers
+    // -----------------------------------------------------------------------
+    runner.startTest("SoTabBoxDragger: nodekit catalog has tabPlane parts");
+    {
+        SoTabBoxDragger *d = new SoTabBoxDragger;
+        d->ref();
+        const SoNodekitCatalog *cat = d->getNodekitCatalog();
+        bool pass = (cat != nullptr) &&
+                    (cat->getPartNumber("tabPlane1") != SO_CATALOG_NAME_NOT_FOUND) &&
+                    (cat->getPartNumber("tabPlane6") != SO_CATALOG_NAME_NOT_FOUND);
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoTabBoxDragger catalog missing tabPlane parts");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoTabBoxDragger: SoSearchAction traversal
+    // -----------------------------------------------------------------------
+    runner.startTest("SoSearchAction finds SoTabBoxDragger in scene graph");
+    {
+        SoSeparator *root = new SoSeparator;
+        root->ref();
+        SoTabBoxDragger *d = new SoTabBoxDragger;
+        root->addChild(d);
+        SoSearchAction sa;
+        sa.setType(SoTabBoxDragger::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        bool pass = (sa.getPath() != nullptr);
+        root->unref();
+        runner.endTest(pass, pass ? "" : "SoSearchAction did not find SoTabBoxDragger");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoTransformBoxDragger: instantiation and type check
+    // -----------------------------------------------------------------------
+    runner.startTest("SoTransformBoxDragger: instantiation and type check");
+    {
+        SoTransformBoxDragger *d = new SoTransformBoxDragger;
+        d->ref();
+        bool pass = (d->getTypeId() != SoType::badType()) &&
+                    d->isOfType(SoDragger::getClassTypeId());
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoTransformBoxDragger bad type or not SoDragger subtype");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoTransformBoxDragger: rotation/translation/scaleFactor field defaults
+    // -----------------------------------------------------------------------
+    runner.startTest("SoTransformBoxDragger: default field values");
+    {
+        SoTransformBoxDragger *d = new SoTransformBoxDragger;
+        d->ref();
+        SbVec3f  t    = d->translation.getValue();
+        SbVec3f  sf   = d->scaleFactor.getValue();
+        SbRotation rot = d->rotation.getValue();
+        SbVec3f   ax; float ang;
+        rot.getValue(ax, ang);
+        bool pass = (fabsf(t[0]) < 1e-5f) &&
+                    (fabsf(t[1]) < 1e-5f) &&
+                    (fabsf(t[2]) < 1e-5f) &&
+                    (fabsf(sf[0] - 1.0f) < 1e-5f) &&
+                    (fabsf(sf[1] - 1.0f) < 1e-5f) &&
+                    (fabsf(sf[2] - 1.0f) < 1e-5f) &&
+                    (fabsf(ang) < 1e-5f); // identity rotation
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoTransformBoxDragger default field values incorrect");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoTransformerDragger: instantiation and type check
+    // -----------------------------------------------------------------------
+    runner.startTest("SoTransformerDragger: instantiation and type check");
+    {
+        SoTransformerDragger *d = new SoTransformerDragger;
+        d->ref();
+        bool pass = (d->getTypeId() != SoType::badType()) &&
+                    d->isOfType(SoDragger::getClassTypeId());
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoTransformerDragger bad type or not SoDragger subtype");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoTransformerDragger: field defaults
+    // -----------------------------------------------------------------------
+    runner.startTest("SoTransformerDragger: default field values");
+    {
+        SoTransformerDragger *d = new SoTransformerDragger;
+        d->ref();
+        SbVec3f  t    = d->translation.getValue();
+        SbVec3f  sf   = d->scaleFactor.getValue();
+        SbRotation rot = d->rotation.getValue();
+        SbVec3f ax; float ang;
+        rot.getValue(ax, ang);
+        // minDiscRotDot default is 0.025f per the Coin source
+        float minDot = d->minDiscRotDot.getValue();
+        bool pass = (fabsf(t[0]) < 1e-5f) &&
+                    (fabsf(t[1]) < 1e-5f) &&
+                    (fabsf(t[2]) < 1e-5f) &&
+                    (fabsf(sf[0] - 1.0f) < 1e-5f) &&
+                    (fabsf(ang) < 1e-5f) &&
+                    (minDot > 0.0f);
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoTransformerDragger default field values incorrect");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoCenterballDragger: instantiation and type check
+    // -----------------------------------------------------------------------
+    runner.startTest("SoCenterballDragger: instantiation and type check");
+    {
+        SoCenterballDragger *d = new SoCenterballDragger;
+        d->ref();
+        bool pass = (d->getTypeId() != SoType::badType()) &&
+                    d->isOfType(SoDragger::getClassTypeId());
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoCenterballDragger bad type or not SoDragger subtype");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoCenterballDragger: rotation and center field defaults
+    // -----------------------------------------------------------------------
+    runner.startTest("SoCenterballDragger: default rotation is identity, center is (0,0,0)");
+    {
+        SoCenterballDragger *d = new SoCenterballDragger;
+        d->ref();
+        SbRotation rot = d->rotation.getValue();
+        SbVec3f    ctr = d->center.getValue();
+        SbVec3f ax; float ang;
+        rot.getValue(ax, ang);
+        bool pass = (fabsf(ang) < 1e-5f) &&
+                    (fabsf(ctr[0]) < 1e-5f) &&
+                    (fabsf(ctr[1]) < 1e-5f) &&
+                    (fabsf(ctr[2]) < 1e-5f);
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoCenterballDragger default rotation/center incorrect");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoCenterballDragger: set/get rotation and center fields
+    // -----------------------------------------------------------------------
+    runner.startTest("SoCenterballDragger: set/get rotation and center fields");
+    {
+        SoCenterballDragger *d = new SoCenterballDragger;
+        d->ref();
+        SbRotation rot(SbVec3f(0.0f, 1.0f, 0.0f),
+                       static_cast<float>(M_PI) / 3.0f);
+        d->rotation.setValue(rot);
+        d->center.setValue(1.0f, 2.0f, 3.0f);
+        SbRotation gotRot = d->rotation.getValue();
+        SbVec3f    gotCtr = d->center.getValue();
+        SbVec3f ax; float ang;
+        SbVec3f rax; float rang;
+        gotRot.getValue(ax, ang);
+        rot.getValue(rax, rang);
+        bool pass = (fabsf(ang - rang) < 1e-4f) &&
+                    (fabsf(gotCtr[0] - 1.0f) < 1e-5f) &&
+                    (fabsf(gotCtr[1] - 2.0f) < 1e-5f) &&
+                    (fabsf(gotCtr[2] - 3.0f) < 1e-5f);
+        d->unref();
+        runner.endTest(pass, pass ? "" : "SoCenterballDragger field set/get failed");
+    }
+
+    // -----------------------------------------------------------------------
+    // SoSearchAction finds complex draggers in a scene graph
+    // -----------------------------------------------------------------------
+    runner.startTest("SoSearchAction finds SoHandleBoxDragger in scene graph");
+    {
+        SoSeparator *root = new SoSeparator;
+        root->ref();
+        SoHandleBoxDragger *d = new SoHandleBoxDragger;
+        root->addChild(d);
+        SoSearchAction sa;
+        sa.setType(SoHandleBoxDragger::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        bool pass = (sa.getPath() != nullptr);
+        root->unref();
+        runner.endTest(pass, pass ? "" : "SoSearchAction did not find SoHandleBoxDragger");
+    }
+
+    runner.startTest("SoSearchAction finds SoTransformerDragger in scene graph");
+    {
+        SoSeparator *root = new SoSeparator;
+        root->ref();
+        SoTransformerDragger *d = new SoTransformerDragger;
+        root->addChild(d);
+        SoSearchAction sa;
+        sa.setType(SoTransformerDragger::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        bool pass = (sa.getPath() != nullptr);
+        root->unref();
+        runner.endTest(pass, pass ? "" : "SoSearchAction did not find SoTransformerDragger");
+    }
+
+    runner.startTest("SoSearchAction finds SoCenterballDragger in scene graph");
+    {
+        SoSeparator *root = new SoSeparator;
+        root->ref();
+        SoCenterballDragger *d = new SoCenterballDragger;
+        root->addChild(d);
+        SoSearchAction sa;
+        sa.setType(SoCenterballDragger::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        bool pass = (sa.getPath() != nullptr);
+        root->unref();
+        runner.endTest(pass, pass ? "" : "SoSearchAction did not find SoCenterballDragger");
     }
 
     return runner.getSummary();
