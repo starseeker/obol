@@ -39,7 +39,6 @@
 #include "fonts/freetype.h"
 #include "fonts/common.h"
 #include "fonts/profont_data.h"
-#include "C/base/string.h"
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>

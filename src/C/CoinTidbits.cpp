@@ -88,7 +88,6 @@
 
 #include <string>
 
-#include "C/base/string.h"
 #include "base/list.h"
 #include "errors/CoinInternalError.h"
 #include "coindefs.h"
