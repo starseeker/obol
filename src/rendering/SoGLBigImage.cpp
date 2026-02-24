@@ -773,10 +773,30 @@ SoGLBigImageP::copyResizeSubImage(SoGLBigImageTls * tls,
   }
 }
 
-// create a lower resolution image by averaging four and four pixels
-// into a new pixel. This is the same technique as the one usually
-// used when creating OpenGL mipmaps. Each level is calculated based
-// on the previous level, not on the full-resolution image.
+// Downsample image by a factor of 2 in each dimension using a 2x2 box
+// filter.  Each mip level is computed from the previous level, NOT from
+// the original full-resolution image.
+//
+// This is the standard OpenGL mipmap generation algorithm.  It is O(N^2)
+// in total work across all levels.  The tradeoff versus computing each
+// level directly from the full-resolution source (a "box-filter pyramid"):
+//
+//   Fast (this function): chains 2x2 averages through the pyramid.
+//     Accumulates one integer truncation step per level (e.g. 10 steps
+//     for a 1024->1 chain).  Each output byte is computed from exactly
+//     4 source bytes.  Quality loss is imperceptible for most images at
+//     normal rendering scales.
+//
+//   Full-source (alternative): computes each level i by averaging a
+//     (2^i x 2^i) block of original pixels.  Zero truncation error
+//     accumulation but O(N^2 * log N) work, which is prohibitive for
+//     the large images SoGLBigImage is designed to handle.
+//
+// Neither is a high-quality filter in the signal-processing sense; both
+// are plain box filters.  For applications requiring the highest quality
+// CPU-side mipmap generation, a Lanczos or Catmull-Rom kernel should be
+// used.  For GPU rendering, glGenerateMipmap() is preferred and avoids
+// this CPU work entirely.
 static void
 image_downsample_fast(const int width, const int height, const int nc,
                       const unsigned char * datain, unsigned char * dataout)
