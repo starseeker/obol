@@ -206,12 +206,6 @@
     SoSeparator * root = SoDB::readAll(&input);
 
     SbBool vrml1 = input.isFileVRML1();
-    SbBool vrml2 = input.isFileVRML2();
-
-    if (vrml2) {
-      fprintf(stderr,"VRML2 not supported yet\n");
-      return -1;
-    }
 
     if (!root) {
       fprintf(stderr,"Unable to read file.\n");

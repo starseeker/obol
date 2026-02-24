@@ -184,7 +184,7 @@ SoSFNode::readValue(SoInput * in)
   // valid condition for VRML97 files, where nodes can indeed be
   // explicitly given as a NULL value. See the 'vrml97nullchild' test
   // case near the end of this file for a valid case that would fail.
-  if(in->isFileVRML1() || in->isFileVRML2()) {
+  if(in->isFileVRML1()) {
     SbName name;
     in->read(name, TRUE);
     if (name == "NULL") {

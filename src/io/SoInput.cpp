@@ -1053,7 +1053,7 @@ SoInput::read(SbString & s)
             // string are \". In this case, the backslash should be
             // considered literal and the quote should terminate the
             // string.
-            if (!this->isFileVRML2() && fi->get(c)) {
+            if (fi->get(c)) {
               fi->putBack(c);
               if ((c == '\r') || (c == '\n'))
                 fi->putBack('\"');
@@ -1064,8 +1064,7 @@ SoInput::read(SbString & s)
               *buf = c;
             }
           }
-          // In VRML V2.0, backslashes must be quoted.
-          else if (c != '\\' || !this->isFileVRML2()) {
+          else {
             fi->putBack(c);
           }
         }
@@ -1116,8 +1115,8 @@ SoInput::read(SbName & n, SbBool validIdent)
   SoInput_FileInfo * fi = PRIVATE(this)->getTopOfStackPopOnEOF();
   if (!this->checkHeader()) return FALSE;
 
-  const enum CodePath { INVENTOR, VRML1, VRML2 } codepath =
-    fi->isFileVRML2() ? VRML2 : (fi->isFileVRML1() ? VRML1 : INVENTOR);
+  const enum CodePath { INVENTOR, VRML1 } codepath =
+    fi->isFileVRML1() ? VRML1 : INVENTOR;
 
   // Binary format.
   if (fi->isBinary()) { // Checkheader has already been called
@@ -1140,13 +1139,6 @@ SoInput::read(SbName & n, SbBool validIdent)
         if (!SoInputP::isNameStartCharVRML1(s[0], validIdent)) return FALSE;
         for (int i = 1; i < strlength; i++)
           if (!SoInputP::isNameCharVRML1(s[i], validIdent)) return FALSE;
-      }
-      break;
-    case VRML2:
-      if (validIdent && strlength > 0) {
-        if (!SoInputP::isNameStartCharVRML2(s[0], validIdent)) return FALSE;
-        for (int i = 1; i < strlength; i++)
-          if (!SoInputP::isNameCharVRML2(s[i], validIdent)) return FALSE;
       }
       break;
     default:
@@ -1184,19 +1176,6 @@ SoInput::read(SbName & n, SbBool validIdent)
       if ((gotchar = fi->get(c)) && SoInputP::isNameStartCharVRML1(c, validIdent)) {
         *b++ = c;
         while ((gotchar = fi->get(c)) && SoInputP::isNameCharVRML1(c, validIdent)) {
-          *b++ = c;
-          if (b - buf == 255) {
-            *b = '\0';
-            s += buf;
-            b = buf;
-          }
-        }
-      }
-      break;
-    case VRML2:
-      if ((gotchar = fi->get(c)) && SoInputP::isNameStartCharVRML2(c, validIdent)) {
-        *b++ = c;
-        while ((gotchar = fi->get(c)) && SoInputP::isNameCharVRML2(c, validIdent)) {
           *b++ = c;
           if (b - buf == 255) {
             *b = '\0';
@@ -2426,20 +2405,6 @@ SoInput::isFileVRML1(void)
   (void) this->checkHeader();
   SoInput_FileInfo * fi = this->getTopOfStack();
   if (fi) return fi->isFileVRML1();
-  return FALSE;
-}
-
-/*!
-  Returns \c TRUE if current file is a VRML 2 / VRML97 file.
-
-  \COIN_FUNCTION_EXTENSION
-*/
-SbBool
-SoInput::isFileVRML2(void)
-{
-  (void) this->checkHeader();
-  SoInput_FileInfo * fi = this->getTopOfStack();
-  if (fi) return fi->isFileVRML2();
   return FALSE;
 }
 
