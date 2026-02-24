@@ -1,6 +1,3 @@
-#ifndef COIN_SOGLMULTITEXTUREENABLEDELEMENT_H
-#define COIN_SOGLMULTITEXTUREENABLEDELEMENT_H
-
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
  * All rights reserved.
@@ -33,30 +30,52 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#include <Inventor/elements/SoMultiTextureEnabledElement.h>
+/*!
+  \class SbStorage SbStorage.h Inventor/threads/SbStorage.h
+  \brief The SbStorage class manages thread-local memory.
 
-class COIN_DLL_API SoGLMultiTextureEnabledElement : public SoMultiTextureEnabledElement {
-  typedef SoMultiTextureEnabledElement inherited;
+  \ingroup coin_threads
 
-  SO_ELEMENT_HEADER(SoGLMultiTextureEnabledElement);
-public:
-  static void initClass(void);
-protected:
-  virtual ~SoGLMultiTextureEnabledElement();
+  This class manages thread-local memory. When different threads access
+  the memory an SbStorage object manages, they will receive different
+  memory blocks back.
 
-public:
-  virtual void init(SoState * state);
+  This provides a mechanism for sharing read/write static data.
+*/
 
-  virtual void push(SoState * state);
-  virtual void pop(SoState * state,
-                   const SoElement * prevTopElement);
-  virtual void setElt(const int unit, const int mode);
+#define COIN_INTERNAL
 
-private:
-  void updategl(const int unit);
-  void updategl(const int unit, const Mode oldvalue, const Mode newvalue);
+#include <Inventor/threads/SbStorage.h>
+#include "threads/threads.h"
+#include "threads/storagep.h"
 
-  uint32_t cachecontext;
-};
+SbStorage::SbStorage(unsigned int size)
+{
+  this->impl = cc_storage_construct(size);
+}
 
-#endif // !COIN_SOGLMULTITEXTUREENABLEDELEMENT_H
+SbStorage::SbStorage(unsigned int size, SbStorageConstructFunc * constr,
+                     SbStorageConstructFunc * destr)
+{
+  this->impl = cc_storage_construct_etc(size,
+    reinterpret_cast<cc_storage_f *>(constr),
+    reinterpret_cast<cc_storage_f *>(destr));
+}
+
+SbStorage::~SbStorage(void)
+{
+  cc_storage_destruct(reinterpret_cast<cc_storage *>(this->impl));
+}
+
+void *
+SbStorage::get(void)
+{
+  return cc_storage_get(reinterpret_cast<cc_storage *>(this->impl));
+}
+
+void
+SbStorage::applyToAll(SbStorageApplyFunc * func, void * closure)
+{
+  cc_storage_apply_to_all(reinterpret_cast<cc_storage *>(this->impl),
+    reinterpret_cast<cc_storage_apply_func *>(func), closure);
+}

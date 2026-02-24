@@ -608,7 +608,7 @@ struct cc_glxglue {
 
 /* GL info storage structure. An instance will be allocated and
    initialized for each new GL context id. */
-struct cc_glglue {
+struct SoGLContext {
 
   uint32_t contextid;
   struct { /* OpenGL versioning. */
@@ -889,6 +889,9 @@ struct cc_glglue {
 
   cc_libhandle dl_handle;
 };
+
+/* Backward-compatibility alias for internal code still using cc_glglue */
+typedef struct SoGLContext cc_glglue;
 
 /* ********************************************************************** */
 
