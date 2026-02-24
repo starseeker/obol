@@ -102,7 +102,6 @@
 
 #include <Inventor/misc/SoGLDriverDatabase.h>
 #include <Inventor/misc/CoinResources.h>
-#include <Inventor/misc/SoGeo.h>
 
 #include "coindefs.h" // COIN_STUB(), COIN_INIT_CHECK_THREAD()
 #include "shaders/SoShader.h"
@@ -392,7 +391,6 @@ SoDB::init(ContextManager * context_manager)
 
   // FIXME: probably temporary. Add FXViz::init() or something? pederb, 2007-03-09
   SoShadowGroup::init();
-  SoGeo::init();
 
 
 
