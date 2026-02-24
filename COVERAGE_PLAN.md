@@ -1,6 +1,7 @@
 # Obol Coverage Baseline and Expansion Plan
 
-*Baseline captured: 2026-02-23.  Build: Debug + OSMesa, `COIN_COVERAGE=ON`.*
+*Baseline re-captured: 2026-02-24.  Build: Debug + OSMesa, `COIN_COVERAGE=ON`.*
+*Previous baseline: 2026-02-23 (31.6 % lines / 40.7 % functions in `src/`).*
 
 ---
 
@@ -8,9 +9,9 @@
 
 | Metric | Count | Total | Percentage |
 |--------|------:|------:|-----------:|
-| Lines (all files) | 36,056 | 97,507 | **37.0 %** |
-| Lines (`src/` only) | 27,572 | 87,284 | **31.6 %** |
-| Functions (`src/` only) | 6,560 | 16,102 | **40.7 %** |
+| Lines (all files) | 46,681 | 99,374 | **47.0 %** |
+| Lines (`src/` only) | 35,877 | 87,303 | **41.1 %** |
+| Functions (`src/` only) | 7,603 | 16,102 | **47.2 %** |
 
 ---
 
@@ -18,31 +19,36 @@
 
 | Subsystem | Lines hit | Total lines | Line % | Funcs hit | Total funcs | Func % |
 |-----------|----------:|------------:|-------:|----------:|------------:|-------:|
+| `lists` | 365 | 483 | **75.6 %** | 77 | 102 | **75.5 %** |
 | `sensors` | 503 | 686 | **73.3 %** | 106 | 144 | **73.6 %** |
-| `lists` | 356 | 483 | **73.7 %** | 75 | 102 | **73.5 %** |
-| `elements` | 3,894 | 6,431 | **60.6 %** | 1,269 | 1,769 | **71.7 %** |
-| `io` | 1,180 | 2,262 | **52.2 %** | 198 | 352 | **56.2 %** |
-| `nodekits` | 955 | 2,016 | **47.4 %** | 170 | 344 | **49.4 %** |
-| `engines` | 1,496 | 3,550 | **42.1 %** | 283 | 856 | **33.1 %** |
+| `elements` | 4,262 | 6,431 | **66.3 %** | 1,335 | 1,769 | **75.5 %** |
+| `shadows` | 811 | 1,256 | **64.6 %** | 74 | 117 | **63.2 %** |
+| `draggers` | 3,308 | 5,499 | **60.2 %** | 398 | 679 | **58.6 %** |
+| `shaders` | 970 | 1,704 | **56.9 %** | 268 | 462 | **58.0 %** |
+| `details` | 155 | 274 | **56.6 %** | 52 | 110 | **47.3 %** |
+| `io` | 1,181 | 2,262 | **52.2 %** | 198 | 352 | **56.2 %** |
+| `nodekits` | 1,058 | 2,016 | **52.5 %** | 187 | 344 | **54.4 %** |
+| `glue` | 1,100 | 2,315 | **47.5 %** | 96 | 290 | **33.1 %** |
+| `misc` | 1,990 | 4,846 | **41.1 %** | 633 | 1,160 | **54.6 %** |
 | `threads` | 223 | 542 | **41.1 %** | 46 | 84 | **54.8 %** |
-| `glue` | 937 | 2,315 | **40.5 %** | 63 | 290 | **21.7 %** |
-| `misc` | 1,752 | 4,846 | **36.2 %** | 549 | 1,160 | **47.3 %** |
-| `fields` | 1,813 | 5,400 | **33.6 %** | 794 | 2,183 | **36.4 %** |
-| `actions` | 1,007 | 3,120 | **32.3 %** | 224 | 560 | **40.0 %** |
-| `rendering` | 1,365 | 4,375 | **31.2 %** | 122 | 650 | **18.8 %** |
-| `nodes` | 3,173 | 10,384 | **30.6 %** | 845 | 1,983 | **42.6 %** |
-| `shapenodes` | 2,343 | 7,731 | **30.3 %** | 283 | 652 | **43.4 %** |
-| `base` | 2,723 | 9,801 | **27.8 %** | 415 | 1,249 | **33.2 %** |
-| `shaders` | 447 | 1,704 | **26.2 %** | 187 | 462 | **40.5 %** |
-| `events` | 121 | 585 | **20.7 %** | 48 | 88 | **54.5 %** |
-| `draggers` | 920 | 5,499 | **16.7 %** | 179 | 679 | **26.4 %** |
-| `shadows` | 141 | 1,239 | **11.4 %** | 46 | 117 | **39.3 %** |
+| `engines` | 1,496 | 3,550 | **42.1 %** | 283 | 856 | **33.1 %** |
+| `nodes` | 4,341 | 10,384 | **41.8 %** | 995 | 1,983 | **50.2 %** |
+| `actions` | 1,290 | 3,120 | **41.3 %** | 262 | 560 | **46.8 %** |
+| `rendering` | 1,721 | 4,375 | **39.3 %** | 157 | 650 | **24.2 %** |
+| `shapenodes` | 3,051 | 7,733 | **39.5 %** | 316 | 652 | **48.5 %** |
+| `caches` | 754 | 2,088 | **36.1 %** | 88 | 196 | **44.9 %** |
+| `fields` | 1,826 | 5,400 | **33.8 %** | 800 | 2,183 | **36.6 %** |
+| `base` | 3,280 | 9,801 | **33.5 %** | 474 | 1,249 | **38.0 %** |
+| `fonts` | 1,082 | 3,145 | **34.4 %** | 90 | 231 | **39.0 %** |
+| `projectors` | 241 | 730 | **33.0 %** | 45 | 101 | **44.6 %** |
+| `bundles` | 81 | 272 | **29.8 %** | 15 | 40 | **37.5 %** |
+| `manips` | 296 | 1,158 | **25.6 %** | 86 | 217 | **39.6 %** |
+| `errors` | 103 | 376 | **27.4 %** | 22 | 77 | **28.6 %** |
+| `events` | 136 | 585 | **23.2 %** | 50 | 88 | **56.8 %** |
 | `geo` | 72 | 622 | **11.6 %** | 29 | 145 | **20.0 %** |
-| `projectors` | 49 | 730 | **6.7 %** | 11 | 101 | **10.9 %** |
-| `manips` | 48 | 1,158 | **4.1 %** | 37 | 217 | **17.1 %** |
-| `collision` | 5 | 1,289 | **0.4 %** | 3 | 85 | **3.5 %** |
-| `profiler` | 23 | 2,745 | **0.8 %** | 9 | 305 | **3.0 %** |
 | `hardcopy` | 17 | 1,215 | **1.4 %** | 10 | 158 | **6.3 %** |
+| `profiler` | 23 | 2,745 | **0.8 %** | 9 | 305 | **3.0 %** |
+| `collision` | 5 | 1,289 | **0.4 %** | 3 | 85 | **3.5 %** |
 | `tools` | 0 | 36 | **0.0 %** | 0 | 8 | **0.0 %** |
 
 ---
@@ -55,21 +61,25 @@ profiler, hardcopy, collision and large third-party files):
 | File | Uncovered | Total | Line % |
 |------|----------:|------:|-------:|
 | `fonts/struetype.h` (font rasterizer) | 1,648 | 2,269 | 27 % |
-| `glue/gl.cpp` (GL dispatch) | 1,093 | 1,969 | 45 % |
-| `actions/SoGLRenderAction.cpp` | 680 | 862 | 21 % |
-| `shadows/SoShadowGroup.cpp` | 1,019 | 1,107 | 8 % |
-| `draggers/SoDragger.cpp` | 561 | 703 | 20 % |
-| `shapenodes/SoShape.cpp` | 554 | 756 | 27 % |
-| `rendering/SoGLImage.cpp` | 551 | 855 | 36 % |
-| `base/SbDPMatrix.cpp` | 536 | 666 | 20 % |
-| `nodekits/SoBaseKit.cpp` | 516 | 894 | 42 % |
-| `io/SoInput.cpp` | 490 | 870 | 44 % |
-| `rendering/SoOffscreenRenderer.cpp` | 405 | 550 | 26 % |
-| `shapenodes/SoIndexedFaceSet.cpp` | 308 | 445 | 31 % |
-| `shapenodes/SoQuadMesh.cpp` | 305 | 418 | 27 % |
-| `shapenodes/SoFaceSet.cpp` | 286 | 482 | 41 % |
-| `elements/GL/SoGLLazyElement.cpp` | 317 | 712 | 56 % |
-| `base/SbMatrix.cpp` | 331 | 694 | 52 % |
+| `nodes/SoExtSelection.cpp` | 1,085 | 1,089 | 0 % |
+| `glue/gl.cpp` (GL dispatch) | 930 | 1,969 | 53 % |
+| `actions/SoGLRenderAction.cpp` | 607 | 862 | 30 % |
+| `rendering/SoRenderManager.cpp` | 573 | 573 | 0 % |
+| `draggers/SoTransformerDragger.cpp` | 550 | 1,062 | 48 % |
+| `io/SoInput.cpp` | 489 | 870 | 44 % |
+| `misc/SoProto.cpp` | 480 | 506 | 5 % |
+| `nodekits/SoBaseKit.cpp` | 446 | 894 | 50 % |
+| `shapenodes/SoImage.cpp` | 426 | 430 | 1 % |
+| `shapenodes/SoShape.cpp` | 415 | 758 | 45 % |
+| `rendering/SoOffscreenRenderer.cpp` | 398 | 550 | 28 % |
+| `shapenodes/SoText3.cpp` | 391 | 762 | 49 % |
+| `shadows/SoShadowGroup.cpp` | 388 | 1,124 | 65 % |
+| `rendering/SoGLImage.cpp` | 388 | 855 | 55 % |
+| `rendering/SoGLBigImage.cpp` | 376 | 392 | 4 % |
+| `rendering/SoGL.cpp` | 370 | 927 | 60 % |
+| `shapenodes/SoAsciiText.cpp` | 368 | 372 | 1 % |
+| `fields/SoField.cpp` | 362 | 879 | 59 % |
+| `base/SbDPMatrix.cpp` | 355 | 666 | 47 % |
 
 ---
 
@@ -165,8 +175,7 @@ emits an HTML report to `<build>/coverage_report/`.
 
 | Milestone | Line % goal | Notes |
 |-----------|------------:|-------|
-| Baseline (current) | 31.6 % | `src/` only; Feb 2026 |
-| After Tier 1 | ~ 45 % | +~13 % from 8 rendering tests |
-| After Tier 2 | ~ 55 % | +~10 % from unit/integration tests |
-| After Tier 3 | ~ 65 % | +~10 % from harder subsystems |
+| Baseline (2026-02-23) | 31.6 % | `src/` only; initial baseline |
+| Re-baseline (2026-02-24, current) | **41.1 %** | `src/` only; after all Tier 1 + Tier 2 + Tier 3 work |
+| Next target | ~ 55 % | Focus on rendering, manips, geo, base |
 | Long-term goal | ≥ 70 % | Covers all actively-maintained APIs |
