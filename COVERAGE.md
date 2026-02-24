@@ -399,16 +399,17 @@ The HTML report breaks coverage down by:
 - **Function coverage** – which functions were called
 - **Branch coverage** – which conditional branches (if/else, switch cases) were taken
 
-### Baseline metrics (captured 2026-02-24, updated with new render tests)
+### Baseline metrics (captured 2026-02-24, updated with new render tests and dead-code removal)
 
 | Metric | Hit | Total | Percentage |
 |--------|----:|------:|----------:|
-| Lines (`src/` only) | 43,301 | 85,386 | **50.7 %** |
-| Functions (`src/` only) | 8,743 | 15,875 | **55.1 %** |
-| Lines (all project files) | 68,593 | 112,202 | **61.1 %** |
+| Lines (`src/` only) | 44,834 | 85,922 | **52.2 %** |
+| Lines (all project files) | 72,795 | 115,551 | **63.0 %** |
+| Functions (all project files) | 11,172 | 18,753 | **59.6 %** |
 
-*Previous baseline (2026-02-24): 41.1 % lines / 47.2 % functions (`src/` only).*
-*Earlier baseline (2026-02-23): 31.6 % lines / 40.7 % functions (`src/` only).*
+*Previous baseline (2026-02-24): 50.7 % lines / 55.1 % functions (`src/` only).*
+*Earlier baseline (2026-02-24): 41.1 % lines / 47.2 % functions (`src/` only).*
+*Initial baseline (2026-02-23): 31.6 % lines / 40.7 % functions (`src/` only).*
 
 Per-subsystem line coverage (`src/` only):
 
@@ -416,30 +417,32 @@ Per-subsystem line coverage (`src/` only):
 |-----------|--------:|----------:|
 | `hardcopy` | 1.4 % | 1,198 |
 | `fonts` | 34.4 % | 2,063 |
-| `fields` | 36.6 % | 3,423 |
+| `fields` | 37.3 % | 3,334 |
+| `base` | 41.8 % | 5,712 |
 | `caches` | 39.1 % | 1,271 |
 | `threads` | 41.1 % | 319 |
-| `events` | 42.6 % | 336 |
-| `base` | 44.4 % | 5,051 |
+| `events` | 43.1 % | 333 |
 | `glue` | 47.8 % | 1,208 |
 | `bundles` | 50.4 % | 135 |
 | `errors` | 51.1 % | 184 |
-| `nodes` | 51.6 % | 5,025 |
-| `engines` | 52.7 % | 1,679 |
-| `actions` | 52.8 % | 1,472 |
-| `misc` | 52.9 % | 2,279 |
-| `rendering` | 53.6 % | 2,015 |
-| `io` | 53.9 % | 1,043 |
-| `shapenodes` | 55.0 % | 3,489 |
+| `actions` | 53.3 % | 1,452 |
+| `misc` | 53.3 % | 2,243 |
+| `engines` | 53.7 % | 1,643 |
+| `rendering` | 57.6 % | 1,840 |
+| `io` | 55.8 % | 939 |
+| `nodes` | 55.9 % | 4,572 |
+| `shapenodes` | 59.3 % | 3,409 |
+| `hud` | 62.2 % | 73 |
 | `nodekits` | 62.1 % | 765 |
 | `projectors` | 62.2 % | 276 |
-| `shaders` | 63.3 % | 625 |
-| `elements` | 65.7 % | 1,377 |
+| `shaders` | 63.4 % | 624 |
+| `elements` | 68.1 % | 2,051 |
 | `draggers` | 68.4 % | 1,738 |
 | `manips` | 72.2 % | 322 |
 | `shadows` | 74.6 % | 319 |
-| `sensors` | 78.4 % | 148 |
+| `sensors` | 79.6 % | 140 |
 | `lists` | 80.5 % | 94 |
+| `tools` | 94.4 % | 2 |
 | `details` | 93.8 % | 17 |
 
 See `COVERAGE_PLAN.md` for per-subsystem breakdown, the top files by uncovered lines,
@@ -455,15 +458,15 @@ Focus areas for improving coverage:
 
 ---
 
-## Dead Code Candidates (`src/rendering/SoGLImage.cpp`)
+## Dead Code Removed (`src/rendering/SoGLImage.cpp`)
 
-Coverage analysis (2026-02-24) identified the following `SoGLImage` methods that have
-**no callers anywhere in the Obol project**.  They are inherited from upstream Coin but
-are removal candidates since Obol has eliminated the subsystems that used them:
+Coverage analysis (2026-02-24) identified the following `SoGLImage` methods that had
+**no callers anywhere in the Obol project**.  They have been removed from the header
+and implementation:
 
-| Method | Reason unused |
-|--------|---------------|
-| `SoGLImage::beginFrame(SoState*)` | Body is empty ("nothing is done for now"); only caller is `freeAllImages` which itself has no callers |
+| Method | Reason removed |
+|--------|----------------|
+| `SoGLImage::beginFrame(SoState*)` | Body was empty; only caller was `freeAllImages` which had no callers |
 | `SoGLImage::endFrame(SoState*)` | Only called from `freeAllImages` |
 | `SoGLImage::freeAllImages(SoState*)` | No callers anywhere in Obol |
 | `SoGLImage::setDisplayListMaxAge(uint32_t)` | No callers anywhere in Obol |
@@ -473,6 +476,17 @@ are removal candidates since Obol has eliminated the subsystems that used them:
 | `SoGLImage::useAlphaTest()` | No callers; alpha-test state is managed entirely through `SoLazyElement` in Obol |
 | `SoGLImage::getGLImageId()` | No callers anywhere in Obol |
 
+Associated private state also removed: `endframecb`, `endframeclosure` (SoGLImageP
+fields only used by the removed callback), `resizecb`/`resizeclosure` static members
+(setter removed; check always false since nobody set them), `glimage_maxage` static
+(only used in removed endFrame/freeAllImages/setDisplayListMaxAge).
+
+The `SoGLImageResizeCB` typedef was removed from the header as its only use was the
+removed `setResizeCallback()` setter.
+
+`tagImage()` was retained – it has callers in `SoGLBigImage.cpp` and
+`SoGLMultiTextureImageElement.cpp`.
+
 The `beginFrame`/`endFrame`/`freeAllImages`/`setDisplayListMaxAge` group formed a
 "texture resource management" subsystem intended to be called from a viewer's render
 loop (e.g. SoQtViewer).  Obol has no viewers, and none of the internal rendering code
@@ -480,9 +494,12 @@ calls these methods.  The `setEndFrameCallback`/`getNumFramesSinceUsed` pair los
 only caller when VRML97 support was removed.
 
 Note: the static functions `fast_mipmap`, `halve_image`, `fast_image_resize`,
-`fast_image_resize3d`, and `regimage_cleanup` are also uncovered but **do have callers**
+`fast_image_resize3d` are also uncovered but **do have callers**
 within `SoGLImage.cpp`; their paths are simply not exercised by the current tests
 (they require non-power-of-2 or 3D textures with mipmapping enabled).
+
+See `CODE_SURVEY.md` for a broader analysis of dead code, always-false conditionals,
+and untested-but-live code across the entire Obol codebase.
 
 ---
 
