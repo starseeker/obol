@@ -131,15 +131,6 @@
 */
 
 /*!
-  \enum SoGLImage::ResizeReason
-
-  Sent as a parameter to SoGLImageResizeCB as a hint to why an image
-  is being resized. IMAGE means that a whole image is being initially
-  resized (e.g. a texture image). SUBIMAGE and MIPMAP are not in use and
-  reserved for future use.
-*/
-
-/*!
   \enum SoGLImage::Flags
 
   Can be used to tune/optimize the GL texture handling. Normally the
@@ -151,34 +142,6 @@
   requirements on how the texture should be rendered, you can set the
   flags using the SoGLImage::setFlags() method.
 
-*/
-
-// FIXME: Support other reason values than IMAGE (kintel 20050531)
-/*!
-  \typedef bool SoGLImage::SoGLImageResizeCB(SoState * state,
-                                             const SbVec3s &newsize,
-                                             unsigned char * destbuffer,
-                                             SoGLImage::ResizeReason reason,
-                                             void * closure,
-                                             class SoGLImage * image)
-
-  Image resize callback type.
-  If registered using setResizeCallback(), this function will be called
-  whenever Coin needs to resize an image. The function will be called
-  both for 2D and 3D images.
-
-  \e state is the current state at the time of resizing.
-  \e newsize is the requested new image size. Note that the z size of a
-  2D image is 0.
-  \e destbuffer is a preallocated buffer big enough to hold the pixels
-  for the resized image. The # of bytes per pixel is the same as for the
-  original image.
-  \e reason is a hint about why the image is resized. At the moment,
-  only IMAGE is supported.
-  \e image is the original image.
-
-  Return value: TRUE if the resize has been resized, FALSE if not.
-  If FALSE is returned, Coin will resize the image instead.
 */
 
 // *************************************************************************
@@ -659,8 +622,6 @@ public:
   int border;
   SbBool isregistered;
   uint32_t imageage;
-  void (*endframecb)(void*);
-  void *endframeclosure;
 
   class dldata {
   public:
@@ -684,15 +645,10 @@ public:
   uint32_t glimageid;
   void init(void);
   static void contextCleanup(uint32_t context, void * closure);
-
-  static SoGLImage::SoGLImageResizeCB * resizecb;
-  static void * resizeclosure;
 };
 
 SoType SoGLImageP::classTypeId STATIC_SOTYPE_INIT;
 uint32_t SoGLImageP::current_glimageid = 1;
-SoGLImage::SoGLImageResizeCB * SoGLImageP::resizecb = NULL;
-void * SoGLImageP::resizeclosure = NULL;
 #ifdef COIN_THREADSAFE
 SbMutex * SoGLImageP::mutex;
 #endif // COIN_THREADSAFE
@@ -833,8 +789,6 @@ SoGLImage::cleanupClass(void)
 #endif // COIN_THREADSAFE
   SoGLImageP::classTypeId STATIC_SOTYPE_INIT;
 
-  SoGLImageP::resizecb = NULL;
-  SoGLImageP::resizeclosure = NULL;
   SoGLImageP::current_glimageid = 1;
 }
 
@@ -1291,24 +1245,6 @@ SoGLImage::hasTransparency(void) const
 }
 
 /*!
-  Returns TRUE if this image has some alpha value != 255, and all
-  these values are 0. If this is the case, alpha test can be used
-  to render this texture instead of for instance blending, which
-  is usually slower and might yield z-buffer artifacts.
-*/
-SbBool
-SoGLImage::useAlphaTest(void) const
-{
-  if (PRIVATE(this)->flags & FORCE_ALPHA_TEST_TRUE) return TRUE;
-  if (PRIVATE(this)->flags & FORCE_ALPHA_TEST_FALSE) return FALSE;
-
-  if (PRIVATE(this)->needtransparencytest) {
-    ((SoGLImage*)this)->pimpl->checkTransparency();
-  }
-  return PRIVATE(this)->usealphatest;
-}
-
-/*!
   Returns the wrap strategy for the S (horizontal) direction.
 */
 SoGLImage::Wrap
@@ -1347,16 +1283,6 @@ SoGLImage::getQuality(void) const
 }
 
 /*!
-  Returns an unique id for this GL image. This id can be used to
-  test for changes in an SoGLImage's internal data.
-*/
-uint32_t
-SoGLImage::getGLImageId(void) const
-{
-  return PRIVATE(this)->glimageid;
-}
-
-/*!
   Virtual method that will be called once each frame.  The method
   should unref display lists that have an age bigger or equal to \a
   maxage, and increment the age for other display lists.
@@ -1388,7 +1314,6 @@ SoGLImageP::init(void)
   this->usealphatest = FALSE;
   this->quality = 0.4f;
   this->imageage = 0;
-  this->endframecb = NULL;
   this->glimageid = 0; // glimageid 0 is an empty image
 }
 
@@ -1515,18 +1440,7 @@ SoGLImageP::resizeImage(SoState * state, unsigned char *& imageptr,
     int numbytes = newx * newy * ((newz==0)?1:newz) * numcomponents;
     unsigned char * glimage_tmpimagebuffer = glimage_get_buffer(numbytes, FALSE);
 
-    // First check if there is a custom resize function registered
-    SbBool customresizedone = FALSE;
-    if (SoGLImageP::resizecb) {
-      customresizedone = SoGLImageP::resizecb(state,
-                                              SbVec3s(newx, newy, newz),
-                                              glimage_tmpimagebuffer,
-                                              SoGLImage::IMAGE,
-                                              SoGLImageP::resizeclosure,
-                                              this->owner);
-    }
-
-    if (!customresizedone) {
+    {
       // simage version 1.1.1 has a pretty high quality resize
       // function. We prefer to use that to avoid using GLU, since
       // there are lots of buggy GLU libraries out there.
@@ -2078,32 +1992,16 @@ SoGLImageP::getNextGLImageId(void)
 //
 // Texture resource management.
 //
-// FIXME: consider sorting images on an LRU strategy to
-// speed up the process of searching for GL-images to free.
+// The reglist tracks all live SoGLImage instances for cleanup purposes.
 //
 
 static SbList <SoGLImage*> * glimage_reglist;
-static uint32_t glimage_maxage = 60;
 
 static void
 regimage_cleanup(void)
 {
   delete glimage_reglist;
   glimage_reglist = NULL;
-  glimage_maxage = 60;
-}
-
-/*!
-  When doing texture resource control, call this method before
-  rendering the scene, typically in the viewer's actualRedraw().
-  \a state should be your SoGLRenderAction state.
-
-  \sa endFrame(), tagImage(), setDisplayListMaxAge()
-*/
-void
-SoGLImage::beginFrame(SoState * /* state */)
-{
-  // nothing is done for now
 }
 
 /*!
@@ -2123,81 +2021,6 @@ SoGLImage::tagImage(SoState *state, SoGLImage *image)
     image->pimpl->tagDL(state);
     UNLOCK_GLIMAGE;
   }
-}
-
-/*!
-  Should be called after your scene is rendered. Old display
-  lists will be deleted when you call this method. \a state
-  should be your SoGLRenderAction state.
-
-  \sa beginFrame(), tagImage(), setDisplayListMaxAge()
-*/
-void
-SoGLImage::endFrame(SoState *state)
-{
-  if (glimage_reglist) {
-    std::vector<std::pair<void (*)(void *), void *> > cb_list;
-    LOCK_GLIMAGE;
-    int n = glimage_reglist->getLength();
-    cb_list.reserve(n);
-    for (int i = 0; i < n; i++) {
-      SoGLImage *img = (*glimage_reglist)[i];
-      img->unrefOldDL(state, glimage_maxage);
-      if (img->pimpl->endframecb)
-        cb_list.push_back(std::make_pair(img->pimpl->endframecb,
-                                         img->pimpl->endframeclosure));
-    }
-    UNLOCK_GLIMAGE;
-
-    // the actual invocation of the callbacks should be performed outside
-    // the locked region to avoid deadlocks
-    for (std::vector<std::pair<void (*)(void *), void *> >::iterator it = cb_list.begin(),
-           end = cb_list.end(); it != end; ++it)
-      it->first(it->second);
-  }
-}
-
-void
-SoGLImage::setEndFrameCallback(void (*cb)(void *), void *closure)
-{
-  PRIVATE(this)->endframecb = cb;
-  PRIVATE(this)->endframeclosure = closure;
-}
-
-int
-SoGLImage::getNumFramesSinceUsed(void) const
-{
-  return PRIVATE(this)->imageage;
-}
-
-/*!
-  Free all GL images currently used. This can be used to help the
-  operating system and/or OpenGL driver's resource handling.  If you
-  know you're not going to render for a while, maybe you're switching
-  to a different application or something, calling this method could
-  be a good idea since it will release all the texture memory used by
-  your application.
-*/
-void
-SoGLImage::freeAllImages(SoState *state)
-{
-  int oldmax = glimage_maxage;
-  glimage_maxage = 0;
-  // call begin/end with maxage 0 to free all images
-  SoGLImage::beginFrame(state);
-  SoGLImage::endFrame(state);
-  glimage_maxage = oldmax;
-}
-
-/*!
-  Set the maximum age for a texture object/display list.  The age
-  of an image is the number of frames since it has been used.
-  Default maximum age is 60.
-*/
-void
-SoGLImage::setDisplayListMaxAge(const uint32_t maxage)
-{
-  glimage_maxage = maxage;
 }
 
 // used internally to keep track of the SoGLImages
@@ -2229,18 +2052,6 @@ SoGLImage::unregisterImage(SoGLImage *image)
   }
   PRIVATE(image)->isregistered = FALSE;
   UNLOCK_GLIMAGE;
-}
-
-/*!
-  Sets a custom image resize function.
-
-  \since Coin 2.5
-*/
-void
-SoGLImage::setResizeCallback(SoGLImageResizeCB * f, void * closure)
-{
-  SoGLImageP::resizecb = f;
-  SoGLImageP::resizeclosure = closure;
 }
 
 // *************************************************************************
