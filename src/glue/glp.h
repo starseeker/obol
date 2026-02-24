@@ -57,7 +57,6 @@
 
 #include <Inventor/system/gl.h>
 #include "base/dict.h"
-#include "C/base/string.h"
 
 /* ********************************************************************** */
 

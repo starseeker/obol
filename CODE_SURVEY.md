@@ -83,8 +83,10 @@ The header (`src/C/base/string.h`) is still included by `src/glue/glp.h` and
 in the current Obol codebase – all active string management uses `SbString` or
 `std::string`.
 
-**Recommendation:** Remove `src/base/string.cpp` from the build and eventually
-retire `src/C/base/string.h` and its `COIN_DLL_API` exports from the public headers.
+**Status:** ✅ **Removed** – `string.cpp` excluded from build (`src/base/CMakeLists.txt`).
+Stale `#include "C/base/string.h"` removed from `freetype.cpp`, `glp.h`, and
+`CoinTidbits.cpp`.  `CoinInternalError.h` made self-sufficient with a direct
+`#include "Inventor/basic.h"` (fixes pre-existing `COIN_DLL_API` build error).
 
 ---
 
@@ -96,8 +98,8 @@ The class comment reads:
 Text rendering in Obol uses `SbFont` / `SbGlyph2D` / `SbGlyph3D` directly.
 `SoGlyph` has no callers in `src/` or `tests/`.
 
-**Recommendation:** Remove `src/misc/SoGlyph.cpp` and
-`include/Inventor/misc/SoGlyph.h`.
+**Status:** ✅ **Removed** – `SoGlyph.cpp` excluded from build (`src/misc/CMakeLists.txt`)
+and `include/Inventor/misc/SoGlyph.h` deleted.
 
 ---
 
@@ -107,8 +109,7 @@ This file is part of the bundled [neacsum/utf8](https://github.com/neacsum/utf8)
 library.  `utf8::IniFile` is never instantiated anywhere in Obol.  The class is
 pulled in because the main `utf8.h` header unconditionally `#include`s `utf8/ini.h`.
 
-**Recommendation:** Guard the include in `utf8.h`, or simply exclude `ini.cpp` from
-the Coin build (it is a third-party file in `src/base/utf8/`).
+**Status:** ✅ **Removed** – `utf8/ini.cpp` excluded from build (`src/base/CMakeLists.txt`).
 
 ---
 
@@ -121,14 +122,13 @@ Only `SoHardCopy::init()` / `getProductName()` / `getVersion()` execute (called 
 - `PSVectorOutput.cpp` / `VectorOutput.cpp` / `VectorizeAction.cpp` – remainder
 
 is never exercised because Obol has no viewer and the PostScript-output workflow
-requires a running render loop.
+requires a running render loop.  The PostScript output capability is real, but
+requires integration with a viewer that Obol does not provide.
 
-**Recommendation:**
-- **Short term:** Add a `COIN_HARDCOPY` CMake option (default OFF) to exclude the
-  subsystem from the build when not needed.
-- **Long term:** Remove or move the entire `src/hardcopy/` tree to a separate
-  optional module.  The headers in `include/Inventor/annex/HardCopy/` would move
-  with it.
+**Status:** ✅ **Made optional** – new `COIN_HARDCOPY` CMake option (default `OFF`)
+gates the entire `src/hardcopy/` subdirectory and the `SoHardCopy::init()` call
+in `SoDB.cpp`.  Enable with `-DCOIN_HARDCOPY=ON` for applications that provide
+their own viewer/render loop.
 
 ---
 
@@ -190,8 +190,13 @@ removal candidates; they are coverage expansion targets.
 
 ### 4a. `src/fonts/` — glyph rasteriser (34.4 %, 2,063 uncovered)
 
-The entire `struetype.h` fast-path glyph renderer (1,648 uncovered lines) is reached
-only when `SoText2` or `SoText3` renders characters.  Text rendering tests
+The transition to `struetype.h` as the sole font backend is complete:
+`freetype.cpp` uses `stt_*` functions for bitmap glyph rendering (`SoText2`), and
+`SoText3` / `SoAsciiText` use `SbFont` / `SbGlyph3D` directly for vector outlines.
+The stale `#include "C/base/string.h"` has been removed from `freetype.cpp`.
+
+The remaining uncovered lines (1,648) in `struetype.h` are reached only when
+`SoText2` or `SoText3` renders characters.  Text rendering tests
 (`render_text2`, `render_text3`, `render_ascii_text`) execute, but the font coverage
 depends heavily on which glyphs are requested.  Adding tests that cover more Unicode
 ranges and multi-line/kerned text would improve this subsystem.
@@ -295,14 +300,14 @@ This also requires updating `SoGLBigImage.cpp` (two call sites).
 
 | Category | Finding | Action |
 |----------|---------|--------|
-| Dead – no callers | `SoGLImage` viewer-loop methods (9) | ✅ **Removed** in this PR |
-| Dead – no callers | `src/base/string.cpp` `cc_string` ADT | 📋 Recommend removal |
-| Dead – no callers | `src/misc/SoGlyph.cpp` obsolete glyph class | 📋 Recommend removal |
-| Dead – no callers | `src/base/utf8/ini.cpp` INI file library | 📋 Exclude from build |
-| Dead – no callers | `src/hardcopy/` PostScript output | 📋 Make optional / remove |
+| Dead – no callers | `SoGLImage` viewer-loop methods (9) | ✅ **Removed** (#185) |
+| Dead – no callers | `src/base/string.cpp` `cc_string` ADT | ✅ **Removed from build** |
+| Dead – no callers | `src/misc/SoGlyph.cpp` obsolete glyph class | ✅ **Removed from build** |
+| Dead – no callers | `src/base/utf8/ini.cpp` INI file library | ✅ **Excluded from build** |
+| Dead – no callers | `src/hardcopy/` PostScript output | ✅ **Made optional** (`COIN_HARDCOPY=OFF`) |
 | Dead paths | `src/profiler/` – `isEnabled()` always FALSE | 📋 Add `COIN_PROFILING` option |
 | Always-false | `SoProfiler::isEnabled()` guards in 4 nodes | 📋 Wrap with `#if COIN_PROFILING` |
-| Always-false (fixed) | `SoGLImageP::resizecb` check | ✅ **Removed** in this PR |
+| Always-false (fixed) | `SoGLImageP::resizecb` check | ✅ **Removed** (#185) |
 | Consolidation | Dual profiler stubs | 📋 Dedup |
 | Consolidation | `glimage_reglist` without iterators | 📋 Simplify or remove |
 | Consolidation | `incAge()`/`resetAge()` without reader | 📋 Remove + update SoGLBigImage |
