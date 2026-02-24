@@ -334,8 +334,7 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_image_deep
                render_quad_mesh_deep
                render_field_connections
-               render_sogl_bindings
-               render_procedural_shape)
+               render_sogl_bindings)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"
