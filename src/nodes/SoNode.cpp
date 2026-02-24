@@ -631,6 +631,7 @@ SoNode::initClasses(void)
   SoIndexedTriangleStripSet::initClass();
   SoImage::initClass();
   SoSphere::initClass();
+  SoProceduralShape::initClass();
   SoText2::initClass();
   SoText3::initClass();
   SoGroup::initClass();
