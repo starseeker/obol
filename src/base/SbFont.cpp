@@ -99,15 +99,17 @@ public:
     int * edgeconnectivity;  // [prev_vertex, current_vertex, next_vertex] for each edge
     int numedges;           // Number of actual edges
 
-    // Default constructor: zero-initialise all pointer and count fields so
-    // that clearCache() can safely call free() on a freshly-constructed object.
+    // All pointer fields must be initialised to null so that clearCache()
+    // can safely call free() on them even before any glyph is loaded.
+    // Without this constructor the pointers have indeterminate values when
+    // SbFontP::SbFontP() calls clearCache() during construction, which
+    // causes free() to be called on garbage addresses and corrupts the heap.
     GlyphCache()
-      : character(0), valid(FALSE), bitmap(NULL),
-        bitmapsize(0, 0), bearing(0, 0), advance(0.0f, 0.0f),
-        vertices(NULL), numvertices(0),
-        faceindices(NULL), numfaceindices(0),
-        edgeindices(NULL), numedgeindices(0),
-        edgeconnectivity(NULL), numedges(0) {}
+      : character(0), valid(FALSE), bitmap(nullptr),
+        vertices(nullptr), numvertices(0),
+        faceindices(nullptr), numfaceindices(0),
+        edgeindices(nullptr), numedgeindices(0),
+        edgeconnectivity(nullptr), numedges(0) {}
   };
   
   static const int CACHE_SIZE = 128;
