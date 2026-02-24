@@ -32,7 +32,7 @@
 
 /**
  * @file test_base_advanced.cpp
- * @brief Additional tests for Obol base types not covered by existing test files.
+ * @brief Additional tests for Coin3D base types not covered by existing test files.
  *
  * Covers APIs not exercised in test_sb_types.cpp, test_sbdpmatrix_full.cpp,
  * test_base_extras.cpp, test_sbtime_sbdict.cpp, test_sb_matrix_box.cpp, or
