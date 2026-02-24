@@ -980,20 +980,6 @@ SoSeparatorP::doCull(SoSeparatorP * thisp, SoState * state,
     }
   }
 
-#if 0
-// temporarily disabled. setNodeFlag() needs current path, which is
-// unavailable here
-  if (outside && SoProfiler::isEnabled()) {
-#ifdef HAVE_NODEKITS
-    SoProfilerElement * elt = SoProfilerElement::get(state);
-    if (elt) {
-      // FIXME: need current path to set this flag. move outside cullTest()?
-      // elt->getProfilingData().setNodeFlag(PUBLIC(thisp)->getCurPath(), SbProfilingData::CULLED_FLAG, TRUE);
-    }
-#endif
-  }
-#endif
-
   return outside;
 }
 

@@ -2501,23 +2501,6 @@ SoInput::setDirectories(SbStringList * dirs)
 }
 
 /*!
-  \COININTERNAL
-
-  Return the currently active stream.
-*/
-#if 0
-SoInput_FileInfo *
-SoInput::getTopOfStack(void) const
-{
-  if (this->filestack.getLength() == 0) {
-    SoDebugError::post("SoInput::getTopOfStack", "no files in stack");
-    return NULL;
-  }
-  return this->filestack[0];
-}
-#endif
-
-/*!
   Scan through the include directories in order and try to find a file
   with the given name in any one of them. If file is found, put the
   full name with complete path from current directory of process into
