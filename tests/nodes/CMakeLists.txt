@@ -57,6 +57,21 @@ if(USE_PTHREAD)
 endif()
 add_test(NAME test_nodekit_deep COMMAND test_nodekit_deep)
 
+# SoSelection + SoExtSelection (currently at 0% coverage)
+add_executable(test_selection_nodes test_selection_nodes.cpp)
+target_link_libraries(test_selection_nodes simple_test_utils Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(test_selection_nodes PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+    ${PROJECT_BINARY_DIR}/include
+    ${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+if(USE_PTHREAD)
+    target_link_libraries(test_selection_nodes pthread)
+endif()
+add_test(NAME test_selection_nodes COMMAND test_selection_nodes)
+
 include(CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG(-Wtautological-compare _NODES_DISABLE_TAUTCOMP)
 if(_NODES_DISABLE_TAUTCOMP)
