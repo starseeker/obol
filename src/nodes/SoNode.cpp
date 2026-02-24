@@ -252,16 +252,6 @@ SbUniqueId is not really a class, just a \c typedef.
 */
 
 /*!
-  \var SoNode::NodeType SoNode::VRML1
-  Node is VRML V1.0 compatible.
-*/
-
-/*!
-  \var SoNode::NodeType SoNode::VRML2
-  Node is from the VRML V2.0 specification.
-*/
-
-/*!
   \var SoNode::NodeType SoNode::INVENTOR_1
   Node was part of SGI Inventor version 1.
 */
@@ -781,9 +771,7 @@ SoNode::isOverride(void) const
 }
 
 /*!
-  Sets the node type for this node to \a type. Since some nodes
-  should be handled differently in VRML1 vs. Inventor, this
-  should be used to get correct behavior for those cases.
+  Sets the node type for this node to \a type.
   The default node type is INVENTOR.
 
   This method is an extension versus the Open Inventor API.
@@ -1301,7 +1289,7 @@ SoNode::write(SoWriteAction * action)
     // check for special case where we actually have to write out an
     // SoEngineOutput "field". An engine output might be connected via
     // an IS reference in a PROTO, and we then need to write back this
-    // IS reference when exporting the VRML file.
+    // IS reference when exporting the file.
     SoProto * proto = out->getCurrentProto();
     if (proto && node->isOfType(SoNodeEngine::getClassTypeId())) {
       SoEngineOutputList l;
@@ -1511,13 +1499,7 @@ SoNode::getFieldDataPtr(void)
 SbBool
 SoNode::readInstance(SoInput * in, unsigned short flags)
 {
-  // Overridden to set node type.
-
-  SbBool ret = inherited::readInstance(in, flags);
-  if (ret) {
-    if (in->isFileVRML1()) this->setNodeType(SoNode::VRML1);
-  }
-  return ret;
+  return inherited::readInstance(in, flags);
 }
 
 /*!
