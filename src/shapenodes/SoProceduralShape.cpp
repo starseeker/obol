@@ -1043,10 +1043,18 @@ SoProceduralShape::emitTriangles(SoAction*                    action,
 
   this->beginShape(action, SoShape::TRIANGLES);
   for (size_t i = 0; i + 2 < tris.indices.size(); i += 3) {
-    for (int j = 0; j < 3; ++j) {
-      int32_t idx = tris.indices[i + static_cast<size_t>(j)];
-      if (idx < 0 || idx >= nv) continue;
+    const int32_t triIdx[3] = {
+      tris.indices[i], tris.indices[i + 1], tris.indices[i + 2]
+    };
+    // Skip the whole triangle if any index is out of range so that
+    // beginShape(TRIANGLES) vertex groups remain properly aligned.
+    if (triIdx[0] < 0 || triIdx[0] >= nv ||
+        triIdx[1] < 0 || triIdx[1] >= nv ||
+        triIdx[2] < 0 || triIdx[2] >= nv)
+      continue;
 
+    for (int j = 0; j < 3; ++j) {
+      const int32_t idx = triIdx[j];
       pv.setPoint(tris.vertices[static_cast<size_t>(idx)]);
       pv.setNormal(hasNormals ? tris.normals[static_cast<size_t>(idx)]
                               : defNorm);
