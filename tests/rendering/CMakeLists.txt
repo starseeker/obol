@@ -127,6 +127,25 @@ add_rendering_test(render_annotation)
 add_rendering_test(render_reset_transform)
 add_rendering_test(render_transparency)
 add_rendering_test(render_marker_set)
+add_rendering_test(render_pick_interaction)
+add_rendering_test(render_simple_draggers)
+add_rendering_test(render_light_manips)
+add_rendering_test(render_event_callback_interaction)
+add_rendering_test(render_selection_interaction)
+add_rendering_test(render_sensor_interaction)
+add_rendering_test(render_pick_filter)
+add_rendering_test(render_scene_interaction)
+add_rendering_test(render_callback_node)
+add_rendering_test(render_camera_interaction)
+add_rendering_test(render_manip_sequences)
+add_rendering_test(render_nodekit_interaction)
+add_rendering_test(render_path_operations)
+add_rendering_test(render_lod_picking)
+add_rendering_test(render_engine_interaction)
+add_rendering_test(render_bbox_action)
+add_rendering_test(render_search_action)
+add_rendering_test(render_callback_action)
+add_rendering_test(render_event_propagation)
 
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
@@ -248,7 +267,18 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_image_node render_sorender_manager
                render_gl_big_image render_cubemap render_gl_features
                render_multi_texture render_marker_set
-               render_annotation render_reset_transform render_transparency)
+               render_annotation render_reset_transform render_transparency
+               render_pick_interaction render_simple_draggers
+               render_light_manips render_event_callback_interaction
+               render_selection_interaction
+               render_sensor_interaction render_pick_filter
+               render_scene_interaction
+               render_callback_node render_camera_interaction
+               render_manip_sequences
+               render_nodekit_interaction render_path_operations
+               render_lod_picking render_engine_interaction
+               render_bbox_action render_search_action
+               render_callback_action render_event_propagation)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"
