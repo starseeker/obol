@@ -142,6 +142,8 @@ add_rendering_test(render_nodekit_interaction)
 add_rendering_test(render_path_operations)
 add_rendering_test(render_lod_picking)
 add_rendering_test(render_engine_interaction)
+add_rendering_test(render_bbox_action)
+add_rendering_test(render_search_action)
 
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
@@ -272,7 +274,8 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_callback_node render_camera_interaction
                render_manip_sequences
                render_nodekit_interaction render_path_operations
-               render_lod_picking render_engine_interaction)
+               render_lod_picking render_engine_interaction
+               render_bbox_action render_search_action)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"
