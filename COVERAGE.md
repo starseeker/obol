@@ -416,6 +416,7 @@ Per-subsystem line coverage (`src/` only):
 | Subsystem | Lines % | Uncovered |
 |-----------|--------:|----------:|
 | `hardcopy` | 1.4 % | 1,198 |
+| `profiler` | 5.3 % | 2,612 |
 | `fonts` | 34.4 % | 2,063 |
 | `fields` | 37.3 % | 3,334 |
 | `base` | 41.8 % | 5,712 |
@@ -423,7 +424,6 @@ Per-subsystem line coverage (`src/` only):
 | `threads` | 41.1 % | 319 |
 | `events` | 43.1 % | 333 |
 | `glue` | 47.8 % | 1,208 |
-| `bundles` | 50.4 % | 135 |
 | `errors` | 51.1 % | 184 |
 | `actions` | 53.3 % | 1,452 |
 | `misc` | 53.3 % | 2,243 |
@@ -444,6 +444,7 @@ Per-subsystem line coverage (`src/` only):
 | `lists` | 80.5 % | 94 |
 | `tools` | 94.4 % | 2 |
 | `details` | 93.8 % | 17 |
+| `hud` | 100.0 % | 0 |
 
 See `COVERAGE_PLAN.md` for per-subsystem breakdown, the top files by uncovered lines,
 and a prioritised plan to reach ≥ 70 % line coverage.
