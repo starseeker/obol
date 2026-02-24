@@ -115,6 +115,10 @@ add_rendering_test(render_depth_buffer)
 add_rendering_test(render_alpha_test)
 add_rendering_test(render_draggers)
 add_rendering_test(render_offscreen)
+add_rendering_test(render_triangle_strip_set)
+add_rendering_test(render_ascii_text)
+add_rendering_test(render_image_node)
+add_rendering_test(render_sorender_manager)
 
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
@@ -231,7 +235,9 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_shape_hints render_environment render_texture3
                render_bump_map render_texture_transform
                render_depth_buffer render_alpha_test
-               render_draggers render_offscreen)
+               render_draggers render_offscreen
+               render_triangle_strip_set render_ascii_text
+               render_image_node render_sorender_manager)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"

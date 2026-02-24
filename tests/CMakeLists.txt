@@ -102,6 +102,11 @@ add_subdirectory(engines)
 add_subdirectory(rendering)
 add_subdirectory(draggers)
 add_subdirectory(manips)
+add_subdirectory(events)
+add_subdirectory(projectors)
+add_subdirectory(errors)
+add_subdirectory(caches)
+add_subdirectory(misc)
 
 # -----------------------------------------------------------------------
 # Image comparison utilities
