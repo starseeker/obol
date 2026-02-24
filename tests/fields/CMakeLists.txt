@@ -44,10 +44,25 @@ if(USE_PTHREAD)
 endif()
 add_test(NAME test_field_connections COMMAND test_field_connections)
 
+add_executable(test_field_extras test_field_extras.cpp)
+target_link_libraries(test_field_extras simple_test_utils Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(test_field_extras PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+    ${PROJECT_BINARY_DIR}/include
+    ${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+if(USE_PTHREAD)
+    target_link_libraries(test_field_extras pthread)
+endif()
+add_test(NAME test_field_extras COMMAND test_field_extras)
+
 include(CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG(-Wtautological-compare _FIELDS_DISABLE_TAUTCOMP)
 if(_FIELDS_DISABLE_TAUTCOMP)
     target_compile_options(test_sf_fields PUBLIC -Wno-tautological-compare)
     target_compile_options(test_mf_fields PUBLIC -Wno-tautological-compare)
     target_compile_options(test_field_connections PUBLIC -Wno-tautological-compare)
+    target_compile_options(test_field_extras PUBLIC -Wno-tautological-compare)
 endif()
