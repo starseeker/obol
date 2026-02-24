@@ -57,6 +57,8 @@
 
 using namespace SimpleTest;
 
+static void silentErrCb(const SoError *, void *) {}
+
 // -------------------------------------------------------------------------
 // Write a minimal IV ASCII scene to a temp file and return the path.
 // Caller is responsible for removing the file.
@@ -105,7 +107,7 @@ int main()
     {
         // Suppress Coin error output for this test
         SoErrorCB * old = SoError::getHandlerCallback();
-        SoError::setHandlerCallback([](const SoError *, void *) {}, nullptr);
+        SoError::setHandlerCallback(silentErrCb, nullptr);
 
         SoInput in;
         SbBool ok = in.openFile("/tmp/does_not_exist_test_io.iv");
