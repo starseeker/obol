@@ -73,7 +73,7 @@ int main(int argc, char ** argv)
         ok = false;
     }
 
-    // Background colour round-trip
+    // Background color round-trip
     SbColor4f bgColor(0.1f, 0.2f, 0.3f, 1.0f);
     mgr->setBackgroundColor(bgColor);
     const SbColor4f & gotBg = mgr->getBackgroundColor();
@@ -81,7 +81,7 @@ int main(int argc, char ** argv)
                 (std::fabs(gotBg[1] - bgColor[1]) < 1e-5f) &&
                 (std::fabs(gotBg[2] - bgColor[2]) < 1e-5f);
     if (!bgOk) {
-        fprintf(stderr, "render_sorender_manager: FAIL - background colour round-trip\n");
+        fprintf(stderr, "render_sorender_manager: FAIL - background color round-trip\n");
         ok = false;
     }
 

@@ -95,6 +95,7 @@ int main(int argc, char ** argv)
         ok = pixOk && renderer.writeToRGB(outpath);
     } else {
         fprintf(stderr, "render_image_node: render() failed\n");
+        // Write output file even on failure to ensure file exists for debugging
         renderer.writeToRGB(outpath);
     }
 

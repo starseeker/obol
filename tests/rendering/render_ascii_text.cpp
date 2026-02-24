@@ -52,7 +52,7 @@ int main(int argc, char ** argv)
     SoOrthographicCamera * cam = new SoOrthographicCamera;
     cam->position    .setValue(0.0f, 0.0f, 10.0f);
     cam->nearDistance = 0.1f;
-    cam->farDistance  = 100.0f;
+    cam->farDistance  = 10.0f;
     cam->height       = 4.0f;
     root->addChild(cam);
 
@@ -89,7 +89,7 @@ int main(int argc, char ** argv)
         ok = pixOk && renderer.writeToRGB(outpath);
     } else {
         fprintf(stderr, "render_ascii_text: render() failed\n");
-        // Still write empty image so the file exists
+        // Write output file even on failure to ensure file exists for debugging
         renderer.writeToRGB(outpath);
     }
 
