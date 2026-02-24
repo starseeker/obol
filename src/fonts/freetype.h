@@ -76,7 +76,6 @@ extern "C" {
   void cc_flwft_done_glyph(void * font, int glyph);
 
   struct cc_font_bitmap * cc_flwft_get_bitmap(void * font, unsigned int glyph);
-  struct cc_font_vector_glyph * cc_flwft_get_vector_glyph(void * font, unsigned int glyph, float complexity);
 
 #ifdef __cplusplus
 }

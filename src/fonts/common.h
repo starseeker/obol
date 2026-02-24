@@ -53,12 +53,6 @@ struct cc_font_bitmap {
   SbBool mono; /* monochrome or antialiased gray level bitmap */
 };
 
-struct cc_font_vector_glyph {
-  float * vertices;
-  int * faceindices;
-  int * edgeindices;
-};
-
 SbBool cc_font_debug(void);
 
 #endif /* !COIN_FONTS_COMMON_H */

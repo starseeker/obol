@@ -321,13 +321,6 @@ cc_flwft_get_bitmap(void * font, unsigned int glyph)
   return bitmap;
 }
 
-struct cc_font_vector_glyph *
-cc_flwft_get_vector_glyph(void * font, unsigned int glyph, float complexity)
-{
-  /* Return NULL indicating no vector glyph available */
-  return NULL;
-}
-
 #ifdef __cplusplus
 }
 #endif
