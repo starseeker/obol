@@ -163,6 +163,9 @@ add_rendering_test(render_offscreen_advanced)
 add_rendering_test(render_glrender_deep)
 add_rendering_test(render_engine_converter)
 add_rendering_test(render_image_deep)
+add_rendering_test(render_quad_mesh_deep)
+add_rendering_test(render_field_connections)
+add_rendering_test(render_sogl_bindings)
 
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
@@ -307,7 +310,10 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_offscreen_advanced
                render_glrender_deep
                render_engine_converter
-               render_image_deep)
+               render_image_deep
+               render_quad_mesh_deep
+               render_field_connections
+               render_sogl_bindings)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"
