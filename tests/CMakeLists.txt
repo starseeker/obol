@@ -107,6 +107,7 @@ add_subdirectory(projectors)
 add_subdirectory(errors)
 add_subdirectory(caches)
 add_subdirectory(misc)
+add_subdirectory(details)
 
 # -----------------------------------------------------------------------
 # Image comparison utilities

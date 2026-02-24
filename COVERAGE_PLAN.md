@@ -184,14 +184,14 @@ depend on decisions not yet made (e.g., font baseline).
 | 47 | `profiler/` (1 %) | Build with `COIN_PROFILING=ON`; enable the profiler, run a render loop for a few frames, assert that statistics counters are non-zero |
 | 48 | `rendering/SoGLBigImage` (4 %) | Render an `SoTexture2` whose image exceeds the maximum GL texture size so the big-image tiling path is exercised; check for non-black pixels in output |
 | 49 | `rendering/SoGLImage` + `SoGL.cpp` deeper | Texture object lifecycle (create → render → delete), mipmap generation path, cube-map path via `SoTextureCubeMap` |
-| 50 | `fields/SoField.cpp` deeper | `getDirty` / `setDirty` lifecycle, field container `getFields` enumeration, circular-connection detection (expect `SoDebugError` warning), `SoFieldConverter` automatic type conversion chain |
-| 51 | `actions/SoGLRenderAction.cpp` deeper | Transparency sorting modes (SORTED_OBJECT, SORTED_LAYERS_BLEND), pass callbacks, `setTransparencyType`, caching policy modes (`NO_AUTO_CACHING`, `CACHE_ALL`); requires OSMesa context |
-| 52 | `misc/SoSceneManager` | `setSceneGraph`, `render`, `setRenderCallback`, background colour, `scheduleRedraw`; complements `SoRenderManager` test |
+| 50 | `fields/SoField.cpp` deeper | `getDirty` / `setDirty` lifecycle, field container `getFields` enumeration, circular-connection detection (expect `SoDebugError` warning), `SoFieldConverter` automatic type conversion chain | ✅ Done (`tests/fields/test_field_extras.cpp`) |
+| 51 | `actions/SoGLRenderAction.cpp` deeper | Transparency sorting modes (SORTED_OBJECT, SORTED_LAYERS_BLEND), pass callbacks, `setTransparencyType`, caching policy modes (`NO_AUTO_CACHING`, `CACHE_ALL`); requires OSMesa context | ✅ Done (`tests/actions/test_glrender_action.cpp`) |
+| 52 | `misc/SoSceneManager` | `setSceneGraph`, `render`, `setRenderCallback`, background colour, `scheduleRedraw`; complements `SoRenderManager` test | ✅ Done (`tests/misc/test_scene_manager.cpp`) |
 | 53 | `io/SoInput` binary edge cases | Corrupt binary file (truncated, wrong magic) graceful return NULL; large binary file streaming via `openFile` |
 | 54 | `fonts/` visual regression | `SoText2` / `SoText3` pixel-comparison tests using Obol's ProFont baseline; gated on a stable shared font baseline |
 | 55 | `rendering/SoGLDriverDatabase` | Query driver workarounds for a known vendor/renderer string; verify `isSupported` / `setFeature` round-trip without a real GPU |
 | 56 | `bundles/` deeper | `SoNormalBundle` (generate normals for a mesh, verify count), `SoTextureCoordinateBundle` (default coordinate generation), `SoVertexAttributeBundle` |
-| 57 | `details/` deeper | After `SoRayPickAction`, extract `SoFaceDetail` (point indices, face index), `SoLineDetail` (line index, point on line), `SoPointDetail`; verify values against known geometry |
+| 57 | `details/` deeper | After `SoRayPickAction`, extract `SoFaceDetail` (point indices, face index), `SoLineDetail` (line index, point on line), `SoPointDetail`; verify values against known geometry | ✅ Done (`tests/details/test_details_suite.cpp`) |
 
 ---
 
