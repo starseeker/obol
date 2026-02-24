@@ -130,6 +130,7 @@
 #include <Inventor/annex/Profiler/SoProfiler.h>
 #include <Inventor/annex/Profiler/elements/SoProfilerElement.h>
 #include "profiler/SoProfilerP.h"
+#include <Inventor/annex/HUD/SoHUD.h>
 
 /* Old OSMesa initialization code removed - now uses public SoDB::ContextManager API */
 
@@ -442,6 +443,8 @@ SoDB::init(ContextManager * context_manager)
   if (SoProfiler::isEnabled()) {
     SoProfiler::init();
   }
+
+  SoHUD::init();
 
   // Note: OSMesa context initialization has been moved to test applications
   // Applications must provide context creation callbacks via cc_glglue_context_set_offscreen_cb_functions()
