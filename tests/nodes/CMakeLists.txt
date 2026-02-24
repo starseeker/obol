@@ -100,6 +100,20 @@ if(USE_PTHREAD)
 endif()
 add_test(NAME test_nodes_shape_ext COMMAND test_nodes_shape_ext)
 
+add_executable(test_nodes_anim_misc test_nodes_anim_misc.cpp)
+target_link_libraries(test_nodes_anim_misc simple_test_utils Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(test_nodes_anim_misc PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+    ${PROJECT_BINARY_DIR}/include
+    ${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+if(USE_PTHREAD)
+    target_link_libraries(test_nodes_anim_misc pthread)
+endif()
+add_test(NAME test_nodes_anim_misc COMMAND test_nodes_anim_misc)
+
 include(CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG(-Wtautological-compare _NODES_DISABLE_TAUTCOMP)
 if(_NODES_DISABLE_TAUTCOMP)
