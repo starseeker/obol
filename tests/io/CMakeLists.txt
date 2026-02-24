@@ -44,6 +44,21 @@ if(USE_PTHREAD)
 endif()
 add_test(NAME test_io_input_binary COMMAND test_io_input_binary)
 
+# File-system I/O: openFile/closeFile, getCurFileName, isFileURL, SoWriteAction
+add_executable(test_io_file_ops test_io_file_ops.cpp)
+target_link_libraries(test_io_file_ops simple_test_utils Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(test_io_file_ops PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+    ${PROJECT_BINARY_DIR}/include
+    ${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+if(USE_PTHREAD)
+    target_link_libraries(test_io_file_ops pthread)
+endif()
+add_test(NAME test_io_file_ops COMMAND test_io_file_ops)
+
 include(CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG(-Wtautological-compare _IO_DISABLE_TAUTCOMP)
 if(_IO_DISABLE_TAUTCOMP)
