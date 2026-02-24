@@ -112,6 +112,7 @@ add_subdirectory(details)
 add_subdirectory(bundles)
 add_subdirectory(tools)
 add_subdirectory(profiler)
+add_subdirectory(lists)
 
 # -----------------------------------------------------------------------
 # Image comparison utilities
