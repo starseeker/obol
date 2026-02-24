@@ -399,48 +399,51 @@ The HTML report breaks coverage down by:
 - **Function coverage** – which functions were called
 - **Branch coverage** – which conditional branches (if/else, switch cases) were taken
 
-### Baseline metrics (captured 2026-02-24, updated with new render tests)
+### Baseline metrics (captured 2026-02-24, updated 2026-02-24 update 2)
 
 | Metric | Hit | Total | Percentage |
 |--------|----:|------:|----------:|
-| Lines (`src/` only) | 43,301 | 85,386 | **50.7 %** |
-| Functions (`src/` only) | 8,743 | 15,875 | **55.1 %** |
-| Lines (all project files) | 68,593 | 112,202 | **61.1 %** |
+| Lines (`src/` only) | 45,029 | 85,904 | **52.4 %** |
+| Functions (`src/` only) | 8,566 | 15,305 | **56.0 %** |
+| Lines (all project files) | 74,101 | 116,750 | **63.5 %** |
 
-*Previous baseline (2026-02-24): 41.1 % lines / 47.2 % functions (`src/` only).*
-*Earlier baseline (2026-02-23): 31.6 % lines / 40.7 % functions (`src/` only).*
+*Previous baseline (2026-02-24): 50.7 % lines / 55.1 % functions (`src/` only).*
+*Earlier baseline (2026-02-24): 41.1 % lines / 47.2 % functions (`src/` only).*
+*Initial baseline (2026-02-23): 31.6 % lines / 40.7 % functions (`src/` only).*
 
 Per-subsystem line coverage (`src/` only):
 
 | Subsystem | Lines % | Uncovered |
 |-----------|--------:|----------:|
 | `hardcopy` | 1.4 % | 1,198 |
+| `profiler` | 5.3 % | 2,612 |
 | `fonts` | 34.4 % | 2,063 |
-| `fields` | 36.6 % | 3,423 |
+| `fields` | 38.3 % | 3,284 |
 | `caches` | 39.1 % | 1,271 |
 | `threads` | 41.1 % | 319 |
-| `events` | 42.6 % | 336 |
-| `base` | 44.4 % | 5,051 |
+| `base` | 41.8 % | 5,712 |
+| `events` | 43.1 % | 333 |
 | `glue` | 47.8 % | 1,208 |
-| `bundles` | 50.4 % | 135 |
 | `errors` | 51.1 % | 184 |
-| `nodes` | 51.6 % | 5,025 |
-| `engines` | 52.7 % | 1,679 |
-| `actions` | 52.8 % | 1,472 |
-| `misc` | 52.9 % | 2,279 |
-| `rendering` | 53.6 % | 2,015 |
-| `io` | 53.9 % | 1,043 |
-| `shapenodes` | 55.0 % | 3,489 |
+| `bundles` | 50.4 % | 135 |
+| `misc` | 53.3 % | 2,243 |
+| `engines` | 53.7 % | 1,643 |
+| `actions` | 54.3 % | 1,421 |
+| `nodes` | 56.3 % | 4,529 |
+| `io` | 56.3 % | 928 |
+| `rendering` | 57.6 % | 1,840 |
+| `shapenodes` | 59.4 % | 3,405 |
 | `nodekits` | 62.1 % | 765 |
 | `projectors` | 62.2 % | 276 |
-| `shaders` | 63.3 % | 625 |
-| `elements` | 65.7 % | 1,377 |
+| `shaders` | 63.4 % | 624 |
+| `elements` | 68.1 % | 2,051 |
 | `draggers` | 68.4 % | 1,738 |
 | `manips` | 72.2 % | 322 |
 | `shadows` | 74.6 % | 319 |
-| `sensors` | 78.4 % | 148 |
+| `sensors` | 79.6 % | 140 |
 | `lists` | 80.5 % | 94 |
 | `details` | 93.8 % | 17 |
+| `hud` | 100.0 % | 0 |
 
 See `COVERAGE_PLAN.md` for per-subsystem breakdown, the top files by uncovered lines,
 and a prioritised plan to reach ≥ 70 % line coverage.
