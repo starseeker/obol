@@ -57,6 +57,8 @@
 #include <Inventor/fields/SoSFVec3f.h>
 #include <Inventor/misc/SoState.h>
 #include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoSphere.h>
+#include <Inventor/nodes/SoText2.h>
 #include <Inventor/nodes/SoTranslation.h>
 #include <Inventor/nodes/SoRotation.h>
 #include <Inventor/draggers/SoDragPointDragger.h>
@@ -610,6 +612,9 @@ SoProceduralShape::SoProceduralShape()
   SO_NODE_ADD_FIELD(schemaJSON, (""));
   SO_NODE_ADD_FIELD(params,     (0.0f));
   this->params.setNum(0);
+  this->d_selectCB         = nullptr;
+  this->d_useCustomSelectCB = FALSE;
+  this->d_selectUserdata   = nullptr;
 }
 
 SoProceduralShape::~SoProceduralShape()
@@ -932,6 +937,214 @@ SoProceduralShape::buildHandleDraggers()
   }
 
   return sep;
+}
+
+// ---------------------------------------------------------------------------
+// buildSelectionDisplay
+// ---------------------------------------------------------------------------
+
+/*!
+  Build a scene separator containing one visual handle marker per defined
+  handle.  Each marker sub-separator contains:
+    - SoTranslation  — places it at the handle position in object space.
+    - SoSphere       — visual hit target; radius 0.05 (vertex), 0.07 (edge),
+                       0.10 (face).
+    - SoText2        — label from the handle's "name" field in the JSON schema.
+
+  The handle set is derived from the same sources as buildHandleDraggers():
+  the application's SoProceduralHandlesCB (if registered) or the parsed
+  "handles" topology from the JSON schema.
+
+  Returns nullptr when no handles can be derived.
+*/
+SoSeparator*
+SoProceduralShape::buildSelectionDisplay() const
+{
+  const ShapeTypeEntry* entry =
+    findEntry(this->shapeType.getValue().getString());
+  if (!entry) return nullptr;
+
+  int          nparams = this->params.getNum();
+  const float* pv      = nparams > 0 ? this->params.getValues(0) : nullptr;
+  std::vector<float> pvVec(pv, pv + nparams);
+
+  // Gather handle descriptors (same logic as buildHandleDraggers)
+  std::vector<SoProceduralHandle> handles;
+
+  if (entry->handlesCB) {
+    entry->handlesCB(pv, nparams, handles, entry->userdata);
+  } else if (entry->topologyParsed && !entry->parsedHandles.empty()) {
+    for (int i = 0; i < (int)entry->parsedHandles.size(); ++i) {
+      const ParsedHandle& ph = entry->parsedHandles[i];
+      SoProceduralHandle h;
+      h.name     = SbString(ph.name.c_str());
+      h.dragType = ph.dragType;
+
+      SbVec3f pos(0, 0, 0);
+      int cnt = 0;
+      for (int vi : ph.vertexIdxs) {
+        pos += vertexPos(*entry, vi, pvVec);
+        ++cnt;
+      }
+      if (cnt > 0) pos /= (float)cnt;
+      h.position = pos;
+      handles.push_back(h);
+    }
+  }
+
+  if (handles.empty()) return nullptr;
+
+  SoSeparator* sep = new SoSeparator;
+
+  for (int i = 0; i < (int)handles.size(); ++i) {
+    const SoProceduralHandle& h = handles[i];
+    const ParsedHandle*       ph =
+      (entry->topologyParsed && i < (int)entry->parsedHandles.size())
+        ? &entry->parsedHandles[i] : nullptr;
+
+    // Radius: vertex → 0.05, edge → 0.07, face → 0.10
+    float radius = 0.05f;
+    if (ph) {
+      if (ph->elementType == 1) radius = 0.07f;  // edge
+      if (ph->elementType == 2) radius = 0.10f;  // face
+    }
+
+    SoSeparator* hsep = new SoSeparator;
+
+    SoTranslation* trans = new SoTranslation;
+    trans->translation.setValue(h.position);
+    hsep->addChild(trans);
+
+    SoSphere* sphere = new SoSphere;
+    sphere->radius.setValue(radius);
+    hsep->addChild(sphere);
+
+    SoText2* label = new SoText2;
+    label->string.setValue(h.name);
+    hsep->addChild(label);
+
+    sep->addChild(hsep);
+  }
+
+  return sep;
+}
+
+// ---------------------------------------------------------------------------
+// setSelectCallback / pickHandle
+// ---------------------------------------------------------------------------
+
+void
+SoProceduralShape::setSelectCallback(SoProceduralSelectCB selectCB,
+                                     SbBool               useCustomCB,
+                                     void*                userdata)
+{
+  this->d_selectCB          = selectCB;
+  this->d_useCustomSelectCB = useCustomCB;
+  this->d_selectUserdata    = userdata;
+}
+
+/*!
+  Return the 0-based index of the handle hit by the given ray.
+
+  Built-in test: for each handle, computes the squared distance from the
+  closest point on the ray to the handle position.  A hit is registered when
+  the distance is below \a proximityThreshSq.
+
+  The application callback (if set) is used instead of, or as a fallback
+  for, the built-in test depending on the \c useCustomCB flag.
+*/
+int
+SoProceduralShape::pickHandle(const SbVec3f& rayOrigin,
+                               const SbVec3f& rayDir,
+                               float          proximityThreshSq) const
+{
+  const ShapeTypeEntry* entry =
+    findEntry(this->shapeType.getValue().getString());
+  if (!entry) return -1;
+
+  int          nparams = this->params.getNum();
+  const float* pv      = nparams > 0 ? this->params.getValues(0) : nullptr;
+  std::vector<float> pvVec(pv, pv + nparams);
+
+  // Gather handle positions (same logic as buildSelectionDisplay)
+  std::vector<SoProceduralHandle> handles;
+  if (entry->handlesCB) {
+    entry->handlesCB(pv, nparams, handles, entry->userdata);
+  } else if (entry->topologyParsed && !entry->parsedHandles.empty()) {
+    for (int i = 0; i < (int)entry->parsedHandles.size(); ++i) {
+      const ParsedHandle& ph = entry->parsedHandles[i];
+      SoProceduralHandle h;
+      h.name     = SbString(ph.name.c_str());
+      h.dragType = ph.dragType;
+      SbVec3f pos(0, 0, 0);
+      int cnt = 0;
+      for (int vi : ph.vertexIdxs) {
+        pos += vertexPos(*entry, vi, pvVec);
+        ++cnt;
+      }
+      if (cnt > 0) pos /= (float)cnt;
+      h.position = pos;
+      handles.push_back(h);
+    }
+  }
+
+  int numHandles = (int)handles.size();
+
+  // If custom CB takes full responsibility, skip built-in test entirely.
+  if (this->d_useCustomSelectCB && this->d_selectCB)
+    return this->d_selectCB(rayOrigin, rayDir, numHandles, this->d_selectUserdata);
+
+  // Built-in vertex-proximity test.
+  // Closest point on ray to handle position: project (pos - origin) onto dir.
+  SbVec3f dirNorm = rayDir;
+  float   dirLen  = dirNorm.normalize();
+  if (dirLen < 1e-10f) return -1;  // degenerate ray — no hit possible
+
+  int   bestIdx   = -1;
+  float bestDistSq = proximityThreshSq;
+
+  for (int i = 0; i < numHandles; ++i) {
+    SbVec3f toPos = handles[i].position - rayOrigin;
+    float   t     = toPos.dot(dirNorm);
+    SbVec3f closest = rayOrigin + dirNorm * t;
+    float   dSq   = (handles[i].position - closest).sqrLength();
+    if (dSq < bestDistSq) {
+      bestDistSq = dSq;
+      bestIdx    = i;
+    }
+  }
+
+  // Fallback to app callback when built-in missed.
+  if (bestIdx == -1 && this->d_selectCB)
+    bestIdx = this->d_selectCB(rayOrigin, rayDir, numHandles, this->d_selectUserdata);
+
+  return bestIdx;
+}
+
+// ---------------------------------------------------------------------------
+// getCurrentParamsJSON
+// ---------------------------------------------------------------------------
+
+/*!
+  Serialise the shape's current \c params field to a JSON string using the
+  same format as SoProceduralObjectValidateCB:
+  \code
+  { "type": "MyShape", "params": { "paramName": 1.23, ... } }
+  \endcode
+*/
+SbString
+SoProceduralShape::getCurrentParamsJSON() const
+{
+  const ShapeTypeEntry* entry =
+    findEntry(this->shapeType.getValue().getString());
+  if (!entry) return SbString("");
+
+  int          nparams = this->params.getNum();
+  const float* pv      = nparams > 0 ? this->params.getValues(0) : nullptr;
+  std::vector<float> pvVec(pv, pv + nparams);
+
+  std::string json = buildProposedParamsJSON(*entry, pvVec);
+  return SbString(json.c_str());
 }
 
 // ---------------------------------------------------------------------------
