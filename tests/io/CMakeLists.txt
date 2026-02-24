@@ -59,6 +59,20 @@ if(USE_PTHREAD)
 endif()
 add_test(NAME test_io_file_ops COMMAND test_io_file_ops)
 
+add_executable(test_io_write_action test_io_write_action.cpp)
+target_link_libraries(test_io_write_action simple_test_utils Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(test_io_write_action PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+    ${PROJECT_BINARY_DIR}/include
+    ${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+if(USE_PTHREAD)
+    target_link_libraries(test_io_write_action pthread)
+endif()
+add_test(NAME test_io_write_action COMMAND test_io_write_action)
+
 include(CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG(-Wtautological-compare _IO_DISABLE_TAUTCOMP)
 if(_IO_DISABLE_TAUTCOMP)
