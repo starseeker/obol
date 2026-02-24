@@ -115,6 +115,10 @@ add_rendering_test(render_depth_buffer)
 add_rendering_test(render_alpha_test)
 add_rendering_test(render_draggers)
 add_rendering_test(render_offscreen)
+add_rendering_test(render_triangle_strip_set)
+add_rendering_test(render_ascii_text)
+add_rendering_test(render_image_node)
+add_rendering_test(render_sorender_manager)
 
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
