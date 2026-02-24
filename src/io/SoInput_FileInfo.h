@@ -114,9 +114,6 @@ public:
   SbBool isFileVRML1(void) {
     return this->vrml1file;
   }
-  SbBool isFileVRML2(void) {
-    return this->vrml2file;
-  }
   void setIvVersion(const float v) {
       this->ivversion = v;
   }
@@ -190,7 +187,7 @@ public:
     // character (was it ü?) with ASCII value > 127 made isspace()
     // return non-nil on a German system. So we're using our own
     // locale-independent isspace() implementation instead.
-    return CoinInternal::isSpace(c) || (this->vrml2file && c == ',');
+    return CoinInternal::isSpace(c);
   }
 
   void connectRoutes(SoInput * in);
@@ -231,7 +228,6 @@ private:
   int lastchar; // Last read character.
   SbBool headerisread, eof;
   SbBool vrml1file;
-  SbBool vrml2file;
 
   SbList <SbName> routelist;
   SbList <SoProto*> protolist;

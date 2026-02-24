@@ -1516,7 +1516,6 @@ SoNode::readInstance(SoInput * in, unsigned short flags)
   SbBool ret = inherited::readInstance(in, flags);
   if (ret) {
     if (in->isFileVRML1()) this->setNodeType(SoNode::VRML1);
-    else if (in->isFileVRML2()) this->setNodeType(SoNode::VRML2);
   }
   return ret;
 }
