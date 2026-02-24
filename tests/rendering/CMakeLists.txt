@@ -187,36 +187,31 @@ add_rendering_image_test(render_texture    RMSE_THRESHOLD 15.0)
 # Higher RMSE threshold to accommodate subpixel differences between platforms.
 add_rendering_image_test(render_text2      RMSE_THRESHOLD 20.0)
 add_rendering_image_test(render_text3      RMSE_THRESHOLD 20.0)
-# Output-only tests (active once control images are generated):
 add_rendering_image_test(render_gradient    RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_colored_cube RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_coordinates RMSE_THRESHOLD 10.0)
 add_rendering_image_test(render_scene       RMSE_THRESHOLD 15.0)
-
-# Tier 2 tests: control images generated with OSMesa backend.
-# Higher thresholds because these images were produced with OSMesa and may
-# show small differences vs GLX renders on some drivers.
-add_rendering_image_test(render_shape_hints      RMSE_THRESHOLD 20.0)
-add_rendering_image_test(render_environment      RMSE_THRESHOLD 20.0)
-add_rendering_image_test(render_texture3         RMSE_THRESHOLD 20.0)
-add_rendering_image_test(render_bump_map         RMSE_THRESHOLD 20.0)
-add_rendering_image_test(render_texture_transform RMSE_THRESHOLD 20.0)
-add_rendering_image_test(render_depth_buffer     RMSE_THRESHOLD 20.0)
-add_rendering_image_test(render_alpha_test       RMSE_THRESHOLD 20.0)
-# Shadow rendering: control image generated with OSMesa backend (GLX context
-# management issues prevent shadow shader compilation in CI GLX environments).
-# High RMSE threshold to allow for shadow/lighting variation across drivers.
-add_rendering_image_test(render_shadow           RMSE_THRESHOLD 25.0)
-
-# Tier 1 tests: control images generated with OSMesa backend.
-# These tests render shape/mesh primitives with various attribute bindings.
-add_rendering_image_test(render_indexed_face_set  RMSE_THRESHOLD 20.0)
-add_rendering_image_test(render_quad_mesh         RMSE_THRESHOLD 20.0)
-add_rendering_image_test(render_indexed_line_set  RMSE_THRESHOLD 20.0)
-add_rendering_image_test(render_point_set         RMSE_THRESHOLD 20.0)
-add_rendering_image_test(render_lod               RMSE_THRESHOLD 20.0)
-add_rendering_image_test(render_scene_texture     RMSE_THRESHOLD 25.0)
-add_rendering_image_test(render_array_multiple_copy RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_shape_hints      RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_environment      RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_texture3         RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_bump_map         RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_texture_transform RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_depth_buffer     RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_alpha_test       RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_indexed_face_set  RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_quad_mesh         RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_indexed_line_set  RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_point_set         RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_lod               RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_scene_texture     RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_array_multiple_copy RMSE_THRESHOLD 15.0)
+# Shadow rendering: control image generated with OSMesa backend (SoShadowGroup
+# GLSL shader compilation crashes on headless GLX pixmap contexts due to
+# multiple GL contexts in the same process).  Only register the image
+# comparison test when building with OSMesa so GLX builds don't crash.
+if(RENDERING_USE_OSMESA)
+    add_rendering_image_test(render_shadow RMSE_THRESHOLD 25.0)
+endif()
 
 # ---- Validation tests: run unconditionally, check exit code only -------------
 # These tests perform their own pixel analysis and return 0/1 directly.
@@ -232,7 +227,7 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_vertex_colors render_clip_plane
                render_indexed_face_set render_quad_mesh render_indexed_line_set
                render_lod render_point_set
-               render_scene_texture render_shadow render_array_multiple_copy
+               render_scene_texture render_array_multiple_copy
                render_shape_hints render_environment render_texture3
                render_bump_map render_texture_transform
                render_depth_buffer render_alpha_test
@@ -248,6 +243,21 @@ foreach(_vtest render_sphere_position render_checker_texture
         TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
     )
 endforeach()
+
+# Shadow rendering validation test: only safe to run with OSMesa (SoShadowGroup
+# GLSL shader compilation crashes on headless GLX pixmap contexts).
+if(RENDERING_USE_OSMESA)
+    add_test(
+        NAME render_shadow
+        COMMAND "${CMAKE_COMMAND}"
+            -DEXECUTABLE=$<TARGET_FILE:render_shadow>
+            -DTEST_TIMEOUT=${IMAGE_COMPARISON_TEST_TIMEOUT}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/run_rendering_test.cmake"
+    )
+    set_tests_properties(render_shadow PROPERTIES
+        TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
+    )
+endif()
 
 # ---- Custom target: generate control images ----------------------------------
 # Runs all rendering tests with GLX (via Xvfb) and converts the .rgb output to
@@ -268,6 +278,9 @@ if(PNG_FOUND)
             render_shape_hints render_environment render_texture3
             render_bump_map render_texture_transform
             render_depth_buffer render_alpha_test
+            render_indexed_face_set render_quad_mesh render_indexed_line_set
+            render_point_set render_lod render_scene_texture
+            render_array_multiple_copy
             render_shadow
         COMMENT "Generating PNG control images for rendering regression tests"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
