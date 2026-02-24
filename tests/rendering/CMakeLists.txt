@@ -135,6 +135,9 @@ add_rendering_test(render_selection_interaction)
 add_rendering_test(render_sensor_interaction)
 add_rendering_test(render_pick_filter)
 add_rendering_test(render_scene_interaction)
+add_rendering_test(render_callback_node)
+add_rendering_test(render_camera_interaction)
+add_rendering_test(render_manip_sequences)
 
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
@@ -261,7 +264,9 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_light_manips render_event_callback_interaction
                render_selection_interaction
                render_sensor_interaction render_pick_filter
-               render_scene_interaction)
+               render_scene_interaction
+               render_callback_node render_camera_interaction
+               render_manip_sequences)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"
