@@ -125,6 +125,7 @@ add_rendering_test(render_gl_features)
 add_rendering_test(render_multi_texture)
 add_rendering_test(render_annotation)
 add_rendering_test(render_reset_transform)
+add_rendering_test(render_transparency)
 add_rendering_test(render_marker_set)
 
 # ---- CTest image-comparison integration --------------------------------------
@@ -247,7 +248,7 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_image_node render_sorender_manager
                render_gl_big_image render_cubemap render_gl_features
                render_multi_texture render_marker_set
-               render_annotation render_reset_transform)
+               render_annotation render_reset_transform render_transparency)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"
