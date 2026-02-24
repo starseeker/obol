@@ -109,6 +109,7 @@ add_subdirectory(caches)
 add_subdirectory(misc)
 add_subdirectory(details)
 add_subdirectory(bundles)
+add_subdirectory(tools)
 
 # -----------------------------------------------------------------------
 # Image comparison utilities

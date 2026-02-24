@@ -29,9 +29,24 @@ if(USE_PTHREAD)
 endif()
 add_test(NAME test_glrender_action COMMAND test_glrender_action)
 
+add_executable(test_actions_extended test_actions_extended.cpp)
+target_link_libraries(test_actions_extended simple_test_utils Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(test_actions_extended PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+    ${PROJECT_BINARY_DIR}/include
+    ${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+if(USE_PTHREAD)
+    target_link_libraries(test_actions_extended pthread)
+endif()
+add_test(NAME test_actions_extended COMMAND test_actions_extended)
+
 include(CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG(-Wtautological-compare _ACTIONS_DISABLE_TAUTCOMP)
 if(_ACTIONS_DISABLE_TAUTCOMP)
     target_compile_options(test_actions_suite PUBLIC -Wno-tautological-compare)
     target_compile_options(test_glrender_action PUBLIC -Wno-tautological-compare)
+    target_compile_options(test_actions_extended PUBLIC -Wno-tautological-compare)
 endif()
