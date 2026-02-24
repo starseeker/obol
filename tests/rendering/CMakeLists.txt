@@ -146,6 +146,13 @@ add_rendering_test(render_bbox_action)
 add_rendering_test(render_search_action)
 add_rendering_test(render_callback_action)
 add_rendering_test(render_event_propagation)
+add_rendering_test(render_shader_program)
+add_rendering_test(render_raypick_shapes)
+add_rendering_test(render_material_binding)
+add_rendering_test(render_shadow_advanced)
+add_rendering_test(render_ext_selection)
+add_rendering_test(render_view_volume_ops)
+add_rendering_test(render_glrender_action_modes)
 
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
