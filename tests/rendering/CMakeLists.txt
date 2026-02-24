@@ -157,6 +157,12 @@ add_rendering_test(render_callback_action_deep)
 add_rendering_test(render_text3_parts)
 add_rendering_test(render_write_read_action)
 add_rendering_test(render_sensors_rendering)
+add_rendering_test(render_ext_selection_events)
+add_rendering_test(render_render_manager_full)
+add_rendering_test(render_offscreen_advanced)
+add_rendering_test(render_glrender_deep)
+add_rendering_test(render_engine_converter)
+add_rendering_test(render_image_deep)
 
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
@@ -295,7 +301,13 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_ext_selection render_view_volume_ops
                render_glrender_action_modes
                render_callback_action_deep render_text3_parts
-               render_write_read_action render_sensors_rendering)
+               render_write_read_action render_sensors_rendering
+               render_ext_selection_events
+               render_render_manager_full
+               render_offscreen_advanced
+               render_glrender_deep
+               render_engine_converter
+               render_image_deep)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"
