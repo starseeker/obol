@@ -1,9 +1,12 @@
 /*
  * render_image_node.cpp - Integration test: SoImage node rendering
  *
- * Creates an SoImage node with a checkerboard of red/blue 8×8 pixels.
- * Renders and verifies that both red and blue pixel values are present
+ * Creates an SoImage node with a 32×32 checkerboard of red/green pixels.
+ * Renders and verifies that both red and green pixel values are present
  * in the output buffer.
+ *
+ * The 32×32 image is large enough that sampling at step 2 within the image
+ * region reliably hits both colors of the checkerboard.
  *
  * Writes argv[1]+".rgb" and returns 0 on pass, 1 on fail.
  */
@@ -20,25 +23,29 @@
 static const int W = 256;
 static const int H = 256;
 
+// Red/green checkerboard: easy to distinguish (avoids blue vs black confusion)
+static const int IMG_W = 32, IMG_H = 32;
+
 static bool validateImage(const unsigned char * buf)
 {
-    int redFound = 0, blueFound = 0;
+    int redFound = 0, greenFound = 0;
 
-    // Scan the full buffer for recognisably red or blue pixels
-    for (int y = 0; y < H; y += 2) {
-        for (int x = 0; x < W; x += 2) {
+    // SoImage renders at the current raster position at its native pixel size.
+    // Scan the full buffer for red and green pixels.
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
             const unsigned char * p = buf + (y * W + x) * 3;
-            if (p[0] > 150 && p[1] < 50 && p[2] < 50) ++redFound;
-            if (p[2] > 150 && p[0] < 50 && p[1] < 50) ++blueFound;
+            if (p[0] > 150 && p[1] < 50  && p[2] < 50)  ++redFound;
+            if (p[1] > 150 && p[0] < 50  && p[2] < 50)  ++greenFound;
         }
     }
 
-    printf("render_image_node: redFound=%d blueFound=%d\n", redFound, blueFound);
+    printf("render_image_node: redFound=%d greenFound=%d\n", redFound, greenFound);
 
-    if (redFound < 2 || blueFound < 2) {
+    if (redFound < 4 || greenFound < 4) {
         fprintf(stderr,
-                "render_image_node: FAIL - expected both red and blue pixels "
-                "(red=%d, blue=%d)\n", redFound, blueFound);
+                "render_image_node: FAIL - expected both red and green pixels "
+                "(red=%d, green=%d)\n", redFound, greenFound);
         return false;
     }
     printf("render_image_node: PASS\n");
@@ -49,16 +56,15 @@ int main(int argc, char ** argv)
 {
     initCoinHeadless();
 
-    // Build checkerboard pixel data (8×8, RGB, red/blue alternating)
-    static const int IMG_W = 8, IMG_H = 8;
+    // Build checkerboard pixel data (32×32, RGB, red/green alternating)
     unsigned char pixels[IMG_W * IMG_H * 3];
     for (int row = 0; row < IMG_H; ++row) {
         for (int col = 0; col < IMG_W; ++col) {
             unsigned char * p = pixels + (row * IMG_W + col) * 3;
             if ((row + col) % 2 == 0) {
-                p[0] = 255; p[1] = 0; p[2] = 0;   // red
+                p[0] = 255; p[1] = 0; p[2] = 0;    // red
             } else {
-                p[0] = 0;   p[1] = 0; p[2] = 255; // blue
+                p[0] = 0;   p[1] = 255; p[2] = 0;  // green
             }
         }
     }
@@ -95,8 +101,6 @@ int main(int argc, char ** argv)
         ok = pixOk && renderer.writeToRGB(outpath);
     } else {
         fprintf(stderr, "render_image_node: render() failed\n");
-        // Write output file even on failure to ensure file exists for debugging
-        renderer.writeToRGB(outpath);
     }
 
     root->unref();

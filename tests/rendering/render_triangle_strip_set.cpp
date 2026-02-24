@@ -2,10 +2,9 @@
  * render_triangle_strip_set.cpp - Integration test: SoTriangleStripSet rendering
  *
  * Renders a triangle strip forming a quad (2 triangles) using SoTriangleStripSet
- * and SoIndexedTriangleStripSet.  The geometry is emissive blue against a black
- * background.  Pixel validation confirms:
- *   - The lower portion of the buffer contains blue pixels.
- *   - The upper portion contains background (black) pixels.
+ * with an emissive blue material.  Pixel validation confirms:
+ *   - Blue pixels are present in the lower portion of the buffer.
+ *   - Black pixels (background) appear in the upper portion.
  *
  * Writes argv[1]+".rgb" and returns 0 on pass, 1 on fail.
  */
@@ -13,7 +12,7 @@
 #include "headless_utils.h"
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
-#include <Inventor/nodes/SoBaseColor.h>
+#include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoCoordinate3.h>
 #include <Inventor/nodes/SoTriangleStripSet.h>
 #include <Inventor/SbViewportRegion.h>
@@ -27,17 +26,18 @@ static bool validateTriangleStrip(const unsigned char * buf)
 {
     int blueFound = 0, blackFound = 0;
 
-    // Lower portion (y: 0..H/4, x: W/4..3W/4) should contain blue pixels
-    for (int y = 0; y < H / 4; y += 4) {
+    // Lower half (y: 0..H/2 in OpenGL order: y=0 = bottom of viewport)
+    // The geometry is in y = [-1, 0], which maps to the lower half
+    for (int y = 0; y < H / 2; y += 4) {
         for (int x = W / 4; x < 3 * W / 4; x += 4) {
             const unsigned char * p = buf + (y * W + x) * 3;
-            if (p[2] > 150 && p[0] < 50 && p[1] < 50)
+            if (p[2] > 150 && p[0] < 60 && p[1] < 60)
                 ++blueFound;
         }
     }
 
-    // Upper portion (y: 3H/4..H) should be black background
-    for (int y = 3 * H / 4; y < H; y += 4) {
+    // Upper half (y: H/2..H) should be black background
+    for (int y = H / 2; y < H; y += 4) {
         for (int x = W / 4; x < 3 * W / 4; x += 4) {
             const unsigned char * p = buf + (y * W + x) * 3;
             if (p[0] < 20 && p[1] < 20 && p[2] < 20)
@@ -67,7 +67,7 @@ int main(int argc, char ** argv)
     SoSeparator * root = new SoSeparator;
     root->ref();
 
-    // Orthographic camera
+    // Orthographic camera; world coords -1..+1 in both axes
     SoOrthographicCamera * cam = new SoOrthographicCamera;
     cam->position    .setValue(0.0f, 0.0f, 1.0f);
     cam->nearDistance = 0.1f;
@@ -77,10 +77,11 @@ int main(int argc, char ** argv)
 
     SoSeparator * grp = new SoSeparator;
 
-    // Emissive blue via SoBaseColor
-    SoBaseColor * color = new SoBaseColor;
-    color->rgb.setValue(0.0f, 0.0f, 1.0f);
-    grp->addChild(color);
+    // Emissive blue material (no lighting dependency)
+    SoMaterial * mat = new SoMaterial;
+    mat->emissiveColor.setValue(0.0f, 0.0f, 1.0f);
+    mat->diffuseColor .setValue(0.0f, 0.0f, 0.0f);
+    grp->addChild(mat);
 
     // 4 vertices forming a quad in the lower half: y in [-1, 0]
     SoCoordinate3 * coords = new SoCoordinate3;

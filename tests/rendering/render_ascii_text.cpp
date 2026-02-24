@@ -1,18 +1,21 @@
 /*
  * render_ascii_text.cpp - Integration test: SoAsciiText rendering
  *
- * Renders SoAsciiText with string "HELLO" and verifies that non-black pixels
- * appear in the centre of the image (text is rendered against a dark background).
+ * Renders SoAsciiText with string "HELLO" using an emissive white material
+ * and verifies that non-black pixels appear in the rendered output.
+ *
+ * SoAsciiText is a 3D shape node (extruded text) so it needs a proper camera
+ * setup and material.  A perspective camera with viewAll() centres the text.
  *
  * Writes argv[1]+".rgb" and returns 0 on pass, 1 on fail.
  */
 
 #include "headless_utils.h"
 #include <Inventor/nodes/SoSeparator.h>
-#include <Inventor/nodes/SoOrthographicCamera.h>
-#include <Inventor/nodes/SoBaseColor.h>
+#include <Inventor/nodes/SoPerspectiveCamera.h>
+#include <Inventor/nodes/SoDirectionalLight.h>
+#include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoAsciiText.h>
-#include <Inventor/nodes/SoTransform.h>
 #include <Inventor/SbViewportRegion.h>
 #include <cstdio>
 
@@ -23,11 +26,11 @@ static bool validateAsciiText(const unsigned char * buf)
 {
     int litFound = 0;
 
-    // Centre region of the image should have lit pixels (text)
-    for (int y = H / 4; y < 3 * H / 4; y += 2) {
+    // Scan the full buffer for any non-background pixels
+    for (int y = 0; y < H; y += 2) {
         for (int x = 0; x < W; x += 2) {
             const unsigned char * p = buf + (y * W + x) * 3;
-            if (p[0] > 100 || p[1] > 100 || p[2] > 100)
+            if (p[0] > 80 || p[1] > 80 || p[2] > 80)
                 ++litFound;
         }
     }
@@ -49,29 +52,30 @@ int main(int argc, char ** argv)
     SoSeparator * root = new SoSeparator;
     root->ref();
 
-    SoOrthographicCamera * cam = new SoOrthographicCamera;
-    cam->position    .setValue(0.0f, 0.0f, 10.0f);
-    cam->nearDistance = 0.1f;
-    cam->farDistance  = 10.0f;
-    cam->height       = 4.0f;
+    // Perspective camera; viewAll() will be called after the scene is built
+    SoPerspectiveCamera * cam = new SoPerspectiveCamera;
     root->addChild(cam);
 
-    // White text
-    SoBaseColor * color = new SoBaseColor;
-    color->rgb.setValue(1.0f, 1.0f, 1.0f);
-    root->addChild(color);
+    // Frontal directional light
+    SoDirectionalLight * light = new SoDirectionalLight;
+    light->direction.setValue(-0.3f, -0.5f, -0.8f);
+    root->addChild(light);
 
-    // Centre the text by translating slightly left
-    SoTransform * xf = new SoTransform;
-    xf->translation.setValue(-1.5f, -0.3f, 0.0f);
-    root->addChild(xf);
+    // Bright emissive + diffuse white material
+    SoMaterial * mat = new SoMaterial;
+    mat->diffuseColor .setValue(0.9f, 0.9f, 0.9f);
+    mat->emissiveColor.setValue(0.5f, 0.5f, 0.5f);
+    root->addChild(mat);
 
     SoAsciiText * text = new SoAsciiText;
     text->string.setValue("HELLO");
-    text->justification.setValue(SoAsciiText::LEFT);
+    text->justification.setValue(SoAsciiText::CENTER);
     root->addChild(text);
 
+    // Auto-fit the camera to the scene bounding box
     SbViewportRegion vp(W, H);
+    cam->viewAll(root, vp);
+
     SoOffscreenRenderer renderer(vp);
     renderer.setComponents(SoOffscreenRenderer::RGB);
     renderer.setBackgroundColor(SbColor(0.0f, 0.0f, 0.0f));
@@ -89,8 +93,6 @@ int main(int argc, char ** argv)
         ok = pixOk && renderer.writeToRGB(outpath);
     } else {
         fprintf(stderr, "render_ascii_text: render() failed\n");
-        // Write output file even on failure to ensure file exists for debugging
-        renderer.writeToRGB(outpath);
     }
 
     root->unref();

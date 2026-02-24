@@ -235,7 +235,9 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_shape_hints render_environment render_texture3
                render_bump_map render_texture_transform
                render_depth_buffer render_alpha_test
-               render_draggers render_offscreen)
+               render_draggers render_offscreen
+               render_triangle_strip_set render_ascii_text
+               render_image_node render_sorender_manager)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"
