@@ -128,6 +128,7 @@ add_rendering_test(render_reset_transform)
 add_rendering_test(render_transparency)
 add_rendering_test(render_marker_set)
 add_rendering_test(render_procedural_shape)
+add_rendering_test(render_arb8_draggers)
 
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.

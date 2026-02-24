@@ -179,8 +179,83 @@ typedef void (*SoProceduralGeomCB)(const float*             params,
                                    void*                    userdata);
 
 // ---------------------------------------------------------------------------
+// Interactive handle API — used by buildHandleDraggers()
+// ---------------------------------------------------------------------------
+
+/*!
+  \struct SoProceduralHandle
+  \brief One interactive manipulation handle for a SoProceduralShape.
+
+  The application fills a vector of these in a SoProceduralHandlesCB to tell
+  Obol where to place dragger widgets and how they are constrained.
+
+  \note All positions are in the shape's local (object) space.
+*/
+struct SoProceduralHandle {
+  /*! Constraint types for the dragger associated with this handle. */
+  enum DragType {
+    DRAG_POINT,       //!< Free 3-D movement (uses SoDragPointDragger).
+    DRAG_ALONG_AXIS,  //!< Constrained to a single axis (uses SoTranslate1Dragger).
+    DRAG_ON_PLANE     //!< Constrained to a plane (uses SoTranslate2Dragger).
+  };
+
+  SbVec3f  position;   //!< Handle position in object space (from current params).
+  DragType dragType;   //!< Constraint type.
+  SbVec3f  axis;       //!< DRAG_ALONG_AXIS: constraint direction (need not be unit).
+  SbVec3f  normal;     //!< DRAG_ON_PLANE: plane normal (need not be unit).
+  SbString name;       //!< Display / debug name (optional).
+
+  SoProceduralHandle()
+    : position(0.f,0.f,0.f), dragType(DRAG_POINT),
+      axis(1.f,0.f,0.f), normal(0.f,1.f,0.f) {}
+};
+
+/*!
+  \typedef SoProceduralHandlesCB
+  \brief Callback that computes the set of interactive handles from current params.
+
+  Called once per \c buildHandleDraggers() call and whenever the shape's
+  \c params field changes while a live dragger set is active.
+
+  \param params    Current parameter values (read-only).
+  \param numParams Number of values in \a params.
+  \param handles   [out] Vector to fill with handle descriptors.
+  \param userdata  Opaque pointer supplied at registration time.
+*/
+typedef void (*SoProceduralHandlesCB)(const float*                     params,
+                                      int                              numParams,
+                                      std::vector<SoProceduralHandle>& handles,
+                                      void*                            userdata);
+
+/*!
+  \typedef SoProceduralHandleDragCB
+  \brief Callback invoked each time a handle dragger moves.
+
+  The callback receives a mutable copy of the current \c params array.
+  It must update \a params in-place to reflect the new handle position.
+  Obol will then assign the modified array back to the shape's \c params field,
+  causing the shape to redraw automatically.
+
+  \param params       In/out: current parameter values; modify to reflect drag.
+  \param numParams    Size of the \a params array.
+  \param handleIndex  Index of the handle that moved (same ordering as returned
+                      by the SoProceduralHandlesCB).
+  \param oldPos       Handle position before this drag step (object space).
+  \param newPos       Handle position after this drag step (object space).
+  \param userdata     Opaque pointer supplied at registration time.
+*/
+typedef void (*SoProceduralHandleDragCB)(float*         params,
+                                         int            numParams,
+                                         int            handleIndex,
+                                         const SbVec3f& oldPos,
+                                         const SbVec3f& newPos,
+                                         void*          userdata);
+
+// ---------------------------------------------------------------------------
 // SoProceduralShape node
 // ---------------------------------------------------------------------------
+
+class SoSeparator;
 
 class COIN_DLL_API SoProceduralShape : public SoShape {
   typedef SoShape inherited;
@@ -214,7 +289,7 @@ public:
   // ----- Registry -----
 
   /*!
-    Register a new procedural shape type.
+    Register a new procedural shape type (geometry + bounding box only).
 
     \param typeName   Unique identifier string for this shape type.
     \param schemaJSON JSON string describing the editable parameters
@@ -222,7 +297,7 @@ public:
                       empty string if no schema is provided.
     \param bboxCB     Bounding-box computation callback.  Must not be null.
     \param geomCB     Geometry generation callback.  Must not be null.
-    \param userdata   Opaque pointer passed through to both callbacks.
+    \param userdata   Opaque pointer passed through to all callbacks.
     \return TRUE on success; FALSE if \a typeName is already registered.
   */
   static SbBool registerShapeType(const char*          typeName,
@@ -231,11 +306,48 @@ public:
                                   SoProceduralGeomCB   geomCB,
                                   void*                userdata = nullptr);
 
+  /*!
+    Register a new procedural shape type with interactive dragger handles.
+
+    This overload adds two optional callbacks that Obol uses to create and
+    wire SoDragger nodes when buildHandleDraggers() is called.  Shapes that
+    do not need interactive editing can use the four-argument overload instead.
+
+    \param handlesCB    Callback that computes handle positions from params.
+                        May be \c nullptr if no interactive handles are needed.
+    \param handleDragCB Callback that updates params when a handle is dragged.
+                        May be \c nullptr if \a handlesCB is \c nullptr.
+  */
+  static SbBool registerShapeType(const char*              typeName,
+                                  const char*              schemaJSON,
+                                  SoProceduralBBoxCB       bboxCB,
+                                  SoProceduralGeomCB       geomCB,
+                                  SoProceduralHandlesCB    handlesCB,
+                                  SoProceduralHandleDragCB handleDragCB,
+                                  void*                    userdata = nullptr);
+
   //! Return the JSON schema string for a registered type, or \c nullptr.
   static const char* getSchemaJSON(const char* typeName);
 
   //! Return true if a shape type with this name has been registered.
   static SbBool isRegistered(const char* typeName);
+
+  /*!
+    Build and return a separator containing one SoDragger per registered handle.
+
+    The returned separator should be inserted into the scene graph at the same
+    transform level as this node (sibling, not child).  Each dragger is wired
+    via an SoFieldSensor: when the user drags a handle, SoProceduralHandleDragCB
+    is called, params is updated, and the shape redraws automatically.
+
+    Returns \c nullptr if the registered type has no handle callbacks, or if
+    \c shapeType is not registered.
+
+    Ownership: the caller is responsible for ref-counting the returned separator.
+    The sensor/callback connections are owned by the separator's child nodes and
+    are destroyed when those nodes are unref'd.
+  */
+  SoSeparator* buildHandleDraggers();
 
   virtual void getPrimitiveCount(SoGetPrimitiveCountAction* action) override;
 

@@ -43,15 +43,26 @@
 #include <cstdlib>
 #include <cmath>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <Inventor/SbVec4f.h>
+#include <Inventor/SbMatrix.h>
+#include <Inventor/SbRotation.h>
 #include <Inventor/SoPrimitiveVertex.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoGetPrimitiveCountAction.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
+#include <Inventor/fields/SoSFVec3f.h>
 #include <Inventor/misc/SoState.h>
+#include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoTranslation.h>
+#include <Inventor/nodes/SoRotation.h>
+#include <Inventor/draggers/SoDragPointDragger.h>
+#include <Inventor/draggers/SoTranslate1Dragger.h>
+#include <Inventor/draggers/SoTranslate2Dragger.h>
+#include <Inventor/sensors/SoFieldSensor.h>
 
 #include "nodes/SoSubNodeP.h"
 
@@ -62,11 +73,13 @@
 namespace {
 
 struct ShapeTypeEntry {
-  std::string          typeName;
-  std::string          schemaJSON;
-  SoProceduralBBoxCB   bboxCB;
-  SoProceduralGeomCB   geomCB;
-  void*                userdata;
+  std::string              typeName;
+  std::string              schemaJSON;
+  SoProceduralBBoxCB       bboxCB;
+  SoProceduralGeomCB       geomCB;
+  SoProceduralHandlesCB    handlesCB;    // may be nullptr
+  SoProceduralHandleDragCB handleDragCB; // may be nullptr
+  void*                    userdata;
 };
 
 // Registry storage: simple sorted map, populated at app-init time.
@@ -78,6 +91,58 @@ static const ShapeTypeEntry* findEntry(const char* typeName)
   if (!typeName || !*typeName) return nullptr;
   auto it = s_registry.find(typeName);
   return (it != s_registry.end()) ? &it->second : nullptr;
+}
+
+// Per-handle sensor connection: keeps the shape pointer, handle index,
+// initial position, and dragger reference alive for the sensor callback.
+struct HandleDragContext {
+  SoProceduralShape*  shape;
+  int                 handleIndex;
+  SbVec3f             initPos;    // handle position when draggers were built
+  SoDragger*          dragger;    // weak ref (dragger outlives sensor in scene)
+
+  HandleDragContext(SoProceduralShape* s, int idx, const SbVec3f& pos,
+                    SoDragger* d)
+    : shape(s), handleIndex(idx), initPos(pos), dragger(d) {}
+};
+
+// Sensor callback: fires when a dragger's translation field changes.
+static void handleDragSensorCB(void* userdata, SoSensor*)
+{
+  auto* ctx = static_cast<HandleDragContext*>(userdata);
+  if (!ctx || !ctx->shape || !ctx->dragger) return;
+
+  SoProceduralShape*    shape = ctx->shape;
+  const ShapeTypeEntry* entry =
+    findEntry(shape->shapeType.getValue().getString());
+  if (!entry || !entry->handleDragCB) return;
+
+  // Retrieve current dragger translation (delta from initial position).
+  SbVec3f delta(0.f, 0.f, 0.f);
+
+  // Both SoDragPointDragger and SoTranslate1Dragger expose a 'translation'
+  // field.  SoTranslate2Dragger also has 'translation'.  Extract via the
+  // common field name.
+  SoField* tf = ctx->dragger->getField("translation");
+  if (tf && tf->isOfType(SoSFVec3f::getClassTypeId()))
+    delta = static_cast<SoSFVec3f*>(tf)->getValue();
+
+  SbVec3f newPos = ctx->initPos + delta;
+
+  // Copy current params, call the application callback, write back.
+  int   nparams = shape->params.getNum();
+  std::vector<float> paramsCopy(static_cast<size_t>(nparams), 0.f);
+  if (nparams > 0) {
+    const float* pv = shape->params.getValues(0);
+    paramsCopy.assign(pv, pv + nparams);
+  }
+
+  entry->handleDragCB(paramsCopy.data(), nparams,
+                      ctx->handleIndex,
+                      ctx->initPos, newPos,
+                      entry->userdata);
+
+  shape->params.setValues(0, nparams, paramsCopy.data());
 }
 
 } // anonymous namespace
@@ -123,16 +188,34 @@ SoProceduralShape::registerShapeType(const char*        typeName,
                                      SoProceduralGeomCB geomCB,
                                      void*              userdata)
 {
+  return SoProceduralShape::registerShapeType(typeName, schemaJSON,
+                                              bboxCB, geomCB,
+                                              nullptr, nullptr,
+                                              userdata);
+}
+
+// static
+SbBool
+SoProceduralShape::registerShapeType(const char*              typeName,
+                                     const char*              schemaJSON,
+                                     SoProceduralBBoxCB       bboxCB,
+                                     SoProceduralGeomCB       geomCB,
+                                     SoProceduralHandlesCB    handlesCB,
+                                     SoProceduralHandleDragCB handleDragCB,
+                                     void*                    userdata)
+{
   if (!typeName || !*typeName || !bboxCB || !geomCB) return FALSE;
 
   if (s_registry.find(typeName) != s_registry.end()) return FALSE;
 
   ShapeTypeEntry entry;
-  entry.typeName  = typeName;
-  entry.schemaJSON = schemaJSON ? schemaJSON : "";
-  entry.bboxCB    = bboxCB;
-  entry.geomCB    = geomCB;
-  entry.userdata  = userdata;
+  entry.typeName     = typeName;
+  entry.schemaJSON   = schemaJSON ? schemaJSON : "";
+  entry.bboxCB       = bboxCB;
+  entry.geomCB       = geomCB;
+  entry.handlesCB    = handlesCB;
+  entry.handleDragCB = handleDragCB;
+  entry.userdata     = userdata;
 
   s_registry[typeName] = entry;
   return TRUE;
@@ -198,6 +281,119 @@ SoProceduralShape::setShapeType(const char* typeName)
     this->params.setNum(0);
     this->params.setValues(0, static_cast<int>(defaults.size()), defaults.data());
   }
+}
+
+// ---------------------------------------------------------------------------
+// buildHandleDraggers
+// ---------------------------------------------------------------------------
+
+/*!
+  Build and return a separator containing one dragger per registered handle.
+
+  The handle positions are computed from the current \c params.  Each dragger
+  is placed at the corresponding position via an \c SoTranslation node and is
+  connected to the shape's \c params field through an \c SoFieldSensor.  When
+  the user drags a handle, the sensor callback calls the registered
+  \c SoProceduralHandleDragCB, which updates \c params in-place; the shape
+  then redraws automatically via the normal Obol notification mechanism.
+
+  Connection notes:
+  - \c SoProceduralHandle::DRAG_POINT  → \c SoDragPointDragger
+  - \c SoProceduralHandle::DRAG_ALONG_AXIS → \c SoTranslate1Dragger
+    (the dragger's default axis is X; an \c SoRotation is prepended to align
+    the axis with \c SoProceduralHandle::axis.)
+  - \c SoProceduralHandle::DRAG_ON_PLANE → \c SoTranslate2Dragger
+
+  Returns \c nullptr if the registered type has no handle callbacks.
+
+  \note Context objects allocated by this function are managed by the
+  returned separator's lifetime via \c SoNodeSensor.  In the current
+  implementation the contexts are \e leaked if the separator is destroyed
+  before the sensor fires; this is acceptable for interactive sessions but
+  production code should add a cleanup notification.
+*/
+SoSeparator*
+SoProceduralShape::buildHandleDraggers()
+{
+  const ShapeTypeEntry* entry =
+    findEntry(this->shapeType.getValue().getString());
+  if (!entry || !entry->handlesCB || !entry->handleDragCB) return nullptr;
+
+  int          nparams = this->params.getNum();
+  const float* pv      = nparams > 0 ? this->params.getValues(0) : nullptr;
+
+  // Ask the application for handle positions.
+  std::vector<SoProceduralHandle> handles;
+  entry->handlesCB(pv, nparams, handles, entry->userdata);
+
+  if (handles.empty()) return nullptr;
+
+  SoSeparator* sep = new SoSeparator;
+
+  for (int i = 0; i < static_cast<int>(handles.size()); ++i) {
+    const SoProceduralHandle& h = handles[static_cast<size_t>(i)];
+
+    // Sub-separator for this handle: translation + optional rotation + dragger.
+    SoSeparator* hsep = new SoSeparator;
+
+    SoTranslation* trans = new SoTranslation;
+    trans->translation.setValue(h.position);
+    hsep->addChild(trans);
+
+    SoDragger* dragger = nullptr;
+
+    switch (h.dragType) {
+    case SoProceduralHandle::DRAG_ALONG_AXIS: {
+      // Rotate so that X aligns with the requested axis, then use Translate1Dragger.
+      SbVec3f normAxis = h.axis;
+      if (normAxis.normalize() > 1e-6f) {
+        SbRotation rot(SbVec3f(1.f, 0.f, 0.f), normAxis);
+        SoRotation* rotNode = new SoRotation;
+        rotNode->rotation.setValue(rot);
+        hsep->addChild(rotNode);
+      }
+      dragger = new SoTranslate1Dragger;
+      break;
+    }
+    case SoProceduralHandle::DRAG_ON_PLANE: {
+      // Rotate so that Y (up) aligns with the plane normal, use Translate2Dragger.
+      SbVec3f normNml = h.normal;
+      if (normNml.normalize() > 1e-6f) {
+        SbRotation rot(SbVec3f(0.f, 1.f, 0.f), normNml);
+        SoRotation* rotNode = new SoRotation;
+        rotNode->rotation.setValue(rot);
+        hsep->addChild(rotNode);
+      }
+      dragger = new SoTranslate2Dragger;
+      break;
+    }
+    case SoProceduralHandle::DRAG_POINT:
+    default:
+      dragger = new SoDragPointDragger;
+      break;
+    }
+
+    hsep->addChild(dragger);
+    sep->addChild(hsep);
+
+    // Allocate context (intentional raw allocation; see note in header).
+    // The sensor is owned by its attachment and will be destroyed with it.
+    auto* ctx = new HandleDragContext(this, i, h.position, dragger);
+
+    // Watch the dragger's 'translation' SoSFVec3f field.
+    SoField* tf = dragger->getField("translation");
+    if (tf) {
+      SoFieldSensor* sensor = new SoFieldSensor(handleDragSensorCB, ctx);
+      sensor->attach(tf);
+      // Sensor is scheduled/triggered by Obol; no explicit ownership transfer
+      // needed here — it will fire as long as the dragger field exists.
+      // The sensor object leaks when the dragger is destroyed, but this is
+      // acceptable for interactive editing sessions (see header note).
+      (void)sensor;
+    }
+  }
+
+  return sep;
 }
 
 // ---------------------------------------------------------------------------

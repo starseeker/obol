@@ -45,6 +45,10 @@
  *   8. Unregistered shape type graceful handling
  *   9. Scene-graph ref/unref lifecycle
  *  10. Node type-id checks
+ *  13. registerShapeType with handle callbacks
+ *  14. buildHandleDraggers() returns non-null for handle-capable type
+ *  15. buildHandleDraggers() returns nullptr for type without handles
+ *  16. buildHandleDraggers() produces correct child count
  */
 
 #include "../test_utils.h"
@@ -367,6 +371,106 @@ int main()
 
         shape->unref();
         runner.endTest(pass, pass ? "" : "Type-id check failed");
+    }
+
+    // ------------------------------------------------------------------
+    // Handle/dragger API tests
+    // ------------------------------------------------------------------
+
+    // Minimal shape type with handle support for the dragger tests.
+    // 2 params: [0]=x, [1]=y — one handle at (x, y, 0)
+    static const auto twoParamBbox = [](const float* p, int n, SbVec3f& mn, SbVec3f& mx, void*){
+        (void)p;(void)n; mn.setValue(-1,-1,-1); mx.setValue(1,1,1);
+    };
+    static const auto twoParamGeom = [](const float*, int, SoProceduralTriangles*, SoProceduralWireframe*, void*){};
+    static const auto twoParamHandles = [](const float* p, int n,
+                                            std::vector<SoProceduralHandle>& handles, void*) {
+        float x = (n>0) ? p[0] : 0.f;
+        float y = (n>1) ? p[1] : 0.f;
+        SoProceduralHandle h;
+        h.position  = SbVec3f(x, y, 0.f);
+        h.dragType  = SoProceduralHandle::DRAG_POINT;
+        handles.push_back(h);
+    };
+    static const auto twoParamDrag = [](float* params, int n, int idx,
+                                         const SbVec3f& oldP, const SbVec3f& newP, void*) {
+        if(idx!=0||n<2) return;
+        SbVec3f d=newP-oldP;
+        params[0]+=d[0]; params[1]+=d[1];
+    };
+
+    // Use non-capturing lambda cast — wrap via plain function pointer
+    // (lambdas without captures are implicitly convertible to function pointers)
+    SbBool hdReg = SoProceduralShape::registerShapeType(
+        "TwoParam_test", "",
+        static_cast<SoProceduralBBoxCB>(twoParamBbox),
+        static_cast<SoProceduralGeomCB>(twoParamGeom),
+        static_cast<SoProceduralHandlesCB>(twoParamHandles),
+        static_cast<SoProceduralHandleDragCB>(twoParamDrag));
+    (void)hdReg;
+
+    // ------------------------------------------------------------------
+    // Test 13: registerShapeType with handle callbacks succeeds
+    // ------------------------------------------------------------------
+    runner.startTest("registerShapeType with handle callbacks");
+    {
+        bool pass = (SoProceduralShape::isRegistered("TwoParam_test") == TRUE);
+        runner.endTest(pass, pass ? "" : "TwoParam_test should be registered");
+    }
+
+    // ------------------------------------------------------------------
+    // Test 14: buildHandleDraggers() returns non-null for type with handles
+    // ------------------------------------------------------------------
+    runner.startTest("buildHandleDraggers returns non-null for registered handle type");
+    {
+        SoProceduralShape* shape = new SoProceduralShape;
+        shape->ref();
+        shape->shapeType.setValue("TwoParam_test");
+        float pv[] = { 0.5f, 0.5f };
+        shape->params.setValues(0, 2, pv);
+
+        SoSeparator* handles = shape->buildHandleDraggers();
+        bool pass = (handles != nullptr);
+        if (handles) handles->ref(); // adopt ownership
+
+        if (handles) handles->unref();
+        shape->unref();
+        runner.endTest(pass, pass ? "" : "buildHandleDraggers returned nullptr");
+    }
+
+    // ------------------------------------------------------------------
+    // Test 15: buildHandleDraggers() returns nullptr for type without handles
+    // ------------------------------------------------------------------
+    runner.startTest("buildHandleDraggers returns nullptr when no handle callbacks");
+    {
+        SoProceduralShape* shape = new SoProceduralShape;
+        shape->ref();
+        shape->setShapeType("UnitBox_test"); // registered WITHOUT handle callbacks
+
+        SoSeparator* handles = shape->buildHandleDraggers();
+        bool pass = (handles == nullptr);
+
+        shape->unref();
+        runner.endTest(pass, pass ? "" : "Expected nullptr for type without handles");
+    }
+
+    // ------------------------------------------------------------------
+    // Test 16: buildHandleDraggers() produces correct number of child nodes
+    // ------------------------------------------------------------------
+    runner.startTest("buildHandleDraggers produces one sub-separator per handle");
+    {
+        SoProceduralShape* shape = new SoProceduralShape;
+        shape->ref();
+        shape->shapeType.setValue("TwoParam_test");
+        float pv[] = { 1.f, 2.f };
+        shape->params.setValues(0, 2, pv);
+
+        SoSeparator* handles = shape->buildHandleDraggers();
+        bool pass = handles && (handles->getNumChildren() == 1); // 1 handle
+
+        if (handles) { handles->ref(); handles->unref(); }
+        shape->unref();
+        runner.endTest(pass, pass ? "" : "Expected 1 child separator for 1 handle");
     }
 
     return runner.getSummary();
