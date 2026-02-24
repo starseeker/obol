@@ -90,6 +90,15 @@ foreach(test_name ${SIMPLE_TESTS})
 endforeach()
 
 # -----------------------------------------------------------------------
+# Image comparison thresholds (defined before subdirectories so that
+# tests/rendering/ and other subdirectories can reference them during
+# the first configure pass before the definitions below are reached)
+# -----------------------------------------------------------------------
+set(IMAGE_COMPARISON_HASH_THRESHOLD "5"   CACHE STRING "Perceptual hash threshold (0-64)")
+set(IMAGE_COMPARISON_RMSE_THRESHOLD "5.0" CACHE STRING "RMSE threshold (0-255)")
+set(IMAGE_COMPARISON_TEST_TIMEOUT   "30"  CACHE STRING "Per-test timeout in seconds")
+
+# -----------------------------------------------------------------------
 # Subdirectory tests
 # -----------------------------------------------------------------------
 add_subdirectory(threads)
@@ -118,11 +127,6 @@ add_subdirectory(lists)
 # -----------------------------------------------------------------------
 # Image comparison utilities
 # -----------------------------------------------------------------------
-
-# Image comparison thresholds (override with -D on cmake command line)
-set(IMAGE_COMPARISON_HASH_THRESHOLD "5"   CACHE STRING "Perceptual hash threshold (0-64)")
-set(IMAGE_COMPARISON_RMSE_THRESHOLD "5.0" CACHE STRING "RMSE threshold (0-255)")
-set(IMAGE_COMPARISON_TEST_TIMEOUT   "30"  CACHE STRING "Per-test timeout in seconds")
 
 set(CONTROL_IMAGES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/control_images")
 
