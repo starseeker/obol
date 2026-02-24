@@ -222,13 +222,8 @@ SoTextureCoordinateEnvironment::pick(SoPickAction * action)
 void
 SoTextureCoordinateEnvironment::handleTexgen(void * /* data */)
 {
-#if 0 // from red book
-  glTexGenfv(GL_S, GL_SPHERE_MAP, 0);
-  glTexGenfv(GL_T, GL_SPHERE_MAP, 0);
-#else // from siggraph 96
   glTexGenf(GL_S, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
   glTexGenf(GL_T, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
-#endif
 
   // supply dummy plane for R and Q so that texture generation works
   // properly

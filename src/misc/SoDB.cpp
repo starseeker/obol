@@ -310,45 +310,6 @@ SoDB::init(ContextManager * context_manager)
   // OBSOLETED asserts for 1.0 release. We should be ok. FIXME: I can
   // only think of possibilities for problems in the binary .iv import
   // and export code. 20010308 mortene.
-#if 0
-  // Sanity checks: if anything here breaks, either
-  // include/Inventor/system/inttypes.h.in or the bitwidth define
-  // configure tests need fixing. Keep these tests around.
-
-  // Sanity check: if the int type is not equal to 32 bits everything
-  // probably goes to hell. FIXME: remove this check when we are no
-  // longer dependent on using native C types where we need to have a
-  // particular bitwidth.
-  assert(sizeof(int) == 4);
-
-  if (sizeof(int) != 4) {
-    SoDebugError::postWarning("SoDB::init",
-                              "sizeof(int) != 4 "
-                              "(Coin not tested on this platform)");
-  }
-
-  // Sanity check: if this breaks, the binary format import and export
-  // routines will not work correctly. FIXME: the code should be fixed
-  // to use the int16_t type, then we can remove this stupid check.
-  assert(sizeof(short) == 2);
-
-  if (sizeof(short) != 2) {
-    SoDebugError::postWarning("SoDB::init",
-                              "sizeof(short) != 2 "
-                              "(Coin not tested on this platform)");
-  }
-
-  // Sanity check: if the int type is not equal to the long type, things
-  // could break -- but probably not.
-  assert(sizeof(int) == sizeof(long));
-
-  if (sizeof(int) != sizeof(long)) {
-    SoDebugError::postWarning("SoDB::init",
-                              "sizeof(int) != sizeof(long) "
-                              "(Coin not tested on this platform)");
-  }
-#endif // OBSOLETED sanity checks
-
   CoinResources::init();
   SoInput::init();
   SoBase::initClass();

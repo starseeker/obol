@@ -1218,10 +1218,6 @@ SoInput::read(SbName & n, SbBool validIdent)
     s += buf;
     n = SbName(s);
 
-#if 0 // debug
-    SoDebugError::postInfo("SoInput::read",
-                           "string read: \"%s\"", s.getString());
-#endif // debug
 
     if (s.getLength() == 0) return FALSE;
   }

@@ -2864,9 +2864,6 @@ cc_glglue_glGenTextures(const cc_glglue * w, GLsizei n, GLuint * textures)
   assert(w->glGenTextures);
   w->glGenTextures(n, textures);
 
-#if 0 /* debug */
-  cc_debugerror_postinfo("cc_glglue_glGenTextures", "%p, size==%d, textures==%p", w, n, textures);
-#endif /* debug */
 }
 
 void
@@ -2875,9 +2872,6 @@ cc_glglue_glBindTexture(const cc_glglue * w, GLenum target, GLuint texture)
   assert(w->glBindTexture);
   w->glBindTexture(target, texture);
 
-#if 0 /* debug */
-  cc_debugerror_postinfo("cc_glglue_glBindTexture", "%p, ..., %d", w, texture);
-#endif /* debug */
 }
 
 void
@@ -2886,9 +2880,6 @@ cc_glglue_glDeleteTextures(const cc_glglue * w, GLsizei n, const GLuint * textur
   assert(w->glDeleteTextures);
   w->glDeleteTextures(n, textures);
 
-#if 0 /* debug */
-  cc_debugerror_postinfo("cc_glglue_glDeleteTextures", "%p, size==%d, textures==%p", w, n, textures);
-#endif /* debug */
 }
 
 /*!
