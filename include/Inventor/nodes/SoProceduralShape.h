@@ -45,9 +45,8 @@
 
   1. Defines a \e shape \e type by calling registerShapeType(), supplying:
      - A unique string name (e.g. "TruncatedCone")
-     - A JSON schema string describing the editable parameters (names, types,
-       defaults, and ranges) — this is stored as-is and made available to
-       editor tools; it is not interpreted by Obol itself.
+     - A JSON schema string describing the editable parameters, and optionally
+       the shape topology (vertices, faces) and handle definitions.
      - A bounding-box callback (SoProceduralBBoxCB) that fills in the AABB
        for a given parameter set.
      - A geometry callback (SoProceduralGeomCB) that fills triangles and/or
@@ -65,7 +64,7 @@
   - \c SoCallbackAction / \c SoGetPrimitiveCountAction work through
     the standard SoShape::generatePrimitives() mechanism.
 
-  \b JSON parameter schema format:
+  \b JSON schema — parameters only (minimal):
   \code
   {
     "type"  : "TruncatedCone",
@@ -84,6 +83,74 @@
   \endcode
 
   Supported parameter types: "float", "int", "bool" (stored as 0/1).
+
+  \b JSON schema — full topology (enables auto-handle generation and built-in
+  DRAG_NO_INTERSECT constraint checking without any application callbacks):
+
+  \code
+  {
+    "type": "ARB8",
+    "label": "Arbitrary 8-Vertex Solid",
+    "params": [
+      { "name": "v0x", "type": "float", "default": -1.0, "label": "V0 X" },
+      { "name": "v0y", "type": "float", "default": -1.0, "label": "V0 Y" },
+      { "name": "v0z", "type": "float", "default": -1.0, "label": "V0 Z" },
+      ...  (24 entries total, 3 per vertex)
+    ],
+
+    "vertices": [
+      { "name": "v0", "x": "v0x", "y": "v0y", "z": "v0z" },
+      { "name": "v1", "x": "v1x", "y": "v1y", "z": "v1z" },
+      ...  (one entry per vertex)
+    ],
+
+    "faces": [
+      { "name": "bottom", "verts": ["v0","v3","v2","v1"], "opposite": "top"  },
+      { "name": "top",    "verts": ["v4","v5","v6","v7"], "opposite": "bottom" },
+      { "name": "front",  "verts": ["v0","v1","v5","v4"], "opposite": "back"  },
+      { "name": "right",  "verts": ["v1","v2","v6","v5"], "opposite": "left"  },
+      { "name": "back",   "verts": ["v2","v3","v7","v6"], "opposite": "front" },
+      { "name": "left",   "verts": ["v3","v0","v4","v7"], "opposite": "right" }
+    ],
+
+    "handles": [
+      { "name": "v0_h",     "vertex": "v0",         "dragType": "DRAG_NO_INTERSECT" },
+      { "name": "e01_h",    "edge":   ["v0","v1"],   "dragType": "DRAG_ON_PLANE"     },
+      { "name": "f_bot_h",  "face":   "bottom",      "dragType": "DRAG_NO_INTERSECT" }
+    ]
+  }
+  \endcode
+
+  \b Topology section semantics:
+
+  - \b "vertices": maps each named vertex to its three float parameter names.
+    SoProceduralShape uses this to compute handle positions and to apply drag
+    deltas without any application callback.
+
+  - \b "faces": defines quad faces by vertex name.  The optional \b "opposite"
+    field names the face that cannot be crossed during a DRAG_NO_INTERSECT
+    drag.  Vertices must appear in CCW order when viewed from outside the solid.
+
+  - \b "handles": each entry defines one interactive dragger widget.  The
+    \b "vertex", \b "edge" (two-element array), or \b "face" field selects the
+    affected geometry.  The \b "dragType" field controls dragger behaviour:
+
+    | dragType              | Dragger used          | Constraint applied |
+    |-----------------------|-----------------------|--------------------|
+    | "DRAG_POINT"          | SoDragPointDragger    | None               |
+    | "DRAG_ALONG_AXIS"     | SoTranslate1Dragger   | Face/edge normal   |
+    | "DRAG_ON_PLANE"       | SoTranslate2Dragger   | Adjacent face plane|
+    | "DRAG_NO_INTERSECT"   | SoDragPointDragger    | No-self-intersect  |
+
+    \b DRAG_NO_INTERSECT uses the solid topology to detect whether a proposed
+    move would flip any face orientation (i.e., cause self-intersection).  If it
+    would, the move is rejected and the dragger snaps back.  A
+    SoProceduralHandleValidateCB may override or supplement this built-in test.
+
+  \b When topology is present in the schema, the \c handlesCB and
+  \c handleDragCB arguments to registerShapeType() may be \c nullptr.
+  SoProceduralShape will auto-generate handles and apply drag deltas using
+  the parsed topology.
 
   \b FILE FORMAT/DEFAULTS:
   \code
@@ -194,9 +261,15 @@ typedef void (*SoProceduralGeomCB)(const float*             params,
 struct SoProceduralHandle {
   /*! Constraint types for the dragger associated with this handle. */
   enum DragType {
-    DRAG_POINT,       //!< Free 3-D movement (uses SoDragPointDragger).
-    DRAG_ALONG_AXIS,  //!< Constrained to a single axis (uses SoTranslate1Dragger).
-    DRAG_ON_PLANE     //!< Constrained to a plane (uses SoTranslate2Dragger).
+    DRAG_POINT,         //!< Free 3-D movement (uses SoDragPointDragger, no constraint).
+    DRAG_ALONG_AXIS,    //!< Constrained to a single axis (uses SoTranslate1Dragger).
+    DRAG_ON_PLANE,      //!< Constrained to a plane (uses SoTranslate2Dragger).
+    DRAG_NO_INTERSECT   /*!< Free 3-D movement (uses SoDragPointDragger) with a
+                             topology-based self-intersection guard: the move is
+                             rejected if it would flip any face's outward normal,
+                             which indicates the solid has become self-intersecting
+                             or turned inside-out.  A SoProceduralHandleValidateCB
+                             may supplement or replace the built-in test. */
   };
 
   SbVec3f  position;   //!< Handle position in object space (from current params).
@@ -250,6 +323,44 @@ typedef void (*SoProceduralHandleDragCB)(float*         params,
                                          const SbVec3f& oldPos,
                                          const SbVec3f& newPos,
                                          void*          userdata);
+
+/*!
+  \typedef SoProceduralHandleValidateCB
+  \brief Optional callback that validates or clamps a proposed DRAG_NO_INTERSECT move.
+
+  Called by buildHandleDraggers() sensor infrastructure whenever a handle
+  with \c DRAG_NO_INTERSECT drag type is dragged, \e before the drag delta is
+  applied to \c params.
+
+  The callback should:
+  - Return \c TRUE and leave \a acceptedPos unchanged if the move is fully valid.
+  - Return \c FALSE and set \a acceptedPos to the nearest valid position if the
+    move should be clamped (e.g., to the position just before self-intersection).
+  - Return \c FALSE and set \a acceptedPos equal to \a oldPos to fully reject
+    the move (the dragger will snap back to its start position).
+
+  \note When a JSON schema with vertex/face topology has been parsed (see class
+  documentation), SoProceduralShape provides a built-in intersection check and
+  this callback may be left \c nullptr.  When both are present, the built-in
+  check runs first; if it passes, the callback is then called.
+
+  \param params         Current parameter values (read-only during validation).
+  \param numParams      Number of elements in \a params.
+  \param handleIndex    Index of the handle being dragged.
+  \param oldPos         Handle position at drag start (object space).
+  \param proposedNewPos Proposed new position (object space).
+  \param acceptedPos    [out] Set to the position that will actually be applied.
+                        Initialised to \a proposedNewPos on entry.
+  \param userdata       Opaque pointer supplied at registration time.
+  \return TRUE if \a proposedNewPos is fully accepted; FALSE if clamped/rejected.
+*/
+typedef SbBool (*SoProceduralHandleValidateCB)(const float*   params,
+                                               int            numParams,
+                                               int            handleIndex,
+                                               const SbVec3f& oldPos,
+                                               const SbVec3f& proposedNewPos,
+                                               SbVec3f&       acceptedPos,
+                                               void*          userdata);
 
 // ---------------------------------------------------------------------------
 // SoProceduralShape node
@@ -314,9 +425,10 @@ public:
     do not need interactive editing can use the four-argument overload instead.
 
     \param handlesCB    Callback that computes handle positions from params.
-                        May be \c nullptr if no interactive handles are needed.
+                        May be \c nullptr if the JSON schema defines a
+                        \b "handles" section with full topology.
     \param handleDragCB Callback that updates params when a handle is dragged.
-                        May be \c nullptr if \a handlesCB is \c nullptr.
+                        May be \c nullptr when topology is present in the schema.
   */
   static SbBool registerShapeType(const char*              typeName,
                                   const char*              schemaJSON,
@@ -325,6 +437,24 @@ public:
                                   SoProceduralHandlesCB    handlesCB,
                                   SoProceduralHandleDragCB handleDragCB,
                                   void*                    userdata = nullptr);
+
+  /*!
+    Register a new procedural shape type with interactive dragger handles
+    and an optional DRAG_NO_INTERSECT validation callback.
+
+    \param validateCB   Optional callback for DRAG_NO_INTERSECT constraint
+                        validation.  When \c nullptr and the JSON schema
+                        contains vertex/face topology, SoProceduralShape uses
+                        its built-in face-flip intersection test instead.
+  */
+  static SbBool registerShapeType(const char*                  typeName,
+                                  const char*                  schemaJSON,
+                                  SoProceduralBBoxCB           bboxCB,
+                                  SoProceduralGeomCB           geomCB,
+                                  SoProceduralHandlesCB        handlesCB,
+                                  SoProceduralHandleDragCB     handleDragCB,
+                                  SoProceduralHandleValidateCB validateCB,
+                                  void*                        userdata = nullptr);
 
   //! Return the JSON schema string for a registered type, or \c nullptr.
   static const char* getSchemaJSON(const char* typeName);

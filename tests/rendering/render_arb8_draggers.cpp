@@ -2,9 +2,15 @@
  * render_arb8_draggers.cpp
  *
  * Visual regression / smoke test for SoProceduralShape with
- * buildHandleDraggers().  Verifies that all three handle types
- * (vertex DRAG_POINT, edge DRAG_ON_PLANE, face DRAG_ALONG_AXIS) can be
- * created and rendered without crashing.
+ * topology-driven buildHandleDraggers() and DRAG_NO_INTERSECT constraint.
+ *
+ * Uses JSON schema with "vertices", "faces", and "handles" sections so that
+ * only bboxCB + geomCB need to be provided; no handlesCB, handleDragCB, or
+ * validateCB are required.  Verifies that:
+ *   - Topology parsing produces the correct handle count.
+ *   - DRAG_NO_INTERSECT handles (vertex + vertical-edge + face) and
+ *     DRAG_ON_PLANE handles (horizontal-ring edges) are all built correctly.
+ *   - The scene renders without crashing.
  *
  * Output: argv[1]+".rgb"  (800×600 SGI RGB)
  */
@@ -38,16 +44,6 @@ static const float kDefault[24] = {
 };
 
 static inline SbVec3f vtx(const float* p,int i){return SbVec3f(p[3*i],p[3*i+1],p[3*i+2]);}
-
-static SbVec3f faceNrm(const float* p,const int fv[4])
-{
-  SbVec3f n=(vtx(p,fv[1])-vtx(p,fv[0])).cross(vtx(p,fv[2])-vtx(p,fv[0]));
-  n.normalize(); return n;
-}
-static SbVec3f faceCtr(const float* p,const int fv[4])
-{
-  return (vtx(p,fv[0])+vtx(p,fv[1])+vtx(p,fv[2])+vtx(p,fv[3]))*0.25f;
-}
 
 static void arb8_bbox_r(const float* p,int n,SbVec3f& mn,SbVec3f& mx,void*)
 {
@@ -84,58 +80,72 @@ static void arb8_geom_r(const float* pp,int n,
   }
 }
 
-static void arb8_handles_r(const float* pp,int n,
-                             std::vector<SoProceduralHandle>& handles,void*)
-{
-  const float* p=(n>=24)?pp:kDefault;
-  handles.clear();
-  for(int i=0;i<8;++i){
-    SoProceduralHandle h; h.position=vtx(p,i);
-    h.dragType=SoProceduralHandle::DRAG_POINT; handles.push_back(h);
-  }
-  for(int e=0;e<12;++e){
-    SbVec3f a=vtx(p,kEdges[e][0]),b=vtx(p,kEdges[e][1]);
-    SoProceduralHandle h; h.position=(a+b)*0.5f;
-    h.dragType=SoProceduralHandle::DRAG_ON_PLANE;
-    h.normal=SbVec3f(0,1,0);
-    for(int f=0;f<6;++f){
-      const int* fv=kFaces[f];
-      for(int k=0;k<4;++k)
-        if(fv[k]==kEdges[e][0]&&fv[(k+1)%4]==kEdges[e][1]){h.normal=faceNrm(p,fv);goto done_e;}
-    }
-    done_e: handles.push_back(h);
-  }
-  for(int f=0;f<6;++f){
-    SoProceduralHandle h; h.position=faceCtr(p,kFaces[f]);
-    h.dragType=SoProceduralHandle::DRAG_ALONG_AXIS; h.axis=faceNrm(p,kFaces[f]);
-    handles.push_back(h);
-  }
-}
-
-static void arb8_handleDrag_r(float* params,int n,int idx,
-                                const SbVec3f& oldP,const SbVec3f& newP,void*)
-{
-  if(n<24)return;
-  SbVec3f d=newP-oldP;
-  if(idx<8){
-    params[3*idx  ]+=d[0];params[3*idx+1]+=d[1];params[3*idx+2]+=d[2];
-  }else if(idx<20){
-    int e=idx-8;
-    for(int k=0;k<2;++k){int v=kEdges[e][k];params[3*v]+=d[0];params[3*v+1]+=d[1];params[3*v+2]+=d[2];}
-  }else if(idx<26){
-    int f=idx-20;
-    for(int k=0;k<4;++k){int v=kFaces[f][k];params[3*v]+=d[0];params[3*v+1]+=d[1];params[3*v+2]+=d[2];}
-  }
-}
+static const char* kArb8SchemaR = R"({
+  "type": "ARB8_render",
+  "params": [
+    {"name":"v0x","type":"float","default":-1.0},{"name":"v0y","type":"float","default":-1.0},{"name":"v0z","type":"float","default":-1.0},
+    {"name":"v1x","type":"float","default": 1.0},{"name":"v1y","type":"float","default":-1.0},{"name":"v1z","type":"float","default":-1.0},
+    {"name":"v2x","type":"float","default": 1.0},{"name":"v2y","type":"float","default":-1.0},{"name":"v2z","type":"float","default": 1.0},
+    {"name":"v3x","type":"float","default":-1.0},{"name":"v3y","type":"float","default":-1.0},{"name":"v3z","type":"float","default": 1.0},
+    {"name":"v4x","type":"float","default":-1.0},{"name":"v4y","type":"float","default": 1.0},{"name":"v4z","type":"float","default":-1.0},
+    {"name":"v5x","type":"float","default": 1.0},{"name":"v5y","type":"float","default": 1.0},{"name":"v5z","type":"float","default":-1.0},
+    {"name":"v6x","type":"float","default": 1.0},{"name":"v6y","type":"float","default": 1.0},{"name":"v6z","type":"float","default": 1.0},
+    {"name":"v7x","type":"float","default":-1.0},{"name":"v7y","type":"float","default": 1.0},{"name":"v7z","type":"float","default": 1.0}
+  ],
+  "vertices": [
+    {"name":"v0","x":"v0x","y":"v0y","z":"v0z"},{"name":"v1","x":"v1x","y":"v1y","z":"v1z"},
+    {"name":"v2","x":"v2x","y":"v2y","z":"v2z"},{"name":"v3","x":"v3x","y":"v3y","z":"v3z"},
+    {"name":"v4","x":"v4x","y":"v4y","z":"v4z"},{"name":"v5","x":"v5x","y":"v5y","z":"v5z"},
+    {"name":"v6","x":"v6x","y":"v6y","z":"v6z"},{"name":"v7","x":"v7x","y":"v7y","z":"v7z"}
+  ],
+  "faces": [
+    {"name":"bottom","verts":["v0","v3","v2","v1"],"opposite":"top"   },
+    {"name":"top",   "verts":["v4","v5","v6","v7"],"opposite":"bottom"},
+    {"name":"front", "verts":["v0","v1","v5","v4"],"opposite":"back"  },
+    {"name":"right", "verts":["v1","v2","v6","v5"],"opposite":"left"  },
+    {"name":"back",  "verts":["v2","v3","v7","v6"],"opposite":"front" },
+    {"name":"left",  "verts":["v3","v0","v4","v7"],"opposite":"right" }
+  ],
+  "handles": [
+    {"name":"v0_h","vertex":"v0","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"v1_h","vertex":"v1","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"v2_h","vertex":"v2","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"v3_h","vertex":"v3","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"v4_h","vertex":"v4","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"v5_h","vertex":"v5","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"v6_h","vertex":"v6","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"v7_h","vertex":"v7","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"e01_h","edge":["v0","v1"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e12_h","edge":["v1","v2"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e23_h","edge":["v2","v3"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e30_h","edge":["v3","v0"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e45_h","edge":["v4","v5"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e56_h","edge":["v5","v6"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e67_h","edge":["v6","v7"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e74_h","edge":["v7","v4"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e04_h","edge":["v0","v4"],"dragType":"DRAG_NO_INTERSECT"},
+    {"name":"e15_h","edge":["v1","v5"],"dragType":"DRAG_NO_INTERSECT"},
+    {"name":"e26_h","edge":["v2","v6"],"dragType":"DRAG_NO_INTERSECT"},
+    {"name":"e37_h","edge":["v3","v7"],"dragType":"DRAG_NO_INTERSECT"},
+    {"name":"f_bot_h","face":"bottom","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"f_top_h","face":"top",   "dragType":"DRAG_NO_INTERSECT"},
+    {"name":"f_frt_h","face":"front", "dragType":"DRAG_NO_INTERSECT"},
+    {"name":"f_rgt_h","face":"right", "dragType":"DRAG_NO_INTERSECT"},
+    {"name":"f_bak_h","face":"back",  "dragType":"DRAG_NO_INTERSECT"},
+    {"name":"f_lft_h","face":"left",  "dragType":"DRAG_NO_INTERSECT"}
+  ]
+})";
 
 int main(int argc, char** argv)
 {
   initCoinHeadless();
 
+  // Topology-driven registration: only bbox + geom callbacks needed.
+  // Handles (DRAG_NO_INTERSECT + DRAG_ON_PLANE), positions, and
+  // constraint checks all come from the JSON schema above.
   SoProceduralShape::registerShapeType(
-      "ARB8_render", "",
-      arb8_bbox_r, arb8_geom_r,
-      arb8_handles_r, arb8_handleDrag_r);
+      "ARB8_render", kArb8SchemaR,
+      arb8_bbox_r, arb8_geom_r);
 
   SoSeparator* root = new SoSeparator;
   root->ref();

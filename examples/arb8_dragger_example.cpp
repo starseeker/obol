@@ -116,7 +116,18 @@ static const float kArb8Default[24] = {
   -1, 1,-1,   1, 1,-1,   1, 1, 1,  -1, 1, 1    // top    (y=+1)
 };
 
-// JSON schema: 8 vertices, each with 3 float params (x, y, z)
+// JSON schema with full topology.
+//
+// "params"   — 24 floats (8 vertices × xyz).
+// "vertices" — maps each vertex name to its three param names.
+// "faces"    — 6 quad faces with CCW winding viewed from outside.
+//              "opposite" enables the face-crossing constraint.
+// "handles"  — one handle per vertex (DRAG_NO_INTERSECT: free but validated),
+//              one per edge (DRAG_ON_PLANE: plane derived from first adj face),
+//              one per face (DRAG_NO_INTERSECT: free but cannot cross opposite).
+//
+// With this schema, registerShapeType() needs only bboxCB + geomCB.
+// No handlesCB, handleDragCB, or validateCB are required.
 static const char* kArb8Schema = R"({
   "type"  : "ARB8",
   "label" : "Arbitrary 8-Vertex Solid",
@@ -145,6 +156,52 @@ static const char* kArb8Schema = R"({
     {"name":"v7x","type":"float","default":-1.0,"label":"V7 X"},
     {"name":"v7y","type":"float","default": 1.0,"label":"V7 Y"},
     {"name":"v7z","type":"float","default": 1.0,"label":"V7 Z"}
+  ],
+  "vertices": [
+    {"name":"v0","x":"v0x","y":"v0y","z":"v0z"},
+    {"name":"v1","x":"v1x","y":"v1y","z":"v1z"},
+    {"name":"v2","x":"v2x","y":"v2y","z":"v2z"},
+    {"name":"v3","x":"v3x","y":"v3y","z":"v3z"},
+    {"name":"v4","x":"v4x","y":"v4y","z":"v4z"},
+    {"name":"v5","x":"v5x","y":"v5y","z":"v5z"},
+    {"name":"v6","x":"v6x","y":"v6y","z":"v6z"},
+    {"name":"v7","x":"v7x","y":"v7y","z":"v7z"}
+  ],
+  "faces": [
+    {"name":"bottom","verts":["v0","v3","v2","v1"],"opposite":"top"   },
+    {"name":"top",   "verts":["v4","v5","v6","v7"],"opposite":"bottom"},
+    {"name":"front", "verts":["v0","v1","v5","v4"],"opposite":"back"  },
+    {"name":"right", "verts":["v1","v2","v6","v5"],"opposite":"left"  },
+    {"name":"back",  "verts":["v2","v3","v7","v6"],"opposite":"front" },
+    {"name":"left",  "verts":["v3","v0","v4","v7"],"opposite":"right" }
+  ],
+  "handles": [
+    {"name":"v0_h","vertex":"v0","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"v1_h","vertex":"v1","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"v2_h","vertex":"v2","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"v3_h","vertex":"v3","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"v4_h","vertex":"v4","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"v5_h","vertex":"v5","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"v6_h","vertex":"v6","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"v7_h","vertex":"v7","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"e01_h","edge":["v0","v1"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e12_h","edge":["v1","v2"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e23_h","edge":["v2","v3"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e30_h","edge":["v3","v0"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e45_h","edge":["v4","v5"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e56_h","edge":["v5","v6"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e67_h","edge":["v6","v7"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e74_h","edge":["v7","v4"],"dragType":"DRAG_ON_PLANE"},
+    {"name":"e04_h","edge":["v0","v4"],"dragType":"DRAG_NO_INTERSECT"},
+    {"name":"e15_h","edge":["v1","v5"],"dragType":"DRAG_NO_INTERSECT"},
+    {"name":"e26_h","edge":["v2","v6"],"dragType":"DRAG_NO_INTERSECT"},
+    {"name":"e37_h","edge":["v3","v7"],"dragType":"DRAG_NO_INTERSECT"},
+    {"name":"f_bot_h", "face":"bottom","dragType":"DRAG_NO_INTERSECT"},
+    {"name":"f_top_h", "face":"top",   "dragType":"DRAG_NO_INTERSECT"},
+    {"name":"f_frt_h", "face":"front", "dragType":"DRAG_NO_INTERSECT"},
+    {"name":"f_rgt_h", "face":"right", "dragType":"DRAG_NO_INTERSECT"},
+    {"name":"f_bak_h", "face":"back",  "dragType":"DRAG_NO_INTERSECT"},
+    {"name":"f_lft_h", "face":"left",  "dragType":"DRAG_NO_INTERSECT"}
   ]
 })";
 
@@ -211,108 +268,6 @@ static void arb8_geom(const float* params, int numParams,
 }
 
 // ============================================================================
-// Handles callback — returns vertex, edge, and face handles
-//
-// Handle index layout:
-//   0..7   vertex handles  (DRAG_POINT)
-//   8..19  edge handles    (DRAG_ON_PLANE, plane = adjacent face normal)
-//   20..25 face handles    (DRAG_ALONG_AXIS, axis = face normal)
-// ============================================================================
-static void arb8_handles(const float* params, int numParams,
-                          std::vector<SoProceduralHandle>& handles,
-                          void*)
-{
-  const float* p = (numParams >= 24) ? params : kArb8Default;
-
-  handles.clear();
-
-  // --- Vertex handles ---
-  for (int i=0;i<8;++i) {
-    SoProceduralHandle h;
-    h.position = arb8Vertex(p, i);
-    h.dragType = SoProceduralHandle::DRAG_POINT;
-    char buf[32]; snprintf(buf,sizeof(buf),"v%d",i);
-    h.name = buf;
-    handles.push_back(h);
-  }
-
-  // --- Edge handles (midpoint, constrained to a face plane) ---
-  for (int e=0;e<12;++e) {
-    SbVec3f a = arb8Vertex(p, kArb8Edges[e][0]);
-    SbVec3f b = arb8Vertex(p, kArb8Edges[e][1]);
-    SoProceduralHandle h;
-    h.position = (a + b) * 0.5f;
-    h.dragType = SoProceduralHandle::DRAG_ON_PLANE;
-    // Use normal of the first face that contains this edge as the plane normal
-    h.normal = SbVec3f(0,1,0); // fallback
-    for (int f=0;f<6;++f) {
-      const int* fv = kArb8Faces[f];
-      for (int k=0;k<4;++k) {
-        if (fv[k]==kArb8Edges[e][0] && fv[(k+1)%4]==kArb8Edges[e][1]) {
-          h.normal = faceNormal(p, fv);
-          goto done_edge;
-        }
-      }
-    }
-    done_edge:
-    char buf[32]; snprintf(buf,sizeof(buf),"e%d",e);
-    h.name = buf;
-    handles.push_back(h);
-  }
-
-  // --- Face handles (centroid, constrained along face normal) ---
-  for (int f=0;f<6;++f) {
-    SoProceduralHandle h;
-    h.position = faceCentroid(p, kArb8Faces[f]);
-    h.dragType = SoProceduralHandle::DRAG_ALONG_AXIS;
-    h.axis     = faceNormal(p, kArb8Faces[f]);
-    char buf[32]; snprintf(buf,sizeof(buf),"f%d",f);
-    h.name = buf;
-    handles.push_back(h);
-  }
-}
-
-// ============================================================================
-// Handle drag callback — updates params when a handle is moved
-// ============================================================================
-static void arb8_handleDrag(float* params, int numParams,
-                             int handleIndex,
-                             const SbVec3f& oldPos, const SbVec3f& newPos,
-                             void*)
-{
-  if (numParams < 24) return;
-  SbVec3f delta = newPos - oldPos;
-
-  if (handleIndex < 8) {
-    // Vertex handle: move the single vertex
-    int i = handleIndex;
-    params[3*i  ] += delta[0];
-    params[3*i+1] += delta[1];
-    params[3*i+2] += delta[2];
-
-  } else if (handleIndex < 20) {
-    // Edge handle: move both endpoint vertices
-    int e = handleIndex - 8;
-    for (int k=0;k<2;++k) {
-      int v = kArb8Edges[e][k];
-      params[3*v  ] += delta[0];
-      params[3*v+1] += delta[1];
-      params[3*v+2] += delta[2];
-    }
-
-  } else if (handleIndex < 26) {
-    // Face handle: move all four face vertices
-    int f = handleIndex - 20;
-    for (int k=0;k<4;++k) {
-      int v = kArb8Faces[f][k];
-      params[3*v  ] += delta[0];
-      params[3*v+1] += delta[1];
-      params[3*v+2] += delta[2];
-    }
-  }
-}
-
-// ============================================================================
 // Build a scene node for one ARB8 instance with optional dragger handles
 // ============================================================================
 static SoSeparator* makeArb8Scene(const char* typeTag,
@@ -373,11 +328,14 @@ int main(int argc, char** argv)
 {
   initCoinHeadless();
 
-  // Register the ARB8 type with both geometry and handle callbacks.
+  // Register the ARB8 type.
+  // With the JSON topology in kArb8Schema (vertices, faces, handles),
+  // only bboxCB and geomCB are needed — no handlesCB, handleDragCB or
+  // validateCB required.  SoProceduralShape derives all handle positions,
+  // drag types, and DRAG_NO_INTERSECT constraint checks from the schema.
   SoProceduralShape::registerShapeType(
       "ARB8", kArb8Schema,
-      arb8_bbox, arb8_geom,
-      arb8_handles, arb8_handleDrag);
+      arb8_bbox, arb8_geom);
 
   SoSeparator* root = new SoSeparator;
   root->ref();

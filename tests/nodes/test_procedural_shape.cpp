@@ -49,6 +49,10 @@
  *  14. buildHandleDraggers() returns non-null for handle-capable type
  *  15. buildHandleDraggers() returns nullptr for type without handles
  *  16. buildHandleDraggers() produces correct child count
+ *  17. JSON topology: setShapeType extracts defaults from full-topology schema
+ *  18. buildHandleDraggers() from topology (no handlesCB) — correct child count
+ *  19. DRAG_NO_INTERSECT is a distinct DragType value
+ *  20. registerShapeType with validateCB
  */
 
 #include "../test_utils.h"
@@ -473,6 +477,119 @@ int main()
         runner.endTest(pass, pass ? "" : "Expected 1 child separator for 1 handle");
     }
 
-    return runner.getSummary();
-}
+    // ------------------------------------------------------------------
+    // JSON topology parsing tests — use a minimal cube schema
+    // ------------------------------------------------------------------
 
+    // Minimal 4-vertex tetrahedron schema with full topology and one handle
+    static const char* kTetraSchema = R"({
+      "type": "Tetra_test",
+      "params": [
+        {"name":"v0x","type":"float","default":-1.0},
+        {"name":"v0y","type":"float","default":-1.0},
+        {"name":"v0z","type":"float","default":-1.0},
+        {"name":"v1x","type":"float","default": 1.0},
+        {"name":"v1y","type":"float","default":-1.0},
+        {"name":"v1z","type":"float","default":-1.0},
+        {"name":"v2x","type":"float","default": 0.0},
+        {"name":"v2y","type":"float","default": 1.0},
+        {"name":"v2z","type":"float","default":-1.0},
+        {"name":"v3x","type":"float","default": 0.0},
+        {"name":"v3y","type":"float","default": 0.0},
+        {"name":"v3z","type":"float","default": 1.0}
+      ],
+      "vertices": [
+        {"name":"v0","x":"v0x","y":"v0y","z":"v0z"},
+        {"name":"v1","x":"v1x","y":"v1y","z":"v1z"},
+        {"name":"v2","x":"v2x","y":"v2y","z":"v2z"},
+        {"name":"v3","x":"v3x","y":"v3y","z":"v3z"}
+      ],
+      "faces": [
+        {"name":"base","verts":["v0","v2","v1"]},
+        {"name":"front","verts":["v0","v1","v3"]},
+        {"name":"right","verts":["v1","v2","v3"]},
+        {"name":"left","verts":["v2","v0","v3"]}
+      ],
+      "handles": [
+        {"name":"v0_h","vertex":"v0","dragType":"DRAG_NO_INTERSECT"},
+        {"name":"e01_h","edge":["v0","v1"],"dragType":"DRAG_ON_PLANE"},
+        {"name":"f_base_h","face":"base","dragType":"DRAG_NO_INTERSECT"}
+      ]
+    })";
+
+    static const auto tetraBbox = [](const float*, int, SbVec3f& mn, SbVec3f& mx, void*){
+        mn.setValue(-2,-2,-2); mx.setValue(2,2,2);
+    };
+    static const auto tetraGeom = [](const float*, int, SoProceduralTriangles*, SoProceduralWireframe*, void*){};
+
+    SoProceduralShape::registerShapeType(
+        "Tetra_test", kTetraSchema,
+        static_cast<SoProceduralBBoxCB>(tetraBbox),
+        static_cast<SoProceduralGeomCB>(tetraGeom));
+
+    // ------------------------------------------------------------------
+    // Test 17: JSON topology parsing — params extracted from schema
+    // ------------------------------------------------------------------
+    runner.startTest("JSON topology: setShapeType extracts 12 defaults for Tetra_test");
+    {
+        SoProceduralShape* shape = new SoProceduralShape;
+        shape->ref();
+        shape->setShapeType("Tetra_test");
+        bool pass = (shape->params.getNum() == 12);
+        shape->unref();
+        runner.endTest(pass, pass ? "" : "Expected 12 params from JSON topology");
+    }
+
+    // ------------------------------------------------------------------
+    // Test 18: buildHandleDraggers() from topology — correct child count
+    // ------------------------------------------------------------------
+    runner.startTest("buildHandleDraggers from topology: correct child count");
+    {
+        SoProceduralShape* shape = new SoProceduralShape;
+        shape->ref();
+        shape->setShapeType("Tetra_test");
+
+        SoSeparator* handles = shape->buildHandleDraggers();
+        // Schema defines 3 handles
+        bool pass = handles && (handles->getNumChildren() == 3);
+        if (handles) { handles->ref(); handles->unref(); }
+        shape->unref();
+        runner.endTest(pass, pass ? "" : "Expected 3 children from topology handles");
+    }
+
+    // ------------------------------------------------------------------
+    // Test 19: DRAG_NO_INTERSECT enum value is distinct from other types
+    // ------------------------------------------------------------------
+    runner.startTest("DRAG_NO_INTERSECT is a distinct DragType value");
+    {
+        bool pass = (SoProceduralHandle::DRAG_NO_INTERSECT != SoProceduralHandle::DRAG_POINT)
+                 && (SoProceduralHandle::DRAG_NO_INTERSECT != SoProceduralHandle::DRAG_ALONG_AXIS)
+                 && (SoProceduralHandle::DRAG_NO_INTERSECT != SoProceduralHandle::DRAG_ON_PLANE);
+        runner.endTest(pass, pass ? "" : "DRAG_NO_INTERSECT not distinct");
+    }
+
+    // ------------------------------------------------------------------
+    // Test 20: registerShapeType with validateCB succeeds
+    // ------------------------------------------------------------------
+    runner.startTest("registerShapeType with validateCB");
+    {
+        static const auto vCB = [](const float*, int, int, const SbVec3f&,
+                                    const SbVec3f& proposed, SbVec3f& accepted,
+                                    void*) -> SbBool {
+            accepted = proposed; // always accept
+            return TRUE;
+        };
+        SbBool ok = SoProceduralShape::registerShapeType(
+            "ValidateTest", "",
+            static_cast<SoProceduralBBoxCB>(tetraBbox),
+            static_cast<SoProceduralGeomCB>(tetraGeom),
+            nullptr, nullptr,
+            static_cast<SoProceduralHandleValidateCB>(vCB));
+        bool pass = (ok == TRUE) && (SoProceduralShape::isRegistered("ValidateTest") == TRUE);
+        runner.endTest(pass, pass ? "" : "validateCB registration failed");
+    }
+
+    return runner.getSummary();
+
+
+}

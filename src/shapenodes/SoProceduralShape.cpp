@@ -67,23 +67,170 @@
 #include "nodes/SoSubNodeP.h"
 
 // ---------------------------------------------------------------------------
-// Shape type registry
+// Minimal JSON parser (self-contained, handles objects/arrays/strings/numbers)
 // ---------------------------------------------------------------------------
 
 namespace {
+
+struct JVal;
+using JArray  = std::vector<JVal>;
+using JObject = std::map<std::string, JVal>;
+
+enum JKind { JK_NULL, JK_BOOL, JK_NUM, JK_STR, JK_ARR, JK_OBJ };
+
+struct JVal {
+  JKind       kind = JK_NULL;
+  bool        bval = false;
+  double      nval = 0.0;
+  std::string sval;
+  JArray      aval;
+  JObject     oval;
+
+  bool   isNull() const { return kind == JK_NULL; }
+  bool   isBool() const { return kind == JK_BOOL; }
+  bool   isNum()  const { return kind == JK_NUM; }
+  bool   isStr()  const { return kind == JK_STR; }
+  bool   isArr()  const { return kind == JK_ARR; }
+  bool   isObj()  const { return kind == JK_OBJ; }
+  bool   getBool()   const { return bval; }
+  double getNum()    const { return nval; }
+  float  getFloat()  const { return (float)nval; }
+  int    getInt()    const { return (int)nval; }
+  const std::string& getStr()  const { return sval; }
+  const JArray&      getArr()  const { return aval; }
+  const JObject&     getObj()  const { return oval; }
+
+  bool contains(const std::string& k) const {
+    return kind == JK_OBJ && oval.count(k) > 0;
+  }
+  const JVal& at(const std::string& k) const {
+    static JVal nullv;
+    auto it = oval.find(k);
+    return it != oval.end() ? it->second : nullv;
+  }
+};
+
+static void jskip(const char*& p) {
+  while (*p && isspace((unsigned char)*p)) ++p;
+}
+static JVal jparse(const char*& p);
+
+static std::string jstring(const char*& p) {
+  ++p; // skip '"'
+  std::string s;
+  while (*p && *p != '"') {
+    if (*p == '\\') {
+      ++p;
+      switch (*p) {
+      case '"': s+='"'; break;  case '\\': s+='\\'; break;
+      case '/': s+='/'; break;  case 'n': s+='\n'; break;
+      case 't': s+='\t'; break; case 'r': s+='\r'; break;
+      default: s+=*p; break;
+      }
+    } else s += *p;
+    ++p;
+  }
+  if (*p=='"') ++p;
+  return s;
+}
+static JVal jobj(const char*& p) {
+  ++p; JVal v; v.kind=JK_OBJ; jskip(p);
+  if (*p=='}') { ++p; return v; }
+  while (*p) {
+    jskip(p); if (*p!='"') break;
+    std::string k = jstring(p); jskip(p);
+    if (*p==':') { ++p; } jskip(p);
+    v.oval[k] = jparse(p); jskip(p);
+    if (*p==',') { ++p; jskip(p); }
+    else if (*p=='}') { ++p; break; }
+    else break;
+  }
+  return v;
+}
+static JVal jarr(const char*& p) {
+  ++p; JVal v; v.kind=JK_ARR; jskip(p);
+  if (*p==']') { ++p; return v; }
+  while (*p) {
+    jskip(p); v.aval.push_back(jparse(p)); jskip(p);
+    if (*p==',') ++p;
+    else if (*p==']') { ++p; break; }
+    else break;
+  }
+  return v;
+}
+static JVal jparse(const char*& p) {
+  jskip(p);
+  if (!*p) return JVal{};
+  if (*p=='{') return jobj(p);
+  if (*p=='[') return jarr(p);
+  if (*p=='"') { JVal v; v.kind=JK_STR; v.sval=jstring(p); return v; }
+  if (strncmp(p,"true",4)==0)  { p+=4; JVal v; v.kind=JK_BOOL; v.bval=true;  return v; }
+  if (strncmp(p,"false",5)==0) { p+=5; JVal v; v.kind=JK_BOOL; v.bval=false; return v; }
+  if (strncmp(p,"null",4)==0)  { p+=4; return JVal{}; }
+  JVal v; v.kind=JK_NUM; char* e=nullptr; v.nval=strtod(p,&e); if(e>p) p=e; return v;
+}
+static JVal parseJSON(const std::string& s) {
+  const char* p = s.c_str(); return jparse(p);
+}
+
+// ---------------------------------------------------------------------------
+// Parsed topology structures (filled from JSON schema "vertices"/"faces"/"handles")
+// ---------------------------------------------------------------------------
+
+struct ParsedParam {
+  std::string name, type, label;
+  float defVal = 0.f, minVal = 0.f, maxVal = 0.f;
+  bool hasMin = false, hasMax = false;
+};
+
+// Vertex → three parameter indices (which slot in params[] is its x, y, z)
+struct ParsedVertex {
+  std::string name;
+  int paramX = -1, paramY = -1, paramZ = -1;
+};
+
+// Quad face with optional opposite face
+struct ParsedFace {
+  std::string name;
+  std::vector<int> vertexIndices; // into ParsedVertex list
+  int oppositeIndex = -1;         // index of opposite ParsedFace (-1 = none)
+};
+
+// One entry in the "handles" JSON array
+struct ParsedHandle {
+  std::string name;
+  SoProceduralHandle::DragType dragType = SoProceduralHandle::DRAG_POINT;
+  int  elementType = 0;          // 0=vertex, 1=edge, 2=face
+  std::vector<int> vertexIdxs;   // vertex/edge: affected vertex list
+  int  faceIdx = -1;             // face handles only
+};
+
+// ---------------------------------------------------------------------------
+// Shape type registry entry
+// ---------------------------------------------------------------------------
 
 struct ShapeTypeEntry {
   std::string              typeName;
   std::string              schemaJSON;
   SoProceduralBBoxCB       bboxCB;
   SoProceduralGeomCB       geomCB;
-  SoProceduralHandlesCB    handlesCB;    // may be nullptr
-  SoProceduralHandleDragCB handleDragCB; // may be nullptr
+  SoProceduralHandlesCB    handlesCB;     // nullptr when topology drives handles
+  SoProceduralHandleDragCB handleDragCB;  // nullptr when topology drives delta
+  SoProceduralHandleValidateCB validateCB; // nullptr = use built-in check
   void*                    userdata;
+
+  // Parsed topology (populated if JSON includes "vertices"/"faces"/"handles")
+  std::vector<ParsedParam>  parsedParams;
+  std::vector<ParsedVertex> parsedVertices;
+  std::vector<ParsedFace>   parsedFaces;
+  std::vector<ParsedHandle> parsedHandles;
+  bool topologyParsed = false;
 };
 
-// Registry storage: simple sorted map, populated at app-init time.
-// No mutex: registrations must complete before rendering starts.
+// ---------------------------------------------------------------------------
+// Registry storage
+// ---------------------------------------------------------------------------
+
 std::map<std::string, ShapeTypeEntry> s_registry;
 
 static const ShapeTypeEntry* findEntry(const char* typeName)
@@ -93,20 +240,223 @@ static const ShapeTypeEntry* findEntry(const char* typeName)
   return (it != s_registry.end()) ? &it->second : nullptr;
 }
 
-// Per-handle sensor connection: keeps the shape pointer, handle index,
-// initial position, and dragger reference alive for the sensor callback.
+// ---------------------------------------------------------------------------
+// JSON topology parser
+// ---------------------------------------------------------------------------
+
+static void parseTopology(ShapeTypeEntry& e, const JVal& root)
+{
+  // --- params section ---
+  if (root.contains("params")) {
+    for (const JVal& p : root.at("params").getArr()) {
+      if (!p.isObj()) continue;
+      ParsedParam pp;
+      if (p.contains("name")) pp.name = p.at("name").getStr();
+      if (p.contains("type")) pp.type = p.at("type").getStr();
+      if (p.contains("label")) pp.label = p.at("label").getStr();
+      if (p.contains("default")) pp.defVal = p.at("default").getFloat();
+      if (p.contains("min"))  { pp.minVal = p.at("min").getFloat();  pp.hasMin = true; }
+      if (p.contains("max"))  { pp.maxVal = p.at("max").getFloat();  pp.hasMax = true; }
+      e.parsedParams.push_back(pp);
+    }
+  }
+
+  if (!root.contains("vertices") || !root.contains("faces")) return;
+
+  // --- vertices section ---
+  // Build param-name → index map
+  std::map<std::string,int> paramIndex;
+  for (int i = 0; i < (int)e.parsedParams.size(); ++i)
+    paramIndex[e.parsedParams[i].name] = i;
+
+  for (const JVal& v : root.at("vertices").getArr()) {
+    if (!v.isObj()) continue;
+    ParsedVertex pv;
+    if (v.contains("name")) pv.name = v.at("name").getStr();
+    auto getIdx = [&](const char* k) -> int {
+      if (!v.contains(k)) return -1;
+      auto it = paramIndex.find(v.at(k).getStr());
+      return it != paramIndex.end() ? it->second : -1;
+    };
+    pv.paramX = getIdx("x");
+    pv.paramY = getIdx("y");
+    pv.paramZ = getIdx("z");
+    e.parsedVertices.push_back(pv);
+  }
+
+  // Build vertex-name → index map
+  std::map<std::string,int> vertexIndex;
+  for (int i = 0; i < (int)e.parsedVertices.size(); ++i)
+    vertexIndex[e.parsedVertices[i].name] = i;
+
+  // --- faces section (first pass: no opposites yet) ---
+  std::vector<std::string> faceOppositeNames;
+  for (const JVal& f : root.at("faces").getArr()) {
+    if (!f.isObj()) continue;
+    ParsedFace pf;
+    if (f.contains("name")) pf.name = f.at("name").getStr();
+    if (f.contains("verts")) {
+      for (const JVal& vn : f.at("verts").getArr()) {
+        if (!vn.isStr()) continue;
+        auto it = vertexIndex.find(vn.getStr());
+        pf.vertexIndices.push_back(it != vertexIndex.end() ? it->second : -1);
+      }
+    }
+    faceOppositeNames.push_back(f.contains("opposite") ? f.at("opposite").getStr() : "");
+    e.parsedFaces.push_back(pf);
+  }
+
+  // Build face-name → index map
+  std::map<std::string,int> faceIndex;
+  for (int i = 0; i < (int)e.parsedFaces.size(); ++i)
+    faceIndex[e.parsedFaces[i].name] = i;
+
+  // Second pass: resolve opposite indices
+  for (int i = 0; i < (int)e.parsedFaces.size(); ++i) {
+    const std::string& oname = faceOppositeNames[i];
+    if (!oname.empty()) {
+      auto it = faceIndex.find(oname);
+      if (it != faceIndex.end()) e.parsedFaces[i].oppositeIndex = it->second;
+    }
+  }
+
+  // --- handles section (optional) ---
+  if (root.contains("handles")) {
+    auto parseDragType = [](const std::string& s) -> SoProceduralHandle::DragType {
+      if (s == "DRAG_ALONG_AXIS")    return SoProceduralHandle::DRAG_ALONG_AXIS;
+      if (s == "DRAG_ON_PLANE")      return SoProceduralHandle::DRAG_ON_PLANE;
+      if (s == "DRAG_NO_INTERSECT")  return SoProceduralHandle::DRAG_NO_INTERSECT;
+      return SoProceduralHandle::DRAG_POINT; // default
+    };
+
+    for (const JVal& h : root.at("handles").getArr()) {
+      if (!h.isObj()) continue;
+      ParsedHandle ph;
+      if (h.contains("name")) ph.name = h.at("name").getStr();
+      std::string dtStr = h.contains("dragType") ? h.at("dragType").getStr() : "";
+      ph.dragType = parseDragType(dtStr);
+
+      if (h.contains("vertex")) {
+        ph.elementType = 0;
+        const std::string& vname = h.at("vertex").getStr();
+        auto it = vertexIndex.find(vname);
+        if (it != vertexIndex.end()) ph.vertexIdxs.push_back(it->second);
+      } else if (h.contains("edge")) {
+        ph.elementType = 1;
+        for (const JVal& vn : h.at("edge").getArr()) {
+          if (!vn.isStr()) continue;
+          auto it = vertexIndex.find(vn.getStr());
+          if (it != vertexIndex.end()) ph.vertexIdxs.push_back(it->second);
+        }
+      } else if (h.contains("face")) {
+        ph.elementType = 2;
+        const std::string& fname = h.at("face").getStr();
+        auto it = faceIndex.find(fname);
+        if (it != faceIndex.end()) {
+          ph.faceIdx = it->second;
+          for (int vi : e.parsedFaces[it->second].vertexIndices)
+            ph.vertexIdxs.push_back(vi);
+        }
+      }
+      e.parsedHandles.push_back(ph);
+    }
+  }
+
+  e.topologyParsed = true;
+}
+
+// ---------------------------------------------------------------------------
+// Get a vertex position from params[] using parsed topology
+// ---------------------------------------------------------------------------
+
+static SbVec3f vertexPos(const ShapeTypeEntry& e,
+                         int vertIdx,
+                         const std::vector<float>& params)
+{
+  if (vertIdx < 0 || vertIdx >= (int)e.parsedVertices.size())
+    return SbVec3f(0,0,0);
+  const ParsedVertex& v = e.parsedVertices[vertIdx];
+  float x = (v.paramX >= 0 && v.paramX < (int)params.size()) ? params[v.paramX] : 0.f;
+  float y = (v.paramY >= 0 && v.paramY < (int)params.size()) ? params[v.paramY] : 0.f;
+  float z = (v.paramZ >= 0 && v.paramZ < (int)params.size()) ? params[v.paramZ] : 0.f;
+  return SbVec3f(x, y, z);
+}
+
+// ---------------------------------------------------------------------------
+// Built-in no-intersect validator: checks that no face normal flips after drag
+// ---------------------------------------------------------------------------
+
+static SbBool checkNoIntersect(const ShapeTypeEntry& e,
+                                const std::vector<float>& currentParams,
+                                int handleIndex,
+                                const SbVec3f& oldPos,
+                                SbVec3f& newPos)   // newPos may be clamped
+{
+  if (!e.topologyParsed || handleIndex < 0 ||
+      handleIndex >= (int)e.parsedHandles.size())
+    return TRUE; // no topology → cannot validate, accept
+
+  const ParsedHandle& hdl = e.parsedHandles[handleIndex];
+
+  SbVec3f delta = newPos - oldPos;
+
+  // Apply delta to the proposed params copy
+  std::vector<float> proposed = currentParams;
+  for (int vi : hdl.vertexIdxs) {
+    if (vi < 0 || vi >= (int)e.parsedVertices.size()) continue;
+    const ParsedVertex& pv = e.parsedVertices[vi];
+    if (pv.paramX >= 0 && pv.paramX < (int)proposed.size()) proposed[pv.paramX] += delta[0];
+    if (pv.paramY >= 0 && pv.paramY < (int)proposed.size()) proposed[pv.paramY] += delta[1];
+    if (pv.paramZ >= 0 && pv.paramZ < (int)proposed.size()) proposed[pv.paramZ] += delta[2];
+  }
+
+  // Compute centroid of all vertices in proposed configuration
+  SbVec3f centroid(0,0,0);
+  int nverts = (int)e.parsedVertices.size();
+  if (nverts == 0) return TRUE;
+  for (int i = 0; i < nverts; ++i) centroid += vertexPos(e, i, proposed);
+  centroid /= (float)nverts;
+
+  // Check every face: outward normal must still point away from centroid
+  for (const ParsedFace& face : e.parsedFaces) {
+    if ((int)face.vertexIndices.size() < 3) continue;
+    SbVec3f v0 = vertexPos(e, face.vertexIndices[0], proposed);
+    SbVec3f v1 = vertexPos(e, face.vertexIndices[1], proposed);
+    SbVec3f v2 = vertexPos(e, face.vertexIndices[2], proposed);
+    SbVec3f normal = (v1 - v0).cross(v2 - v0);
+    // outness > epsilon means the normal still points away from the centroid.
+    // A small negative threshold allows numerical tolerance at near-degenerate faces.
+    if (normal.dot(v0 - centroid) <= -1e-6f) {
+      // Face flipped — reject move
+      newPos = oldPos;
+      return FALSE;
+    }
+  }
+  return TRUE;
+}
+
+// ---------------------------------------------------------------------------
+// Per-handle drag sensor context (stores sensor ref for dragger reset)
+// ---------------------------------------------------------------------------
+
 struct HandleDragContext {
   SoProceduralShape*  shape;
   int                 handleIndex;
-  SbVec3f             initPos;    // handle position when draggers were built
-  SoDragger*          dragger;    // weak ref (dragger outlives sensor in scene)
+  SbVec3f             initPos;
+  SoDragger*          dragger;
+  SoFieldSensor*      sensor;  // stored so we can detach/reattach on reset
+  bool                isNoIntersect; // true → apply validate logic
 
   HandleDragContext(SoProceduralShape* s, int idx, const SbVec3f& pos,
-                    SoDragger* d)
-    : shape(s), handleIndex(idx), initPos(pos), dragger(d) {}
+                    SoDragger* d, bool noIntersect)
+    : shape(s), handleIndex(idx), initPos(pos), dragger(d),
+      sensor(nullptr), isNoIntersect(noIntersect) {}
 };
 
-// Sensor callback: fires when a dragger's translation field changes.
+// ---------------------------------------------------------------------------
+// Sensor callback
+// ---------------------------------------------------------------------------
+
 static void handleDragSensorCB(void* userdata, SoSensor*)
 {
   auto* ctx = static_cast<HandleDragContext*>(userdata);
@@ -115,21 +465,18 @@ static void handleDragSensorCB(void* userdata, SoSensor*)
   SoProceduralShape*    shape = ctx->shape;
   const ShapeTypeEntry* entry =
     findEntry(shape->shapeType.getValue().getString());
-  if (!entry || !entry->handleDragCB) return;
+  if (!entry) return;
 
-  // Retrieve current dragger translation (delta from initial position).
+  // Get current dragger translation delta
   SbVec3f delta(0.f, 0.f, 0.f);
-
-  // Both SoDragPointDragger and SoTranslate1Dragger expose a 'translation'
-  // field.  SoTranslate2Dragger also has 'translation'.  Extract via the
-  // common field name.
   SoField* tf = ctx->dragger->getField("translation");
   if (tf && tf->isOfType(SoSFVec3f::getClassTypeId()))
     delta = static_cast<SoSFVec3f*>(tf)->getValue();
 
-  SbVec3f newPos = ctx->initPos + delta;
+  SbVec3f proposedNewPos = ctx->initPos + delta;
+  SbVec3f acceptedPos    = proposedNewPos;
 
-  // Copy current params, call the application callback, write back.
+  // Snapshot of current params
   int   nparams = shape->params.getNum();
   std::vector<float> paramsCopy(static_cast<size_t>(nparams), 0.f);
   if (nparams > 0) {
@@ -137,12 +484,58 @@ static void handleDragSensorCB(void* userdata, SoSensor*)
     paramsCopy.assign(pv, pv + nparams);
   }
 
-  entry->handleDragCB(paramsCopy.data(), nparams,
-                      ctx->handleIndex,
-                      ctx->initPos, newPos,
-                      entry->userdata);
+  if (ctx->isNoIntersect) {
+    // 1. Built-in topology intersection check (if topology available)
+    SbBool builtInOK = TRUE;
+    if (entry->topologyParsed) {
+      builtInOK = checkNoIntersect(*entry, paramsCopy,
+                                   ctx->handleIndex, ctx->initPos, acceptedPos);
+    }
 
-  shape->params.setValues(0, nparams, paramsCopy.data());
+    // 2. Application validate callback (may further clamp or reject)
+    if (builtInOK && entry->validateCB) {
+      SbBool cbOK = entry->validateCB(
+          paramsCopy.data(), nparams,
+          ctx->handleIndex, ctx->initPos, proposedNewPos,
+          acceptedPos, entry->userdata);
+      (void)cbOK;
+    }
+
+    // If accepted position differs from proposed, reset the dragger field.
+    SbVec3f acceptedDelta = acceptedPos - ctx->initPos;
+    static const float kResetThreshSq = 1e-6f * 1e-6f;
+    if ((acceptedPos - proposedNewPos).sqrLength() > kResetThreshSq) {
+      if (ctx->sensor) ctx->sensor->detach();
+      SoSFVec3f* tvf = static_cast<SoSFVec3f*>(tf);
+      if (tvf) tvf->setValue(acceptedDelta);
+      if (ctx->sensor && tf) ctx->sensor->attach(tf);
+    }
+  }
+
+  // --- Apply drag via topology-based built-in OR application callback ---
+  if (entry->topologyParsed && !entry->handleDragCB &&
+      ctx->handleIndex < (int)entry->parsedHandles.size()) {
+    // Built-in: apply accepted delta to affected vertex params
+    const ParsedHandle& hdl = entry->parsedHandles[ctx->handleIndex];
+
+    SbVec3f appliedDelta = acceptedPos - ctx->initPos;
+    for (int vi : hdl.vertexIdxs) {
+      if (vi < 0 || vi >= (int)entry->parsedVertices.size()) continue;
+      const ParsedVertex& pv = entry->parsedVertices[vi];
+      if (pv.paramX >= 0 && pv.paramX < nparams) paramsCopy[pv.paramX] += appliedDelta[0];
+      if (pv.paramY >= 0 && pv.paramY < nparams) paramsCopy[pv.paramY] += appliedDelta[1];
+      if (pv.paramZ >= 0 && pv.paramZ < nparams) paramsCopy[pv.paramZ] += appliedDelta[2];
+    }
+    shape->params.setValues(0, nparams, paramsCopy.data());
+
+  } else if (entry->handleDragCB) {
+    // Application-supplied callback
+    entry->handleDragCB(paramsCopy.data(), nparams,
+                        ctx->handleIndex,
+                        ctx->initPos, acceptedPos,
+                        entry->userdata);
+    shape->params.setValues(0, nparams, paramsCopy.data());
+  }
 }
 
 } // anonymous namespace
@@ -191,7 +584,7 @@ SoProceduralShape::registerShapeType(const char*        typeName,
   return SoProceduralShape::registerShapeType(typeName, schemaJSON,
                                               bboxCB, geomCB,
                                               nullptr, nullptr,
-                                              userdata);
+                                              nullptr, userdata);
 }
 
 // static
@@ -204,8 +597,24 @@ SoProceduralShape::registerShapeType(const char*              typeName,
                                      SoProceduralHandleDragCB handleDragCB,
                                      void*                    userdata)
 {
-  if (!typeName || !*typeName || !bboxCB || !geomCB) return FALSE;
+  return SoProceduralShape::registerShapeType(typeName, schemaJSON,
+                                              bboxCB, geomCB,
+                                              handlesCB, handleDragCB,
+                                              nullptr, userdata);
+}
 
+// static
+SbBool
+SoProceduralShape::registerShapeType(const char*                  typeName,
+                                     const char*                  schemaJSON,
+                                     SoProceduralBBoxCB           bboxCB,
+                                     SoProceduralGeomCB           geomCB,
+                                     SoProceduralHandlesCB        handlesCB,
+                                     SoProceduralHandleDragCB     handleDragCB,
+                                     SoProceduralHandleValidateCB validateCB,
+                                     void*                        userdata)
+{
+  if (!typeName || !*typeName || !bboxCB || !geomCB) return FALSE;
   if (s_registry.find(typeName) != s_registry.end()) return FALSE;
 
   ShapeTypeEntry entry;
@@ -215,9 +624,16 @@ SoProceduralShape::registerShapeType(const char*              typeName,
   entry.geomCB       = geomCB;
   entry.handlesCB    = handlesCB;
   entry.handleDragCB = handleDragCB;
+  entry.validateCB   = validateCB;
   entry.userdata     = userdata;
 
-  s_registry[typeName] = entry;
+  // Parse the JSON schema to extract params and optional topology
+  if (!entry.schemaJSON.empty()) {
+    JVal root = parseJSON(entry.schemaJSON);
+    if (root.isObj()) parseTopology(entry, root);
+  }
+
+  s_registry[typeName] = std::move(entry);
   return TRUE;
 }
 
@@ -259,24 +675,31 @@ SoProceduralShape::setShapeType(const char* typeName)
 
   this->schemaJSON.setValue(entry->schemaJSON.c_str());
 
-  // Extract "default": <number> entries from the schema JSON in order.
-  // We use a simple linear scan that works for the documented schema format.
+  // Use parsed params (populated during registerShapeType) when available.
+  if (!entry->parsedParams.empty()) {
+    std::vector<float> defaults;
+    defaults.reserve(entry->parsedParams.size());
+    for (const ParsedParam& pp : entry->parsedParams)
+      defaults.push_back(pp.defVal);
+    this->params.setNum(0);
+    this->params.setValues(0, static_cast<int>(defaults.size()), defaults.data());
+    return;
+  }
+
+  // Fallback: simple linear scan for "default": <number> entries.
   const char* schema = entry->schemaJSON.c_str();
   std::vector<float> defaults;
   const char* p = schema;
   while ((p = strstr(p, "\"default\"")) != nullptr) {
-    p += 9; // skip past "default"
-    // Skip whitespace and the colon separator
+    p += 9;
     while (*p && (*p == ':' || *p == ' ' || *p == '\t' || *p == '\n' || *p == '\r'))
       ++p;
     if (!*p) break;
     char* end = nullptr;
     float v = strtof(p, &end);
-    if (end && end > p)
-      defaults.push_back(v);
+    if (end && end > p) defaults.push_back(v);
     p = end ? end : p + 1;
   }
-
   if (!defaults.empty()) {
     this->params.setNum(0);
     this->params.setValues(0, static_cast<int>(defaults.size()), defaults.data());
@@ -290,50 +713,106 @@ SoProceduralShape::setShapeType(const char* typeName)
 /*!
   Build and return a separator containing one dragger per registered handle.
 
-  The handle positions are computed from the current \c params.  Each dragger
-  is placed at the corresponding position via an \c SoTranslation node and is
-  connected to the shape's \c params field through an \c SoFieldSensor.  When
-  the user drags a handle, the sensor callback calls the registered
-  \c SoProceduralHandleDragCB, which updates \c params in-place; the shape
-  then redraws automatically via the normal Obol notification mechanism.
+  Handles are sourced from one of two places (in priority order):
+  1. Application \c handlesCB callback (if non-null).
+  2. The "handles" section of the JSON schema, when topology has been parsed
+     (no \c handlesCB or \c handleDragCB needed in that case).
 
-  Connection notes:
-  - \c SoProceduralHandle::DRAG_POINT  → \c SoDragPointDragger
-  - \c SoProceduralHandle::DRAG_ALONG_AXIS → \c SoTranslate1Dragger
-    (the dragger's default axis is X; an \c SoRotation is prepended to align
-    the axis with \c SoProceduralHandle::axis.)
-  - \c SoProceduralHandle::DRAG_ON_PLANE → \c SoTranslate2Dragger
+  Each dragger is placed at the handle position via an SoTranslation node
+  and wired to the shape's \c params field through an SoFieldSensor.
 
-  Returns \c nullptr if the registered type has no handle callbacks.
+  Dragger selection by DragType:
+  - DRAG_POINT / DRAG_NO_INTERSECT → SoDragPointDragger
+  - DRAG_ALONG_AXIS → SoTranslate1Dragger (axis aligned via SoRotation)
+  - DRAG_ON_PLANE   → SoTranslate2Dragger (plane via SoRotation)
 
-  \note Context objects allocated by this function are managed by the
-  returned separator's lifetime via \c SoNodeSensor.  In the current
-  implementation the contexts are \e leaked if the separator is destroyed
-  before the sensor fires; this is acceptable for interactive sessions but
-  production code should add a cleanup notification.
+  For DRAG_NO_INTERSECT: if topology is parsed, the built-in face-flip test
+  runs before each delta is applied; rejected moves snap the dragger back.
+  The optional SoProceduralHandleValidateCB runs after the built-in test.
+
+  Returns nullptr when no handles can be derived.
 */
 SoSeparator*
 SoProceduralShape::buildHandleDraggers()
 {
   const ShapeTypeEntry* entry =
     findEntry(this->shapeType.getValue().getString());
-  if (!entry || !entry->handlesCB || !entry->handleDragCB) return nullptr;
+  if (!entry) return nullptr;
 
   int          nparams = this->params.getNum();
   const float* pv      = nparams > 0 ? this->params.getValues(0) : nullptr;
+  std::vector<float> pvVec(pv, pv + nparams);
 
-  // Ask the application for handle positions.
+  // --- Gather handle descriptors ---
   std::vector<SoProceduralHandle> handles;
-  entry->handlesCB(pv, nparams, handles, entry->userdata);
+
+  if (entry->handlesCB) {
+    // Application-supplied callback
+    entry->handlesCB(pv, nparams, handles, entry->userdata);
+  } else if (entry->topologyParsed && !entry->parsedHandles.empty()) {
+    // Auto-generate from parsed topology
+    for (int i = 0; i < (int)entry->parsedHandles.size(); ++i) {
+      const ParsedHandle& ph = entry->parsedHandles[i];
+      SoProceduralHandle h;
+      h.name     = SbString(ph.name.c_str());
+      h.dragType = ph.dragType;
+
+      // Compute position from affected vertices
+      SbVec3f pos(0,0,0);
+      int cnt = 0;
+      for (int vi : ph.vertexIdxs) {
+        pos += vertexPos(*entry, vi, pvVec);
+        ++cnt;
+      }
+      if (cnt > 0) pos /= (float)cnt;
+      h.position = pos;
+
+      // For DRAG_ON_PLANE (edge): use first adjacent face's normal as plane normal
+      if (ph.dragType == SoProceduralHandle::DRAG_ON_PLANE &&
+          ph.elementType == 1 && ph.vertexIdxs.size() == 2) {
+        // Find a face containing both vertices
+        for (const ParsedFace& face : entry->parsedFaces) {
+          bool hasA = false, hasB = false;
+          for (int vi : face.vertexIndices) {
+            if (vi == ph.vertexIdxs[0]) hasA = true;
+            if (vi == ph.vertexIdxs[1]) hasB = true;
+          }
+          if (hasA && hasB && face.vertexIndices.size() >= 3) {
+            SbVec3f v0 = vertexPos(*entry, face.vertexIndices[0], pvVec);
+            SbVec3f v1 = vertexPos(*entry, face.vertexIndices[1], pvVec);
+            SbVec3f v2 = vertexPos(*entry, face.vertexIndices[2], pvVec);
+            h.normal = (v1-v0).cross(v2-v0);
+            h.normal.normalize();
+            break;
+          }
+        }
+      }
+
+      // For DRAG_ALONG_AXIS (face): use face normal as axis
+      if (ph.dragType == SoProceduralHandle::DRAG_ALONG_AXIS &&
+          ph.elementType == 2 && ph.faceIdx >= 0 &&
+          ph.faceIdx < (int)entry->parsedFaces.size()) {
+        const ParsedFace& face = entry->parsedFaces[ph.faceIdx];
+        if (face.vertexIndices.size() >= 3) {
+          SbVec3f v0 = vertexPos(*entry, face.vertexIndices[0], pvVec);
+          SbVec3f v1 = vertexPos(*entry, face.vertexIndices[1], pvVec);
+          SbVec3f v2 = vertexPos(*entry, face.vertexIndices[2], pvVec);
+          h.axis = (v1-v0).cross(v2-v0);
+          h.axis.normalize();
+        }
+      }
+
+      handles.push_back(h);
+    }
+  }
 
   if (handles.empty()) return nullptr;
 
   SoSeparator* sep = new SoSeparator;
 
-  for (int i = 0; i < static_cast<int>(handles.size()); ++i) {
-    const SoProceduralHandle& h = handles[static_cast<size_t>(i)];
+  for (int i = 0; i < (int)handles.size(); ++i) {
+    const SoProceduralHandle& h = handles[i];
 
-    // Sub-separator for this handle: translation + optional rotation + dragger.
     SoSeparator* hsep = new SoSeparator;
 
     SoTranslation* trans = new SoTranslation;
@@ -344,7 +823,6 @@ SoProceduralShape::buildHandleDraggers()
 
     switch (h.dragType) {
     case SoProceduralHandle::DRAG_ALONG_AXIS: {
-      // Rotate so that X aligns with the requested axis, then use Translate1Dragger.
       SbVec3f normAxis = h.axis;
       if (normAxis.normalize() > 1e-6f) {
         SbRotation rot(SbVec3f(1.f, 0.f, 0.f), normAxis);
@@ -356,7 +834,6 @@ SoProceduralShape::buildHandleDraggers()
       break;
     }
     case SoProceduralHandle::DRAG_ON_PLANE: {
-      // Rotate so that Y (up) aligns with the plane normal, use Translate2Dragger.
       SbVec3f normNml = h.normal;
       if (normNml.normalize() > 1e-6f) {
         SbRotation rot(SbVec3f(0.f, 1.f, 0.f), normNml);
@@ -367,6 +844,7 @@ SoProceduralShape::buildHandleDraggers()
       dragger = new SoTranslate2Dragger;
       break;
     }
+    case SoProceduralHandle::DRAG_NO_INTERSECT:
     case SoProceduralHandle::DRAG_POINT:
     default:
       dragger = new SoDragPointDragger;
@@ -376,19 +854,14 @@ SoProceduralShape::buildHandleDraggers()
     hsep->addChild(dragger);
     sep->addChild(hsep);
 
-    // Allocate context (intentional raw allocation; see note in header).
-    // The sensor is owned by its attachment and will be destroyed with it.
-    auto* ctx = new HandleDragContext(this, i, h.position, dragger);
+    bool isNoIntersect = (h.dragType == SoProceduralHandle::DRAG_NO_INTERSECT);
+    auto* ctx = new HandleDragContext(this, i, h.position, dragger, isNoIntersect);
 
-    // Watch the dragger's 'translation' SoSFVec3f field.
     SoField* tf = dragger->getField("translation");
     if (tf) {
       SoFieldSensor* sensor = new SoFieldSensor(handleDragSensorCB, ctx);
+      ctx->sensor = sensor;  // store for possible reset
       sensor->attach(tf);
-      // Sensor is scheduled/triggered by Obol; no explicit ownership transfer
-      // needed here — it will fire as long as the dragger field exists.
-      // The sensor object leaks when the dragger is destroyed, but this is
-      // acceptable for interactive editing sessions (see header note).
       (void)sensor;
     }
   }
