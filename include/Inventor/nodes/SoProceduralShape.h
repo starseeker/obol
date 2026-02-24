@@ -176,6 +176,7 @@
 #include <vector>
 #include <cstdint>
 
+#include <Inventor/SbString.h>
 #include <Inventor/SbVec3f.h>
 #include <Inventor/SbBox3f.h>
 #include <Inventor/nodes/SoSubNode.h>
@@ -406,6 +407,34 @@ typedef SbBool (*SoProceduralHandleValidateCB)(const float*   params,
 typedef SbBool (*SoProceduralObjectValidateCB)(const char* proposedParamsJSON,
                                                void*       userdata);
 
+/*!
+  \typedef SoProceduralSelectCB
+  \brief Optional ray-based selection callback for custom hit-testing of handles.
+
+  Called when the application wants to determine which handle a view-space ray
+  hits (e.g., from a mouse click processed by the parent application).  The
+  callback receives the pick ray in the shape's local (object) space and should
+  return the 0-based index of the handle it considers hit, or \c -1 for no hit.
+
+  This callback supplements the built-in vertex-proximity test used by
+  buildSelectionDisplay().  Whether the built-in test runs first (as a fallback)
+  or is skipped entirely is controlled by the \c useCustomSelectCB flag passed
+  to setSelectCallback().
+
+  \param rayOrigin   Origin of the pick ray in object (local) space.
+  \param rayDir      Direction of the pick ray (need not be normalised).
+  \param numHandles  Number of handles currently available on this shape.
+  \param userdata    Opaque pointer supplied to setSelectCallback().
+  \return 0-based index of the hit handle, or -1 for no hit.
+
+  \sa SoProceduralShape::setSelectCallback()
+  \sa SoProceduralShape::buildSelectionDisplay()
+*/
+typedef int (*SoProceduralSelectCB)(const SbVec3f& rayOrigin,
+                                    const SbVec3f& rayDir,
+                                    int            numHandles,
+                                    void*          userdata);
+
 // ---------------------------------------------------------------------------
 // SoProceduralShape node
 // ---------------------------------------------------------------------------
@@ -545,6 +574,84 @@ public:
   */
   SoSeparator* buildHandleDraggers();
 
+  /*!
+    Build and return a separator containing one visual marker per handle.
+
+    Each marker consists of:
+    - An SoTranslation placing it at the handle's computed position.
+    - An SoSphere whose radius reflects the handle element type
+      (vertex = 0.05, edge = 0.07, face = 0.10).
+    - An SoText2 label showing the handle's name as defined in the JSON
+      schema (the \b "name" field of each entry in the "handles" array),
+      or an empty label when no name was provided.
+
+    This separator is intended to be added to the scene graph alongside the
+    shape to give the user visual targets for picking.  Picking logic can be
+    supplied via setSelectCallback(); by default, proximity to vertex
+    positions is used.
+
+    Returns \c nullptr when no handles can be derived (no handle callbacks
+    and no topology in the schema).
+
+    Ownership: caller is responsible for ref-counting the returned separator.
+  */
+  SoSeparator* buildSelectionDisplay() const;
+
+  /*!
+    Register a ray-based selection callback for this shape instance.
+
+    When the parent application receives a mouse-click event and wants to
+    determine which handle was hit, it should call this function and later
+    invoke its own pick logic.  The callback receives the pick ray in
+    \e object (local) space and should return the 0-based handle index, or
+    -1 for no hit.
+
+    \param selectCB      The callback function; \c nullptr to remove.
+    \param useCustomCB   If \c TRUE, the built-in vertex-proximity test is
+                         skipped entirely and \a selectCB has full
+                         responsibility.  If \c FALSE, the built-in test
+                         runs first and \a selectCB is used only when the
+                         built-in test returns -1.
+    \param userdata      Opaque pointer forwarded to the callback.
+  */
+  void setSelectCallback(SoProceduralSelectCB selectCB,
+                         SbBool               useCustomCB,
+                         void*                userdata = nullptr);
+
+  /*!
+    Return the index of the handle hit by a pick ray in object (local) space.
+
+    Applies the selection strategy set by setSelectCallback():
+    - If \c useCustomCB is \c TRUE, only the application callback is used.
+    - Otherwise, built-in vertex-proximity testing is tried first (within a
+      squared distance of \a proximityThreshSq), and the application callback
+      runs as a fallback only when the built-in test returns no hit.
+
+    \param rayOrigin        Origin of the ray in object space.
+    \param rayDir           Direction of the ray (need not be normalised).
+    \param proximityThreshSq  Squared hit radius for the built-in vertex test.
+    \return 0-based handle index, or -1 for no hit.
+  */
+  int pickHandle(const SbVec3f& rayOrigin,
+                 const SbVec3f& rayDir,
+                 float          proximityThreshSq = 0.01f) const;
+
+  /*!
+    Serialise the shape's current parameter values as a JSON string.
+
+    The format is identical to the JSON passed to SoProceduralObjectValidateCB:
+    \code
+    { "type": "MyShape", "params": { "paramName": 1.23, ... } }
+    \endcode
+    Named parameters are used when the schema defines them; otherwise
+    index-based keys ("p0", "p1", …) are substituted.
+
+    The returned SbString is empty when no shape type has been set.
+
+    \return JSON string encoding the current \c params field.
+  */
+  SbString getCurrentParamsJSON() const;
+
   virtual void getPrimitiveCount(SoGetPrimitiveCountAction* action) override;
 
 protected:
@@ -559,6 +666,11 @@ private:
                      const SoProceduralTriangles& tris);
   void emitWireframe(SoAction* action,
                      const SoProceduralWireframe& wire);
+
+  // Per-instance selection callback state
+  SoProceduralSelectCB d_selectCB;
+  SbBool               d_useCustomSelectCB;
+  void*                d_selectUserdata;
 };
 
 #endif // !COIN_SOPROCEDURALSHAPE_H
