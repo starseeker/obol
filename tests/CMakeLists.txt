@@ -70,6 +70,7 @@ set(SIMPLE_TESTS
     test_sensors
     test_comprehensive
     test_legacy_integration
+    test_hud
 )
 
 foreach(test_name ${SIMPLE_TESTS})
