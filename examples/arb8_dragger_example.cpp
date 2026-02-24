@@ -268,6 +268,102 @@ static void arb8_geom(const float* params, int numParams,
 }
 
 // ============================================================================
+// Object-level validation callback (SoProceduralObjectValidateCB)
+//
+// SoProceduralShape calls this with a JSON string encoding the proposed new
+// parameter state before any DRAG_NO_INTERSECT drag is applied.  The app
+// is responsible for parsing that JSON and deciding whether the configuration
+// is valid.  Returning FALSE snaps the dragger back to its start position.
+//
+// In this example we implement a face-flip (self-intersection) check: for
+// each of the six faces we verify that its outward normal still points away
+// from the solid's centroid.  The application owns this logic — it can be as
+// simple or as sophisticated as needed (e.g., checking convexity, minimum
+// wall thickness, clearance constraints, etc.).
+//
+// The JSON format Obol sends:
+//   { "type": "ARB8",
+//     "params": { "v0x": -1.0, "v0y": -1.0, "v0z": -1.0, ... } }
+// ============================================================================
+
+// Minimal parser for the specific params JSON Obol sends.
+// We only need to extract "v0x"…"v7z" as floats (24 values).
+static bool parseArb8ProposedParams(const char* json, float out[24])
+{
+  // Locate "params":{...} and scan for "vNa": value pairs.
+  const char* p = strstr(json, "\"params\"");
+  if (!p) return false;
+  p = strchr(p, '{');
+  if (!p) return false;
+
+  // Parse key:value pairs inside the params object.
+  // Keys look like "v0x", "v0y", "v0z", "v1x", … "v7z"
+  while (*p && *p != '}') {
+    // Find next '"'
+    const char* qs = strchr(p, '"');
+    if (!qs || *qs == '}') break;
+    ++qs;
+    const char* qe = strchr(qs, '"');
+    if (!qe) break;
+    std::string key(qs, static_cast<size_t>(qe - qs));
+    p = qe + 1;
+
+    // Skip : and whitespace
+    while (*p && (*p == ':' || isspace((unsigned char)*p))) ++p;
+
+    // Parse number
+    char* endp = nullptr;
+    float val = strtof(p, &endp);
+    if (!endp || endp == p) { p++; continue; }
+    p = endp;
+
+    // Map key to param index: "vNa" where N=0..7, a=x/y/z
+    if (key.size() == 3 && key[0] == 'v') {
+      int vn = key[1] - '0';
+      int ax = (key[2]=='x') ? 0 : (key[2]=='y') ? 1 : (key[2]=='z') ? 2 : -1;
+      if (vn >= 0 && vn <= 7 && ax >= 0)
+        out[3*vn + ax] = val;
+    }
+    while (*p && (*p == ',' || isspace((unsigned char)*p))) ++p;
+  }
+  return true;
+}
+
+static SbBool arb8ObjectValidate(const char* proposedParamsJSON, void*)
+{
+  float verts[24];
+  // Initialise to current default so partially-parsed arrays still work.
+  const float kDefault[24] = {
+    -1,-1,-1, 1,-1,-1, 1,-1,1,-1,-1,1,
+    -1, 1,-1, 1, 1,-1, 1, 1,1,-1, 1,1
+  };
+  memcpy(verts, kDefault, sizeof(verts));
+
+  if (!parseArb8ProposedParams(proposedParamsJSON, verts))
+    return TRUE; // parse error → be permissive
+
+  // Compute centroid of all 8 vertices
+  SbVec3f centroid(0,0,0);
+  for (int i = 0; i < 8; ++i)
+    centroid += SbVec3f(verts[3*i], verts[3*i+1], verts[3*i+2]);
+  centroid /= 8.f;
+
+  // Check that each face's outward normal still points away from the centroid.
+  for (int f = 0; f < 6; ++f) {
+    const int* fv = kArb8Faces[f];
+    SbVec3f v0(verts[3*fv[0]], verts[3*fv[0]+1], verts[3*fv[0]+2]);
+    SbVec3f v1(verts[3*fv[1]], verts[3*fv[1]+1], verts[3*fv[1]+2]);
+    SbVec3f v2(verts[3*fv[2]], verts[3*fv[2]+1], verts[3*fv[2]+2]);
+    SbVec3f nrm = (v1 - v0).cross(v2 - v0);
+    // If dot(outward_normal, v0-centroid) <= kEpsilon, the face has flipped → reject
+    static const float kFaceOrientationEpsilon = -1e-6f;
+    if (nrm.dot(v0 - centroid) <= kFaceOrientationEpsilon)
+      return FALSE;
+  }
+  return TRUE; // all faces still face outward — accept
+}
+
+// ============================================================================
 // Build a scene node for one ARB8 instance with optional dragger handles
 // ============================================================================
 static SoSeparator* makeArb8Scene(const char* typeTag,
@@ -329,13 +425,20 @@ int main(int argc, char** argv)
   initCoinHeadless();
 
   // Register the ARB8 type.
-  // With the JSON topology in kArb8Schema (vertices, faces, handles),
-  // only bboxCB and geomCB are needed — no handlesCB, handleDragCB or
-  // validateCB required.  SoProceduralShape derives all handle positions,
-  // drag types, and DRAG_NO_INTERSECT constraint checks from the schema.
+  // With JSON topology in kArb8Schema, only bboxCB + geomCB are required.
+  // SoProceduralShape auto-generates handles from the "handles" section.
   SoProceduralShape::registerShapeType(
       "ARB8", kArb8Schema,
       arb8_bbox, arb8_geom);
+
+  // Attach the object-level validation callback.
+  // This is the general constraint mechanism: for every DRAG_NO_INTERSECT drag
+  // Obol serialises the proposed parameter state as a JSON object and calls
+  // this function.  The application parses the JSON and returns TRUE (accept)
+  // or FALSE (reject / snap back).  The shape library (Obol) does not need to
+  // know anything about what makes an ARB8 valid — that knowledge lives here,
+  // in the application that owns the shape type.
+  SoProceduralShape::setObjectValidateCallback("ARB8", arb8ObjectValidate);
 
   SoSeparator* root = new SoSeparator;
   root->ref();

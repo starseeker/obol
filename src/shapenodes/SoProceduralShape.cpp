@@ -125,6 +125,7 @@ static std::string jstring(const char*& p) {
       case '"': s+='"'; break;  case '\\': s+='\\'; break;
       case '/': s+='/'; break;  case 'n': s+='\n'; break;
       case 't': s+='\t'; break; case 'r': s+='\r'; break;
+      case 'b': s+='\b'; break; case 'f': s+='\f'; break;
       default: s+=*p; break;
       }
     } else s += *p;
@@ -214,9 +215,10 @@ struct ShapeTypeEntry {
   std::string              schemaJSON;
   SoProceduralBBoxCB       bboxCB;
   SoProceduralGeomCB       geomCB;
-  SoProceduralHandlesCB    handlesCB;     // nullptr when topology drives handles
-  SoProceduralHandleDragCB handleDragCB;  // nullptr when topology drives delta
-  SoProceduralHandleValidateCB validateCB; // nullptr = use built-in check
+  SoProceduralHandlesCB    handlesCB;       // nullptr when topology drives handles
+  SoProceduralHandleDragCB handleDragCB;    // nullptr when topology drives delta
+  SoProceduralHandleValidateCB handleValidateCB; // optional per-position clamping
+  SoProceduralObjectValidateCB objectValidateCB; // optional object-level JSON check
   void*                    userdata;
 
   // Parsed topology (populated if JSON includes "vertices"/"faces"/"handles")
@@ -383,56 +385,78 @@ static SbVec3f vertexPos(const ShapeTypeEntry& e,
 }
 
 // ---------------------------------------------------------------------------
-// Built-in no-intersect validator: checks that no face normal flips after drag
+// Serialise proposed params to JSON for SoProceduralObjectValidateCB
+//
+// Format:  { "type": "MyShape", "params": { "paramName": 1.23, ... } }
+// If no named params are available, index keys "p0", "p1", ... are used.
 // ---------------------------------------------------------------------------
 
-static SbBool checkNoIntersect(const ShapeTypeEntry& e,
-                                const std::vector<float>& currentParams,
-                                int handleIndex,
-                                const SbVec3f& oldPos,
-                                SbVec3f& newPos)   // newPos may be clamped
+static std::string buildProposedParamsJSON(const ShapeTypeEntry&     e,
+                                           const std::vector<float>& params)
 {
-  if (!e.topologyParsed || handleIndex < 0 ||
-      handleIndex >= (int)e.parsedHandles.size())
-    return TRUE; // no topology → cannot validate, accept
+  // Helper: emit a JSON number with enough precision for round-trip float32.
+  // "%.9g" uses up to 9 significant digits, which equals FLT_DECIMAL_DIG and
+  // guarantees that parsing the output back to float32 yields the original
+  // value (IEEE 754 single precision requires exactly 9 decimal digits for
+  // this guarantee).
+  auto emitNum = [](char* buf, size_t sz, float v) {
+    snprintf(buf, sz, "%.9g", (double)v);
+    // Append ".0" if no decimal point / exponent so JSON parsers know it is a
+    // floating-point value, not an integer.
+    bool hasDot = false;
+    for (int i = 0; buf[i]; ++i)
+      if (buf[i] == '.' || buf[i] == 'e' || buf[i] == 'E') { hasDot = true; break; }
+    if (!hasDot) {
+      size_t n = strlen(buf);
+      if (n + 2 < sz) { buf[n] = '.'; buf[n+1] = '0'; buf[n+2] = '\0'; }
+    }
+  };
 
-  const ParsedHandle& hdl = e.parsedHandles[handleIndex];
+  // Basic JSON string escaping for param names (normally simple identifiers,
+  // but we escape backslash and double-quote just in case).
+  auto escapeStr = [](const std::string& s) -> std::string {
+    std::string out;
+    out.reserve(s.size() + 2);
+    out += '"';
+    for (char c : s) {
+      if (c == '"')  { out += '\\'; out += '"';  }
+      else if (c == '\\') { out += '\\'; out += '\\'; }
+      else out += c;
+    }
+    out += '"';
+    return out;
+  };
 
-  SbVec3f delta = newPos - oldPos;
+  std::string json;
+  json.reserve(128 + params.size() * 20);
+  json += "{\"type\":";
+  json += escapeStr(e.typeName);
+  json += ",\"params\":{";
 
-  // Apply delta to the proposed params copy
-  std::vector<float> proposed = currentParams;
-  for (int vi : hdl.vertexIdxs) {
-    if (vi < 0 || vi >= (int)e.parsedVertices.size()) continue;
-    const ParsedVertex& pv = e.parsedVertices[vi];
-    if (pv.paramX >= 0 && pv.paramX < (int)proposed.size()) proposed[pv.paramX] += delta[0];
-    if (pv.paramY >= 0 && pv.paramY < (int)proposed.size()) proposed[pv.paramY] += delta[1];
-    if (pv.paramZ >= 0 && pv.paramZ < (int)proposed.size()) proposed[pv.paramZ] += delta[2];
-  }
-
-  // Compute centroid of all vertices in proposed configuration
-  SbVec3f centroid(0,0,0);
-  int nverts = (int)e.parsedVertices.size();
-  if (nverts == 0) return TRUE;
-  for (int i = 0; i < nverts; ++i) centroid += vertexPos(e, i, proposed);
-  centroid /= (float)nverts;
-
-  // Check every face: outward normal must still point away from centroid
-  for (const ParsedFace& face : e.parsedFaces) {
-    if ((int)face.vertexIndices.size() < 3) continue;
-    SbVec3f v0 = vertexPos(e, face.vertexIndices[0], proposed);
-    SbVec3f v1 = vertexPos(e, face.vertexIndices[1], proposed);
-    SbVec3f v2 = vertexPos(e, face.vertexIndices[2], proposed);
-    SbVec3f normal = (v1 - v0).cross(v2 - v0);
-    // outness > epsilon means the normal still points away from the centroid.
-    // A small negative threshold allows numerical tolerance at near-degenerate faces.
-    if (normal.dot(v0 - centroid) <= -1e-6f) {
-      // Face flipped — reject move
-      newPos = oldPos;
-      return FALSE;
+  char numBuf[32];
+  bool first = true;
+  if (!e.parsedParams.empty()) {
+    for (int i = 0; i < (int)e.parsedParams.size() && i < (int)params.size(); ++i) {
+      if (!first) json += ',';
+      json += escapeStr(e.parsedParams[i].name);
+      json += ':';
+      emitNum(numBuf, sizeof(numBuf), params[i]);
+      json += numBuf;
+      first = false;
+    }
+  } else {
+    for (int i = 0; i < (int)params.size(); ++i) {
+      if (!first) json += ',';
+      char kbuf[16];
+      snprintf(kbuf, sizeof(kbuf), "\"p%d\":", i);
+      json += kbuf;
+      emitNum(numBuf, sizeof(numBuf), params[i]);
+      json += numBuf;
+      first = false;
     }
   }
-  return TRUE;
+  json += "}}";
+  return json;
 }
 
 // ---------------------------------------------------------------------------
@@ -485,16 +509,38 @@ static void handleDragSensorCB(void* userdata, SoSensor*)
   }
 
   if (ctx->isNoIntersect) {
-    // 1. Built-in topology intersection check (if topology available)
-    SbBool builtInOK = TRUE;
-    if (entry->topologyParsed) {
-      builtInOK = checkNoIntersect(*entry, paramsCopy,
-                                   ctx->handleIndex, ctx->initPos, acceptedPos);
+    // Build proposed params: apply the drag delta to the affected vertices.
+    std::vector<float> proposed = paramsCopy;
+    if (entry->topologyParsed &&
+        ctx->handleIndex < (int)entry->parsedHandles.size()) {
+      const ParsedHandle& hdl = entry->parsedHandles[ctx->handleIndex];
+      for (int vi : hdl.vertexIdxs) {
+        if (vi < 0 || vi >= (int)entry->parsedVertices.size()) continue;
+        const ParsedVertex& pv = entry->parsedVertices[vi];
+        if (pv.paramX >= 0 && pv.paramX < nparams) proposed[pv.paramX] += delta[0];
+        if (pv.paramY >= 0 && pv.paramY < nparams) proposed[pv.paramY] += delta[1];
+        if (pv.paramZ >= 0 && pv.paramZ < nparams) proposed[pv.paramZ] += delta[2];
+      }
     }
 
-    // 2. Application validate callback (may further clamp or reject)
-    if (builtInOK && entry->validateCB) {
-      SbBool cbOK = entry->validateCB(
+    // 1. Object-level validation: serialise proposed params to JSON and call app.
+    if (entry->objectValidateCB) {
+      std::string json = buildProposedParamsJSON(*entry, proposed);
+      SbBool ok = entry->objectValidateCB(json.c_str(), entry->userdata);
+      if (!ok) {
+        // Rejected — snap dragger back to its start position.
+        acceptedPos = ctx->initPos;
+        if (ctx->sensor) ctx->sensor->detach();
+        SoSFVec3f* tvf = static_cast<SoSFVec3f*>(tf);
+        if (tvf) tvf->setValue(SbVec3f(0.f, 0.f, 0.f));
+        if (ctx->sensor && tf) ctx->sensor->attach(tf);
+        return; // params unchanged
+      }
+    }
+
+    // 2. Per-position spatial clamping callback (optional, runs after object CB).
+    if (entry->handleValidateCB) {
+      SbBool cbOK = entry->handleValidateCB(
           paramsCopy.data(), nparams,
           ctx->handleIndex, ctx->initPos, proposedNewPos,
           acceptedPos, entry->userdata);
@@ -502,9 +548,10 @@ static void handleDragSensorCB(void* userdata, SoSensor*)
     }
 
     // If accepted position differs from proposed, reset the dragger field.
-    SbVec3f acceptedDelta = acceptedPos - ctx->initPos;
-    static const float kResetThreshSq = 1e-6f * 1e-6f;
-    if ((acceptedPos - proposedNewPos).sqrLength() > kResetThreshSq) {
+    // 1 micrometre squared threshold avoids spurious resets from float noise.
+    static const float kDraggerResetThreshSq = 1e-6f * 1e-6f;
+    if ((acceptedPos - proposedNewPos).sqrLength() > kDraggerResetThreshSq) {
+      SbVec3f acceptedDelta = acceptedPos - ctx->initPos;
       if (ctx->sensor) ctx->sensor->detach();
       SoSFVec3f* tvf = static_cast<SoSFVec3f*>(tf);
       if (tvf) tvf->setValue(acceptedDelta);
@@ -584,7 +631,8 @@ SoProceduralShape::registerShapeType(const char*        typeName,
   return SoProceduralShape::registerShapeType(typeName, schemaJSON,
                                               bboxCB, geomCB,
                                               nullptr, nullptr,
-                                              nullptr, userdata);
+                                              nullptr, nullptr,
+                                              userdata);
 }
 
 // static
@@ -600,7 +648,8 @@ SoProceduralShape::registerShapeType(const char*              typeName,
   return SoProceduralShape::registerShapeType(typeName, schemaJSON,
                                               bboxCB, geomCB,
                                               handlesCB, handleDragCB,
-                                              nullptr, userdata);
+                                              nullptr, nullptr,
+                                              userdata);
 }
 
 // static
@@ -611,21 +660,23 @@ SoProceduralShape::registerShapeType(const char*                  typeName,
                                      SoProceduralGeomCB           geomCB,
                                      SoProceduralHandlesCB        handlesCB,
                                      SoProceduralHandleDragCB     handleDragCB,
-                                     SoProceduralHandleValidateCB validateCB,
+                                     SoProceduralHandleValidateCB handleValidateCB,
+                                     SoProceduralObjectValidateCB objectValidateCB,
                                      void*                        userdata)
 {
   if (!typeName || !*typeName || !bboxCB || !geomCB) return FALSE;
   if (s_registry.find(typeName) != s_registry.end()) return FALSE;
 
   ShapeTypeEntry entry;
-  entry.typeName     = typeName;
-  entry.schemaJSON   = schemaJSON ? schemaJSON : "";
-  entry.bboxCB       = bboxCB;
-  entry.geomCB       = geomCB;
-  entry.handlesCB    = handlesCB;
-  entry.handleDragCB = handleDragCB;
-  entry.validateCB   = validateCB;
-  entry.userdata     = userdata;
+  entry.typeName        = typeName;
+  entry.schemaJSON      = schemaJSON ? schemaJSON : "";
+  entry.bboxCB          = bboxCB;
+  entry.geomCB          = geomCB;
+  entry.handlesCB       = handlesCB;
+  entry.handleDragCB    = handleDragCB;
+  entry.handleValidateCB = handleValidateCB;
+  entry.objectValidateCB = objectValidateCB;
+  entry.userdata        = userdata;
 
   // Parse the JSON schema to extract params and optional topology
   if (!entry.schemaJSON.empty()) {
@@ -634,6 +685,20 @@ SoProceduralShape::registerShapeType(const char*                  typeName,
   }
 
   s_registry[typeName] = std::move(entry);
+  return TRUE;
+}
+
+// static
+SbBool
+SoProceduralShape::setObjectValidateCallback(const char*                  typeName,
+                                             SoProceduralObjectValidateCB objectValidateCB,
+                                             void*                        userdata)
+{
+  if (!typeName || !*typeName) return FALSE;
+  auto it = s_registry.find(typeName);
+  if (it == s_registry.end()) return FALSE;
+  it->second.objectValidateCB = objectValidateCB;
+  it->second.userdata         = userdata;  // always updated (pass nullptr to clear)
   return TRUE;
 }
 
