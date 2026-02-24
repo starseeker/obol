@@ -132,6 +132,7 @@ add_rendering_test(render_hud_no3d)
 add_rendering_test(render_hud_interaction)
 add_rendering_test(render_procedural_shape)
 add_rendering_test(render_arb8_draggers)
+add_rendering_test(render_arb8_edit_cycle)
 add_rendering_test(render_pick_interaction)
 add_rendering_test(render_simple_draggers)
 add_rendering_test(render_light_manips)
@@ -268,6 +269,11 @@ add_rendering_image_test(render_hud_no3d     RMSE_THRESHOLD 25.0)
 # SoProceduralShape visual regression test: solid filled + wireframe cone.
 add_rendering_image_test(render_procedural_shape RMSE_THRESHOLD 15.0)
 
+# ARB8 edit-cycle visual progression test: 4-step edit cycle with
+# selection display (handle spheres + text labels) and vertex manipulation.
+# Text labels increase subpixel variance so a higher RMSE threshold is used.
+add_rendering_image_test(render_arb8_edit_cycle RMSE_THRESHOLD 25.0)
+
 # ---- Validation tests: run unconditionally, check exit code only -------------
 # These tests perform their own pixel analysis and return 0/1 directly.
 # run_rendering_test.cmake wraps with xvfb-run when DISPLAY is not set.
@@ -310,7 +316,7 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_glrender_action_modes
                render_callback_action_deep render_text3_parts
                render_write_read_action render_sensors_rendering
-               render_procedural_shape)
+               render_procedural_shape render_arb8_edit_cycle)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"
@@ -363,6 +369,7 @@ if(PNG_FOUND)
             render_shadow
             render_hud_overlay render_hud_no3d
             render_procedural_shape
+            render_arb8_edit_cycle
         COMMENT "Generating PNG control images for rendering regression tests"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )

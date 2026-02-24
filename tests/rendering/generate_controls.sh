@@ -152,5 +152,8 @@ gen_control render_hud_no3d           render_hud_no3d
 # SoProceduralShape visual regression test
 gen_control render_procedural_shape   render_procedural_shape
 
+# ARB8 edit-cycle visual progression test (4 images: primary + 3 step images)
+gen_control render_arb8_edit_cycle    render_arb8_edit_cycle
+
 echo ""
 echo "=== Done – control images in $CONTROL_DIR ==="
