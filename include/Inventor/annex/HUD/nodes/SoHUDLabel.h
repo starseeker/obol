@@ -62,6 +62,8 @@
 #include <Inventor/fields/SoSFFloat.h>
 #include <Inventor/fields/SoSFEnum.h>
 
+class SoText2;
+
 class COIN_DLL_API SoHUDLabel : public SoNode {
   typedef SoNode inherited;
   SO_NODE_HEADER(SoHUDLabel);
@@ -91,6 +93,9 @@ public:
 
 protected:
   virtual ~SoHUDLabel(void);
+
+private:
+  SoText2 * textNode; // lazy-initialised on first GLRender, ref-counted
 };
 
 #endif // !COIN_SOHUDLABEL_H

@@ -72,6 +72,7 @@ SoHUDLabel::initClass(void)
   justification LEFT.
 */
 SoHUDLabel::SoHUDLabel(void)
+  : textNode(NULL)
 {
   SO_NODE_INTERNAL_CONSTRUCTOR(SoHUDLabel);
 
@@ -92,6 +93,7 @@ SoHUDLabel::SoHUDLabel(void)
 */
 SoHUDLabel::~SoHUDLabel(void)
 {
+  if (this->textNode) this->textNode->unref();
 }
 
 /*!
@@ -122,14 +124,16 @@ SoHUDLabel::GLRender(SoGLRenderAction * action)
   SoColorPacker colorPacker;
   SoLazyElement::setDiffuse(state, this, 1, &col, &colorPacker);
 
-  // Create a temporary SoText2 node and render the label.
-  SoText2 * text = new SoText2;
-  text->ref();
-  text->string = this->string;
+  // Lazy-initialise persistent SoText2 (not created until first GLRender so
+  // that constructing a label before SoDB is initialised is safe).
+  if (!this->textNode) {
+    this->textNode = new SoText2;
+    this->textNode->ref();
+  }
+  this->textNode->string = this->string;
   // Map our justification enum to SoText2's enum (values are identical).
-  text->justification.setValue(this->justification.getValue());
-  text->GLRender(action);
-  text->unref();
+  this->textNode->justification.setValue(this->justification.getValue());
+  this->textNode->GLRender(action);
 
   state->pop();
 }

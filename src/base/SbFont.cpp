@@ -98,6 +98,16 @@ public:
     // Edge connectivity data for 3D extrusion
     int * edgeconnectivity;  // [prev_vertex, current_vertex, next_vertex] for each edge
     int numedges;           // Number of actual edges
+
+    // Default constructor: zero-initialise all pointer and count fields so
+    // that clearCache() can safely call free() on a freshly-constructed object.
+    GlyphCache()
+      : character(0), valid(FALSE), bitmap(NULL),
+        bitmapsize(0, 0), bearing(0, 0), advance(0.0f, 0.0f),
+        vertices(NULL), numvertices(0),
+        faceindices(NULL), numfaceindices(0),
+        edgeindices(NULL), numedgeindices(0),
+        edgeconnectivity(NULL), numedges(0) {}
   };
   
   static const int CACHE_SIZE = 128;
@@ -113,6 +123,9 @@ SbFontP::SbFontP()
     fontname(""), size(12.0f), scale(1.0f), cacheindex(0)
 {
   memset(&fontinfo, 0, sizeof(fontinfo));
+  // Zero-initialise cache[] before clearCache() so that the NULL-pointer
+  // checks inside clearCache() are safe on a freshly constructed object.
+  memset(cache, 0, sizeof(cache));
   clearCache();
 }
 

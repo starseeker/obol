@@ -86,6 +86,12 @@ struct CallbackEntry {
 
 struct SoHUDButtonP {
   SbList<CallbackEntry> callbacks;
+  SoText2 * textNode; // lazy-initialised on first GLRender, ref-counted
+
+  SoHUDButtonP(void) : textNode(NULL) {}
+  ~SoHUDButtonP(void) {
+    if (this->textNode) this->textNode->unref();
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -197,13 +203,14 @@ SoHUDButton::GLRender(SoGLRenderAction * action)
   SoColorPacker colorPacker;
   SoLazyElement::setDiffuse(state, this, 1, &tcol, &colorPacker);
 
-  // Create a temporary SoText2 node and render the label.
-  SoText2 * text = new SoText2;
-  text->ref();
-  text->string.setValue(this->string.getValue().getString());
-  text->justification.setValue(SoText2::CENTER);
-  text->GLRender(action);
-  text->unref();
+  // Lazy-initialise persistent SoText2 for the button label.
+  if (!pimpl->textNode) {
+    pimpl->textNode = new SoText2;
+    pimpl->textNode->ref();
+    pimpl->textNode->justification.setValue(SoText2::CENTER);
+  }
+  pimpl->textNode->string.setValue(this->string.getValue().getString());
+  pimpl->textNode->GLRender(action);
 
   state->pop();
 }
