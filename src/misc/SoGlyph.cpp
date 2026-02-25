@@ -59,7 +59,7 @@
 // SoGlyph has been migrated to use SbFont directly instead of old font lib wrapper.
   
 #include <Inventor/misc/SoGlyph.h>
-#include "coindefs.h"
+#include "config.h"
 
 #include <cstdlib>
 #include <cstring>

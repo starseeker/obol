@@ -49,9 +49,7 @@
 
 #include <Inventor/SoInteraction.h>
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif // HAVE_CONFIG_H
 
 #include <Inventor/SoDB.h>
 #include <Inventor/nodekits/SoNodeKit.h>

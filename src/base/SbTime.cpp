@@ -51,9 +51,7 @@
 #include <cerrno>
 #include <cmath>
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif // HAVE_CONFIG_H
+#include "config.h"
 
 #ifdef HAVE_TIME_H
 #include <ctime> // struct timeval (Linux)
@@ -74,7 +72,6 @@
 #include <chrono>
 #include <chrono>
 
-#include "coindefs.h"
 
 #ifndef COIN_WORKAROUND_NO_USING_STD_FUNCS
 using std::strlen;

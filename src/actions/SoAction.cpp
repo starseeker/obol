@@ -206,9 +206,7 @@
 
 #include <Inventor/actions/SoAction.h>
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif // HAVE_CONFIG_H
 
 #include <cassert>
 #include <cstdlib>
@@ -224,7 +222,6 @@
 #include <Inventor/errors/SoDebugError.h>
 
 #include "C/CoinTidbits.h"
-#include "coindefs.h" // COIN_OBSOLETED
 #include "actions/SoActionP.h"
 #include "misc/SoDBP.h" // for global envvar COIN_PROFILER
 #include "misc/SoCompactPathList.h"

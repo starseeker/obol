@@ -45,9 +45,7 @@
 
 #include "C/CoinTidbits.h"
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif /* HAVE_CONFIG_H */
 
 #include <cassert>
 #include <cerrno>
@@ -90,7 +88,6 @@
 
 #include "base/list.h"
 #include "errors/CoinInternalError.h"
-#include "coindefs.h"
 #include "misc/SoEnvironment.h"
 
 /* ********************************************************************** */

@@ -149,9 +149,7 @@
 #include <Inventor/annex/Profiler/SbProfilingData.h>
 #endif
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif // HAVE_CONFIG_H
 
 #ifdef COIN_THREADSAFE
 #include <Inventor/threads/SbStorage.h>

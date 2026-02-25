@@ -40,7 +40,7 @@
 */
 
 #include <Inventor/elements/SoGLPolygonOffsetElement.h>
-#include "coindefs.h"
+#include "config.h"
 
 #include <cassert>
 #include <cstdlib>

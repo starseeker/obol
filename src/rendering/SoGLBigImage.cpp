@@ -64,16 +64,13 @@
 // *************************************************************************
 
 #include <Inventor/misc/SoGLBigImage.h>
-#include "coindefs.h"
+#include "config.h"
 
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <cassert>
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif // HAVE_CONFIG_H
 
 #include "threads/threads.h"
 #include <Inventor/SbImage.h>

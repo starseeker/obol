@@ -60,9 +60,7 @@
 
 #include <Inventor/actions/SoGLRenderAction.h>
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif // HAVE_CONFIG_H
 
 #include <cstdlib>
 #include <cstring>
@@ -113,7 +111,6 @@
 
 #include <Inventor/system/gl.h>
 
-#include "coindefs.h"
 
 #include "SbBasicP.h"
 #include "actions/SoActionP.h"

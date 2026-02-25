@@ -58,9 +58,7 @@
 
 #include <Inventor/nodes/SoLocateHighlight.h>
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif // HAVE_CONFIG_H
+#include "config.h"
 
 #include <Inventor/elements/SoOverrideElement.h>
 #include <Inventor/elements/SoLazyElement.h>

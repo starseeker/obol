@@ -83,7 +83,7 @@
 
 #include "io/SoWriterefCounter.h"
 #include "C/CoinTidbits.h"
-#include "coindefs.h" // COIN_STUB()
+#include "config.h" // COIN_STUB()
 
 // *************************************************************************
 

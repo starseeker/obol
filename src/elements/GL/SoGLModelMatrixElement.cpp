@@ -44,9 +44,7 @@
 #include <Inventor/SbRotation.h>
 #include <Inventor/SbVec3f.h>
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif // HAVE_CONFIG_H
+#include "config.h"
 
 #include <Inventor/system/gl.h>
 #include "C/CoinTidbits.h"

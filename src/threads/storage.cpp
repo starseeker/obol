@@ -55,14 +55,11 @@
 */
 
 #include "threads/threads.h"
-#include "coindefs.h"
+#include "config.h"
 
 #include <cstdlib>
 #include <cassert>
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif /* HAVE_CONFIG_H */
 
 /* FIXME: instead of doing all the HAVE_THREADS wrapping in the code
    of this file, perhaps it would be cleaner to make the cc_thread and

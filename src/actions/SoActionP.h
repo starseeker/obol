@@ -37,9 +37,7 @@
 #error this is a private header file
 #endif /* !COIN_INTERNAL */
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif // HAVE_CONFIG_H
 
 #include "misc/SoCompactPathList.h"
 

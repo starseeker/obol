@@ -48,7 +48,7 @@
 
 #include "C/CoinTidbits.h"
 #include "rendering/SoVBO.h"
-#include "coindefs.h"
+#include "config.h"
 
 /* Legacy MSVC6 workaround removed - not needed for C++17 */
 

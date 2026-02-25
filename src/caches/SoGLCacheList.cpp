@@ -39,9 +39,7 @@
 
 #include <Inventor/caches/SoGLCacheList.h>
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif // HAVE_CONFIG_H
+#include "config.h"
 
 #include "misc/SoEnvironment.h"
 #include <Inventor/actions/SoGLRenderAction.h>

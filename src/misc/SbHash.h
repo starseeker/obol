@@ -56,7 +56,7 @@
 #include "base/memalloc.h"
 
 #include "C/CoinTidbits.h"
-#include "coindefs.h"
+#include "config.h"
 #include "SbBasicP.h"
 
 // *************************************************************************

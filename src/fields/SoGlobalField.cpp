@@ -63,7 +63,7 @@
 #include <Inventor/fields/SoFieldData.h>
 #include <Inventor/lists/SoBaseList.h>
 
-#include "coindefs.h"
+#include "config.h"
 #include "C/CoinTidbits.h"
 #include "SbBasicP.h"
 

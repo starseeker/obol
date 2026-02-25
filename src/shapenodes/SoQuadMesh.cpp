@@ -168,9 +168,7 @@
 #include <cmath> // ilogb
 #include <cfloat> // _logb
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif // HAVE_CONFIG_H
+#include "config.h"
 
 #include "C/CoinTidbits.h"
 #include <Inventor/SbPlane.h>

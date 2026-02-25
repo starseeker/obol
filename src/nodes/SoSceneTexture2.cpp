@@ -261,7 +261,7 @@
 */
 
 #include <Inventor/nodes/SoSceneTexture2.h>
-#include "coindefs.h"
+#include "config.h"
 
 #include <cassert>
 #include <cstring>
@@ -307,9 +307,6 @@
 #include <Inventor/system/gl.h>
 #include <Inventor/misc/SoGLDriverDatabase.h>
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif // HAVE_CONFIG_H
 
 #ifdef COIN_THREADSAFE
 #include <Inventor/threads/SbMutex.h>

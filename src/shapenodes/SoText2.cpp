@@ -98,14 +98,11 @@
 */
 
 #include <Inventor/nodes/SoText2.h>
-#include "coindefs.h"
+#include "config.h"
 
 #include <climits>
 #include <cstring>
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif // HAVE_CONFIG_H
 
 #include "../base/SbUtf8.h" // Modern UTF-8 support
 

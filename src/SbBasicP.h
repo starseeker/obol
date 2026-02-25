@@ -99,7 +99,7 @@ To coin_safe_cast(ScXMLObject * ptr) { return coin_internal_safe_cast2<To>(ptr);
 template<typename To>
 To coin_safe_cast(const ScXMLObject * ptr) { return coin_internal_safe_cast2<To>(ptr); }
 
-#include "coindefs.h"
+#include "config.h"
 
 template<typename To,typename From>
 To

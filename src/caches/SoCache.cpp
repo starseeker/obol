@@ -126,7 +126,7 @@
 #include "C/CoinTidbits.h"
 
 
-#include "coindefs.h"
+#include "config.h"
 
 #ifndef COIN_WORKAROUND_NO_USING_STD_FUNCS
 using std::memset;

@@ -39,7 +39,7 @@
 
 // *************************************************************************
 
-#include "coindefs.h"
+#include "config.h"
 #include <Inventor/elements/SoGLCacheContextElement.h>
 
 #include <cstdlib>
