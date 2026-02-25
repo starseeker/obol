@@ -559,6 +559,17 @@ if(COIN_BUILD_VIEWER)
   # Compile definitions matching the Coin library build
   if(COIN3D_BUILD_DUAL_GL)
     target_compile_definitions(obol_viewer PRIVATE COIN3D_BUILD_DUAL_GL)
+    # Dual-GL builds enable the OSMesa panel (OBOL_VIEWER_OSMESA_PANEL is
+    # defined in obol_viewer.cpp when COIN3D_BUILD_DUAL_GL is set).
+    # The viewer needs direct access to OSMesa headers and the library so it
+    # can create OSMesa contexts independently of the global context manager.
+    target_include_directories(obol_viewer PRIVATE
+      "${PROJECT_SOURCE_DIR}/external/osmesa/include"
+      "${PROJECT_SOURCE_DIR}/tests/utils"    # osmesa_context_manager.h
+    )
+    if(DEFINED COIN_OSMESA_LIBRARIES)
+      target_link_libraries(obol_viewer PRIVATE ${COIN_OSMESA_LIBRARIES})
+    endif()
   elseif(COIN3D_USE_OSMESA)
     # Pure-OSMesa build: headless_utils.h uses OSMesa context manager
     target_compile_definitions(obol_viewer PRIVATE COIN3D_OSMESA_BUILD)

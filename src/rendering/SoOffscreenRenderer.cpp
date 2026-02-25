@@ -390,6 +390,7 @@ public:
     this->buffer = NULL;
     this->bufferbytesize = 0;
     this->lastnodewasacamera = FALSE;
+    this->instanceContextManager = NULL;
 	
     if (glrenderaction) {
       this->renderaction = glrenderaction;
@@ -427,6 +428,14 @@ public:
   SoOffscreenRenderer::Components components;
   SoGLRenderAction * renderaction;
   SbBool didallocation;
+
+  // Per-instance context manager override (NULL → use global singleton).
+  SoDB::ContextManager * instanceContextManager;
+
+  // Returns the effective context manager for this renderer.
+  SoDB::ContextManager * effectiveMgr() const {
+    return instanceContextManager ? instanceContextManager : SoDB::getContextManager();
+  }
 
   void updateDCBitmap();
   SbBool useDC;
@@ -699,13 +708,17 @@ SoOffscreenRendererP::GLRenderAbortCallback(void *userData)
 SbBool
 SoOffscreenRendererP::renderFromBase(SoBase * base)
 {
+  // Push per-instance manager to the GL canvas so all context lifecycle
+  // calls use the right backend (e.g. OSMesa vs system GL).
+  this->glcanvas.setContextManager(this->instanceContextManager);
+
   // --- Alternative rendering path (e.g. nanort) ----------------------------
-  // If the context manager provides a renderScene() implementation that
-  // returns TRUE, use those pixels directly and skip the entire GL pipeline.
+  // If the effective context manager provides a renderScene() implementation
+  // that returns TRUE, use those pixels directly and skip the GL pipeline.
   // This enables software raytracers, test stubs, and other backends to work
   // seamlessly with SoOffscreenRenderer without any GL context.
   if (base->isOfType(SoNode::getClassTypeId())) {
-    SoDB::ContextManager * alt_mgr = SoDB::getContextManager();
+    SoDB::ContextManager * alt_mgr = this->effectiveMgr();
     if (alt_mgr) {
       const SbVec2s fullsize = this->viewport.getViewportSizePixels();
       if (fullsize[0] > 0 && fullsize[1] > 0) {
@@ -1694,6 +1707,41 @@ SoOffscreenRenderer::getPbufferEnable(void) const
   // mortene.
 
   return TRUE;
+}
+
+/*!
+  Set a per-instance context manager.  When non-NULL, this renderer uses the
+  provided \a manager for all OpenGL context lifecycle operations (create,
+  make-current, restore, destroy) instead of the global singleton returned by
+  SoDB::getContextManager().  This allows multiple SoOffscreenRenderer
+  instances to use independent backends simultaneously – for example one
+  instance backed by system GLX and another backed by OSMesa – without any
+  global state mutation.
+
+  The alternative rendering path (renderScene()) is also dispatched through
+  this manager when it is set.
+
+  Pass NULL to revert to the global singleton.
+
+  \since Coin 4.0
+*/
+void
+SoOffscreenRenderer::setContextManager(SoDB::ContextManager * manager)
+{
+  PRIVATE(this)->instanceContextManager = manager;
+  PRIVATE(this)->glcanvas.setContextManager(manager);
+}
+
+/*!
+  Returns the per-instance context manager set via setContextManager(), or
+  NULL if none has been set (meaning the global singleton is used).
+
+  \since Coin 4.0
+*/
+SoDB::ContextManager *
+SoOffscreenRenderer::getContextManager(void) const
+{
+  return PRIVATE(this)->instanceContextManager;
 }
 
 // ======================================================================

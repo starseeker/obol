@@ -177,6 +177,15 @@ public:
 
   static ContextManager * getContextManager(void);
 
+  /**
+   * Replace the active context manager at runtime without re-running
+   * SoDB initialisation.  Useful for temporarily switching to a different
+   * rendering backend (e.g. swapping between system GL and OSMesa) within
+   * the same process.  The caller is responsible for ensuring that no
+   * render is in progress when this is called.  Passing NULL is a no-op.
+   */
+  static void setContextManager(ContextManager * manager);
+
 private:
   static SoGroup * readAllWrapper(SoInput * input, const SoType & grouptype);
 };

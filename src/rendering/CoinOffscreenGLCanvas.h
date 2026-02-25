@@ -40,6 +40,7 @@
 // *************************************************************************
 
 #include <Inventor/SbVec2s.h>
+#include <Inventor/SoDB.h>
 
 // *************************************************************************
 
@@ -57,6 +58,11 @@ public:
   void readPixels(uint8_t * dst, const SbVec2s & vpdims,
                   unsigned int dstrowsize,
                   unsigned int nrcomponents) const;
+
+  // Per-instance context manager override.  When set, this manager is used
+  // for all context lifecycle operations instead of the global singleton
+  // (SoDB::getContextManager()).  Pass NULL to revert to the global manager.
+  void setContextManager(SoDB::ContextManager * mgr);
 
   static SbBool debug(void);
 
@@ -77,12 +83,19 @@ private:
   void cleanupFBO(void);
   SbBool bindFBO(void);
   void unbindFBO(void);
+
+  // Returns the effective context manager: per-instance override if set,
+  // otherwise the global SoDB::getContextManager().
+  SoDB::ContextManager * effectiveMgr(void) const;
   
   SbVec2s size;
 
   void * context;
   uint32_t renderid;
   const void * current_hdc;
+
+  // Per-instance context manager (NULL → use global singleton)
+  SoDB::ContextManager * instance_mgr;
   
   // FBO-based offscreen rendering support
   unsigned int fbo;          // Framebuffer object ID

@@ -3,39 +3,45 @@
  *
  * Architecture
  * ────────────
- * The viewer links directly against the Coin shared library (built with
- * COIN3D_BUILD_DUAL_GL by default) and uses Obol's public API to build
- * and render scenes into off-screen pixel buffers displayed via FLTK.
+ * The viewer links directly against the Coin shared library and uses Obol's
+ * public API to build and render scenes into off-screen pixel buffers
+ * displayed via FLTK.
  *
  * No bridge libraries or dlopen are involved.  The context manager
  * (OSMesa for headless/dual builds, GLX for sys-only builds) is set up
  * via headless_utils.h, exactly as the rendering tests do.
  *
+ * OSMesa panel (dual-GL builds only: COIN3D_BUILD_DUAL_GL)
+ * ─────────────────────────────────────────────────────────
+ * In dual-GL builds a second "OSMesa" panel is shown alongside the system-GL
+ * panel.  It uses its own SoOffscreenRenderer whose context manager is set to
+ * a private CoinOSMesaContextManager instance via the new
+ * SoOffscreenRenderer::setContextManager() API.  This pins the OSMesa backend
+ * to that specific renderer without touching the global singleton, so both GL
+ * paths render simultaneously without any global state mutation.
+ *
  * NanoRT optional panel
  * ─────────────────────
  * When OBOL_VIEWER_NANORT is defined at compile time (set by CMake when
- * external/nanort/nanort.h is found), a second render panel is shown on
- * the right side of the window.  It uses SoNanoRTContextManager::renderScene()
- * called directly — the viewer instantiates the NanoRT renderer as an
- * application-supplied rendering object and drives it independently of the
- * main Coin context manager.  No bridge, no dlopen, no changes to Coin core.
+ * external/nanort/nanort.h is found), an additional CPU-raytracing panel is
+ * shown.  It uses SoNanoRTContextManager::renderScene() called directly.
  *
- * Layout (without NanoRT)          Layout (with NanoRT)
- * ──────────────────────           ────────────────────────────────────────
- *  ┌───────┬────────────────┐       ┌───────┬──────────────┬──────────────┐
- *  │Scene  │                │       │Scene  │   Coin GL    │   NanoRT     │
- *  │browser│  Coin GL panel │       │browser│   panel      │   panel      │
- *  │       │                │       │       │              │              │
- *  ├───────┴────────────────┤       ├───────┴──────────────┴──────────────┤
- *  │[Reload][Save PNG…] ...  │       │[Reload][Save PNG…]  [×]Sync views  │
- *  └────────────────────────┘       └────────────────────────────────────┘
+ * Layout (dual + nanort)                    Layout (dual only)
+ * ──────────────────────────────────────    ─────────────────────────────────
+ *  ┌──────┬───────────┬────────┬────────┐    ┌──────┬─────────────┬─────────┐
+ *  │Scene │ System GL │ OSMesa │ NanoRT │    │Scene │  System GL  │  OSMesa │
+ *  │brows.│  panel    │ panel  │ panel  │    │brows.│   panel     │  panel  │
+ *  ├──────┴───────────┴────────┴────────┤    ├──────┴─────────────┴─────────┤
+ *  │[Reload][Save]  [×]GL+OSMesa [×]NRT│    │[Reload][Save] [×]Sync GL+OSM│
+ *  └────────────────────────────────────┘    └──────────────────────────────┘
+ *
+ * Non-dual builds fall back to the existing 1- or 2-panel layout.
  *
  * Camera interaction
  *   Left-drag  → orbit
  *   Right-drag → dolly
  *   Scroll     → zoom
- *   When "Sync views" is checked (NanoRT mode), moving the camera in
- *   either panel immediately mirrors to the other.
+ *   Sync checkboxes mirror camera between matching panel pairs.
  *
  * Building
  * ────────
@@ -94,6 +100,12 @@
 
 /* ---- Context manager (OSMesa for dual/headless, GLX for sys-only) ---- */
 #include "headless_utils.h"
+
+/* ---- Optional OSMesa panel: only available in dual-GL builds ----------- */
+#ifdef COIN3D_BUILD_DUAL_GL
+#  define OBOL_VIEWER_OSMESA_PANEL
+#  include "osmesa_context_manager.h"
+#endif
 
 /* ---- Optional NanoRT application-supplied renderer ---- */
 #ifdef OBOL_VIEWER_NANORT
@@ -857,12 +869,199 @@ private:
 #endif /* OBOL_VIEWER_NANORT */
 
 
+/* =========================================================================
+ * OSMesaPanel  –  OSMesa offscreen rendering panel (dual-GL builds only)
+ *
+ * Renders the same scene graph as CoinPanel but via a dedicated
+ * SoOffscreenRenderer whose context manager is set to CoinOSMesaContextManager.
+ * This is completely independent of the global context manager singleton:
+ * SoOffscreenRenderer::setContextManager() pins the OSMesa backend to this
+ * specific renderer instance, so system-GL and OSMesa renders can coexist
+ * in the same process without any global state mutation.
+ * ======================================================================= */
+#ifdef OBOL_VIEWER_OSMESA_PANEL
+class OSMesaPanel : public Fl_Box {
+public:
+    SoSeparator*         root       = nullptr;
+    SoPerspectiveCamera* cam        = nullptr;
+    std::string          label_text;
+    std::string          status_text;
+
+    std::vector<uint8_t> display_buf; /* RGB, top-down for FLTK */
+    Fl_RGB_Image*        fltk_img  = nullptr;
+
+    std::function<void(OSMesaPanel*)> on_camera_changed;
+
+    explicit OSMesaPanel(int X, int Y, int W, int H, const char* lbl = "")
+        : Fl_Box(X, Y, W, H, ""), label_text(lbl ? lbl : "")
+    {
+        box(FL_FLAT_BOX);
+        color(FL_BLACK);
+
+        SbViewportRegion vp(W, H);
+        renderer_.reset(new SoOffscreenRenderer(vp));
+        renderer_->setComponents(SoOffscreenRenderer::RGB_TRANSPARENCY);
+        renderer_->setBackgroundColor(SbColor(0.15f, 0.15f, 0.2f));
+        /* Pin this renderer to the OSMesa backend – completely independent
+         * of the global context manager used by CoinPanel. */
+        renderer_->setContextManager(&osmesa_mgr_);
+    }
+
+    ~OSMesaPanel() { delete fltk_img; }
+
+    void setScene(SoSeparator* r, SoPerspectiveCamera* c) {
+        root = r; cam = c; status_text.clear();
+        refreshRender();
+    }
+
+    void refreshRender() {
+        if (!root) { redraw(); return; }
+        int pw = std::max(w(), 1);
+        int ph = std::max(h(), 1);
+
+        SbViewportRegion vp(pw, ph);
+        renderer_->setViewportRegion(vp);
+
+        if (!renderer_->render(root)) {
+            status_text = "OSMesa render failed"; redraw(); return;
+        }
+
+        const unsigned char* src = renderer_->getBuffer();
+        if (!src) { status_text = "No buffer"; redraw(); return; }
+
+        /* Convert bottom-up RGBA → top-down RGB for FLTK. */
+        display_buf.resize((size_t)pw * ph * 3);
+        for (int row = 0; row < ph; ++row) {
+            const uint8_t* s = src + (size_t)(ph-1-row) * pw * 4;
+            uint8_t*       d = display_buf.data() + (size_t)row * pw * 3;
+            for (int col = 0; col < pw; ++col) {
+                d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; s+=4; d+=3;
+            }
+        }
+        delete fltk_img;
+        fltk_img = new Fl_RGB_Image(display_buf.data(), pw, ph, 3);
+        status_text.clear();
+        redraw();
+    }
+
+    void getCamera(float pos[3], float orient[4], float& dist) const {
+        if (!cam) return;
+        SbVec3f p = cam->position.getValue();
+        pos[0]=p[0]; pos[1]=p[1]; pos[2]=p[2];
+        SbRotation rot = cam->orientation.getValue();
+        SbVec3f axis; float angle; rot.getValue(axis, angle);
+        float s2 = sinf(angle*0.5f);
+        orient[0]=axis[0]*s2; orient[1]=axis[1]*s2;
+        orient[2]=axis[2]*s2; orient[3]=cosf(angle*0.5f);
+        dist = cam->focalDistance.getValue();
+    }
+
+    void setCamera(const float pos[3], const float orient[4], float dist) {
+        if (!cam) return;
+        cam->position.setValue(pos[0], pos[1], pos[2]);
+        float qx=orient[0], qy=orient[1], qz=orient[2], qw=orient[3];
+        float len = sqrtf(qx*qx+qy*qy+qz*qz+qw*qw);
+        if (len > 1e-6f) { qx/=len; qy/=len; qz/=len; qw/=len; }
+        float angle = 2.0f*acosf(qw);
+        SbVec3f ax(qx,qy,qz);
+        if (ax.length() < 1e-6f) { ax=SbVec3f(0,1,0); angle=0; } else ax.normalize();
+        cam->orientation.setValue(SbRotation(ax, angle));
+        if (dist > 0.0f) cam->focalDistance.setValue(dist);
+        refreshRender();
+    }
+
+    /* ---- FLTK overrides ---- */
+
+    void draw() override {
+        fl_rectf(x(), y(), w(), h(), FL_BLACK);
+        if (fltk_img) {
+            fltk_img->draw(x(), y(), w(), h(), 0, 0);
+        } else {
+            fl_color(FL_WHITE); fl_font(FL_HELVETICA, 14);
+            fl_draw("(no scene)", x()+w()/2-40, y()+h()/2);
+        }
+        if (!label_text.empty()) {
+            fl_color(fl_rgb_color(80, 200, 255)); fl_font(FL_HELVETICA_BOLD, 13);
+            fl_draw(label_text.c_str(), x()+6, y()+16);
+        }
+        if (!status_text.empty()) {
+            fl_color(fl_rgb_color(255, 80, 80)); fl_font(FL_HELVETICA, 12);
+            fl_draw(status_text.c_str(), x()+6, y()+h()-6);
+        }
+    }
+
+    int handle(int event) override {
+        if (!root || !cam) return Fl_Box::handle(event);
+        switch (event) {
+        case FL_PUSH:
+            take_focus(); return 1;
+        case FL_RELEASE:
+            notifyCameraChanged(); refreshRender(); return 1;
+        case FL_DRAG: {
+            static int last_x = 0, last_y = 0;
+            static int drag_btn = 0;
+            if (Fl::event_is_click()) { last_x = Fl::event_x(); last_y = Fl::event_y(); drag_btn = Fl::event_button(); }
+            int dx = Fl::event_x() - last_x, dy = Fl::event_y() - last_y;
+            last_x = Fl::event_x(); last_y = Fl::event_y();
+            if (drag_btn == 1) {
+                float az = -(float)dx * 0.01f, el = (float)dy * 0.01f;
+                SbVec3f center(0,0,0), offset = cam->position.getValue() - center;
+                SbRotation(SbVec3f(0,1,0), az).multVec(offset, offset);
+                SbVec3f viewDir = -offset; viewDir.normalize();
+                SbVec3f right = SbVec3f(0,1,0).cross(viewDir);
+                float rl = right.length();
+                if (rl > 1e-4f) right *= 1.0f/rl; else right = SbVec3f(1,0,0);
+                SbRotation(right, el).multVec(offset, offset);
+                cam->position.setValue(center + offset);
+                cam->pointAt(center, SbVec3f(0,1,0));
+            } else if (drag_btn == 3) {
+                float dist = cam->focalDistance.getValue() * (1.0f + dy*0.01f);
+                if (dist < 0.1f) dist = 0.1f;
+                SbVec3f dir = cam->position.getValue(); dir.normalize();
+                cam->position.setValue(dir * dist);
+                cam->focalDistance.setValue(dist);
+            }
+            notifyCameraChanged(); refreshRender(); return 1;
+        }
+        case FL_MOUSEWHEEL: {
+            float dist = cam->focalDistance.getValue() * (1.0f + (float)Fl::event_dy()*0.1f);
+            if (dist < 0.1f) dist = 0.1f;
+            SbVec3f dir = cam->position.getValue(); dir.normalize();
+            cam->position.setValue(dir * dist);
+            cam->focalDistance.setValue(dist);
+            notifyCameraChanged(); refreshRender(); return 1;
+        }
+        case FL_FOCUS: case FL_UNFOCUS: return 1;
+        default: break;
+        }
+        return Fl_Box::handle(event);
+    }
+
+    void resize(int X, int Y, int W, int H) override {
+        Fl_Box::resize(X, Y, W, H);
+        refreshRender();
+    }
+
+private:
+    CoinOSMesaContextManager           osmesa_mgr_;
+    std::unique_ptr<SoOffscreenRenderer> renderer_;
+
+    void notifyCameraChanged() { if (on_camera_changed) on_camera_changed(this); }
+};
+#endif /* OBOL_VIEWER_OSMESA_PANEL */
+
+
 class ObolViewerWindow : public Fl_Double_Window {
     Fl_Hold_Browser*  browser_;
     CoinPanel*        coin_panel_;
     Fl_Button*        reload_btn_;
     Fl_Button*        save_btn_;
     Fl_Box*           status_bar_;
+#ifdef OBOL_VIEWER_OSMESA_PANEL
+    OSMesaPanel*      osmesa_panel_ = nullptr;
+    Fl_Check_Button*  osmesa_sync_btn_ = nullptr;
+    bool              osmesa_syncing_ = false;
+#endif
 #ifdef OBOL_VIEWER_NANORT
     NanoRTPanel*      nrt_panel_  = nullptr;
     Fl_Check_Button*  sync_btn_   = nullptr;
@@ -885,6 +1084,37 @@ public:
 
     void loadScene(const char* name) {
         coin_panel_->loadScene(name);
+
+#ifdef OBOL_VIEWER_OSMESA_PANEL
+        /* OSMesa panel shares the same scene root and camera as the Coin panel. */
+        if (osmesa_panel_ && coin_panel_->state && coin_panel_->state->root) {
+            osmesa_panel_->setScene(coin_panel_->state->root,
+                                    coin_panel_->state->cam);
+        }
+        /* Wire up camera sync: Coin ↔ OSMesa. */
+        coin_panel_->on_camera_changed = [this](CoinPanel* src) {
+            if (!osmesa_syncing_ && osmesa_sync_btn_ && osmesa_sync_btn_->value()
+                && osmesa_panel_) {
+                osmesa_syncing_ = true;
+                float pos[3], orient[4], dist = 1.0f;
+                src->getCamera(pos, orient, dist);
+                osmesa_panel_->setCamera(pos, orient, dist);
+                osmesa_syncing_ = false;
+            }
+        };
+        if (osmesa_panel_) {
+            osmesa_panel_->on_camera_changed = [this](OSMesaPanel* src) {
+                if (!osmesa_syncing_ && osmesa_sync_btn_ && osmesa_sync_btn_->value()) {
+                    osmesa_syncing_ = true;
+                    float pos[3], orient[4], dist = 1.0f;
+                    src->getCamera(pos, orient, dist);
+                    coin_panel_->setCamera(pos, orient, dist);
+                    osmesa_syncing_ = false;
+                }
+            };
+        }
+#endif /* OBOL_VIEWER_OSMESA_PANEL */
+
 #ifdef OBOL_VIEWER_NANORT
         /* NanoRT panel shares the same scene root and camera as the Coin
          * panel.  Both renderers traverse the same graph, so camera state
@@ -894,6 +1124,7 @@ public:
                                  coin_panel_->state->cam);
         }
         /* Wire up cross-panel camera sync callbacks once per load. */
+#  ifndef OBOL_VIEWER_OSMESA_PANEL  /* avoid double-wiring coin_panel_ callback */
         coin_panel_->on_camera_changed = [this](CoinPanel* src) {
             if (!syncing_ && sync_btn_ && sync_btn_->value() && nrt_panel_) {
                 syncing_ = true;
@@ -903,6 +1134,7 @@ public:
                 syncing_ = false;
             }
         };
+#  endif
         if (nrt_panel_) {
             nrt_panel_->on_camera_changed = [this](NanoRTPanel* src) {
                 if (!syncing_ && sync_btn_ && sync_btn_->value()) {
@@ -914,7 +1146,8 @@ public:
                 }
             };
         }
-#endif
+#endif /* OBOL_VIEWER_NANORT */
+
         std::string s = "Scene: "; s += name;
         status_bar_->copy_label(s.c_str());
     }
@@ -923,7 +1156,7 @@ private:
     /* ---- coin panel label, chosen at compile time ---- */
     static const char* coinLabel() {
 #if defined(COIN3D_BUILD_DUAL_GL)
-        return "Dual GL (system + OSMesa)";
+        return "System GL";
 #elif defined(COIN3D_OSMESA_BUILD)
         return "OSMesa (headless)";
 #else
@@ -942,16 +1175,42 @@ private:
             browser_->add(e.c_str());
         }
 
-        /* Render area: Fl_Tile so panels can be resized by dragging */
+        /* Render area: Fl_Tile so panels can be resized by dragging.
+         * Panel layout depends on which optional panels are compiled in:
+         *   dual + nanort  → 3 panels: System GL | OSMesa | NanoRT
+         *   dual only      → 2 panels: System GL | OSMesa
+         *   nanort only    → 2 panels: Coin GL   | NanoRT
+         *   neither        → 1 panel:  Coin GL
+         */
         Fl_Tile* tile = new Fl_Tile(BROWSER_W, 0, W - BROWSER_W, content_h);
         {
-#ifdef OBOL_VIEWER_NANORT
+#if defined(OBOL_VIEWER_OSMESA_PANEL) && defined(OBOL_VIEWER_NANORT)
+            /* Three panels */
+            int panel_w = (W - BROWSER_W) / 3;
+            int panel_w2 = (W - BROWSER_W) - 2 * panel_w; // last gets remainder
+            coin_panel_   = new CoinPanel(BROWSER_W, 0, panel_w, content_h, coinLabel());
+            osmesa_panel_ = new OSMesaPanel(BROWSER_W + panel_w, 0,
+                                            panel_w, content_h,
+                                            "OSMesa (per-renderer backend)");
+            nrt_panel_    = new NanoRTPanel(BROWSER_W + 2*panel_w, 0,
+                                            panel_w2, content_h,
+                                            "NanoRT (app-supplied renderer)");
+#elif defined(OBOL_VIEWER_OSMESA_PANEL)
+            /* Two panels: System GL + OSMesa */
+            int cpw = (W - BROWSER_W) / 2;
+            coin_panel_   = new CoinPanel(BROWSER_W, 0, cpw, content_h, coinLabel());
+            osmesa_panel_ = new OSMesaPanel(BROWSER_W + cpw, 0,
+                                            W - BROWSER_W - cpw, content_h,
+                                            "OSMesa (per-renderer backend)");
+#elif defined(OBOL_VIEWER_NANORT)
+            /* Two panels: Coin GL + NanoRT */
             int cpw = (W - BROWSER_W) / 2;
             coin_panel_ = new CoinPanel(BROWSER_W, 0, cpw, content_h, coinLabel());
             nrt_panel_  = new NanoRTPanel(BROWSER_W + cpw, 0,
                                           W - BROWSER_W - cpw, content_h,
                                           "NanoRT (app-supplied renderer)");
 #else
+            /* Single panel */
             coin_panel_ = new CoinPanel(BROWSER_W, 0, W - BROWSER_W, content_h,
                                         coinLabel());
 #endif
@@ -967,8 +1226,12 @@ private:
             reload_btn_->callback(reloadCB, this); bx += 76;
             save_btn_ = new Fl_Button(bx, by, 80, bh, "Save RGB...");
             save_btn_->callback(saveCB, this); bx += 86;
+#ifdef OBOL_VIEWER_OSMESA_PANEL
+            osmesa_sync_btn_ = new Fl_Check_Button(bx, by, 120, bh, "Sync GL+OSMesa");
+            osmesa_sync_btn_->value(1); bx += 126;
+#endif
 #ifdef OBOL_VIEWER_NANORT
-            sync_btn_ = new Fl_Check_Button(bx, by, 110, bh, "Sync views");
+            sync_btn_ = new Fl_Check_Button(bx, by, 110, bh, "Sync NanoRT");
             sync_btn_->value(1); bx += 116;
 #endif
             status_bar_ = new Fl_Box(bx, by, W-bx-6, bh, "Ready");

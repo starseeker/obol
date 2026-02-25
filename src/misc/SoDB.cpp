@@ -1645,6 +1645,21 @@ SoDB::getContextManager(void)
   return global_context_manager;
 }
 
+/*!
+  Replace the active context manager at runtime without triggering a full
+  re-initialisation of the library.  The caller is responsible for ensuring
+  that no render is in progress when this is called.  Passing NULL is a no-op.
+
+  \since Coin 4.0
+*/
+void
+SoDB::setContextManager(ContextManager * manager)
+{
+  if (manager) {
+    global_context_manager = manager;
+  }
+}
+
 // C-style helper function for glue layer to access context manager
 // This avoids circular dependencies between glue and SoDB
 extern "C" {

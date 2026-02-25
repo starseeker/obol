@@ -61,11 +61,35 @@ CoinOffscreenGLCanvas::CoinOffscreenGLCanvas(void)
   this->color_rb = 0;
   this->depth_rb = 0;
   this->fbo_initialized = FALSE;
+  this->instance_mgr = NULL;
 }
 
 CoinOffscreenGLCanvas::~CoinOffscreenGLCanvas()
 {
   if (this->context) { this->destructContext(); }
+}
+
+// *************************************************************************
+
+// Set a per-instance context manager.  When non-NULL this manager is used
+// for all context lifecycle calls, overriding the global singleton.
+void
+CoinOffscreenGLCanvas::setContextManager(SoDB::ContextManager * mgr)
+{
+  // If there's already an active context that was created with a different
+  // manager, destroy it first so the new manager starts fresh.
+  if (this->context && this->instance_mgr != mgr) {
+    this->destructContext();
+  }
+  this->instance_mgr = mgr;
+}
+
+// Returns the effective context manager to use: per-instance if set,
+// otherwise the global singleton.
+SoDB::ContextManager *
+CoinOffscreenGLCanvas::effectiveMgr(void) const
+{
+  return this->instance_mgr ? this->instance_mgr : SoDB::getContextManager();
 }
 
 // *************************************************************************
@@ -169,9 +193,10 @@ CoinOffscreenGLCanvas::setWantedSize(SbVec2s reqsize)
 
   // Clean up FBO if size is changing - it will be recreated with new size
   if (this->context && this->fbo_initialized) {
-    if (SoGLContext_context_make_current(this->context)) {
+    SoDB::ContextManager * mgr = this->effectiveMgr();
+    if (mgr && mgr->makeContextCurrent(this->context)) {
       this->cleanupFBO();
-      SoGLContext_context_reinstate_previous(this->context);
+      mgr->restorePreviousContext(this->context);
     }
   }
 
@@ -191,11 +216,16 @@ CoinOffscreenGLCanvas::tryActivateGLContext(void)
 {
   if (this->size == SbVec2s(0, 0)) { return 0; }
 
+  SoDB::ContextManager * mgr = this->effectiveMgr();
+
   if (this->context == NULL) {
-    // Always use the callback-based context creation system
-    // Applications must provide context creation callbacks
-    this->context = SoGLContext_context_create_offscreen(this->size[0],
-                                                       this->size[1]);
+    if (!mgr) {
+      SoDebugError::post("CoinOffscreenGLCanvas::tryActivateGLContext",
+                         "No context manager available. Applications must provide "
+                         "a context manager via SoDB::init() before rendering.");
+      return 0;
+    }
+    this->context = mgr->createOffscreenContext(this->size[0], this->size[1]);
     
     if (CoinOffscreenGLCanvas::debug()) {
       SoDebugError::postInfo("CoinOffscreenGLCanvas::tryActivateGLContext",
@@ -219,11 +249,8 @@ CoinOffscreenGLCanvas::tryActivateGLContext(void)
     /* In dual-GL builds, tell the GL dispatch layer which backend this
        context was created with so SoGLContext_instance() can route to
        the correct (osmesa_ or sysgl) implementation. */
-    {
-      SoDB::ContextManager * mgr = SoDB::getContextManager();
-      if (mgr && mgr->isOSMesaContext(this->context)) {
-        coingl_register_osmesa_context(static_cast<int>(this->renderid));
-      }
+    if (mgr->isOSMesaContext(this->context)) {
+      coingl_register_osmesa_context(static_cast<int>(this->renderid));
     }
 #endif
 
@@ -232,7 +259,7 @@ CoinOffscreenGLCanvas::tryActivateGLContext(void)
     this->current_hdc = NULL;
   }
 
-  if (SoGLContext_context_make_current(this->context) == FALSE) {
+  if (!mgr || mgr->makeContextCurrent(this->context) == FALSE) {
     if (CoinOffscreenGLCanvas::debug()) {
       SoDebugError::post("CoinOffscreenGLCanvas::tryActivateGLContext",
                          "Couldn't make context current.");
@@ -315,7 +342,8 @@ CoinOffscreenGLCanvas::deactivateGLContext(void)
   // Unbind FBO before deactivating context
   this->unbindFBO();
   
-  SoGLContext_context_reinstate_previous(this->context);
+  SoDB::ContextManager * mgr = this->effectiveMgr();
+  if (mgr) mgr->restorePreviousContext(this->context);
 }
 
 // *************************************************************************
@@ -325,7 +353,8 @@ CoinOffscreenGLCanvas::destructContext(void)
 {
   assert(this->context);
 
-  if (SoGLContext_context_make_current(this->context)) {
+  SoDB::ContextManager * mgr = this->effectiveMgr();
+  if (mgr && mgr->makeContextCurrent(this->context)) {
     // Clean up FBO resources before destroying context
     this->cleanupFBO();
     
@@ -340,7 +369,7 @@ CoinOffscreenGLCanvas::destructContext(void)
     }
   }
 
-  SoGLContext_context_destruct(this->context);
+  if (mgr) mgr->destroyContext(this->context);
 
   this->context = NULL;
   this->renderid = 0;
@@ -582,7 +611,8 @@ CoinOffscreenGLCanvas::initializeFBO(void)
   if (this->fbo_initialized) { return TRUE; }
   
   // Ensure the context is current before calling SoGLContext_instance
-  if (this->context && !SoGLContext_context_make_current(this->context)) {
+  SoDB::ContextManager * mgr = this->effectiveMgr();
+  if (this->context && (!mgr || mgr->makeContextCurrent(this->context) == FALSE)) {
     if (CoinOffscreenGLCanvas::debug()) {
       SoDebugError::post("CoinOffscreenGLCanvas::initializeFBO",
                          "Failed to make context current before FBO initialization");
