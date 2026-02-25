@@ -310,6 +310,69 @@ macro(add_rendering_image_test test_name)
     endif()
 endmacro()
 
+# ---- NanoRT image-comparison macro -------------------------------------------
+#
+# add_nanort_image_test(name [HASH_THRESHOLD n] [RMSE_THRESHOLD f])
+#
+# Runs nrt_<name> to produce an SGI RGB image, then compares it against the
+# OSMesa control image (<name>_control.png) using image_comparator.
+#
+# NanoRT uses Phong ray-tracing rather than OpenGL rasterization, so the renders
+# will differ in shading detail (specular highlights, ambient fill) while still
+# depicting the same scene geometry and colours.  The thresholds are therefore
+# set higher than the OSMesa regression tests to accommodate these algorithm
+# differences, while still catching major regressions such as missing geometry,
+# wrong colours, or a completely black image.
+#
+# Default thresholds:
+#   HASH_THRESHOLD 15   – perceptual hash (0-64 range; 5 is near-identical)
+#   RMSE_THRESHOLD 60.0 – per-channel RMSE (0-255 range)
+macro(add_nanort_image_test name)
+    set(_ctrl "${CONTROL_IMAGES_DIR}/${name}_control.png")
+    set(_base "${CMAKE_CURRENT_BINARY_DIR}/test_output/nrt_${name}_test")
+
+    # Default thresholds – more lenient than the OSMesa tests because NanoRT
+    # uses a different shading model (Phong ray-tracing vs GL rasterization).
+    set(_hash_thresh 15)
+    set(_rmse_thresh 60.0)
+
+    set(_next_is_hash FALSE)
+    set(_next_is_rmse FALSE)
+    foreach(_arg ${ARGN})
+        if(_arg STREQUAL "HASH_THRESHOLD")
+            set(_next_is_hash TRUE)
+            set(_next_is_rmse FALSE)
+        elseif(_arg STREQUAL "RMSE_THRESHOLD")
+            set(_next_is_rmse TRUE)
+            set(_next_is_hash FALSE)
+        elseif(_next_is_hash)
+            set(_hash_thresh ${_arg})
+            set(_next_is_hash FALSE)
+        elseif(_next_is_rmse)
+            set(_rmse_thresh ${_arg})
+            set(_next_is_rmse FALSE)
+        endif()
+    endforeach()
+
+    if(EXISTS "${_ctrl}")
+        add_test(
+            NAME nrt_${name}_image_test
+            COMMAND ${CMAKE_COMMAND}
+                -DEXECUTABLE=$<TARGET_FILE:nrt_${name}>
+                -DTEST_BASE=${_base}
+                -DCONTROL_IMAGE=${_ctrl}
+                -DCOMPARATOR=$<TARGET_FILE:image_comparator>
+                -DHASH_THRESHOLD=${_hash_thresh}
+                -DRMSE_THRESHOLD=${_rmse_thresh}
+                -DTEST_TIMEOUT=${IMAGE_COMPARISON_TEST_TIMEOUT}
+                -P ${CMAKE_SOURCE_DIR}/tests/run_image_test.cmake
+        )
+        set_tests_properties(nrt_${name}_image_test PROPERTIES
+            TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
+        )
+    endif()
+endmacro()
+
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test_output")
 
 # Per-test RMSE thresholds.
@@ -367,6 +430,17 @@ add_rendering_image_test(render_procedural_shape RMSE_THRESHOLD 15.0)
 # selection display (handle spheres + text labels) and vertex manipulation.
 # Text labels increase subpixel variance so a higher RMSE threshold is used.
 add_rendering_image_test(render_arb8_edit_cycle RMSE_THRESHOLD 25.0)
+
+# ---- NanoRT image-comparison tests -------------------------------------------
+# Compare NanoRT (CPU ray-tracing) output against the OSMesa control images.
+# These use the same scenes as the OSMesa tests and should produce substantially
+# similar results despite the different rendering algorithms.
+# render_rt_proxy_shapes has no control image and is omitted here.
+add_nanort_image_test(render_primitives  RMSE_THRESHOLD 60.0)
+add_nanort_image_test(render_materials   RMSE_THRESHOLD 60.0)
+add_nanort_image_test(render_transforms  RMSE_THRESHOLD 60.0)
+add_nanort_image_test(render_colored_cube RMSE_THRESHOLD 60.0)
+add_nanort_image_test(render_scene        RMSE_THRESHOLD 60.0)
 
 # ---- Validation tests: run unconditionally, check exit code only -------------
 # These tests perform their own pixel analysis and return 0/1 directly.
