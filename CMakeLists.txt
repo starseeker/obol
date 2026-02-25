@@ -556,17 +556,14 @@ if(COIN_BUILD_VIEWER)
     ${FLTK_INCLUDE_DIRS}
   )
 
-  # OSMesa submodule headers for headless_utils.h (dual or osmesa builds)
-  if(COIN3D_BUILD_DUAL_GL OR COIN3D_USE_OSMESA)
-    target_include_directories(obol_viewer PRIVATE
-      "${PROJECT_SOURCE_DIR}/external/osmesa/include")
-  endif()
-
   # Compile definitions matching the Coin library build
   if(COIN3D_BUILD_DUAL_GL)
     target_compile_definitions(obol_viewer PRIVATE COIN3D_BUILD_DUAL_GL)
   elseif(COIN3D_USE_OSMESA)
+    # Pure-OSMesa build: headless_utils.h uses OSMesa context manager
     target_compile_definitions(obol_viewer PRIVATE COIN3D_OSMESA_BUILD)
+    target_include_directories(obol_viewer PRIVATE
+      "${PROJECT_SOURCE_DIR}/external/osmesa/include")
   endif()
 
   # Optional NanoRT panel: enabled when nanort.h is found in external/nanort/
@@ -586,8 +583,21 @@ if(COIN_BUILD_VIEWER)
       Coin
       ${COIN_TARGET_LINK_LIBRARIES}
       ${FLTK_LIBRARIES}
-      ${COIN_OSMESA_LIBRARIES}   # needed when headless_utils.h uses OSMesa directly
   )
+  # On Linux the viewer includes headless_utils.h which uses GLX symbols for
+  # the system-GL path; link the X/GL libs explicitly when available.
+  if(UNIX AND NOT APPLE)
+    find_package(X11 QUIET)
+    find_package(OpenGL QUIET)
+    if(X11_FOUND)
+      target_link_libraries(obol_viewer PRIVATE ${X11_X11_LIB})
+    endif()
+    if(TARGET OpenGL::GL)
+      target_link_libraries(obol_viewer PRIVATE OpenGL::GL)
+    elseif(OPENGL_gl_LIBRARY)
+      target_link_libraries(obol_viewer PRIVATE ${OPENGL_gl_LIBRARY})
+    endif()
+  endif()
 
   install(TARGETS obol_viewer RUNTIME DESTINATION bin)
 endif() # COIN_BUILD_VIEWER

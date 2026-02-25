@@ -21,13 +21,8 @@ if(DEFINED COIN3D_USE_OSMESA)
 else()
     set(RENDERING_USE_OSMESA OFF CACHE BOOL "Use OSMesa for rendering tests")
 endif()
-
-# Dual-GL builds use the OSMesa context manager for headless rendering
-# (headless_utils.h selects the OSMesa path for COIN3D_BUILD_DUAL_GL).
-if(COIN3D_BUILD_DUAL_GL AND NOT RENDERING_USE_OSMESA)
-    set(RENDERING_USE_OSMESA ON)
-    set(RENDERING_DUAL_GL ON)
-endif()
+# Note: COIN3D_BUILD_DUAL_GL builds use system GL (GLX+Xvfb) for rendering
+# tests; the OSMesa layer is in the library but scene traversal uses system GL.
 
 if(RENDERING_USE_OSMESA)
     set(OSMESA_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/external/osmesa/include")
@@ -58,11 +53,7 @@ macro(add_rendering_test name)
     )
     target_link_libraries(${name} Coin ${COIN_TARGET_LINK_LIBRARIES})
     if(RENDERING_USE_OSMESA)
-        if(RENDERING_DUAL_GL)
-            target_compile_definitions(${name} PRIVATE COIN3D_BUILD_DUAL_GL)
-        else()
-            target_compile_definitions(${name} PRIVATE COIN3D_OSMESA_BUILD)
-        endif()
+        target_compile_definitions(${name} PRIVATE COIN3D_OSMESA_BUILD)
         if(OSMESA_INCLUDE_DIR)
             target_include_directories(${name} PRIVATE ${OSMESA_INCLUDE_DIR})
         endif()

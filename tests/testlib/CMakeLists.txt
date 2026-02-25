@@ -17,6 +17,9 @@ if(DEFINED COIN3D_USE_OSMESA)
 else()
     set(TESTLIB_USE_OSMESA OFF)
 endif()
+# Note: COIN3D_BUILD_DUAL_GL builds use system GL (GLX+Xvfb) for rendering
+# tests, not OSMesa, because the Coin scene traversal uses system GL symbols.
+# Only pure COIN3D_USE_OSMESA builds use the OSMesa context path here.
 
 # ---- Library target -------------------------------------------------------
 add_library(obol_testlib STATIC
@@ -41,7 +44,7 @@ target_link_libraries(obol_testlib
     ${COIN_TARGET_LINK_LIBRARIES}
 )
 
-# OSMesa backend
+# OSMesa backend (pure COIN3D_USE_OSMESA builds only)
 if(TESTLIB_USE_OSMESA)
     set(OSMESA_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/external/osmesa/include")
     target_compile_definitions(obol_testlib PUBLIC COIN3D_OSMESA_BUILD)

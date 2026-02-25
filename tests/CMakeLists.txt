@@ -56,8 +56,8 @@ target_include_directories(simple_test_utils PUBLIC
     ${PROJECT_BINARY_DIR}/include
     ${COIN_TARGET_INCLUDE_DIRECTORIES}
 )
-# headless_utils.h needs the OSMesa submodule headers for dual-GL and osmesa builds
-if(COIN3D_BUILD_DUAL_GL OR COIN3D_USE_OSMESA)
+# headless_utils.h needs the OSMesa submodule headers for pure osmesa builds
+if(COIN3D_USE_OSMESA)
     target_include_directories(simple_test_utils PUBLIC
         "${PROJECT_SOURCE_DIR}/external/osmesa/include")
 endif()
