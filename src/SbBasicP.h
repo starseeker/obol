@@ -42,11 +42,6 @@ class SoEvent;
 class SoPath;
 class ScXMLObject;
 
-#if !defined(_MSC_VER) || (_MSC_VER >= 1300) //coin_depointer does not work with MSVC 6
-#define COIN_DEPOINTER_AVAILABLE
-#endif
-
-#ifdef COIN_DEPOINTER_AVAILABLE
 template <typename Type>
 struct coin_depointer {
   enum { valid = false };
@@ -64,17 +59,9 @@ struct coin_depointer<Type * const> {
   typedef Type type;
 };
 
-#endif //COIN_DEPOINTER_AVAILABLE
-
 template<typename To,typename From>
 To coin_internal_safe_cast2(From * ptr) {
-#ifdef COIN_DEPOINTER_AVAILABLE
   if((ptr != NULL) && ptr->getTypeId().isDerivedFrom(coin_depointer<To>::type::getClassTypeId()))
-#else
-  //FIXME Can we avoid declaring an unused variable also for MSVC6? - BFG 20080807
-  To retVal = NULL;
-  if((ptr != NULL) && ptr->getTypeId().isDerivedFrom(retVal->getClassTypeId()))
-#endif //OLDMSVC
   return static_cast<To>(ptr);
   return NULL;
 }
@@ -82,11 +69,7 @@ To coin_internal_safe_cast2(From * ptr) {
 template<typename To,typename From>
 To
 coin_internal_safe_cast(From * ptr) {
-#ifdef COIN_DEPOINTER_AVAILABLE
   if((ptr != NULL) && ptr->isOfType(coin_depointer<To>::type::getClassTypeId()))
-#else
-  if((ptr != NULL) && ptr->isOfType(((To) NULL)->getClassTypeId()))
-#endif //OLDMSVC
     return static_cast<To>(ptr);
   return NULL;
 }
@@ -168,19 +151,12 @@ reclassify_cast(const SoPath * ptr) {
   return reinterpret_cast<To>(ptr);
 }
 
-//NOTE What we are doing here is strictly not supported by the C++
-//standard. So we need to do some duck and dive between different
-//compilers. BFG 20080814
+//NOTE: function_to_object_cast is technically non-standard C++, but all
+//C++17 compilers support reinterpret_cast for this purpose.
 template <typename To, typename From>
 To
 function_to_object_cast(From ptr) {
-#if defined(__GNUC__) && ( __GNUC__ >= 4)
-  //Add compilers which support this style explicitly
   return reinterpret_cast<To>(ptr);
-#else
-  //This is not C++ correct, but we default to this, as most compilers will accept it.
-  return (To) ptr;
-#endif
 }
 
 //Casting the other way of function_to_object_cast, implemented by
