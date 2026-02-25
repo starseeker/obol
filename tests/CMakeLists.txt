@@ -100,6 +100,98 @@ set(IMAGE_COMPARISON_RMSE_THRESHOLD "5.0" CACHE STRING "RMSE threshold (0-255)")
 set(IMAGE_COMPARISON_TEST_TIMEOUT   "30"  CACHE STRING "Per-test timeout in seconds")
 
 # -----------------------------------------------------------------------
+# Test library (shared registry, scene factories, unit-test wrappers)
+# Must come before any target that links obol_testlib, but after
+# simple_test_utils is defined above.
+# -----------------------------------------------------------------------
+add_subdirectory(testlib)
+
+# -----------------------------------------------------------------------
+# Unified CLI runner
+# -----------------------------------------------------------------------
+add_executable(obol_test obol_test.cpp)
+# --whole-archive ensures the static-initialiser REGISTER_TEST blocks in
+# unit_test_wrappers.cpp (and test_scenes.cpp) are not discarded by the
+# linker even though obol_test.cpp has no direct symbol references to them.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_link_libraries(obol_test
+        -Wl,--whole-archive obol_testlib -Wl,--no-whole-archive
+        Coin ${COIN_TARGET_LINK_LIBRARIES}
+    )
+else()
+    target_link_libraries(obol_test obol_testlib Coin ${COIN_TARGET_LINK_LIBRARIES})
+endif()
+target_include_directories(obol_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/testlib
+    ${CMAKE_CURRENT_SOURCE_DIR}/utils
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+    ${PROJECT_BINARY_DIR}/include
+    ${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+if(USE_PTHREAD)
+    target_link_libraries(obol_test pthread)
+endif()
+add_test(NAME obol_test_all COMMAND obol_test)
+
+# -----------------------------------------------------------------------
+# FLTK GUI viewer (optional – only built when FLTK is found)
+# -----------------------------------------------------------------------
+find_package(FLTK QUIET)
+if(FLTK_FOUND)
+    message(STATUS "FLTK found – building obol_viewer")
+    add_executable(obol_viewer obol_viewer.cpp)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_link_libraries(obol_viewer
+            -Wl,--whole-archive obol_testlib -Wl,--no-whole-archive
+            Coin ${COIN_TARGET_LINK_LIBRARIES}
+            ${FLTK_LIBRARIES}
+        )
+    else()
+        target_link_libraries(obol_viewer
+            obol_testlib Coin ${COIN_TARGET_LINK_LIBRARIES}
+            ${FLTK_LIBRARIES}
+        )
+    endif()
+    target_include_directories(obol_viewer PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/testlib
+        ${CMAKE_CURRENT_SOURCE_DIR}/utils
+        ${FLTK_INCLUDE_DIRS}
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+        ${PROJECT_BINARY_DIR}/include
+        ${COIN_TARGET_INCLUDE_DIRECTORIES}
+    )
+    # OSMesa for the offscreen render panel
+    if(DEFINED COIN3D_USE_OSMESA AND COIN3D_USE_OSMESA)
+        target_compile_definitions(obol_viewer PRIVATE COIN3D_OSMESA_BUILD)
+        set(_OSMESA_INC "${CMAKE_SOURCE_DIR}/external/osmesa/include")
+        if(EXISTS "${_OSMESA_INC}")
+            target_include_directories(obol_viewer PRIVATE "${_OSMESA_INC}")
+        endif()
+        if(TARGET osmesa_interface)
+            target_link_libraries(obol_viewer osmesa_interface)
+        elseif(TARGET osmesa)
+            target_link_libraries(obol_viewer osmesa)
+        endif()
+    else()
+        # Try system OSMesa for the viewer's offscreen panel
+        find_library(OSMESA_LIBRARY NAMES OSMesa osmesa QUIET)
+        if(OSMESA_LIBRARY)
+            target_compile_definitions(obol_viewer PRIVATE HAVE_OSMESA)
+            target_link_libraries(obol_viewer ${OSMESA_LIBRARY})
+        endif()
+    endif()
+    if(USE_PTHREAD)
+        target_link_libraries(obol_viewer pthread)
+    endif()
+else()
+    message(STATUS "FLTK not found – obol_viewer will not be built")
+endif()
+
+# -----------------------------------------------------------------------
 # Subdirectory tests
 # -----------------------------------------------------------------------
 add_subdirectory(threads)
