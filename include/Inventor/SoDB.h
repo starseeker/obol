@@ -131,6 +131,17 @@ public:
     virtual SbBool makeContextCurrent(void * context) = 0;
     virtual void restorePreviousContext(void * context) = 0;
     virtual void destroyContext(void * context) = 0;
+    /**
+     * Return TRUE if the given context handle was created against the OSMesa
+     * backend rather than the system OpenGL/GLX/WGL backend.
+     *
+     * The default implementation returns FALSE, which is appropriate for
+     * applications that only use one backend.  Dual-backend implementations
+     * (COIN3D_BUILD_DUAL_GL) should override this and return TRUE for
+     * contexts created via OSMesa so that the GL-glue dispatch layer can
+     * route SoGLContext_instance() to the correct (osmesa_*) implementation.
+     */
+    virtual SbBool isOSMesaContext(void * /*context*/) { return FALSE; }
   };
 
   static ContextManager * getContextManager(void);
