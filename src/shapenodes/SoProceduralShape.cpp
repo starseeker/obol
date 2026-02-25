@@ -1002,11 +1002,11 @@ SoProceduralShape::buildSelectionDisplay() const
       (entry->topologyParsed && i < (int)entry->parsedHandles.size())
         ? &entry->parsedHandles[i] : nullptr;
 
-    // Radius: vertex → 0.05, edge → 0.07, face → 0.10
-    float radius = 0.05f;
+    // Radius: vertex → 0.12, edge → 0.09, face → 0.18
+    float radius = 0.12f;
     if (ph) {
-      if (ph->elementType == 1) radius = 0.07f;  // edge
-      if (ph->elementType == 2) radius = 0.10f;  // face
+      if (ph->elementType == 1) radius = 0.09f;  // edge
+      if (ph->elementType == 2) radius = 0.18f;  // face
     }
 
     SoSeparator* hsep = new SoSeparator;
