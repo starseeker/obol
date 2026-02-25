@@ -93,7 +93,6 @@ set(COIN_LIBRARY_TYPE $<IF:$<BOOL:${BUILD_SHARED_LIBS}>,SHARED,STATIC>)
 set(COIN_ADDITIONAL_HDRS 
     ${PROJECT_SOURCE_DIR}/include/SoWinEnterScope.h 
     ${PROJECT_SOURCE_DIR}/include/SoWinLeaveScope.h 
-    ${PROJECT_SOURCE_DIR}/include/SoDebug.h 
     ${PROJECT_BINARY_DIR}/src/config.h
 )
 
@@ -339,7 +338,7 @@ else()
           DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/Inventor 
           COMPONENT development 
           FILES_MATCHING PATTERN "*.h")
-  install(FILES ${PROJECT_SOURCE_DIR}/include/SoWinEnterScope.h ${PROJECT_SOURCE_DIR}/include/SoWinLeaveScope.h ${PROJECT_SOURCE_DIR}/include/SoDebug.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT development)
+  install(FILES ${PROJECT_SOURCE_DIR}/include/SoWinEnterScope.h ${PROJECT_SOURCE_DIR}/include/SoWinLeaveScope.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT development)
 
 # ############################################################################
 # Install target
