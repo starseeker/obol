@@ -173,6 +173,90 @@ add_rendering_test(render_quad_mesh_deep)
 add_rendering_test(render_field_connections)
 add_rendering_test(render_sogl_bindings)
 
+# ---- NanoRT raytracing backend -------------------------------------------
+#
+# add_nanort_rendering_test(name)
+#
+# Compiles <name>.cpp with:
+#   - COIN3D_NANORT_BUILD defined  →  headless_utils.h uses SoNanoRTContextManager
+#   - nanort.h and stb_image_write.h on the include path
+#
+# Tests built this way work without a display server and without OpenGL.
+# They still use the standard renderToFile() + writeToRGB() path from
+# headless_utils.h; SoOffscreenRenderer dispatches to the nanort renderer
+# via the generalized ContextManager::renderScene() hook.
+macro(add_nanort_rendering_test name)
+    add_executable(nrt_${name} ${name}.cpp)
+    target_include_directories(nrt_${name} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/tests/utils
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+        ${PROJECT_BINARY_DIR}/include
+        ${COIN_TARGET_INCLUDE_DIRECTORIES}
+        ${PROJECT_SOURCE_DIR}/external/nanort
+        ${PROJECT_SOURCE_DIR}/external/nanort/examples/common
+    )
+    target_compile_definitions(nrt_${name} PRIVATE COIN3D_NANORT_BUILD)
+    target_link_libraries(nrt_${name} Coin ${COIN_TARGET_LINK_LIBRARIES})
+    set_target_properties(nrt_${name} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
+    )
+    add_test(
+        NAME nrt_${name}
+        COMMAND "${CMAKE_COMMAND}"
+            -DEXECUTABLE=$<TARGET_FILE:nrt_${name}>
+            -DTEST_TIMEOUT=${IMAGE_COMPARISON_TEST_TIMEOUT}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/run_rendering_test.cmake"
+    )
+    set_tests_properties(nrt_${name} PROPERTIES
+        TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
+    )
+endmacro()
+
+# ---- NanoRT versions of standard rendering tests ----------------------------
+# These tests use SoOffscreenRenderer + the generalized ContextManager hook to
+# produce pixel output via nanort.  They operate on triangle-based geometry;
+# tests that rely on text, lines, or OpenGL-specific features are omitted.
+add_nanort_rendering_test(render_primitives)
+add_nanort_rendering_test(render_materials)
+add_nanort_rendering_test(render_transforms)
+add_nanort_rendering_test(render_colored_cube)
+add_nanort_rendering_test(render_scene)
+
+# ---- Standalone nanort demo (original, uses its own context manager) --------
+# render_nanort.cpp is the original proof-of-concept demo that builds its own
+# NullContextManager internally (before the generalized hook was added).
+# It is kept as a standalone self-contained test.
+add_executable(render_nanort render_nanort.cpp)
+target_include_directories(render_nanort PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/tests/utils
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+    ${PROJECT_BINARY_DIR}/include
+    ${COIN_TARGET_INCLUDE_DIRECTORIES}
+    ${PROJECT_SOURCE_DIR}/external/nanort
+    ${PROJECT_SOURCE_DIR}/external/nanort/examples/common
+)
+target_link_libraries(render_nanort Coin ${COIN_TARGET_LINK_LIBRARIES})
+set_target_properties(render_nanort PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
+)
+# The nanort test does its own pixel analysis and returns 0/1.
+# It does not need xvfb-run because it never calls OpenGL, but
+# run_rendering_test.cmake is still used for consistent test reporting.
+add_test(
+    NAME render_nanort
+    COMMAND "${CMAKE_COMMAND}"
+        -DEXECUTABLE=$<TARGET_FILE:render_nanort>
+        -DTEST_TIMEOUT=${IMAGE_COMPARISON_TEST_TIMEOUT}
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/run_rendering_test.cmake"
+)
+set_tests_properties(render_nanort PROPERTIES
+    TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
+)
+
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
 # The run_image_test.cmake driver handles Xvfb wrapping for GLX builds.
