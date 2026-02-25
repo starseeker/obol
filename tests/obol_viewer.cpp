@@ -1,636 +1,605 @@
-/**************************************************************************\
- * Copyright (c) Kongsberg Oil & Gas Technologies AS
- * All rights reserved.
+/*
+ * obol_viewer.cpp  –  FLTK dual-backend scene viewer for Obol
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
+ * Architecture
+ * ────────────
+ * The viewer loads two bridge shared libraries at startup:
  *
- * Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
+ *   libobol_bridge_sys.so    – Obol built against system OpenGL / GLX
+ *   libobol_bridge_osmesa.so – Obol built against OSMesa (headless)
  *
- * Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
+ * Both bridges export the same C API (obol_bridge.h), and each bridge
+ * embeds its corresponding Obol static library with -fvisibility=hidden
+ * so the C++ symbols are private.  The viewer loads them with
+ * dlopen(RTLD_LOCAL) so even the visible obol_* C functions live in
+ * separate namespaces and never collide.
  *
- * Neither the name of the copyright holder nor the names of its
- * contributors may be used to endorse or promote products derived from
- * this software without specific prior written permission.
+ * If libobol_bridge_sys.so is unavailable (no DISPLAY, missing libGL,
+ * CI headless runner) the viewer falls back to using the OSMesa bridge
+ * for both panels and shows a status message.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-\**************************************************************************/
-
-/**
- * @file obol_viewer.cpp
- * @brief FLTK GUI viewer for Obol test scenes.
+ * Layout
+ * ──────
+ *   ┌─────────┬──────────────────────────────────────┐
+ *   │  Test   │  [System GL]      │  [OSMesa]         │
+ *   │ browser │  CoinPanel (left) │  CoinPanel (right)│
+ *   │         │                   │                   │
+ *   ├─────────┴───────────────────┴───────────────────┤
+ *   │ [Reload] [Render…]  [×] Sync views  status text │
+ *   └──────────────────────────────────────────────────┘
  *
- * Layout:
- *   +--250px--+------- remaining width -------+
- *   | Test    | "System GL"  | "OSMesa"        |
- *   | browser |  CoinGLWidget|  CoinOSMesaWidget|
- *   |         |  (left half) |  (right half)   |
- *   +---------+--------------+-----------------+
- *   | [Run] [Render] [Help]   [x] Sync Views   |
- *   +---------------------------------------------+
+ * Interaction (both panels)
+ *   Left-drag   → orbit camera
+ *   Right-drag  → dolly (zoom along view axis)
+ *   Scroll      → zoom
+ *   When "Sync views" is checked, moving the camera in either panel
+ *   immediately mirrors to the other.
  *
- * System GL widget: renders via SoGLRenderAction in an Fl_Gl_Window.
- * OSMesa widget   : renders via SoOffscreenRenderer (OSMesa context),
- *                   then displays the result as an Fl_RGB_Image inside
- *                   an Fl_Box.
+ * Building
+ * ────────
+ * This file is built as part of tests/obol_superbuild/ (see that
+ * directory's CMakeLists.txt).  The superbuild compiles both Obol
+ * variants and the bridge libraries, then builds this file linking
+ * only FLTK and libdl.
  *
- * Both widgets share the same SoSeparator scene root produced by the
- * registry's create_scene factory, and each manages its own
- * SoPerspectiveCamera so the two views can be compared independently
- * (or kept in sync when "Sync Views" is checked).
- *
- * Camera interaction (both widgets):
- *   Left-drag   : orbit (trackball)
- *   Right-drag  : dolly (zoom in/out along view axis)
- *   Scroll      : zoom
+ * The superbuild passes -DOBOL_BRIDGE_DIR=<path> so the viewer knows
+ * where to find the bridge .so files.  A fallback search path (directory
+ * of the executable) is also tried.
  */
 
-#include "testlib/test_registry.h"
-#include "utils/headless_utils.h"
+#include "obol_bridge.h"   /* C API + ObolBridgeAPI struct */
 
-// FLTK
 #include <FL/Fl.H>
-#include <FL/Fl_Window.H>
-#include <FL/Fl_Gl_Window.H>
-#include <FL/Fl_Box.H>
+#include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Hold_Browser.H>
 #include <FL/Fl_Button.H>
 #include <FL/Fl_Check_Button.H>
-#include <FL/Fl_Group.H>
+#include <FL/Fl_Box.H>
 #include <FL/Fl_RGB_Image.H>
+#include <FL/Fl_Group.H>
+#include <FL/Fl_File_Chooser.H>
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
-
-// OpenGL (system GL for CoinGLWidget)
-#ifdef COIN3D_OSMESA_BUILD
-#  include <OSMesa/gl.h>
-#else
-#  ifdef __unix__
-#    include <GL/gl.h>
-#  else
-#    include <OpenGL/gl.h>
-#  endif
-#endif
-
-// Coin
-#include <Inventor/SbViewportRegion.h>
-#include <Inventor/SbRotation.h>
-#include <Inventor/SbVec3f.h>
-#include <Inventor/actions/SoGLRenderAction.h>
-#include <Inventor/nodes/SoSeparator.h>
-#include <Inventor/nodes/SoPerspectiveCamera.h>
-
-// OSMesa for the offscreen widget
-#ifdef COIN3D_OSMESA_BUILD
-#  include <OSMesa/osmesa.h>
-#else
-// When building without OSMesa as the primary backend, we still attempt to
-// use the system OSMesa if available.  The widget degrades gracefully if
-// OSMesa is not present at link time.
-#  ifdef HAVE_OSMESA
-#    include <GL/osmesa.h>
-#  endif
-#endif
+#include <FL/Fl_Tile.H>
+#include <FL/Fl_Pack.H>
+#include <FL/Fl_Scroll.H>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
-#include <cmath>
-#include <memory>
+#include <functional>
 #include <string>
 #include <vector>
+#include <algorithm>
 
-// =========================================================================
-// Forward declarations
-// =========================================================================
-class CoinGLWidget;
-class CoinOSMesaWidget;
-class ObolViewerWindow;
+#ifndef OBOL_BRIDGE_DIR
+#  define OBOL_BRIDGE_DIR ""
+#endif
 
-// =========================================================================
-// Camera orbit helper (shared by both widgets)
-// =========================================================================
-namespace {
+/* =========================================================================
+ * Bridge discovery helpers
+ * ======================================================================= */
 
-void orbitCamera(SoPerspectiveCamera* cam, float dAzimuth, float dElevation)
+/** Try to load a bridge .so from several candidate paths. */
+static ObolBridgeAPI* try_load_bridge(const char* basename,
+                                      const char* extra_dir = nullptr)
 {
-    if (!cam) return;
-    const SbVec3f center(0.0f, 0.0f, 0.0f);
-    SbVec3f offset = cam->position.getValue() - center;
-
-    // Azimuth: rotate around world Y
-    SbRotation azRot(SbVec3f(0,1,0), dAzimuth);
-    azRot.multVec(offset, offset);
-
-    // Elevation: rotate around the camera's right axis
-    SbVec3f viewDir = -offset; viewDir.normalize();
-    SbVec3f worldUp(0,1,0);
-    SbVec3f rightVec = worldUp.cross(viewDir);
-    float rLen = rightVec.length();
-    if (rLen > 1e-4f) {
-        rightVec *= (1.0f / rLen);
-        SbRotation elRot(rightVec, dElevation);
-        elRot.multVec(offset, offset);
+    std::vector<std::string> candidates;
+    /* 0. environment variable override (highest priority) */
+    const char* env_dir = getenv("OBOL_BRIDGE_DIR");
+    if (env_dir && env_dir[0]) {
+        candidates.push_back(std::string(env_dir) + "/" + basename);
     }
+    /* 1. explicit build-time bridge dir */
+    if (OBOL_BRIDGE_DIR[0]) {
+        candidates.push_back(std::string(OBOL_BRIDGE_DIR) + "/" + basename);
+    }
+    /* 2. caller-supplied extra dir (e.g. directory of the executable) */
+    if (extra_dir && extra_dir[0]) {
+        candidates.push_back(std::string(extra_dir) + "/" + basename);
+    }
+    /* 3. system default (LD_LIBRARY_PATH etc.) */
+    candidates.push_back(basename);
 
-    cam->position.setValue(center + offset);
-    cam->pointAt(center, SbVec3f(0,1,0));
+    for (const auto& path : candidates) {
+        ObolBridgeAPI* api = ObolBridgeAPI::load(path.c_str());
+        if (api) {
+            fprintf(stdout, "obol_viewer: loaded bridge '%s'\n", path.c_str());
+            return api;
+        }
+        /* Print dlerror for debugging */
+        fprintf(stderr, "obol_viewer: could not load '%s': %s\n",
+                path.c_str(), dlerror());
+    }
+    return nullptr;
 }
 
-void dollyCamera(SoPerspectiveCamera* cam, float delta)
-{
-    if (!cam) return;
-    SbVec3f pos = cam->position.getValue();
-    float dist = pos.length();
-    dist *= (1.0f + delta);
-    if (dist < 0.01f) dist = 0.01f;
-    pos.normalize();
-    cam->position.setValue(pos * dist);
-}
+/* =========================================================================
+ * CoinPanel  –  one render panel backed by a bridge instance
+ * ======================================================================= */
 
-} // anonymous namespace
-
-// =========================================================================
-// CoinGLWidget – renders scene into an Fl_Gl_Window via SoGLRenderAction
-// =========================================================================
-class CoinGLWidget : public Fl_Gl_Window {
+/**
+ * CoinPanel is an Fl_Box that:
+ *  • holds an ObolBridgeAPI* and an ObolScene handle
+ *  • renders the scene via bridge->fn_scene_render() on every draw()
+ *  • forwards FLTK mouse / scroll / key events to the bridge
+ *  • exposes camera state read/write for the Sync Views feature
+ */
+class CoinPanel : public Fl_Box {
 public:
-    SoSeparator*         scene_root_ = nullptr;
-    SoPerspectiveCamera* camera_     = nullptr;
-    // Callback invoked after each draw (used by "Sync Views")
-    std::function<void(SoPerspectiveCamera*)> on_camera_changed_;
+    ObolBridgeAPI* bridge   = nullptr;
+    ObolScene      scene    = nullptr;
+    std::string    label_text;
+    std::string    status_text;
 
-    CoinGLWidget(int x, int y, int w, int h, const char* label = nullptr)
-        : Fl_Gl_Window(x, y, w, h, label)
-    {
-        mode(FL_RGB | FL_DOUBLE | FL_DEPTH);
-    }
+    /* Raw pixel buffer (RGBA, bottom-up from GL convention) */
+    std::vector<uint8_t> pixel_buf;
+    /* FLTK image object (top-down RGB) created from pixel_buf */
+    Fl_RGB_Image*   fltk_img = nullptr;
+    /* Separate display buffer: FLTK wants top-down RGB (3 channels) */
+    std::vector<uint8_t> display_buf;
 
-    void setScene(SoSeparator* root, SoPerspectiveCamera* cam) {
-        scene_root_ = root;
-        camera_     = cam;
-        valid(0);
-        redraw();
-    }
+    /* Sync callback: called after local camera changes */
+    std::function<void(CoinPanel*)> on_camera_changed;
 
-    void draw() override {
-        if (!valid()) {
-            glViewport(0, 0, pixel_w(), pixel_h());
-            valid(1);
-        }
-        glClearColor(0.15f, 0.15f, 0.15f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        if (scene_root_) {
-            SbViewportRegion vp(pixel_w(), pixel_h());
-            SoGLRenderAction action(vp);
-            action.setTransparencyType(SoGLRenderAction::BLEND);
-            action.apply(scene_root_);
-        }
-    }
-
-    int handle(int event) override {
-        static int  last_x = 0, last_y = 0;
-        static bool left_down = false, right_down = false;
-
-        switch (event) {
-        case FL_PUSH:
-            last_x = Fl::event_x();
-            last_y = Fl::event_y();
-            if (Fl::event_button() == FL_LEFT_MOUSE)  left_down  = true;
-            if (Fl::event_button() == FL_RIGHT_MOUSE) right_down = true;
-            return 1;
-
-        case FL_RELEASE:
-            if (Fl::event_button() == FL_LEFT_MOUSE)  left_down  = false;
-            if (Fl::event_button() == FL_RIGHT_MOUSE) right_down = false;
-            return 1;
-
-        case FL_DRAG:
-            if (camera_) {
-                int dx = Fl::event_x() - last_x;
-                int dy = Fl::event_y() - last_y;
-                if (left_down) {
-                    orbitCamera(camera_,
-                                -dx * 0.01f,
-                                -dy * 0.01f);
-                } else if (right_down) {
-                    dollyCamera(camera_, dy * 0.01f);
-                }
-                if (on_camera_changed_) on_camera_changed_(camera_);
-                redraw();
-            }
-            last_x = Fl::event_x();
-            last_y = Fl::event_y();
-            return 1;
-
-        case FL_MOUSEWHEEL:
-            if (camera_) {
-                dollyCamera(camera_, Fl::event_dy() * 0.1f);
-                if (on_camera_changed_) on_camera_changed_(camera_);
-                redraw();
-            }
-            return 1;
-
-        default:
-            return Fl_Gl_Window::handle(event);
-        }
-    }
-};
-
-// =========================================================================
-// CoinOSMesaWidget – renders via OSMesa and displays as Fl_RGB_Image
-// =========================================================================
-class CoinOSMesaWidget : public Fl_Box {
-public:
-    SoSeparator*         scene_root_ = nullptr;
-    SoPerspectiveCamera* camera_     = nullptr;
-    std::function<void(SoPerspectiveCamera*)> on_camera_changed_;
-
-    CoinOSMesaWidget(int x, int y, int wi, int hi, const char* label = nullptr)
-        : Fl_Box(x, y, wi, hi, label), buf_w_(0), buf_h_(0)
+    explicit CoinPanel(int X, int Y, int W, int H, const char* lbl = "")
+        : Fl_Box(X, Y, W, H, ""), label_text(lbl ? lbl : "")
     {
         box(FL_FLAT_BOX);
-        color(fl_rgb_color(30, 30, 30));
-#if defined(COIN3D_OSMESA_BUILD) || defined(HAVE_OSMESA)
-        mesa_ctx_ = OSMesaCreateContextExt(OSMESA_RGBA, 16, 0, 0, nullptr);
-#else
-        mesa_ctx_ = nullptr;
-#endif
+        color(FL_BLACK);
     }
 
-    ~CoinOSMesaWidget() {
-#if defined(COIN3D_OSMESA_BUILD) || defined(HAVE_OSMESA)
-        if (mesa_ctx_) OSMesaDestroyContext(mesa_ctx_);
-#endif
-        delete[] pixel_buf_;
-        delete   display_image_;
+    ~CoinPanel() {
+        destroyScene();
+        delete fltk_img; fltk_img = nullptr;
     }
 
-    void setScene(SoSeparator* root, SoPerspectiveCamera* cam) {
-        scene_root_ = root;
-        camera_     = cam;
-        refresh();
-    }
+    /* ------------------------------------------------------------------
+     * Scene management
+     * ------------------------------------------------------------------ */
 
-    /** Re-render the scene and update the displayed image. */
-    void refresh() {
-        if (!scene_root_) { redraw(); return; }
-
-        int rw = w() > 0 ? w() : 800;
-        int rh = h() > 0 ? h() : 600;
-
-        ensureBuffer(rw, rh);
-
-#if defined(COIN3D_OSMESA_BUILD) || defined(HAVE_OSMESA)
-        if (!mesa_ctx_) { redraw(); return; }
-
-        if (!OSMesaMakeCurrent(mesa_ctx_, pixel_buf_,
-                               GL_UNSIGNED_BYTE, rw, rh)) {
-            fprintf(stderr, "CoinOSMesaWidget: OSMesaMakeCurrent failed\n");
-            redraw(); return;
+    void createScene(const char* name) {
+        destroyScene();
+        if (!bridge) return;
+        scene = bridge->fn_scene_create(name, w(), h());
+        if (!scene) {
+            status_text = std::string("Failed to create scene '") + name + "'";
+        } else {
+            status_text = "";
         }
+        refreshRender();
+    }
 
-        glViewport(0, 0, rw, rh);
-        glClearColor(0.15f, 0.15f, 0.15f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    void destroyScene() {
+        if (scene && bridge) { bridge->fn_scene_destroy(scene); scene = nullptr; }
+        delete fltk_img; fltk_img = nullptr;
+    }
 
-        {
-            SbViewportRegion vp(rw, rh);
-            SoGLRenderAction action(vp);
-            action.setTransparencyType(SoGLRenderAction::BLEND);
-            action.apply(scene_root_);
+    /* Render scene via bridge, update FLTK image, redraw widget. */
+    void refreshRender() {
+        if (!scene || !bridge) { redraw(); return; }
+        int pw = std::max(w(), 1);
+        int ph = std::max(h(), 1);
+        pixel_buf.resize((size_t)pw * ph * 4);
+        if (bridge->fn_scene_render(scene, pixel_buf.data(), pw, ph) != 0) {
+            status_text = "Render failed";
+            redraw();
+            return;
         }
-
-        glFlush();
-        OSMesaMakeCurrent(nullptr, nullptr, 0, 0, 0);
-
-        // Build Fl_RGB_Image from RGBA buffer (strip alpha, flip vertically)
-        int stride = rw * 4;
-        std::unique_ptr<unsigned char[]> rgb(new unsigned char[rw * rh * 3]);
-        for (int row = 0; row < rh; ++row) {
-            // OSMesa origin is bottom-left; FLTK origin is top-left
-            const unsigned char* src = pixel_buf_ + (rh - 1 - row) * stride;
-            unsigned char*       dst = rgb.get()  + row * rw * 3;
-            for (int col = 0; col < rw; ++col) {
-                dst[0] = src[0];
-                dst[1] = src[1];
-                dst[2] = src[2];
+        /* Convert bottom-up RGBA → top-down RGB for FLTK */
+        display_buf.resize((size_t)pw * ph * 3);
+        for (int row = 0; row < ph; ++row) {
+            const uint8_t* src = pixel_buf.data() + (size_t)(ph - 1 - row) * pw * 4;
+            uint8_t*       dst = display_buf.data() + (size_t)row * pw * 3;
+            for (int col = 0; col < pw; ++col) {
+                dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2];
                 src += 4; dst += 3;
             }
         }
-
-        delete display_image_;
-        display_image_ = new Fl_RGB_Image(rgb.release(), rw, rh, 3);
-        display_image_->alloc_array = 1;
-        image(display_image_);
-#else
-        // No OSMesa: show placeholder text
-        label("OSMesa not available");
-#endif
+        delete fltk_img;
+        fltk_img = new Fl_RGB_Image(display_buf.data(), pw, ph, 3);
         redraw();
     }
 
+    /* ------------------------------------------------------------------
+     * Camera state sync helpers
+     * ------------------------------------------------------------------ */
+
+    void getCamera(float pos[3], float orient[4], float& dist) const {
+        if (scene && bridge)
+            bridge->fn_scene_get_camera(scene, pos, orient, &dist);
+    }
+
+    void setCamera(const float pos[3], const float orient[4], float dist) {
+        if (scene && bridge) {
+            bridge->fn_scene_set_camera(scene, pos, orient, dist);
+            refreshRender();
+        }
+    }
+
+    /* ------------------------------------------------------------------
+     * FLTK overrides
+     * ------------------------------------------------------------------ */
+
+    void draw() override {
+        fl_rectf(x(), y(), w(), h(), FL_BLACK);
+        if (fltk_img) {
+            fltk_img->draw(x(), y(), w(), h(), 0, 0);
+        } else {
+            /* No scene loaded: draw a placeholder message */
+            fl_color(FL_WHITE);
+            fl_font(FL_HELVETICA, 14);
+            fl_draw("(no scene loaded)", x() + w()/2 - 60, y() + h()/2);
+        }
+        /* Backend label top-left */
+        if (!label_text.empty()) {
+            fl_color(fl_rgb_color(255,255,100));
+            fl_font(FL_HELVETICA_BOLD, 13);
+            fl_draw(label_text.c_str(), x()+6, y()+16);
+        }
+        /* Status text bottom-left */
+        if (!status_text.empty()) {
+            fl_color(fl_rgb_color(255,80,80));
+            fl_font(FL_HELVETICA, 12);
+            fl_draw(status_text.c_str(), x()+6, y()+h()-6);
+        }
+    }
+
     int handle(int event) override {
-        static int  last_x = 0, last_y = 0;
-        static bool left_down = false, right_down = false;
+        if (!scene || !bridge) return Fl_Box::handle(event);
 
         switch (event) {
         case FL_PUSH:
-            last_x = Fl::event_x();
-            last_y = Fl::event_y();
-            if (Fl::event_button() == FL_LEFT_MOUSE)  left_down  = true;
-            if (Fl::event_button() == FL_RIGHT_MOUSE) right_down = true;
-            return 1;
-
+            take_focus();
+            bridge->fn_scene_mouse_press(scene,
+                Fl::event_x() - x(), Fl::event_y() - y(),
+                Fl::event_button());
+            if (Fl::event_button() != FL_MIDDLE_MOUSE)
+                return 1; /* consume for drag */
+            break;
         case FL_RELEASE:
-            if (Fl::event_button() == FL_LEFT_MOUSE)  left_down  = false;
-            if (Fl::event_button() == FL_RIGHT_MOUSE) right_down = false;
+            bridge->fn_scene_mouse_release(scene,
+                Fl::event_x() - x(), Fl::event_y() - y(),
+                Fl::event_button());
+            notifyCameraChanged();
+            refreshRender();
             return 1;
-
         case FL_DRAG:
-            if (camera_) {
-                int dx = Fl::event_x() - last_x;
-                int dy = Fl::event_y() - last_y;
-                if (left_down) {
-                    orbitCamera(camera_, -dx * 0.01f, -dy * 0.01f);
-                } else if (right_down) {
-                    dollyCamera(camera_, dy * 0.01f);
-                }
-                if (on_camera_changed_) on_camera_changed_(camera_);
-                refresh();
-            }
-            last_x = Fl::event_x();
-            last_y = Fl::event_y();
+            bridge->fn_scene_mouse_move(scene,
+                Fl::event_x() - x(), Fl::event_y() - y());
+            notifyCameraChanged();
+            refreshRender();
             return 1;
-
         case FL_MOUSEWHEEL:
-            if (camera_) {
-                dollyCamera(camera_, Fl::event_dy() * 0.1f);
-                if (on_camera_changed_) on_camera_changed_(camera_);
-                refresh();
-            }
+            bridge->fn_scene_scroll(scene, -(float)Fl::event_dy());
+            notifyCameraChanged();
+            refreshRender();
             return 1;
-
-        default:
-            return Fl_Box::handle(event);
+        case FL_KEYDOWN:
+            bridge->fn_scene_key_press(scene, Fl::event_key());
+            refreshRender();
+            return 1;
+        case FL_KEYUP:
+            bridge->fn_scene_key_release(scene, Fl::event_key());
+            return 1;
+        case FL_FOCUS: case FL_UNFOCUS:
+            return 1;
+        default: break;
         }
+        return Fl_Box::handle(event);
+    }
+
+    void resize(int X, int Y, int W, int H) override {
+        Fl_Box::resize(X, Y, W, H);
+        if (scene && bridge) bridge->fn_scene_resize(scene, W, H);
+        refreshRender();
     }
 
 private:
-    void ensureBuffer(int bw, int bh) {
-        if (bw == buf_w_ && bh == buf_h_) return;
-        delete[] pixel_buf_;
-        pixel_buf_ = new unsigned char[bw * bh * 4]();
-        buf_w_ = bw; buf_h_ = bh;
+    void notifyCameraChanged() {
+        if (on_camera_changed) on_camera_changed(this);
     }
-
-#if defined(COIN3D_OSMESA_BUILD) || defined(HAVE_OSMESA)
-    OSMesaContext mesa_ctx_    = nullptr;
-#else
-    void*         mesa_ctx_    = nullptr;
-#endif
-    unsigned char* pixel_buf_  = nullptr;
-    int            buf_w_ = 0, buf_h_ = 0;
-    Fl_RGB_Image*  display_image_ = nullptr;
 };
 
-// =========================================================================
-// ObolViewerWindow – top-level window wiring everything together
-// =========================================================================
-class ObolViewerWindow : public Fl_Window {
+/* =========================================================================
+ * Main window
+ * ======================================================================= */
+
+class ObolViewerWindow : public Fl_Double_Window {
+    /* UI widgets */
+    Fl_Hold_Browser*  browser_;
+    CoinPanel*        left_panel_;   /* system GL */
+    CoinPanel*        right_panel_;  /* OSMesa    */
+    Fl_Check_Button*  sync_btn_;
+    Fl_Box*           status_bar_;
+    Fl_Button*        reload_btn_;
+    Fl_Button*        render_btn_;
+
+    /* Bridges */
+    ObolBridgeAPI*    sys_api_    = nullptr;
+    ObolBridgeAPI*    osmesa_api_ = nullptr;
+
+    /* Sync guard (prevents recursive sync) */
+    bool syncing_ = false;
+
+    static const int BROWSER_W = 220;
+    static const int TOOLBAR_H = 32;
+    static const int STATUS_H  = 22;
+
 public:
-    ObolViewerWindow(int w, int h)
-        : Fl_Window(w, h, "Obol Test Viewer")
+    ObolViewerWindow(int W, int H,
+                     ObolBridgeAPI* sys_api, ObolBridgeAPI* osmesa_api)
+        : Fl_Double_Window(W, H, "Obol Scene Viewer"),
+          sys_api_(sys_api), osmesa_api_(osmesa_api)
     {
         begin();
-
-        const int BROWSER_W  = 250;
-        const int TOOLBAR_H  = 40;
-        const int view_w     = w - BROWSER_W;
-        const int view_h     = h - TOOLBAR_H;
-        const int half_view  = view_w / 2;
-
-        // ---- Test browser (left) ----------------------------------------
-        browser_ = new Fl_Hold_Browser(0, 0, BROWSER_W, view_h, nullptr);
-        browser_->textsize(12);
-        browser_->callback(browserSelectCB, this);
-        populateBrowser();
-
-        // ---- Label bar (above GL views) ---------------------------------
-        Fl_Box* gl_label = new Fl_Box(BROWSER_W, 0,
-                                       half_view, 20, "System GL");
-        gl_label->labelsize(11); gl_label->align(FL_ALIGN_CENTER);
-
-        Fl_Box* os_label = new Fl_Box(BROWSER_W + half_view, 0,
-                                       view_w - half_view, 20, "OSMesa");
-        os_label->labelsize(11); os_label->align(FL_ALIGN_CENTER);
-
-        // ---- GL widget (left half of view area) -------------------------
-        gl_widget_ = new CoinGLWidget(BROWSER_W, 20,
-                                       half_view, view_h - 20, nullptr);
-        gl_widget_->on_camera_changed_ = [this](SoPerspectiveCamera* cam) {
-            if (sync_views_ && osmesa_widget_->camera_) {
-                // Copy camera state to OSMesa widget's camera
-                osmesa_widget_->camera_->position.setValue(cam->position.getValue());
-                osmesa_widget_->camera_->orientation.setValue(cam->orientation.getValue());
-                osmesa_widget_->refresh();
-            }
-        };
-
-        // ---- OSMesa widget (right half of view area) --------------------
-        osmesa_widget_ = new CoinOSMesaWidget(BROWSER_W + half_view, 20,
-                                               view_w - half_view, view_h - 20,
-                                               nullptr);
-        osmesa_widget_->on_camera_changed_ = [this](SoPerspectiveCamera* cam) {
-            if (sync_views_ && gl_widget_->camera_) {
-                gl_widget_->camera_->position.setValue(cam->position.getValue());
-                gl_widget_->camera_->orientation.setValue(cam->orientation.getValue());
-                gl_widget_->redraw();
-            }
-        };
-
-        // ---- Toolbar (bottom) -------------------------------------------
-        Fl_Group* toolbar = new Fl_Group(0, view_h, w, TOOLBAR_H);
-        toolbar->box(FL_UP_BOX);
-
-        Fl_Button* btn_run = new Fl_Button(5, view_h + 6, 70, 28, "Run");
-        btn_run->callback(runCB, this);
-
-        Fl_Button* btn_render = new Fl_Button(80, view_h + 6, 90, 28, "Render...");
-        btn_render->callback(renderCB, this);
-
-        Fl_Button* btn_help = new Fl_Button(175, view_h + 6, 60, 28, "Help");
-        btn_help->callback(helpCB, this);
-
-        sync_check_ = new Fl_Check_Button(250, view_h + 6, 120, 28, "Sync Views");
-        sync_check_->value(0);
-        sync_check_->callback(syncCB, this);
-
-        toolbar->end();
+        buildUI(W, H);
         end();
+
+        /* Populate the scene browser from the OSMesa bridge (always present) */
+        ObolBridgeAPI* cat_api = osmesa_api_ ? osmesa_api_ : sys_api_;
+        if (cat_api) {
+            int n = cat_api->fn_scene_count();
+            for (int i = 0; i < n; ++i) {
+                std::string entry =
+                    std::string(cat_api->fn_scene_category(i)) + "/" +
+                    cat_api->fn_scene_name(i);
+                browser_->add(entry.c_str());
+            }
+        }
+
+        /* Wire up camera-sync callbacks */
+        left_panel_->on_camera_changed = [this](CoinPanel* src) {
+            if (!syncing_ && sync_btn_->value()) syncCamerasFrom(src);
+        };
+        right_panel_->on_camera_changed = [this](CoinPanel* src) {
+            if (!syncing_ && sync_btn_->value()) syncCamerasFrom(src);
+        };
+
+        updateStatusBar();
         resizable(this);
     }
 
-    ~ObolViewerWindow() {
-        clearScene();
+    /* ------------------------------------------------------------------
+     * Public: load a named scene into both panels
+     * ------------------------------------------------------------------ */
+    void loadScene(const char* name) {
+        left_panel_->createScene(name);
+        right_panel_->createScene(name);
+        updateStatusBar();
     }
 
 private:
-    Fl_Hold_Browser*     browser_      = nullptr;
-    CoinGLWidget*        gl_widget_    = nullptr;
-    CoinOSMesaWidget*    osmesa_widget_= nullptr;
-    Fl_Check_Button*     sync_check_  = nullptr;
+    /* ------------------------------------------------------------------
+     * UI construction
+     * ------------------------------------------------------------------ */
+    void buildUI(int W, int H) {
+        int content_h = H - TOOLBAR_H - STATUS_H;
 
-    SoSeparator*         scene_root_  = nullptr;
-    SoPerspectiveCamera* cam_gl_      = nullptr;
-    SoPerspectiveCamera* cam_osmesa_  = nullptr;
-    bool                 sync_views_  = false;
+        /* ---- Left browser ---- */
+        browser_ = new Fl_Hold_Browser(0, 0, BROWSER_W, content_h);
+        browser_->textsize(12);
+        browser_->callback(browserCB, this);
 
-    std::vector<std::string> test_names_;  // parallel to browser lines
-
-    // ---- Populate browser from registry ---------------------------------
-    void populateBrowser() {
-        const auto& tests = ObolTest::TestRegistry::instance().allTests();
-        for (const auto& e : tests) {
-            if (!e.has_visual && !e.create_scene) continue;
-            std::string line = e.name + "  (" +
-                ObolTest::categoryToString(e.category) + ")";
-            browser_->add(line.c_str());
-            test_names_.push_back(e.name);
-        }
-    }
-
-    // ---- Load the selected test into both widgets -----------------------
-    void loadSelectedTest() {
-        int idx = browser_->value();
-        if (idx < 1 || idx > (int)test_names_.size()) return;
-
-        const std::string& name = test_names_[idx - 1];
-        const ObolTest::TestEntry* entry =
-            ObolTest::TestRegistry::instance().findTest(name);
-        if (!entry || !entry->create_scene) return;
-
-        clearScene();
-
-        // Create scene for GL widget
-        scene_root_ = entry->create_scene(gl_widget_->w(), gl_widget_->h());
-
-        // Build independent cameras for each view
-        cam_gl_ = new SoPerspectiveCamera;
-        cam_gl_->ref();
+        /* ---- Render area (Fl_Tile for resizable split) ---- */
+        Fl_Tile* tile = new Fl_Tile(BROWSER_W, 0,
+                                    W - BROWSER_W, content_h);
         {
-            SbViewportRegion vp(gl_widget_->w(), gl_widget_->h());
-            cam_gl_->viewAll(scene_root_, vp);
+            int panel_w = (W - BROWSER_W) / 2;
+
+            /* Left panel: system GL */
+            left_panel_ = new CoinPanel(BROWSER_W, 0,
+                                        panel_w, content_h,
+                                        sys_api_
+                                            ? sys_api_->fn_backend_name()
+                                            : "System GL (unavailable)");
+            left_panel_->bridge = sys_api_;
+
+            /* Right panel: OSMesa */
+            right_panel_ = new CoinPanel(BROWSER_W + panel_w, 0,
+                                         W - BROWSER_W - panel_w, content_h,
+                                         osmesa_api_
+                                             ? osmesa_api_->fn_backend_name()
+                                             : "OSMesa (unavailable)");
+            right_panel_->bridge = osmesa_api_;
         }
+        tile->end();
 
-        cam_osmesa_ = new SoPerspectiveCamera;
-        cam_osmesa_->ref();
-        cam_osmesa_->position.setValue(cam_gl_->position.getValue());
-        cam_osmesa_->orientation.setValue(cam_gl_->orientation.getValue());
-        cam_osmesa_->nearDistance.setValue(cam_gl_->nearDistance.getValue());
-        cam_osmesa_->farDistance.setValue(cam_gl_->farDistance.getValue());
-        cam_osmesa_->focalDistance.setValue(cam_gl_->focalDistance.getValue());
+        /* ---- Toolbar ---- */
+        Fl_Group* toolbar = new Fl_Group(0, content_h, W, TOOLBAR_H);
+        toolbar->box(FL_UP_BOX);
+        {
+            int bx = 6, by = content_h + 4, bh = TOOLBAR_H - 8;
 
-        gl_widget_->setScene(scene_root_, cam_gl_);
-        osmesa_widget_->setScene(scene_root_, cam_osmesa_);
+            reload_btn_ = new Fl_Button(bx, by, 70, bh, "Reload");
+            reload_btn_->callback(reloadCB, this);
+            bx += 76;
+
+            render_btn_ = new Fl_Button(bx, by, 80, bh, "Render…");
+            render_btn_->callback(renderCB, this);
+            bx += 86;
+
+            sync_btn_ = new Fl_Check_Button(bx, by, 100, bh, "Sync views");
+            sync_btn_->value(1);   /* default: synced */
+            bx += 106;
+
+            /* status label fills remaining space */
+            status_bar_ = new Fl_Box(bx, by, W - bx - 6, bh, "");
+            status_bar_->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+            status_bar_->labelsize(12);
+        }
+        toolbar->end();
+
+        /* ---- Status bar ---- */
+        Fl_Box* statusbox = new Fl_Box(0, content_h + TOOLBAR_H,
+                                       W, STATUS_H, "");
+        statusbox->box(FL_ENGRAVED_BOX);
+        statusbox->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+        statusbox->labelsize(11);
     }
 
-    void clearScene() {
-        gl_widget_->setScene(nullptr, nullptr);
-        osmesa_widget_->setScene(nullptr, nullptr);
-        if (cam_gl_)     { cam_gl_->unref();     cam_gl_     = nullptr; }
-        if (cam_osmesa_) { cam_osmesa_->unref();  cam_osmesa_ = nullptr; }
-        if (scene_root_) { scene_root_->unref();  scene_root_ = nullptr; }
+    /* ------------------------------------------------------------------
+     * Camera synchronisation
+     * ------------------------------------------------------------------ */
+    void syncCamerasFrom(CoinPanel* src) {
+        CoinPanel* dst = (src == left_panel_) ? right_panel_ : left_panel_;
+        if (!dst->scene || !dst->bridge) return;
+        syncing_ = true;
+        float pos[3], orient[4], dist = 1.0f;
+        src->getCamera(pos, orient, dist);
+        dst->setCamera(pos, orient, dist);
+        syncing_ = false;
     }
 
-    // ---- Render selected test to file -----------------------------------
-    void renderSelected() {
-        int idx = browser_->value();
-        if (idx < 1 || idx > (int)test_names_.size()) {
-            fl_alert("Please select a test first.");
-            return;
-        }
-        const std::string& name = test_names_[idx - 1];
-        std::string outpath = name + "_viewer_output.rgb";
-        bool ok = ObolTest::TestRegistry::instance().renderTestToFile(
-            name, outpath, 800, 600);
-        if (ok)
-            fl_message("Rendered to: %s", outpath.c_str());
+    /* ------------------------------------------------------------------
+     * Status bar
+     * ------------------------------------------------------------------ */
+    void updateStatusBar() {
+        std::string msg;
+        if (sys_api_)
+            msg += std::string("Left: ") + sys_api_->fn_backend_name();
         else
-            fl_alert("Render failed for test: %s", name.c_str());
+            msg += "Left: System GL (NOT available – using OSMesa fallback)";
+        msg += "   |   ";
+        if (osmesa_api_)
+            msg += std::string("Right: ") + osmesa_api_->fn_backend_name();
+        else
+            msg += "Right: OSMesa (NOT available)";
+        status_bar_->copy_label(msg.c_str());
     }
 
-    // ---- Run unit test for selected entry --------------------------------
-    void runSelected() {
-        int idx = browser_->value();
-        if (idx < 1 || idx > (int)test_names_.size()) {
-            fl_alert("Please select a test first.");
-            return;
-        }
-        const std::string& name = test_names_[idx - 1];
-        const ObolTest::TestEntry* entry =
-            ObolTest::TestRegistry::instance().findTest(name);
-        if (!entry) return;
-
-        if (entry->run_unit) {
-            int rc = entry->run_unit();
-            if (rc == 0)
-                fl_message("PASS: %s", name.c_str());
-            else
-                fl_alert("FAIL: %s (rc=%d)", name.c_str(), rc);
-        } else {
-            // Visual-only: just reload the scene
-            loadSelectedTest();
-        }
+    /* ------------------------------------------------------------------
+     * Callbacks
+     * ------------------------------------------------------------------ */
+    static void browserCB(Fl_Widget*, void* data) {
+        auto* self = static_cast<ObolViewerWindow*>(data);
+        int sel = self->browser_->value();
+        if (sel < 1) return;
+        const char* entry = self->browser_->text(sel);
+        /* entry format: "Category/scene_name" */
+        const char* slash = strrchr(entry, '/');
+        const char* name  = slash ? slash + 1 : entry;
+        self->loadScene(name);
     }
 
-    // ---- Static FLTK callbacks ------------------------------------------
-    static void browserSelectCB(Fl_Widget*, void* data) {
-        static_cast<ObolViewerWindow*>(data)->loadSelectedTest();
+    static void reloadCB(Fl_Widget*, void* data) {
+        auto* self = static_cast<ObolViewerWindow*>(data);
+        int sel = self->browser_->value();
+        if (sel < 1) return;
+        const char* entry = self->browser_->text(sel);
+        const char* slash = strrchr(entry, '/');
+        const char* name  = slash ? slash + 1 : entry;
+        self->loadScene(name);
     }
-    static void runCB(Fl_Widget*, void* data) {
-        static_cast<ObolViewerWindow*>(data)->runSelected();
-    }
+
     static void renderCB(Fl_Widget*, void* data) {
-        static_cast<ObolViewerWindow*>(data)->renderSelected();
-    }
-    static void helpCB(Fl_Widget*, void*) {
-        fl_message(
-            "Obol Test Viewer\n\n"
-            "  Left-drag  : orbit camera\n"
-            "  Right-drag : dolly (zoom)\n"
-            "  Scroll     : zoom\n\n"
-            "  Run    : execute the selected test's unit test\n"
-            "  Render : render scene to an .rgb file\n"
-            "  Sync   : keep both cameras synchronised");
-    }
-    static void syncCB(Fl_Widget* w, void* data) {
-        ObolViewerWindow* self = static_cast<ObolViewerWindow*>(data);
-        self->sync_views_ = (static_cast<Fl_Check_Button*>(w)->value() != 0);
+        auto* self = static_cast<ObolViewerWindow*>(data);
+        /* Ask which backend to render */
+        int choice = fl_choice(
+            "Render to PNG from which backend?",
+            "Cancel", "System GL", "OSMesa");
+        if (choice == 0) return;  /* Cancel */
+        const char* path = fl_file_chooser(
+            "Save rendered image", "*.rgb", "output.rgb");
+        if (!path) return;
+
+        int sel = self->browser_->value();
+        if (sel < 1) { fl_message("Please select a scene first."); return; }
+        const char* entry = self->browser_->text(sel);
+        const char* slash = strrchr(entry, '/');
+        const char* name  = slash ? slash + 1 : entry;
+
+        ObolBridgeAPI* api = (choice == 1) ? self->sys_api_
+                                            : self->osmesa_api_;
+        if (!api) { fl_message("Selected backend is not available."); return; }
+
+        int pw = 800, ph = 600;
+        std::vector<uint8_t> buf((size_t)pw * ph * 4);
+        ObolScene sc = api->fn_scene_create(name, pw, ph);
+        if (!sc) { fl_message("Failed to create scene."); return; }
+        int rc = api->fn_scene_render(sc, buf.data(), pw, ph);
+        api->fn_scene_destroy(sc);
+        if (rc != 0) { fl_message("Render failed."); return; }
+
+        /* Write raw RGB (drop alpha) – convert bottom-up to top-down */
+        FILE* f = fopen(path, "wb");
+        if (!f) { fl_message("Cannot open output file."); return; }
+        for (int row = ph - 1; row >= 0; --row) {
+            const uint8_t* src = buf.data() + (size_t)row * pw * 4;
+            for (int col = 0; col < pw; ++col) {
+                fputc(src[0], f); fputc(src[1], f); fputc(src[2], f);
+                src += 4;
+            }
+        }
+        fclose(f);
+        fl_message("Saved %d×%d RGB image to:\n%s", pw, ph, path);
     }
 };
 
-// =========================================================================
-// main
-// =========================================================================
+/* =========================================================================
+ * main()
+ * ======================================================================= */
+
 int main(int argc, char** argv)
 {
-    initCoinHeadless();
+    /* ---- Load bridge libraries ---- */
 
-    ObolViewerWindow* win = new ObolViewerWindow(1100, 700);
+    /* Determine a fallback search directory: same dir as the executable */
+    std::string exe_dir;
+    if (argc > 0 && argv[0]) {
+        std::string exe(argv[0]);
+        auto sep = exe.rfind('/');
+        if (sep != std::string::npos) exe_dir = exe.substr(0, sep);
+    }
+    const char* extra = exe_dir.empty() ? nullptr : exe_dir.c_str();
+
+    ObolBridgeAPI* sys_api    = try_load_bridge("libobol_bridge_sys.so",    extra);
+    ObolBridgeAPI* osmesa_api = try_load_bridge("libobol_bridge_osmesa.so", extra);
+
+    /* Graceful fallback: if system GL bridge is unavailable, use OSMesa for
+     * both panels so the viewer is still functional. */
+    bool sys_fallback = false;
+    if (!sys_api && osmesa_api) {
+        fprintf(stderr,
+            "obol_viewer: system GL bridge unavailable – using OSMesa for both panels\n");
+        sys_api = osmesa_api;
+        sys_fallback = true;
+    }
+
+    if (!sys_api && !osmesa_api) {
+        fprintf(stderr,
+            "obol_viewer: ERROR: could not load either bridge library.\n"
+            "  Run from the superbuild output directory, or set LD_LIBRARY_PATH.\n");
+        return 1;
+    }
+
+    /* ---- Build and show the window ---- */
+    Fl::scheme("gtk+");
+    Fl::visual(FL_RGB | FL_DOUBLE);
+
+    ObolViewerWindow* win = new ObolViewerWindow(
+        1280, 720, sys_api, osmesa_api);
     win->show(argc, argv);
-    return Fl::run();
+
+    if (sys_fallback) {
+        fl_message("System GL bridge (libobol_bridge_sys.so) was not found.\n"
+                   "Both panels are using the OSMesa backend.\n\n"
+                   "To enable side-by-side comparison, build the viewer\n"
+                   "using the superbuild in tests/obol_superbuild/.");
+    }
+
+    /* Load the first scene automatically */
+    ObolBridgeAPI* cat_api = osmesa_api ? osmesa_api : sys_api;
+    if (cat_api && cat_api->fn_scene_count() > 0) {
+        win->loadScene(cat_api->fn_scene_name(0));
+    }
+
+    int ret = Fl::run();
+
+    /* Cleanup */
+    delete win;
+    if (osmesa_api && osmesa_api != sys_api) delete osmesa_api;
+    if (sys_api) delete sys_api;
+
+    return ret;
 }

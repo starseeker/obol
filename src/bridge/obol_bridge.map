@@ -1,0 +1,35 @@
+/*
+ * obol_bridge.map  –  GNU linker version script
+ *
+ * Exported:  only the obol_* C-linkage bridge functions.
+ * Hidden:    all C++ Obol/Coin symbols and any GL symbols pulled in from the
+ *            statically-linked Coin library.
+ *
+ * This ensures that two bridge .so files loaded in the same process with
+ * dlopen(RTLD_LOCAL) cannot see each other's internal symbols even if the
+ * dynamic linker would ordinarily promote them.
+ */
+{
+    global:
+        obol_init;
+        obol_backend_name;
+        obol_scene_count;
+        obol_scene_name;
+        obol_scene_category;
+        obol_scene_description;
+        obol_scene_find;
+        obol_scene_create;
+        obol_scene_destroy;
+        obol_scene_render;
+        obol_scene_resize;
+        obol_scene_mouse_press;
+        obol_scene_mouse_release;
+        obol_scene_mouse_move;
+        obol_scene_scroll;
+        obol_scene_key_press;
+        obol_scene_key_release;
+        obol_scene_get_camera;
+        obol_scene_set_camera;
+    local:
+        *;
+};
