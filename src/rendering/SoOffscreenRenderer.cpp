@@ -699,6 +699,61 @@ SoOffscreenRendererP::GLRenderAbortCallback(void *userData)
 SbBool
 SoOffscreenRendererP::renderFromBase(SoBase * base)
 {
+  // --- Alternative rendering path (e.g. nanort) ----------------------------
+  // If the context manager provides a renderScene() implementation that
+  // returns TRUE, use those pixels directly and skip the entire GL pipeline.
+  // This enables software raytracers, test stubs, and other backends to work
+  // seamlessly with SoOffscreenRenderer without any GL context.
+  if (base->isOfType(SoNode::getClassTypeId())) {
+    SoDB::ContextManager * alt_mgr = SoDB::getContextManager();
+    if (alt_mgr) {
+      const SbVec2s fullsize = this->viewport.getViewportSizePixels();
+      if (fullsize[0] > 0 && fullsize[1] > 0) {
+        const unsigned int nrcomp = PUBLIC(this)->getComponents();
+        const size_t bufsize = (size_t)fullsize[0] * (size_t)fullsize[1] * nrcomp;
+
+        // Grow or shrink buffer as needed (same policy as the GL path below)
+        const SbBool alloc = (bufsize > this->bufferbytesize) ||
+                             (bufsize <= (this->bufferbytesize / 8));
+        if (alloc) {
+          delete[] this->buffer;
+          this->buffer = new unsigned char[bufsize];
+          this->bufferbytesize = bufsize;
+        }
+
+        // Clear to background colour before calling renderScene so partial
+        // renders (e.g. a scene with no geometry) still get the right bg.
+        const float bg[3] = {
+          this->backgroundcolor[0],
+          this->backgroundcolor[1],
+          this->backgroundcolor[2]
+        };
+        // Fill buffer with background colour (handles both RGB and RGBA)
+        const unsigned char bgR = (unsigned char)(bg[0] * 255.0f);
+        const unsigned char bgG = (unsigned char)(bg[1] * 255.0f);
+        const unsigned char bgB = (unsigned char)(bg[2] * 255.0f);
+        unsigned char * p = this->buffer;
+        for (size_t i = 0; i < (size_t)fullsize[0] * fullsize[1]; ++i) {
+          *p++ = bgR; *p++ = bgG; *p++ = bgB;
+          if (nrcomp == 4) *p++ = 255;
+        }
+
+        SbBool handled = alt_mgr->renderScene(
+            static_cast<SoNode *>(base),
+            fullsize[0], fullsize[1],
+            this->buffer, nrcomp, bg);
+
+        if (handled) {
+          this->didreadbuffer = TRUE;
+          return TRUE;
+        }
+        // renderScene() returned FALSE: fall through to GL path.
+        // The buffer will be overwritten by the GL pipeline below.
+      }
+    }
+  }
+  // -------------------------------------------------------------------------
+
   if (SoOffscreenRendererP::offscreenContextsNotSupported()) {
     static SbBool first = TRUE;
     if (first) {
@@ -1152,7 +1207,10 @@ SoOffscreenRendererP::writeToRGB(FILE * fp, unsigned int w, unsigned int h,
 SbBool
 SoOffscreenRenderer::writeToRGB(FILE * fp) const
 {
-  if (SoOffscreenRendererP::offscreenContextsNotSupported()) { return FALSE; }
+  // Allow writing when a non-GL renderer (e.g. renderScene()) already filled
+  // the buffer.  Only bail out when GL is unavailable AND no buffer exists.
+  if (SoOffscreenRendererP::offscreenContextsNotSupported() &&
+      !PRIVATE(this)->didreadbuffer) { return FALSE; }
 
   SbVec2s size = PRIVATE(this)->viewport.getViewportSizePixels();
 
