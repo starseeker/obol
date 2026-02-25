@@ -89,6 +89,7 @@ add_rendering_test(render_text2)
 add_rendering_test(render_text3)
 # Moved from top-level SIMPLE_TESTS: these need a rendering context to run
 add_rendering_test(render_gradient)
+add_rendering_test(render_background_gradient)
 add_rendering_test(render_colored_cube)
 add_rendering_test(render_coordinates)
 add_rendering_test(render_scene)
@@ -226,6 +227,7 @@ add_nanort_rendering_test(render_transforms)
 add_nanort_rendering_test(render_colored_cube)
 add_nanort_rendering_test(render_scene)
 add_nanort_rendering_test(render_rt_proxy_shapes)
+add_nanort_rendering_test(render_background_gradient)
 
 # ---- Standalone nanort demo (original, uses its own context manager) --------
 # render_nanort.cpp is the original proof-of-concept demo that builds its own
@@ -458,6 +460,7 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_vertex_colors render_clip_plane
                render_indexed_face_set render_quad_mesh render_indexed_line_set
                render_lod render_point_set
+               render_background_gradient
                render_scene_texture render_array_multiple_copy
                render_shape_hints render_environment render_texture3
                render_bump_map render_texture_transform

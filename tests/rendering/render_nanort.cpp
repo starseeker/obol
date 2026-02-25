@@ -264,9 +264,33 @@ static bool renderToPNG(const RtScene& scene,
                         const std::vector<SbColor>& lightColors,
                         const std::vector<float>&   lightIntensities,
                         int W, int H,
-                        const char* outpath)
+                        const char* outpath,
+                        const float* bgBottom = nullptr,
+                        const float* bgTop    = nullptr)
 {
-    std::vector<unsigned char> image(W * H * 3, 0);
+    // Default background: black
+    static const float kBlack[3] = { 0.0f, 0.0f, 0.0f };
+    const float* bottom = bgBottom ? bgBottom : kBlack;
+    const float* top    = bgTop    ? bgTop    : bottom;
+
+    std::vector<unsigned char> image(W * H * 3);
+
+    // Pre-fill the image with the background colour (solid or vertical gradient).
+    // Row 0 is the TOP of the PNG (y-down image), so row 0 maps to ny=1 (screen top).
+    for (int y = 0; y < H; ++y) {
+        // t=0 → top of image (screen top colour), t=1 → bottom of image (screen bottom)
+        float t = (H > 1) ? (float)y / (float)(H - 1) : 0.0f;
+        float r = top[0] * (1.0f - t) + bottom[0] * t;
+        float g = top[1] * (1.0f - t) + bottom[1] * t;
+        float b = top[2] * (1.0f - t) + bottom[2] * t;
+        auto rB = (unsigned char)(r * 255.0f);
+        auto gB = (unsigned char)(g * 255.0f);
+        auto bB = (unsigned char)(b * 255.0f);
+        for (int x = 0; x < W; ++x) {
+            int i = (y * W + x) * 3;
+            image[i+0] = rB; image[i+1] = gB; image[i+2] = bB;
+        }
+    }
 
     // nanort intersector uses the same flat arrays from RtScene
     nanort::TriangleIntersector<float> intersector(
@@ -274,6 +298,7 @@ static bool renderToPNG(const RtScene& scene,
 
     // Small ambient fill to avoid completely black shadows
     const float kAmbientFill = 0.12f;
+    int hitCount = 0;
 
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
@@ -300,6 +325,7 @@ static bool renderToPNG(const RtScene& scene,
             bool hit = scene.accel.Traverse(ray, intersector, &isect);
 
             if (!hit) continue;
+            ++hitCount;
 
             unsigned int fid = isect.prim_id;
             // Barycentric: (1-u-v) * v0 + u * v1 + v * v2
@@ -371,16 +397,11 @@ static bool renderToPNG(const RtScene& scene,
         return false;
     }
 
-    // Sanity-check: at least 1% of pixels should be non-background
-    int nonBg = 0;
-    for (int i = 0; i < W * H * 3; i += 3) {
-        if (image[i] > 10 || image[i+1] > 10 || image[i+2] > 10)
-            ++nonBg;
-    }
-    float coverage = static_cast<float>(nonBg) / (W * H);
-    printf("Image coverage: %.1f%% non-background pixels\n", coverage * 100.0f);
+    // Sanity-check: at least 1% of pixels should have been hit by rays
+    float coverage = static_cast<float>(hitCount) / (W * H);
+    printf("Image coverage: %.1f%% hit pixels\n", coverage * 100.0f);
     if (coverage < 0.01f) {
-        fprintf(stderr, "ERROR: rendered image is nearly all black\n");
+        fprintf(stderr, "ERROR: rendered image has almost no geometry hits\n");
         return false;
     }
 
@@ -507,6 +528,7 @@ int main(int argc, char** argv)
     printf("Rendering %d×%d image with nanort...\n", W, H);
     SbViewVolume vv = cam->getViewVolume(static_cast<float>(W) / H);
 
+    // --- 6a. Solid background render (default black) -----------------------
     if (!renderToPNG(scene, vv, lightDirs, lightColors, lightIntensities,
                      W, H, outpath))
     {
@@ -514,6 +536,38 @@ int main(int argc, char** argv)
         return 1;
     }
     printf("  Written to: %s\n", outpath);
+
+    // --- 6b. Gradient background render ------------------------------------
+    // Demonstrate that the nanort backend supports gradient backgrounds by
+    // rendering the same scene with a dark-blue → steel-blue sky gradient.
+    // The gradient output file is written alongside the primary output.
+    {
+        // Build gradient output path: replace ".png" suffix with "_gradient.png"
+        std::string gradpath(outpath);
+        const std::string suffix(".png");
+        if (gradpath.size() >= suffix.size() &&
+            gradpath.compare(gradpath.size() - suffix.size(), suffix.size(), suffix) == 0)
+        {
+            gradpath.replace(gradpath.size() - suffix.size(), suffix.size(),
+                             "_gradient.png");
+        } else {
+            gradpath += "_gradient.png";
+        }
+
+        // Dark navy at the screen-bottom, steel-blue at the screen-top
+        const float bgBottom[3] = { 0.05f, 0.05f, 0.25f };  // dark navy
+        const float bgTop[3] = { 0.40f, 0.60f, 0.85f };  // steel blue
+
+        printf("Rendering gradient background variant...\n");
+        if (!renderToPNG(scene, vv, lightDirs, lightColors, lightIntensities,
+                         W, H, gradpath.c_str(), bgBottom, bgTop))
+        {
+            root->unref();
+            return 1;
+        }
+        printf("  Written to: %s\n", gradpath.c_str());
+    }
+
 
     root->unref();
     return 0;

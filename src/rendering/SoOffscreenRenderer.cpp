@@ -386,6 +386,9 @@ public:
     this->didreadbuffer = TRUE;
 
     this->backgroundcolor.setValue(0,0,0);
+    this->has_gradient = FALSE;
+    this->gradient_bottom.setValue(0,0,0);
+    this->gradient_top.setValue(0,0,0);
     this->components = SoOffscreenRenderer::RGB;
     this->buffer = NULL;
     this->bufferbytesize = 0;
@@ -425,6 +428,9 @@ public:
 
   SbViewportRegion viewport;
   SbColor backgroundcolor;
+  SbBool has_gradient;
+  SbColor gradient_bottom;
+  SbColor gradient_top;
   SoOffscreenRenderer::Components components;
   SoGLRenderAction * renderaction;
   SbBool didallocation;
@@ -622,6 +628,42 @@ SoOffscreenRenderer::getBackgroundColor(void) const
 }
 
 /*!
+  Sets a vertical gradient background.  The buffer is filled with a
+  linear gradient from \a bottom (at y=0, screen-bottom) to \a top
+  (at y=height-1, screen-top) before rendering.  Gradient rendering
+  is supported by both the alternative (nanort) path and the GL path.
+  Calling setBackgroundColor() does not clear the gradient; call
+  clearBackgroundGradient() explicitly to revert to a solid background.
+*/
+void
+SoOffscreenRenderer::setBackgroundGradient(const SbColor & bottom, const SbColor & top)
+{
+  PRIVATE(this)->has_gradient   = TRUE;
+  PRIVATE(this)->gradient_bottom = bottom;
+  PRIVATE(this)->gradient_top    = top;
+}
+
+/*!
+  Disables the vertical gradient background set by setBackgroundGradient()
+  and reverts to the solid background colour from setBackgroundColor().
+*/
+void
+SoOffscreenRenderer::clearBackgroundGradient(void)
+{
+  PRIVATE(this)->has_gradient = FALSE;
+}
+
+/*!
+  Returns TRUE if a gradient background has been set via setBackgroundGradient().
+*/
+SbBool
+SoOffscreenRenderer::hasBackgroundGradient(void) const
+{
+  return PRIVATE(this)->has_gradient;
+}
+
+
+/*!
   Sets the render action. Use this if you have special rendering needs.
 */
 void
@@ -646,10 +688,53 @@ SoOffscreenRenderer::getGLRenderAction(void) const
 // *************************************************************************
 
 static void
-pre_render_cb(void * COIN_UNUSED_ARG(userdata), SoGLRenderAction * action)
+pre_render_cb(void * userdata, SoGLRenderAction * action)
 {
   glClear(GL_DEPTH_BUFFER_BIT|GL_COLOR_BUFFER_BIT);
   action->setRenderingIsRemote(FALSE);
+
+  // If a gradient background has been requested, paint it now over the
+  // cleared colour buffer before the scene is drawn.  We use immediate-mode
+  // GL so that this works without any VBO/VAO infrastructure.
+  SoOffscreenRendererP * thisp = static_cast<SoOffscreenRendererP *>(userdata);
+  if (thisp && thisp->has_gradient) {
+    // Save enough GL state to restore afterwards.
+    // glPushAttrib/glPopAttrib are deprecated in core-profile OpenGL 3.1+ but
+    // are available in the compatibility profile used by this renderer.
+    glPushAttrib(GL_ENABLE_BIT | GL_DEPTH_BUFFER_BIT | GL_CURRENT_BIT);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glDepthMask(GL_FALSE);
+
+    // Switch to a simple orthographic 2-D projection
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    // Draw a full-screen quad with per-vertex colours:
+    //   y=0 (bottom) → gradient_bottom colour
+    //   y=1 (top)    → gradient_top colour
+    const SbColor & bot = thisp->gradient_bottom;
+    const SbColor & top = thisp->gradient_top;
+    glBegin(GL_QUADS);
+      glColor3f(bot[0], bot[1], bot[2]);  glVertex2f(0.0f, 0.0f);
+      glColor3f(bot[0], bot[1], bot[2]);  glVertex2f(1.0f, 0.0f);
+      glColor3f(top[0], top[1], top[2]);  glVertex2f(1.0f, 1.0f);
+      glColor3f(top[0], top[1], top[2]);  glVertex2f(0.0f, 1.0f);
+    glEnd();
+
+    // Restore matrices and GL state
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glPopAttrib();
+  }
 }
 
 // *************************************************************************
@@ -734,21 +819,41 @@ SoOffscreenRendererP::renderFromBase(SoBase * base)
           this->bufferbytesize = bufsize;
         }
 
-        // Clear to background colour before calling renderScene so partial
-        // renders (e.g. a scene with no geometry) still get the right bg.
+        // Clear to background colour (or gradient) before calling renderScene
+        // so partial renders (e.g. a scene with no geometry) get the right bg.
         const float bg[3] = {
           this->backgroundcolor[0],
           this->backgroundcolor[1],
           this->backgroundcolor[2]
         };
-        // Fill buffer with background colour (handles both RGB and RGBA)
-        const unsigned char bgR = (unsigned char)(bg[0] * 255.0f);
-        const unsigned char bgG = (unsigned char)(bg[1] * 255.0f);
-        const unsigned char bgB = (unsigned char)(bg[2] * 255.0f);
+        // Fill buffer with background colour or vertical gradient
+        // (handles both RGB and RGBA).  Row 0 is the screen-bottom (GL/getBuffer
+        // convention), so y=0 → gradient_bottom and y=height-1 → gradient_top.
         unsigned char * p = this->buffer;
-        for (size_t i = 0; i < (size_t)fullsize[0] * fullsize[1]; ++i) {
-          *p++ = bgR; *p++ = bgG; *p++ = bgB;
-          if (nrcomp == 4) *p++ = 255;
+        if (this->has_gradient) {
+          const int H = fullsize[1];
+          const int W = fullsize[0];
+          for (int y = 0; y < H; ++y) {
+            const float t  = (H > 1) ? (float)y / (float)(H - 1) : 0.0f;
+            const float r  = this->gradient_bottom[0] * (1.0f - t) + this->gradient_top[0] * t;
+            const float g  = this->gradient_bottom[1] * (1.0f - t) + this->gradient_top[1] * t;
+            const float b  = this->gradient_bottom[2] * (1.0f - t) + this->gradient_top[2] * t;
+            const unsigned char rB = (unsigned char)(r * 255.0f);
+            const unsigned char gB = (unsigned char)(g * 255.0f);
+            const unsigned char bB = (unsigned char)(b * 255.0f);
+            for (int x = 0; x < W; ++x) {
+              *p++ = rB; *p++ = gB; *p++ = bB;
+              if (nrcomp == 4) *p++ = 255;
+            }
+          }
+        } else {
+          const unsigned char bgR = (unsigned char)(bg[0] * 255.0f);
+          const unsigned char bgG = (unsigned char)(bg[1] * 255.0f);
+          const unsigned char bgB = (unsigned char)(bg[2] * 255.0f);
+          for (size_t i = 0; i < (size_t)fullsize[0] * fullsize[1]; ++i) {
+            *p++ = bgR; *p++ = bgG; *p++ = bgB;
+            if (nrcomp == 4) *p++ = 255;
+          }
         }
 
         SbBool handled = alt_mgr->renderScene(
@@ -826,10 +931,16 @@ SoOffscreenRendererP::renderFromBase(SoBase * base)
   }
 
   glEnable(GL_DEPTH_TEST);
-  glClearColor(this->backgroundcolor[0],
-               this->backgroundcolor[1],
-               this->backgroundcolor[2],
-               0.0f);
+  {
+    // Use the bottom gradient colour (or the solid background colour) as the
+    // GL clear colour.  When a gradient is active the pre_render_cb will
+    // immediately overpaint the full quad, so the exact clear colour matters
+    // only for very small scenes or if the quad draw fails.
+    const SbColor & bgcol = this->has_gradient
+                            ? this->gradient_bottom
+                            : this->backgroundcolor;
+    glClearColor(bgcol[0], bgcol[1], bgcol[2], 0.0f);
+  }
 
   // Make this large to get best possible quality on any "big-image"
   // textures (from using SoTextureScalePolicy).
@@ -867,7 +978,7 @@ SoOffscreenRendererP::renderFromBase(SoBase * base)
 
   // needed to clear viewport after glViewport() is called from
   // SoGLRenderAction
-  this->renderaction->addPreRenderCallback(pre_render_cb, NULL);
+  this->renderaction->addPreRenderCallback(pre_render_cb, this);
 
   // For debugging purposes, it has been made possible to use an
   // envvar to *force* tiled rendering even when it can be done in a
@@ -1009,7 +1120,7 @@ SoOffscreenRendererP::renderFromBase(SoBase * base)
     }
   }
 
-  this->renderaction->removePreRenderCallback(pre_render_cb, NULL);
+  this->renderaction->removePreRenderCallback(pre_render_cb, this);
 
   // Restore old value.
   (void)SoGLBigImage::setChangeLimit(bigimagechangelimit);
