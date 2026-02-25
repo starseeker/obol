@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16...3.31)
+cmake_minimum_required(VERSION 3.16)
 
 # Modern CMake project definition with metadata
 project(Coin
