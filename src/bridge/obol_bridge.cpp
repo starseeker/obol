@@ -87,7 +87,7 @@
 
 /* ---- Backend context manager (headless_utils.h pattern) ---- */
 
-#ifdef COIN3D_OSMESA_BUILD
+#if defined(COIN3D_OSMESA_BUILD) || defined(COIN3D_BUILD_DUAL_GL)
 #  include <OSMesa/osmesa.h>
 #  include <OSMesa/gl.h>
 /* OSMesa context manager -------------------------------------------------- */
@@ -149,6 +149,13 @@ static void bridge_init_coin() {
     SoNodeKit::init();
     SoInteraction::init();
 }
+
+/* backend name: distinguish pure osmesa from dual */
+#ifdef COIN3D_BUILD_DUAL_GL
+#  define OBOL_BRIDGE_BACKEND_NAME "Dual (system GL + OSMesa headless)"
+#else
+#  define OBOL_BRIDGE_BACKEND_NAME "OSMesa (headless)"
+#endif
 
 #elif defined(COIN3D_NANORT_BUILD) /* NanoRT CPU raytracing backend ---------- */
 

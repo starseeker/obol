@@ -91,8 +91,13 @@ set(COIN_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
 # Documentation options removed - not needed for minimal library build
 
 # Feature options
-option(COIN3D_USE_OSMESA "Build against OSMesa for offscreen/headless rendering" ON)
-option(COIN3D_BUILD_DUAL_GL "Build with both system-OpenGL and OSMesa backends in a single library (requires COIN3D_USE_OSMESA=OFF)" OFF)
+# Backend selection:
+#   COIN3D_USE_OSMESA=ON          → OSMesa-only (headless, no system GL)
+#   COIN3D_USE_SYSTEM_ONLY=ON     → system OpenGL only (no OSMesa)
+#   default (both OFF)            → auto-detect; dual mode when both are available
+option(COIN3D_USE_OSMESA "Build against OSMesa only for offscreen/headless rendering" OFF)
+option(COIN3D_USE_SYSTEM_ONLY "Build against system OpenGL only (no OSMesa fallback)" OFF)
+option(COIN3D_BUILD_DUAL_GL "Build with both system-OpenGL and OSMesa backends in a single library" OFF)
 option(COIN_THREADSAFE "Enable thread safe render traversals" ON)
 
 # Component options
@@ -131,6 +136,44 @@ set(COIN_TARGET_INCLUDE_DIRECTORIES)
 set(COIN_TARGET_LINK_LIBRARIES_GL)
 
 # OpenGL backend selection
+# -----------------------------------------------------------------------
+# Auto-detection when neither OSMESA-only nor SYSTEM-only is forced:
+#   1. Check for system OpenGL and for the OSMesa submodule
+#   2. If both are available → enable DUAL GL (one library, both backends)
+#   3. If only OSMesa submodule is available → OSMesa-only mode
+#   4. If only system GL is available → system-only mode
+# The user can override by setting COIN3D_USE_OSMESA=ON (osmesa only)
+# or COIN3D_USE_SYSTEM_ONLY=ON (system GL only) before configuring.
+#
+# NOTE: system libosmesa6-dev is intentionally NOT used for auto-detection.
+# The project requires its own name-mangled OSMesa build (external/osmesa
+# submodule with USE_MGL_NAMESPACE).  The submodule include path
+# <OSMesa/osmesa.h> was chosen specifically to avoid pulling in the
+# system header at <GL/osmesa.h>, which uses un-mangled gl* symbols
+# incompatible with a dual system-GL+OSMesa build.
+# -----------------------------------------------------------------------
+if(NOT COIN3D_USE_OSMESA AND NOT COIN3D_USE_SYSTEM_ONLY AND NOT COIN3D_BUILD_DUAL_GL)
+  find_package(OpenGL QUIET)
+  # "OSMesa available" means our submodule is present (not system osmesa)
+  if(EXISTS "${PROJECT_SOURCE_DIR}/external/osmesa/CMakeLists.txt")
+    set(_have_osmesa_submodule TRUE)
+  else()
+    set(_have_osmesa_submodule FALSE)
+  endif()
+  if(OpenGL_FOUND AND _have_osmesa_submodule)
+    set(COIN3D_BUILD_DUAL_GL ON CACHE BOOL
+        "Build with both system-OpenGL and OSMesa backends in a single library" FORCE)
+    message(STATUS "Auto-detected system OpenGL + OSMesa submodule: enabling DUAL GL mode")
+  elseif(_have_osmesa_submodule)
+    set(COIN3D_USE_OSMESA ON CACHE BOOL
+        "Build against OSMesa only for offscreen/headless rendering" FORCE)
+    message(STATUS "Auto-detected OSMesa submodule only: enabling OSMesa-only mode")
+  else()
+    # System-only (OpenGL required below will error if not present)
+    message(STATUS "Auto-detected: system OpenGL only (no OSMesa submodule found)")
+  endif()
+endif()
+
 if(COIN3D_USE_OSMESA)
   # OSMesa backend for offscreen/headless rendering
   find_package(OSMesa REQUIRED)
@@ -152,7 +195,7 @@ if(COIN3D_USE_OSMESA)
     message(STATUS "Using OSMesa for offscreen/headless rendering")
   endif()
 else()
-  # System OpenGL backend (default)
+  # System OpenGL backend (default or SYSTEM_ONLY)
   find_package(OpenGL REQUIRED)
   set(HAVE_OPENGL 1)
 
@@ -188,15 +231,17 @@ list(APPEND COIN_TARGET_LINK_LIBRARIES ${COIN_TARGET_LINK_LIBRARIES_GL})
 
 # Dual-GL build: also find and store OSMesa libraries separately so
 # gl_osmesa.cpp can be compiled against them alongside system GL.
+# Our FindOSMesa.cmake only looks at the external/osmesa submodule, which
+# provides the name-mangled (mgl*) build required by dual GL.
 if(COIN3D_BUILD_DUAL_GL)
   if(COIN3D_USE_OSMESA)
-    message(FATAL_ERROR "COIN3D_BUILD_DUAL_GL requires COIN3D_USE_OSMESA=OFF "
-            "(the main build uses system OpenGL; the OSMesa variant is compiled "
-            "in a separate translation unit via src/glue/gl_osmesa.cpp).")
+    message(FATAL_ERROR "COIN3D_BUILD_DUAL_GL and COIN3D_USE_OSMESA are mutually exclusive. "
+            "DUAL GL uses system OpenGL as primary with OSMesa as a secondary backend.")
   endif()
   find_package(OSMesa REQUIRED)
   if(NOT OSMesa_FOUND)
-    message(FATAL_ERROR "COIN3D_BUILD_DUAL_GL requires OSMesa to be installed.")
+    message(FATAL_ERROR "COIN3D_BUILD_DUAL_GL requires the external/osmesa submodule.\n"
+            "Run: git submodule update --init --recursive")
   endif()
   # Collect OSMesa include dirs and link libraries for the per-file target
   if(TARGET OSMesa::OSMesa)
@@ -500,7 +545,9 @@ if(COIN_BUILD_BRIDGE)
   # pass -DCOIN_BRIDGE_SUFFIX explicitly; they only need -DCOIN_BUILD_BRIDGE=ON.
   # When -DCOIN_BRIDGE_SUFFIX=nanort is passed explicitly, that takes precedence.
   if(NOT DEFINED COIN_BRIDGE_SUFFIX OR COIN_BRIDGE_SUFFIX STREQUAL "")
-    if(COIN3D_USE_OSMESA)
+    if(COIN3D_BUILD_DUAL_GL)
+      set(COIN_BRIDGE_SUFFIX "dual" CACHE STRING "" FORCE)
+    elseif(COIN3D_USE_OSMESA)
       set(COIN_BRIDGE_SUFFIX "osmesa" CACHE STRING "" FORCE)
     else()
       set(COIN_BRIDGE_SUFFIX "sys" CACHE STRING "" FORCE)

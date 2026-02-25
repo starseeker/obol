@@ -3,27 +3,21 @@
 #
 # Builds one libobol_bridge_<suffix>.so per backend.
 #
-# Symbol isolation strategy
-# ─────────────────────────
-# The Obol (Coin) shared library already uses different output names for
-# each backend:
-#   • libCoin.so          (COIN3D_USE_OSMESA=OFF, system GL)
-#   • libCoin-osmesa.so   (COIN3D_USE_OSMESA=ON,  OSMesa;
-#                          GL functions mangled to mgl* via USE_MGL_NAMESPACE)
+# Backend variants:
+#   dual    – Obol built with COIN3D_BUILD_DUAL_GL (system GL + OSMesa in one
+#             library).  The bridge uses OSMesa contexts for headless rendering
+#             while the Coin library retains sys GL capability.
+#   osmesa  – Obol built with COIN3D_USE_OSMESA=ON (OSMesa only).
+#   sys     – Obol built against system OpenGL / GLX only.
+#   nanort  – Obol with NanoRT CPU raytracing (no GL context required).
 #
-# Both bridge .so files are compiled with -fvisibility=hidden + a GNU
-# version script (obol_bridge.map) so they export ONLY the obol_* C
-# functions and no C++ Coin symbols.
-#
-# The viewer loads both with dlopen(RTLD_LOCAL).  Because the two Coin
-# libraries have different sonames they are always loaded as separate
-# objects; RTLD_LOCAL keeps their symbols private so even if both bridges
-# export the same obol_* names, each bridge's obol_* functions resolve to
-# its own embedded Coin instance.
+# The dual bridge eliminates the previous need for separate sys + osmesa
+# bridges: one bridge handles both backends via the dual Coin library.
 #
 # Usage from the top-level project (after Coin is configured):
 #   cmake ... -DCOIN_BUILD_BRIDGE=ON
-# The bridge suffix is set automatically from COIN3D_USE_OSMESA.
+# The bridge suffix is set automatically from COIN3D_BUILD_DUAL_GL /
+# COIN3D_USE_OSMESA (see top-level CMakeLists.txt).
 # =============================================================================
 
 cmake_minimum_required(VERSION 3.16)
@@ -31,23 +25,29 @@ cmake_minimum_required(VERSION 3.16)
 # ---- Options ----------------------------------------------------------------
 
 set(COIN_BRIDGE_SUFFIX "sys" CACHE STRING
-    "Bridge library suffix (sys | osmesa | nanort).  Set by the top-level project.")
+    "Bridge library suffix (dual | sys | osmesa | nanort).  Set by top-level project.")
 
 set(COIN_BRIDGE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}" CACHE PATH
     "Directory where the bridge .so will be placed.")
 
 # ---- Backend detection -------------------------------------------------------
 
-if(DEFINED COIN3D_USE_OSMESA AND COIN3D_USE_OSMESA)
-    set(_bridge_osmesa TRUE)
-else()
-    set(_bridge_osmesa FALSE)
-endif()
-
 if(COIN_BRIDGE_SUFFIX STREQUAL "nanort")
     set(_bridge_nanort TRUE)
 else()
     set(_bridge_nanort FALSE)
+endif()
+
+if(COIN_BRIDGE_SUFFIX STREQUAL "dual")
+    set(_bridge_dual TRUE)
+else()
+    set(_bridge_dual FALSE)
+endif()
+
+if(DEFINED COIN3D_USE_OSMESA AND COIN3D_USE_OSMESA AND NOT _bridge_dual)
+    set(_bridge_osmesa TRUE)
+else()
+    set(_bridge_osmesa FALSE)
 endif()
 
 # ---- Shared library target --------------------------------------------------
@@ -87,6 +87,45 @@ if(_bridge_nanort)
         "${PROJECT_SOURCE_DIR}/external/nanort"
         "${PROJECT_SOURCE_DIR}/tests/utils"
     )
+elseif(_bridge_dual)
+    # Dual GL bridge: compiled against dual Coin library (sys GL + OSMesa).
+    # Uses OSMesa context manager for headless rendering; the Coin library
+    # also carries sys GL capability for use by the application directly.
+    target_compile_definitions(obol_bridge_${COIN_BRIDGE_SUFFIX} PRIVATE
+        COIN3D_BUILD_DUAL_GL)
+    # OSMesa headers – prefer submodule (name-mangled mgl*) for dual builds
+    set(_osmesa_submodule_inc "${CMAKE_SOURCE_DIR}/external/osmesa/include")
+    if(EXISTS "${_osmesa_submodule_inc}")
+        target_include_directories(obol_bridge_${COIN_BRIDGE_SUFFIX} PRIVATE
+            "${_osmesa_submodule_inc}")
+    elseif(COIN_OSMESA_INCLUDE_DIRS)
+        target_include_directories(obol_bridge_${COIN_BRIDGE_SUFFIX} PRIVATE
+            ${COIN_OSMESA_INCLUDE_DIRS})
+    endif()
+    # Link OSMesa library
+    if(COIN_OSMESA_LIBRARIES)
+        target_link_libraries(obol_bridge_${COIN_BRIDGE_SUFFIX}
+            ${COIN_OSMESA_LIBRARIES})
+    elseif(TARGET osmesa_interface)
+        target_link_libraries(obol_bridge_${COIN_BRIDGE_SUFFIX} osmesa_interface)
+    elseif(TARGET osmesa)
+        target_link_libraries(obol_bridge_${COIN_BRIDGE_SUFFIX} osmesa)
+    endif()
+    # Also link sys GL / GLX for the sys-GL context manager path
+    find_package(X11 QUIET)
+    find_package(OpenGL QUIET)
+    if(X11_FOUND)
+        target_include_directories(obol_bridge_${COIN_BRIDGE_SUFFIX} PRIVATE
+            ${X11_INCLUDE_DIR})
+        target_link_libraries(obol_bridge_${COIN_BRIDGE_SUFFIX}
+            ${X11_X11_LIB})
+    endif()
+    if(OpenGL_OpenGL_FOUND AND TARGET OpenGL::GL)
+        target_link_libraries(obol_bridge_${COIN_BRIDGE_SUFFIX} OpenGL::GL)
+    elseif(OPENGL_gl_LIBRARY)
+        target_link_libraries(obol_bridge_${COIN_BRIDGE_SUFFIX}
+            ${OPENGL_gl_LIBRARY})
+    endif()
 elseif(_bridge_osmesa)
     target_compile_definitions(obol_bridge_${COIN_BRIDGE_SUFFIX} PRIVATE
         COIN3D_OSMESA_BUILD)
@@ -94,11 +133,16 @@ elseif(_bridge_osmesa)
     if(EXISTS "${_osmesa_inc}")
         target_include_directories(obol_bridge_${COIN_BRIDGE_SUFFIX} PRIVATE
             "${_osmesa_inc}")
+    elseif(COIN_OSMESA_INCLUDE_DIRS)
+        target_include_directories(obol_bridge_${COIN_BRIDGE_SUFFIX} PRIVATE
+            ${COIN_OSMESA_INCLUDE_DIRS})
     endif()
     if(TARGET osmesa_interface)
         target_link_libraries(obol_bridge_${COIN_BRIDGE_SUFFIX} osmesa_interface)
     elseif(TARGET osmesa)
         target_link_libraries(obol_bridge_${COIN_BRIDGE_SUFFIX} osmesa)
+    elseif(OSMesa_LIBRARIES)
+        target_link_libraries(obol_bridge_${COIN_BRIDGE_SUFFIX} ${OSMesa_LIBRARIES})
     endif()
 else()
     # System GL / GLX
