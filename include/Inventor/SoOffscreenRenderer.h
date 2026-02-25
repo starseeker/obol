@@ -75,6 +75,9 @@ public:
   const SbViewportRegion & getViewportRegion(void) const;
   void setBackgroundColor(const SbColor & color);
   const SbColor & getBackgroundColor(void) const;
+  void setBackgroundGradient(const SbColor & bottom, const SbColor & top);
+  void clearBackgroundGradient(void);
+  SbBool hasBackgroundGradient(void) const;
   void setGLRenderAction(SoGLRenderAction * action);
   SoGLRenderAction * getGLRenderAction(void) const;
   SbBool render(SoNode * scene);
