@@ -39,6 +39,7 @@
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/misc/SoContextHandler.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
+#include <Inventor/SoDB.h>
 
 #include "CoinTidbits.h"
 #include "misc/SoEnvironment.h"
@@ -213,6 +214,18 @@ CoinOffscreenGLCanvas::tryActivateGLContext(void)
 
     // Set up mapping from GL context to SoGLRenderAction context id.
     this->renderid = SoGLCacheContextElement::getUniqueCacheContext();
+
+#ifdef COIN3D_BUILD_DUAL_GL
+    /* In dual-GL builds, tell the GL dispatch layer which backend this
+       context was created with so SoGLContext_instance() can route to
+       the correct (osmesa_ or sysgl) implementation. */
+    {
+      SoDB::ContextManager * mgr = SoDB::getContextManager();
+      if (mgr && mgr->isOSMesaContext(this->context)) {
+        coingl_register_osmesa_context(static_cast<int>(this->renderid));
+      }
+    }
+#endif
 
     // Note: HDC handling is Windows-specific and should be handled by 
     // the callback implementation if needed

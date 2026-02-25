@@ -92,6 +92,7 @@ set(COIN_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
 
 # Feature options
 option(COIN3D_USE_OSMESA "Build against OSMesa for offscreen/headless rendering" ON)
+option(COIN3D_BUILD_DUAL_GL "Build with both system-OpenGL and OSMesa backends in a single library (requires COIN3D_USE_OSMESA=OFF)" OFF)
 option(COIN_THREADSAFE "Enable thread safe render traversals" ON)
 
 # Component options
@@ -184,6 +185,34 @@ else()
 endif()
 
 list(APPEND COIN_TARGET_LINK_LIBRARIES ${COIN_TARGET_LINK_LIBRARIES_GL})
+
+# Dual-GL build: also find and store OSMesa libraries separately so
+# gl_osmesa.cpp can be compiled against them alongside system GL.
+if(COIN3D_BUILD_DUAL_GL)
+  if(COIN3D_USE_OSMESA)
+    message(FATAL_ERROR "COIN3D_BUILD_DUAL_GL requires COIN3D_USE_OSMESA=OFF "
+            "(the main build uses system OpenGL; the OSMesa variant is compiled "
+            "in a separate translation unit via src/glue/gl_osmesa.cpp).")
+  endif()
+  find_package(OSMesa REQUIRED)
+  if(NOT OSMesa_FOUND)
+    message(FATAL_ERROR "COIN3D_BUILD_DUAL_GL requires OSMesa to be installed.")
+  endif()
+  # Collect OSMesa include dirs and link libraries for the per-file target
+  if(TARGET OSMesa::OSMesa)
+    get_target_property(_osmesa_inc OSMesa::OSMesa INTERFACE_INCLUDE_DIRECTORIES)
+    set(COIN_OSMESA_INCLUDE_DIRS "${_osmesa_inc}")
+    set(COIN_OSMESA_LIBRARIES OSMesa::OSMesa)
+  elseif(TARGET osmesa_interface)
+    set(COIN_OSMESA_INCLUDE_DIRS "${OSMesa_INCLUDE_DIRS}")
+    set(COIN_OSMESA_LIBRARIES osmesa_interface)
+  else()
+    set(COIN_OSMESA_INCLUDE_DIRS "${OSMesa_INCLUDE_DIRS}")
+    set(COIN_OSMESA_LIBRARIES "${OSMesa_LIBRARIES}")
+  endif()
+  add_definitions(-DCOIN3D_BUILD_DUAL_GL)
+  message(STATUS "Dual-GL build enabled: system OpenGL + OSMesa in one library")
+endif()
 
 # Set library output name based on backend selection
 if(COIN3D_USE_OSMESA)

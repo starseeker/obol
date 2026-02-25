@@ -132,6 +132,9 @@ else()
         $<TARGET_OBJECTS:tools>
         $<TARGET_OBJECTS:hardcopy>
     )
+    if(COIN3D_BUILD_DUAL_GL)
+        list(APPEND _coin_objects $<TARGET_OBJECTS:glue_osmesa>)
+    endif()
     add_library(${PROJECT_NAME} ${COIN_SOURCE} ${COIN_ADDITIONAL_HDRS} ${_coin_objects})
 endif()
 
@@ -191,6 +194,12 @@ target_include_directories(${PROJECT_NAME}
 
 # Target-specific linking (modern approach)  
 target_link_libraries(${PROJECT_NAME} PRIVATE ${COIN_TARGET_LINK_LIBRARIES})
+
+# For dual-GL builds, also link OSMesa so that osmesa_SoGLContext_* functions
+# can resolve mgl* symbols at runtime.
+if(COIN3D_BUILD_DUAL_GL)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${COIN_OSMESA_LIBRARIES})
+endif()
 
 if(WIN32)
   if(COIN_BUILD_SHARED_LIBS)
