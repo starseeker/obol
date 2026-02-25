@@ -91,8 +91,6 @@ set(COIN_LIBRARY_TYPE $<IF:$<BOOL:${BUILD_SHARED_LIBS}>,SHARED,STATIC>)
 
 # Additional headers to include in target
 set(COIN_ADDITIONAL_HDRS 
-    ${PROJECT_SOURCE_DIR}/include/SoWinEnterScope.h 
-    ${PROJECT_SOURCE_DIR}/include/SoWinLeaveScope.h 
     ${PROJECT_BINARY_DIR}/src/config.h
 )
 
