@@ -43,9 +43,14 @@
 
 #include "misc/SoCompactPathList.h"
 
+#include <Inventor/annex/Profiler/nodes/SoProfilerStats.h>
 #include <Inventor/actions/SoAction.h>
 
-// Profiler functionality removed - nodekit elimination
+#ifdef HAVE_NODEKITS
+#include <Inventor/annex/Profiler/nodekits/SoProfilerOverlayKit.h>
+#else // !HAVE_NODEKITS
+class SoProfilerOverlayKit;
+#endif // !HAVE_NODEKITS
 
 class SoActionP {
 public:
@@ -64,7 +69,8 @@ public:
   SbList <SbList<int> *> pathcodearray;
   int prevenabledelementscounter;
 
-  // Profiler functionality removed - nodekit elimination
+  static SoNode * getProfilerOverlay(void);
+  static SoProfilerStats * getProfilerStatsNode(void);
 }; // SoActionP
 
 #endif // !COIN_SOACTIONP_H
