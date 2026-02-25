@@ -192,6 +192,9 @@ static void setupCamera(SoSeparator* root, float backoff = 1.4f)
             SoPerspectiveCamera* cam = static_cast<SoPerspectiveCamera*>(child);
             cam->viewAll(root, vp);
             cam->position.setValue(cam->position.getValue() * backoff);
+            // Extend the far clipping plane so the full scene depth remains
+            // visible after moving the camera back.
+            cam->farDistance.setValue(cam->farDistance.getValue() * backoff * 1.5f);
             return;
         }
     }

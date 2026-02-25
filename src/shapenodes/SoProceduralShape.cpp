@@ -1020,19 +1020,15 @@ SoProceduralShape::buildSelectionDisplay() const
     sphere->radius.setValue(radius);
     hsep->addChild(sphere);
 
-    // Lift the label above the sphere so it is not occluded by sphere
-    // depth values (SoText2 is subject to depth testing in this Coin fork).
-    // The offset is just enough to clear the sphere's top edge.
-    SoTranslation* labelOffset = new SoTranslation;
-    labelOffset->translation.setValue(0.0f, radius * 2.0f + 0.05f, 0.0f);
-    hsep->addChild(labelOffset);
-
     SoFont* font = new SoFont;
     font->size.setValue(12.0f);
     hsep->addChild(font);
 
+    // depthTest=FALSE: label always renders on top of the sphere and solid
+    // geometry regardless of depth — mirrors SGI OpenInventor 2.1 behaviour.
     SoText2* label = new SoText2;
     label->string.setValue(h.name);
+    label->depthTest.setValue(FALSE);
     hsep->addChild(label);
 
     sep->addChild(hsep);
