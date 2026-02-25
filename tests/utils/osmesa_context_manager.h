@@ -91,12 +91,18 @@ public:
         return ctx->isValid() ? ctx : (delete ctx, nullptr);
     }
 
-    virtual SbBool isOSMesaContext(void* /*context*/) override {
+    virtual SbBool isOSMesaContext(void * /*context*/) override {
         /* All contexts created by this manager are OSMesa contexts.
          * Returning TRUE lets CoinOffscreenGLCanvas call
          * coingl_register_osmesa_context() so GL dispatch routes to the
          * osmesa_ implementation instead of the system-GL symbols. */
         return TRUE;
+    }
+
+    virtual void maxOffscreenDimensions(unsigned int & width,
+                                        unsigned int & height) const override {
+        width  = 16384;
+        height = 16384;
     }
 
     virtual SbBool makeContextCurrent(void* context) override {

@@ -95,15 +95,31 @@ CoinOffscreenGLCanvas::effectiveMgr(void) const
 // *************************************************************************
 
 SbBool
-CoinOffscreenGLCanvas::clampSize(SbVec2s & reqsize)
+CoinOffscreenGLCanvas::clampSize(SbVec2s & reqsize) const
 {
   // getMaxTileSize() returns the theoretical maximum gathered from
   // various GL driver information. We're not guaranteed that we'll be
   // able to allocate a buffer of this size -- e.g. due to memory
   // constraints on the gfx card.
 
-  const SbVec2s maxsize = CoinOffscreenGLCanvas::getMaxTileSize();
-  if (maxsize == SbVec2s(0, 0)) { return FALSE; }
+  SbVec2s maxsize = CoinOffscreenGLCanvas::getMaxTileSize();
+  if (maxsize == SbVec2s(0, 0)) {
+    // The global GL probe returned nothing usable (e.g. no system-GL context
+    // could be created because we are headless or there is no display).
+    // Ask the per-instance manager for its own limits -- this allows an
+    // OSMesa-backed renderer to report its RAM-only limits independently of
+    // the system-GL state.
+    SoDB::ContextManager * mgr = this->effectiveMgr();
+    if (mgr) {
+      unsigned int mw = 0, mh = 0;
+      mgr->maxOffscreenDimensions(mw, mh);
+      if (mw > 0 && mh > 0) {
+        maxsize[0] = (short)SbMin(mw, (unsigned int)SHRT_MAX);
+        maxsize[1] = (short)SbMin(mh, (unsigned int)SHRT_MAX);
+      }
+    }
+    if (maxsize == SbVec2s(0, 0)) { return FALSE; }
+  }
 
   reqsize[0] = SbMin(reqsize[0], maxsize[0]);
   reqsize[1] = SbMin(reqsize[1], maxsize[1]);
@@ -132,7 +148,7 @@ CoinOffscreenGLCanvas::setWantedSize(SbVec2s reqsize)
 {
   assert((reqsize[0] > 0) && (reqsize[1] > 0) && "invalid dimensions attempted set");
 
-  const SbBool ok = CoinOffscreenGLCanvas::clampSize(reqsize);
+  const SbBool ok = this->clampSize(reqsize);
   if (!ok) {
     if (this->context) { this->destructContext(); }
     this->size = SbVec2s(0, 0);
@@ -406,10 +422,15 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
                                   unsigned int dstrowsize,
                                   unsigned int nrcomponents) const
 {
-  // Ensure FBO is bound for reading pixels from offscreen render target
-  const SoGLContext * glue = SoGLContext_instance(static_cast<int>(this->renderid));
-  if (glue && this->fbo_initialized && this->fbo != 0) {
-    SoGLContext_glBindFramebuffer(glue, GL_FRAMEBUFFER_EXT, this->fbo);
+  // For OSMesa contexts, glReadPixels reads directly from the OSMesa buffer
+  // (no FBO involved).  For system-GL contexts, ensure the FBO is bound.
+  SoDB::ContextManager * mgr = this->effectiveMgr();
+  const bool isOSMesa = mgr && this->context && mgr->isOSMesaContext(this->context);
+  if (!isOSMesa) {
+    const SoGLContext * glue = SoGLContext_instance(static_cast<int>(this->renderid));
+    if (glue && this->fbo_initialized && this->fbo != 0) {
+      SoGLContext_glBindFramebuffer(glue, GL_FRAMEBUFFER_EXT, this->fbo);
+    }
   }
   
   glPushAttrib(GL_ALL_ATTRIB_BITS);
@@ -751,6 +772,17 @@ CoinOffscreenGLCanvas::cleanupFBO(void)
 SbBool
 CoinOffscreenGLCanvas::bindFBO(void)
 {
+  // OSMesa renders directly to the buffer supplied at context creation time
+  // (via OSMesaMakeCurrent) – there is no separate framebuffer object needed.
+  // Attempting to create one would require GL_EXT_framebuffer_object support
+  // from the OSMesa implementation, which the bundled OSMesa may not provide.
+  // glReadPixels() will read from the OSMesa buffer directly when an OSMesa
+  // context is current, so we can skip FBO entirely for these contexts.
+  SoDB::ContextManager * mgr = this->effectiveMgr();
+  if (mgr && this->context && mgr->isOSMesaContext(this->context)) {
+    return TRUE;  // use OSMesa's own buffer – no FBO needed
+  }
+
   if (!this->fbo_initialized) {
     if (!this->initializeFBO()) {
       return FALSE;
@@ -771,6 +803,12 @@ CoinOffscreenGLCanvas::bindFBO(void)
 void
 CoinOffscreenGLCanvas::unbindFBO(void)
 {
+  // No FBO to unbind for OSMesa contexts (see bindFBO comment).
+  SoDB::ContextManager * mgr = this->effectiveMgr();
+  if (mgr && this->context && mgr->isOSMesaContext(this->context)) {
+    return;
+  }
+
   const SoGLContext * glue = SoGLContext_instance(static_cast<int>(this->renderid));
   if (!glue) { return; }
   

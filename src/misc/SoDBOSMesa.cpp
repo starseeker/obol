@@ -88,6 +88,13 @@ public:
     return TRUE;
   }
 
+  void maxOffscreenDimensions(unsigned int & width, unsigned int & height) const override {
+    /* OSMesa is limited only by available RAM; 16384×16384 is large enough
+     * for any realistic offscreen render request. */
+    width  = 16384;
+    height = 16384;
+  }
+
   SbBool makeContextCurrent(void * context) override {
     return context &&
            static_cast<CoinOSMesaCtxData *>(context)->makeCurrent()

@@ -71,7 +71,7 @@ public:
   const void * const & getHDC(void) const; // ugliness to support SoOffscreenRenderer::getDC()
   void updateDCBitmap();	
 private:
-  static SbBool clampSize(SbVec2s & s);
+  SbBool clampSize(SbVec2s & s) const;
   static void clampToPixelSizeRoof(SbVec2s & s);
   static SbVec2s getMaxTileSize(void);
   static unsigned int tilesizeroof;

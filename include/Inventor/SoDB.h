@@ -161,6 +161,22 @@ public:
      */
     virtual SbBool isOSMesaContext(void * /*context*/) { return FALSE; }
 
+    /**
+     * Report the maximum offscreen rendering dimensions supported by this
+     * backend.  CoinOffscreenGLCanvas calls this instead of probing the
+     * global GL pipeline so that per-instance managers (e.g. an OSMesa
+     * renderer living alongside a system-GL renderer) can declare the right
+     * limits for their backend.
+     *
+     * The default implementation returns {0,0}, which causes CoinOffscreenGLCanvas
+     * to fall back to its global GL-probing logic (the traditional behaviour for
+     * the global context manager).  An OSMesa implementation should return a
+     * large value (e.g. 16384 × 16384) since OSMesa is only RAM-limited.
+     */
+    virtual void maxOffscreenDimensions(unsigned int & width,
+                                        unsigned int & height) const
+    { width = 0; height = 0; }
+
     // --- Optional alternative rendering path -------------------------------
     // If this returns TRUE, SoOffscreenRenderer uses 'pixels' directly and
     // skips the GL pipeline.  'pixels' is a pre-allocated row-major buffer of
