@@ -173,6 +173,39 @@ add_rendering_test(render_quad_mesh_deep)
 add_rendering_test(render_field_connections)
 add_rendering_test(render_sogl_bindings)
 
+# ---- NanoRT raytracing backend test -----------------------------------------
+# render_nanort uses Obol's scene-graph API (SoCallbackAction, camera, lights)
+# with nanort for ray-triangle intersection instead of OpenGL.  It requires no
+# display server and no GL context; a no-op ContextManager is used internally.
+add_executable(render_nanort render_nanort.cpp)
+target_include_directories(render_nanort PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/tests/utils
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+    ${PROJECT_BINARY_DIR}/include
+    ${COIN_TARGET_INCLUDE_DIRECTORIES}
+    ${PROJECT_SOURCE_DIR}/external/nanort
+    ${PROJECT_SOURCE_DIR}/external/nanort/examples/common
+)
+target_link_libraries(render_nanort Coin ${COIN_TARGET_LINK_LIBRARIES})
+set_target_properties(render_nanort PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
+)
+# The nanort test does its own pixel analysis and returns 0/1.
+# It does not need xvfb-run because it never calls OpenGL, but
+# run_rendering_test.cmake is still used for consistent test reporting.
+add_test(
+    NAME render_nanort
+    COMMAND "${CMAKE_COMMAND}"
+        -DEXECUTABLE=$<TARGET_FILE:render_nanort>
+        -DTEST_TIMEOUT=${IMAGE_COMPARISON_TEST_TIMEOUT}
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/run_rendering_test.cmake"
+)
+set_tests_properties(render_nanort PROPERTIES
+    TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
+)
+
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
 # The run_image_test.cmake driver handles Xvfb wrapping for GLX builds.
