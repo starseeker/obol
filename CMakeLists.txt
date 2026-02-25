@@ -83,7 +83,7 @@ endif()
 option(BUILD_SHARED_LIBS "Build shared library when ON, static when OFF" ON)
 option(COIN_BUILD_TESTS "Build unit tests" ON)
 option(COIN_BUILD_EXAMPLES "Build examples" OFF)
-option(COIN_BUILD_BRIDGE "Build the obol C bridge library (libobol_bridge_<suffix>.so) for the dual-backend viewer superbuild" OFF)
+option(COIN_BUILD_VIEWER "Build the FLTK scene viewer (obol_viewer); requires FLTK" OFF)
 
 # Compatibility alias for legacy code
 set(COIN_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
@@ -91,8 +91,13 @@ set(COIN_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
 # Documentation options removed - not needed for minimal library build
 
 # Feature options
-option(COIN3D_USE_OSMESA "Build against OSMesa for offscreen/headless rendering" ON)
-option(COIN3D_BUILD_DUAL_GL "Build with both system-OpenGL and OSMesa backends in a single library (requires COIN3D_USE_OSMESA=OFF)" OFF)
+# Backend selection:
+#   COIN3D_USE_OSMESA=ON          → OSMesa-only (headless, no system GL)
+#   COIN3D_USE_SYSTEM_ONLY=ON     → system OpenGL only (no OSMesa)
+#   default (both OFF)            → auto-detect; dual mode when both are available
+option(COIN3D_USE_OSMESA "Build against OSMesa only for offscreen/headless rendering" OFF)
+option(COIN3D_USE_SYSTEM_ONLY "Build against system OpenGL only (no OSMesa fallback)" OFF)
+option(COIN3D_BUILD_DUAL_GL "Build with both system-OpenGL and OSMesa backends in a single library" OFF)
 option(COIN_THREADSAFE "Enable thread safe render traversals" ON)
 
 # Component options
@@ -131,6 +136,44 @@ set(COIN_TARGET_INCLUDE_DIRECTORIES)
 set(COIN_TARGET_LINK_LIBRARIES_GL)
 
 # OpenGL backend selection
+# -----------------------------------------------------------------------
+# Auto-detection when neither OSMESA-only nor SYSTEM-only is forced:
+#   1. Check for system OpenGL and for the OSMesa submodule
+#   2. If both are available → enable DUAL GL (one library, both backends)
+#   3. If only OSMesa submodule is available → OSMesa-only mode
+#   4. If only system GL is available → system-only mode
+# The user can override by setting COIN3D_USE_OSMESA=ON (osmesa only)
+# or COIN3D_USE_SYSTEM_ONLY=ON (system GL only) before configuring.
+#
+# NOTE: system libosmesa6-dev is intentionally NOT used for auto-detection.
+# The project requires its own name-mangled OSMesa build (external/osmesa
+# submodule with USE_MGL_NAMESPACE).  The submodule include path
+# <OSMesa/osmesa.h> was chosen specifically to avoid pulling in the
+# system header at <GL/osmesa.h>, which uses un-mangled gl* symbols
+# incompatible with a dual system-GL+OSMesa build.
+# -----------------------------------------------------------------------
+if(NOT COIN3D_USE_OSMESA AND NOT COIN3D_USE_SYSTEM_ONLY AND NOT COIN3D_BUILD_DUAL_GL)
+  find_package(OpenGL QUIET)
+  # "OSMesa available" means our submodule is present (not system osmesa)
+  if(EXISTS "${PROJECT_SOURCE_DIR}/external/osmesa/CMakeLists.txt")
+    set(_have_osmesa_submodule TRUE)
+  else()
+    set(_have_osmesa_submodule FALSE)
+  endif()
+  if(OpenGL_FOUND AND _have_osmesa_submodule)
+    set(COIN3D_BUILD_DUAL_GL ON CACHE BOOL
+        "Build with both system-OpenGL and OSMesa backends in a single library" FORCE)
+    message(STATUS "Auto-detected system OpenGL + OSMesa submodule: enabling DUAL GL mode")
+  elseif(_have_osmesa_submodule)
+    set(COIN3D_USE_OSMESA ON CACHE BOOL
+        "Build against OSMesa only for offscreen/headless rendering" FORCE)
+    message(STATUS "Auto-detected OSMesa submodule only: enabling OSMesa-only mode")
+  else()
+    # System-only (OpenGL required below will error if not present)
+    message(STATUS "Auto-detected: system OpenGL only (no OSMesa submodule found)")
+  endif()
+endif()
+
 if(COIN3D_USE_OSMESA)
   # OSMesa backend for offscreen/headless rendering
   find_package(OSMesa REQUIRED)
@@ -152,7 +195,7 @@ if(COIN3D_USE_OSMESA)
     message(STATUS "Using OSMesa for offscreen/headless rendering")
   endif()
 else()
-  # System OpenGL backend (default)
+  # System OpenGL backend (default or SYSTEM_ONLY)
   find_package(OpenGL REQUIRED)
   set(HAVE_OPENGL 1)
 
@@ -188,15 +231,17 @@ list(APPEND COIN_TARGET_LINK_LIBRARIES ${COIN_TARGET_LINK_LIBRARIES_GL})
 
 # Dual-GL build: also find and store OSMesa libraries separately so
 # gl_osmesa.cpp can be compiled against them alongside system GL.
+# Our FindOSMesa.cmake only looks at the external/osmesa submodule, which
+# provides the name-mangled (mgl*) build required by dual GL.
 if(COIN3D_BUILD_DUAL_GL)
   if(COIN3D_USE_OSMESA)
-    message(FATAL_ERROR "COIN3D_BUILD_DUAL_GL requires COIN3D_USE_OSMESA=OFF "
-            "(the main build uses system OpenGL; the OSMesa variant is compiled "
-            "in a separate translation unit via src/glue/gl_osmesa.cpp).")
+    message(FATAL_ERROR "COIN3D_BUILD_DUAL_GL and COIN3D_USE_OSMESA are mutually exclusive. "
+            "DUAL GL uses system OpenGL as primary with OSMesa as a secondary backend.")
   endif()
   find_package(OSMesa REQUIRED)
   if(NOT OSMesa_FOUND)
-    message(FATAL_ERROR "COIN3D_BUILD_DUAL_GL requires OSMesa to be installed.")
+    message(FATAL_ERROR "COIN3D_BUILD_DUAL_GL requires the external/osmesa submodule.\n"
+            "Run: git submodule update --init --recursive")
   endif()
   # Collect OSMesa include dirs and link libraries for the per-file target
   if(TARGET OSMesa::OSMesa)
@@ -495,19 +540,67 @@ if(COIN_BUILD_EXAMPLES)
   add_subdirectory(examples)
 endif()
 
-if(COIN_BUILD_BRIDGE)
-  # Determine the bridge suffix from the backend so callers don't have to
-  # pass -DCOIN_BRIDGE_SUFFIX explicitly; they only need -DCOIN_BUILD_BRIDGE=ON.
-  # When -DCOIN_BRIDGE_SUFFIX=nanort is passed explicitly, that takes precedence.
-  if(NOT DEFINED COIN_BRIDGE_SUFFIX OR COIN_BRIDGE_SUFFIX STREQUAL "")
-    if(COIN3D_USE_OSMESA)
-      set(COIN_BRIDGE_SUFFIX "osmesa" CACHE STRING "" FORCE)
-    else()
-      set(COIN_BRIDGE_SUFFIX "sys" CACHE STRING "" FORCE)
+if(COIN_BUILD_VIEWER)
+  # ---- FLTK ----------------------------------------------------------------
+  find_package(FLTK REQUIRED)
+
+  # ---- Viewer executable ---------------------------------------------------
+  add_executable(obol_viewer tests/obol_viewer.cpp)
+
+  target_include_directories(obol_viewer PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+    ${PROJECT_BINARY_DIR}/include
+    ${PROJECT_SOURCE_DIR}/tests/utils     # headless_utils.h
+    ${COIN_TARGET_INCLUDE_DIRECTORIES}
+    ${FLTK_INCLUDE_DIRS}
+  )
+
+  # Compile definitions matching the Coin library build
+  if(COIN3D_BUILD_DUAL_GL)
+    target_compile_definitions(obol_viewer PRIVATE COIN3D_BUILD_DUAL_GL)
+  elseif(COIN3D_USE_OSMESA)
+    # Pure-OSMesa build: headless_utils.h uses OSMesa context manager
+    target_compile_definitions(obol_viewer PRIVATE COIN3D_OSMESA_BUILD)
+    target_include_directories(obol_viewer PRIVATE
+      "${PROJECT_SOURCE_DIR}/external/osmesa/include")
+  endif()
+
+  # Optional NanoRT panel: enabled when nanort.h is found in external/nanort/
+  if(EXISTS "${PROJECT_SOURCE_DIR}/external/nanort/nanort.h")
+    target_compile_definitions(obol_viewer PRIVATE OBOL_VIEWER_NANORT)
+    target_include_directories(obol_viewer PRIVATE
+      "${PROJECT_SOURCE_DIR}/external/nanort"
+      "${PROJECT_SOURCE_DIR}/tests/utils"   # nanort_context_manager.h
+    )
+    message(STATUS "obol_viewer: NanoRT panel enabled (external/nanort/nanort.h found)")
+  else()
+    message(STATUS "obol_viewer: NanoRT panel disabled (external/nanort/nanort.h not found)")
+  endif()
+
+  target_link_libraries(obol_viewer
+    PRIVATE
+      Coin
+      ${COIN_TARGET_LINK_LIBRARIES}
+      ${FLTK_LIBRARIES}
+  )
+  # On Linux the viewer includes headless_utils.h which uses GLX symbols for
+  # the system-GL path; link the X/GL libs explicitly when available.
+  if(UNIX AND NOT APPLE)
+    find_package(X11 QUIET)
+    find_package(OpenGL QUIET)
+    if(X11_FOUND)
+      target_link_libraries(obol_viewer PRIVATE ${X11_X11_LIB})
+    endif()
+    if(TARGET OpenGL::GL)
+      target_link_libraries(obol_viewer PRIVATE OpenGL::GL)
+    elseif(OPENGL_gl_LIBRARY)
+      target_link_libraries(obol_viewer PRIVATE ${OPENGL_gl_LIBRARY})
     endif()
   endif()
-  add_subdirectory(src/bridge)
-endif()
+
+  install(TARGETS obol_viewer RUNTIME DESTINATION bin)
+endif() # COIN_BUILD_VIEWER
 
 if(COIN_BUILD_TESTS)
   # Build libpng from the bundled submodule so that rgb_to_png and

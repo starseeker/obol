@@ -1,60 +1,112 @@
 /*
- * obol_viewer.cpp  –  FLTK triple-backend scene viewer for Obol
+ * obol_viewer.cpp  –  FLTK scene viewer for Obol (direct library use)
  *
  * Architecture
  * ────────────
- * The viewer loads up to three bridge shared libraries at startup:
+ * The viewer links directly against the Coin shared library (built with
+ * COIN3D_BUILD_DUAL_GL by default) and uses Obol's public API to build
+ * and render scenes into off-screen pixel buffers displayed via FLTK.
  *
- *   libobol_bridge_sys.so    – Obol built against system OpenGL / GLX
- *   libobol_bridge_osmesa.so – Obol built against OSMesa (headless)
- *   libobol_bridge_nanort.so – Obol with NanoRT CPU raytracing (no GL)
+ * No bridge libraries or dlopen are involved.  The context manager
+ * (OSMesa for headless/dual builds, GLX for sys-only builds) is set up
+ * via headless_utils.h, exactly as the rendering tests do.
  *
- * Both bridges export the same C API (obol_bridge.h), and each bridge
- * embeds its corresponding Obol static library with -fvisibility=hidden
- * so the C++ symbols are private.  The viewer loads them with
- * dlopen(RTLD_LOCAL) so even the visible obol_* C functions live in
- * separate namespaces and never collide.
+ * NanoRT optional panel
+ * ─────────────────────
+ * When OBOL_VIEWER_NANORT is defined at compile time (set by CMake when
+ * external/nanort/nanort.h is found), a second render panel is shown on
+ * the right side of the window.  It uses SoNanoRTContextManager::renderScene()
+ * called directly — the viewer instantiates the NanoRT renderer as an
+ * application-supplied rendering object and drives it independently of the
+ * main Coin context manager.  No bridge, no dlopen, no changes to Coin core.
  *
- * If libobol_bridge_sys.so is unavailable (no DISPLAY, missing libGL,
- * CI headless runner) the viewer falls back to using the OSMesa bridge
- * for both panels and shows a status message.
- * The NanoRT panel is omitted when libobol_bridge_nanort.so is not found.
+ * Layout (without NanoRT)          Layout (with NanoRT)
+ * ──────────────────────           ────────────────────────────────────────
+ *  ┌───────┬────────────────┐       ┌───────┬──────────────┬──────────────┐
+ *  │Scene  │                │       │Scene  │   Coin GL    │   NanoRT     │
+ *  │browser│  Coin GL panel │       │browser│   panel      │   panel      │
+ *  │       │                │       │       │              │              │
+ *  ├───────┴────────────────┤       ├───────┴──────────────┴──────────────┤
+ *  │[Reload][Save PNG…] ...  │       │[Reload][Save PNG…]  [×]Sync views  │
+ *  └────────────────────────┘       └────────────────────────────────────┘
  *
- * Layout
- * ──────
- *   ┌─────────┬──────────────────────────────────────────────────┐
- *   │  Test   │  [System GL]  │  [OSMesa]  │  [NanoRT]           │
- *   │ browser │  CoinPanel    │  CoinPanel │  CoinPanel (if avail)│
- *   ├─────────┴───────────────┴────────────┴─────────────────────┤
- *   │ [Reload] [Render…]  [×] Sync views  status text            │
- *   └──────────────────────────────────────────────────────────────┘
- *
- * Interaction (all panels)
- *   Left-drag   → orbit camera
- *   Right-drag  → dolly (zoom along view axis)
- *   Scroll      → zoom
- *   When "Sync views" is checked, moving the camera in any panel
- *   immediately mirrors to the others.
+ * Camera interaction
+ *   Left-drag  → orbit
+ *   Right-drag → dolly
+ *   Scroll     → zoom
+ *   When "Sync views" is checked (NanoRT mode), moving the camera in
+ *   either panel immediately mirrors to the other.
  *
  * Building
  * ────────
- * This file is built as part of tests/obol_superbuild/ (see that
- * directory's CMakeLists.txt).  The superbuild compiles all Obol
- * variants and the bridge libraries, then builds this file linking
- * only FLTK and libdl.
- *
- * The superbuild passes -DOBOL_BRIDGE_DIR=<path> so the viewer knows
- * where to find the bridge .so files.  A fallback search path (directory
- * of the executable) is also tried.
+ * Enabled by -DCOIN_BUILD_VIEWER=ON at CMake configure time.
+ * The viewer is built as part of the main project; no separate superbuild
+ * is required.
  */
 
-#include "obol_bridge.h"   /* C API + ObolBridgeAPI struct */
+/* ---- Obol / Coin headers ---- */
+#include <Inventor/SoDB.h>
+#include <Inventor/nodekits/SoNodeKit.h>
+#include <Inventor/SoInteraction.h>
+#include <Inventor/SoOffscreenRenderer.h>
+#include <Inventor/SbViewportRegion.h>
+#include <Inventor/SbColor.h>
+#include <Inventor/SbRotation.h>
+#include <Inventor/SbVec3f.h>
+#include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoPerspectiveCamera.h>
+#include <Inventor/nodes/SoOrthographicCamera.h>
+#include <Inventor/nodes/SoDirectionalLight.h>
+#include <Inventor/nodes/SoPointLight.h>
+#include <Inventor/nodes/SoMaterial.h>
+#include <Inventor/nodes/SoTransform.h>
+#include <Inventor/nodes/SoTranslation.h>
+#include <Inventor/nodes/SoRotation.h>
+#include <Inventor/nodes/SoSphere.h>
+#include <Inventor/nodes/SoCube.h>
+#include <Inventor/nodes/SoCone.h>
+#include <Inventor/nodes/SoCylinder.h>
+#include <Inventor/nodes/SoText2.h>
+#include <Inventor/nodes/SoText3.h>
+#include <Inventor/nodes/SoFont.h>
+#include <Inventor/nodes/SoBaseColor.h>
+#include <Inventor/nodes/SoCoordinate3.h>
+#include <Inventor/nodes/SoIndexedFaceSet.h>
+#include <Inventor/nodes/SoIndexedLineSet.h>
+#include <Inventor/nodes/SoDrawStyle.h>
+#include <Inventor/nodes/SoLightModel.h>
+#include <Inventor/nodes/SoComplexity.h>
+#include <Inventor/nodes/SoShapeHints.h>
+#include <Inventor/nodes/SoTexture2.h>
+#include <Inventor/nodes/SoTextureCoordinate2.h>
+#include <Inventor/nodes/SoNormal.h>
+#include <Inventor/nodes/SoNormalBinding.h>
+#include <Inventor/nodes/SoMaterialBinding.h>
+#include <Inventor/actions/SoGLRenderAction.h>
+#include <Inventor/actions/SoGetBoundingBoxAction.h>
+#include <Inventor/actions/SoHandleEventAction.h>
+#include <Inventor/actions/SoSearchAction.h>
+#include <Inventor/events/SoMouseButtonEvent.h>
+#include <Inventor/events/SoLocation2Event.h>
+#include <Inventor/events/SoKeyboardEvent.h>
+#include <Inventor/annex/FXViz/nodes/SoShadowGroup.h>
+#include <Inventor/annex/FXViz/nodes/SoShadowDirectionalLight.h>
 
+/* ---- Context manager (OSMesa for dual/headless, GLX for sys-only) ---- */
+#include "headless_utils.h"
+
+/* ---- Optional NanoRT application-supplied renderer ---- */
+#ifdef OBOL_VIEWER_NANORT
+#  include "nanort_context_manager.h"
+/* Single NanoRT renderer instance owned by the viewer application. */
+static SoNanoRTContextManager s_nanort_mgr;
+#endif
+
+/* ---- FLTK ---- */
 #include <FL/Fl.H>
 #include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Hold_Browser.H>
 #include <FL/Fl_Button.H>
-#include <FL/Fl_Check_Button.H>
 #include <FL/Fl_Box.H>
 #include <FL/Fl_RGB_Image.H>
 #include <FL/Fl_Group.H>
@@ -62,8 +114,7 @@
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 #include <FL/Fl_Tile.H>
-#include <FL/Fl_Pack.H>
-#include <FL/Fl_Scroll.H>
+#include <FL/Fl_Check_Button.H>
 
 #include <cstdio>
 #include <cstdlib>
@@ -72,75 +123,333 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-
-#ifndef OBOL_BRIDGE_DIR
-#  define OBOL_BRIDGE_DIR ""
-#endif
+#include <memory>
 
 /* =========================================================================
- * Bridge discovery helpers
+ * Scene factories
  * ======================================================================= */
 
-/** Try to load a bridge .so from several candidate paths. */
-static ObolBridgeAPI* try_load_bridge(const char* basename,
-                                      const char* extra_dir = nullptr)
-{
-    std::vector<std::string> candidates;
-    /* 0. environment variable override (highest priority) */
-    const char* env_dir = getenv("OBOL_BRIDGE_DIR");
-    if (env_dir && env_dir[0]) {
-        candidates.push_back(std::string(env_dir) + "/" + basename);
-    }
-    /* 1. explicit build-time bridge dir */
-    if (OBOL_BRIDGE_DIR[0]) {
-        candidates.push_back(std::string(OBOL_BRIDGE_DIR) + "/" + basename);
-    }
-    /* 2. caller-supplied extra dir (e.g. directory of the executable) */
-    if (extra_dir && extra_dir[0]) {
-        candidates.push_back(std::string(extra_dir) + "/" + basename);
-    }
-    /* 3. system default (LD_LIBRARY_PATH etc.) */
-    candidates.push_back(basename);
+typedef SoSeparator* (*SceneFactory)(int w, int h);
 
-    for (const auto& path : candidates) {
-        ObolBridgeAPI* api = ObolBridgeAPI::load(path.c_str());
-        if (api) {
-            fprintf(stdout, "obol_viewer: loaded bridge '%s'\n", path.c_str());
-            return api;
-        }
-        /* Print dlerror for debugging */
-        fprintf(stderr, "obol_viewer: could not load '%s': %s\n",
-                path.c_str(), dlerror());
+static SoSeparator* scene_primitives(int w, int h) {
+    SoSeparator* root = new SoSeparator; root->ref();
+    SoPerspectiveCamera* cam = new SoPerspectiveCamera; root->addChild(cam);
+    SoDirectionalLight* li = new SoDirectionalLight;
+    li->direction.setValue(-0.5f,-0.8f,-0.6f); root->addChild(li);
+    const float s = 2.5f;
+    struct { float r,g,b,tx,ty; SoNode* shape; } prims[] = {
+        {0.85f,0.15f,0.15f,-s*.5f, s*.5f,new SoSphere},
+        {0.15f,0.75f,0.15f, s*.5f, s*.5f,new SoCube},
+        {0.15f,0.35f,0.90f,-s*.5f,-s*.5f,new SoCone},
+        {0.90f,0.75f,0.15f, s*.5f,-s*.5f,new SoCylinder},
+    };
+    for (auto& p : prims) {
+        SoSeparator* sep = new SoSeparator;
+        SoTranslation* t = new SoTranslation; t->translation.setValue(p.tx,p.ty,0);
+        sep->addChild(t);
+        SoMaterial* m = new SoMaterial;
+        m->diffuseColor.setValue(p.r,p.g,p.b);
+        m->specularColor.setValue(0.6f,0.6f,0.6f);
+        m->shininess.setValue(0.5f);
+        sep->addChild(m); sep->addChild(p.shape); root->addChild(sep);
     }
-    return nullptr;
+    SbViewportRegion vp(w,h); cam->viewAll(root,vp);
+    cam->position.setValue(cam->position.getValue()*1.1f);
+    return root;
+}
+
+static SoSeparator* scene_materials(int w, int h) {
+    SoSeparator* root = new SoSeparator; root->ref();
+    SoPerspectiveCamera* cam = new SoPerspectiveCamera; root->addChild(cam);
+    SoDirectionalLight* li = new SoDirectionalLight;
+    li->direction.setValue(-1,-1,-1); root->addChild(li);
+    struct MatDesc { float dr,dg,db,sr,sg,sb,sh,tx; };
+    MatDesc mats[] = {
+        {0.8f,0.1f,0.1f,0.9f,0.9f,0.9f,0.9f,-3.0f},
+        {0.1f,0.7f,0.1f,0.0f,0.0f,0.0f,0.0f,-1.0f},
+        {0.1f,0.1f,0.8f,0.5f,0.5f,0.8f,0.5f, 1.0f},
+        {0.8f,0.7f,0.0f,1.0f,1.0f,0.8f,0.8f, 3.0f},
+    };
+    for (auto& m : mats) {
+        SoSeparator* sep = new SoSeparator;
+        SoTranslation* t = new SoTranslation; t->translation.setValue(m.tx,0,0);
+        sep->addChild(t);
+        SoMaterial* mat = new SoMaterial;
+        mat->diffuseColor.setValue(m.dr,m.dg,m.db);
+        mat->specularColor.setValue(m.sr,m.sg,m.sb);
+        mat->shininess.setValue(m.sh);
+        sep->addChild(mat); sep->addChild(new SoSphere); root->addChild(sep);
+    }
+    SbViewportRegion vp(w,h); cam->viewAll(root,vp);
+    return root;
+}
+
+static SoSeparator* scene_lighting(int w, int h) {
+    SoSeparator* root = new SoSeparator; root->ref();
+    SoPerspectiveCamera* cam = new SoPerspectiveCamera; root->addChild(cam);
+    SoDirectionalLight* li = new SoDirectionalLight;
+    li->direction.setValue(0,-1,-1); li->color.setValue(1,0.9f,0.8f);
+    root->addChild(li);
+    SoPointLight* pl = new SoPointLight;
+    pl->location.setValue(-3,2,2); pl->color.setValue(0.2f,0.4f,1.0f);
+    root->addChild(pl);
+    SoMaterial* mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.7f,0.7f,0.7f);
+    mat->specularColor.setValue(1,1,1); mat->shininess.setValue(0.7f);
+    root->addChild(mat); root->addChild(new SoSphere);
+    SbViewportRegion vp(w,h); cam->viewAll(root,vp);
+    return root;
+}
+
+static SoSeparator* scene_transforms(int w, int h) {
+    SoSeparator* root = new SoSeparator; root->ref();
+    SoPerspectiveCamera* cam = new SoPerspectiveCamera; root->addChild(cam);
+    SoDirectionalLight* li = new SoDirectionalLight;
+    li->direction.setValue(-1,-1,-1); root->addChild(li);
+    SoMaterial* mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.5f,0.7f,0.9f);
+    mat->specularColor.setValue(0.8f,0.8f,0.8f); mat->shininess.setValue(0.6f);
+    root->addChild(mat);
+    for (int i = 0; i < 5; ++i) {
+        SoSeparator* sep = new SoSeparator;
+        SoTransform* xf = new SoTransform;
+        xf->translation.setValue((i-2)*2.0f, 0, 0);
+        xf->rotation.setValue(SbVec3f(0,1,0), (float)i * 0.5f);
+        xf->scaleFactor.setValue(0.6f+i*0.1f, 0.6f+i*0.1f, 0.6f+i*0.1f);
+        sep->addChild(xf); sep->addChild(new SoCube); root->addChild(sep);
+    }
+    SbViewportRegion vp(w,h); cam->viewAll(root,vp);
+    return root;
+}
+
+static SoSeparator* scene_colored_cube(int w, int h) {
+    SoSeparator* root = new SoSeparator; root->ref();
+    SoPerspectiveCamera* cam = new SoPerspectiveCamera; root->addChild(cam);
+    SoDirectionalLight* li = new SoDirectionalLight;
+    li->direction.setValue(-1,-1,-1); root->addChild(li);
+    SoMaterial* mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.85f,0.10f,0.10f);
+    mat->specularColor.setValue(0.50f,0.50f,0.50f); mat->shininess.setValue(0.40f);
+    root->addChild(mat); root->addChild(new SoCube);
+    SbViewportRegion vp(w,h); cam->viewAll(root,vp);
+    return root;
+}
+
+static SoSeparator* scene_coordinates(int w, int h) {
+    SoSeparator* root = new SoSeparator; root->ref();
+    SoPerspectiveCamera* cam = new SoPerspectiveCamera; root->addChild(cam);
+    root->addChild(new SoDirectionalLight);
+    static const float axverts[6][3] = {
+        {0,0,0},{2,0,0}, {0,0,0},{0,2,0}, {0,0,0},{0,0,2}
+    };
+    static const float axcols[3][3] = {{1,0,0},{0,1,0},{0,0,1}};
+    SoLightModel* lm = new SoLightModel;
+    lm->model = SoLightModel::BASE_COLOR; root->addChild(lm);
+    for (int a = 0; a < 3; ++a) {
+        SoSeparator* sep = new SoSeparator;
+        SoBaseColor* bc = new SoBaseColor;
+        bc->rgb.setValue(axcols[a][0], axcols[a][1], axcols[a][2]);
+        sep->addChild(bc);
+        SoCoordinate3* co = new SoCoordinate3;
+        co->point.setValues(0, 2, reinterpret_cast<const float(*)[3]>(axverts + a*2));
+        sep->addChild(co);
+        SoIndexedLineSet* ils = new SoIndexedLineSet;
+        static const int32_t idx[] = {0,1,-1};
+        ils->coordIndex.setValues(0, 3, idx); sep->addChild(ils);
+        root->addChild(sep);
+    }
+    root->addChild(new SoSphere);
+    SbViewportRegion vp(w,h); cam->viewAll(root,vp);
+    return root;
+}
+
+static SoSeparator* scene_shadow(int w, int h) {
+    SoSeparator* outer = new SoSeparator; outer->ref();
+    SoPerspectiveCamera* cam = new SoPerspectiveCamera;
+    cam->position.setValue(0, 8, 10);
+    cam->pointAt(SbVec3f(0,0,0), SbVec3f(0,1,0));
+    outer->addChild(cam);
+    SoShadowGroup* sg = new SoShadowGroup;
+    sg->isActive = TRUE; sg->intensity = 0.7f;
+    SoShadowDirectionalLight* sdl = new SoShadowDirectionalLight;
+    sdl->direction.setValue(-1,-2,-1); sg->addChild(sdl);
+    SoMaterial* floor_mat = new SoMaterial;
+    floor_mat->diffuseColor.setValue(0.7f,0.6f,0.5f); sg->addChild(floor_mat);
+    SoTransform* floor_xf = new SoTransform;
+    floor_xf->scaleFactor.setValue(8,0.1f,8);
+    floor_xf->translation.setValue(0,-0.5f,0); sg->addChild(floor_xf);
+    sg->addChild(new SoCube);
+    SoMaterial* sphere_mat = new SoMaterial;
+    sphere_mat->diffuseColor.setValue(0.2f,0.4f,0.9f); sg->addChild(sphere_mat);
+    SoTranslation* sph_t = new SoTranslation;
+    sph_t->translation.setValue(0,1,0); sg->addChild(sph_t);
+    sg->addChild(new SoSphere); outer->addChild(sg);
+    return outer;
+}
+
+static SoSeparator* scene_transparency(int w, int h) {
+    SoSeparator* root = new SoSeparator; root->ref();
+    SoPerspectiveCamera* cam = new SoPerspectiveCamera; root->addChild(cam);
+    SoDirectionalLight* li = new SoDirectionalLight;
+    li->direction.setValue(-1,-1,-1); root->addChild(li);
+    struct { float r,g,b,a,x; } spheres[] = {
+        {0.8f,0.1f,0.1f,0.3f,-2.0f},
+        {0.1f,0.8f,0.1f,0.5f, 0.0f},
+        {0.1f,0.1f,0.8f,0.7f, 2.0f},
+        {0.8f,0.8f,0.1f,0.9f, 4.0f},
+    };
+    for (auto& s : spheres) {
+        SoSeparator* sep = new SoSeparator;
+        SoTranslation* t = new SoTranslation; t->translation.setValue(s.x,0,0);
+        sep->addChild(t);
+        SoMaterial* mat = new SoMaterial;
+        mat->diffuseColor.setValue(s.r,s.g,s.b);
+        mat->transparency.setValue(1.0f-s.a);
+        sep->addChild(mat); sep->addChild(new SoSphere); root->addChild(sep);
+    }
+    SbViewportRegion vp(w,h); cam->viewAll(root,vp);
+    return root;
+}
+
+static SoSeparator* scene_lod(int w, int h) {
+    SoSeparator* root = new SoSeparator; root->ref();
+    SoPerspectiveCamera* cam = new SoPerspectiveCamera; root->addChild(cam);
+    SoDirectionalLight* li = new SoDirectionalLight;
+    li->direction.setValue(-1,-1,-1); root->addChild(li);
+    SoMaterial* mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.3f,0.6f,1.0f);
+    mat->specularColor.setValue(0.9f,0.9f,0.9f); mat->shininess.setValue(0.8f);
+    root->addChild(mat);
+    for (int i = 0; i < 3; ++i) {
+        SoSeparator* sep = new SoSeparator;
+        SoTranslation* t = new SoTranslation; t->translation.setValue((i-1)*3.0f,0,0);
+        sep->addChild(t);
+        SoComplexity* cx = new SoComplexity; cx->value = 0.1f + 0.4f * i;
+        sep->addChild(cx); sep->addChild(new SoSphere); root->addChild(sep);
+    }
+    SbViewportRegion vp(w,h); cam->viewAll(root,vp);
+    return root;
+}
+
+static SoSeparator* scene_drawstyle(int w, int h) {
+    SoSeparator* root = new SoSeparator; root->ref();
+    SoPerspectiveCamera* cam = new SoPerspectiveCamera; root->addChild(cam);
+    SoDirectionalLight* li = new SoDirectionalLight;
+    li->direction.setValue(-1,-1,-1); root->addChild(li);
+    const struct { SoDrawStyle::Style s; float tx; } styles[] = {
+        {SoDrawStyle::FILLED, -3.0f},
+        {SoDrawStyle::LINES,   0.0f},
+        {SoDrawStyle::POINTS,  3.0f},
+    };
+    SoMaterial* mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.5f,0.7f,0.3f); root->addChild(mat);
+    for (auto& st : styles) {
+        SoSeparator* sep = new SoSeparator;
+        SoTranslation* t = new SoTranslation; t->translation.setValue(st.tx,0,0);
+        sep->addChild(t);
+        SoDrawStyle* ds = new SoDrawStyle; ds->style = st.s; sep->addChild(ds);
+        sep->addChild(new SoCube); root->addChild(sep);
+    }
+    SbViewportRegion vp(w,h); cam->viewAll(root,vp);
+    return root;
+}
+
+static SoSeparator* scene_indexed_face_set(int w, int h) {
+    SoSeparator* root = new SoSeparator; root->ref();
+    SoPerspectiveCamera* cam = new SoPerspectiveCamera; root->addChild(cam);
+    SoDirectionalLight* li = new SoDirectionalLight;
+    li->direction.setValue(-1,-1,-1); root->addChild(li);
+    SoMaterial* mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.9f,0.5f,0.1f); root->addChild(mat);
+    static const float pts[4][3] = {
+        {0,1,0},{-1,-1,1},{1,-1,1},{0,-1,-1}
+    };
+    static const int32_t idx[] = {
+        0,1,2,-1,  0,2,3,-1,  0,3,1,-1,  1,3,2,-1
+    };
+    SoCoordinate3* co = new SoCoordinate3;
+    co->point.setValues(0, 4, pts); root->addChild(co);
+    SoShapeHints* sh = new SoShapeHints;
+    sh->vertexOrdering = SoShapeHints::COUNTERCLOCKWISE;
+    sh->shapeType = SoShapeHints::SOLID; root->addChild(sh);
+    SoIndexedFaceSet* ifs = new SoIndexedFaceSet;
+    ifs->coordIndex.setValues(0, 16, idx); root->addChild(ifs);
+    SbViewportRegion vp(w,h); cam->viewAll(root,vp);
+    return root;
+}
+
+/* ---- Scene catalogue ---- */
+struct SceneEntry {
+    const char* name;
+    const char* category;
+    const char* description;
+    SceneFactory factory;
+};
+static const SceneEntry s_scenes[] = {
+    {"primitives",       "Rendering", "Basic primitives: sphere, cube, cone, cylinder", scene_primitives},
+    {"materials",        "Rendering", "Material property showcase",                      scene_materials},
+    {"lighting",         "Rendering", "Multiple light sources",                          scene_lighting},
+    {"transforms",       "Rendering", "Hierarchical transform chain",                    scene_transforms},
+    {"colored_cube",     "Rendering", "Simple red cube (smoke test)",                    scene_colored_cube},
+    {"coordinates",      "Rendering", "XYZ coordinate axis visualization",               scene_coordinates},
+    {"shadow",           "Rendering", "SoShadowGroup shadow casting",                    scene_shadow},
+    {"transparency",     "Rendering", "Alpha-blended transparent spheres",               scene_transparency},
+    {"lod",              "Rendering", "Level-of-detail SoComplexity comparison",         scene_lod},
+    {"drawstyle",        "Rendering", "Filled / wireframe / points draw styles",         scene_drawstyle},
+    {"indexed_face_set", "Rendering", "SoIndexedFaceSet tetrahedron",                    scene_indexed_face_set},
+};
+static const int s_scene_count = (int)(sizeof(s_scenes)/sizeof(s_scenes[0]));
+
+/* =========================================================================
+ * Scene state
+ * ======================================================================= */
+struct SceneState {
+    SoSeparator*         root   = nullptr;
+    SoPerspectiveCamera* cam    = nullptr;
+    int width  = 800;
+    int height = 600;
+    /* drag state */
+    bool dragging  = false;
+    int  drag_btn  = 0;
+    int  last_x    = 0;
+    int  last_y    = 0;
+
+    ~SceneState() { if (root) root->unref(); }
+
+    static SoPerspectiveCamera* findCamera(SoSeparator* r) {
+        SoSearchAction sa;
+        sa.setType(SoPerspectiveCamera::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(r);
+        if (sa.getPath())
+            return static_cast<SoPerspectiveCamera*>(sa.getPath()->getTail());
+        return nullptr;
+    }
+};
+
+/* Shared off-screen renderer */
+static SoOffscreenRenderer* s_renderer = nullptr;
+static SoOffscreenRenderer* getRenderer(int w, int h) {
+    if (!s_renderer) {
+        SbViewportRegion vp(w, h);
+        s_renderer = new SoOffscreenRenderer(vp);
+    }
+    return s_renderer;
 }
 
 /* =========================================================================
- * CoinPanel  –  one render panel backed by a bridge instance
+ * CoinPanel  –  FLTK widget that renders a Coin scene
  * ======================================================================= */
-
-/**
- * CoinPanel is an Fl_Box that:
- *  • holds an ObolBridgeAPI* and an ObolScene handle
- *  • renders the scene via bridge->fn_scene_render() on every draw()
- *  • forwards FLTK mouse / scroll / key events to the bridge
- *  • exposes camera state read/write for the Sync Views feature
- */
 class CoinPanel : public Fl_Box {
 public:
-    ObolBridgeAPI* bridge   = nullptr;
-    ObolScene      scene    = nullptr;
-    std::string    label_text;
-    std::string    status_text;
+    std::unique_ptr<SceneState> state;
+    std::string label_text;
+    std::string status_text;
 
-    /* Raw pixel buffer (RGBA, bottom-up from GL convention) */
     std::vector<uint8_t> pixel_buf;
-    /* FLTK image object (top-down RGB) created from pixel_buf */
-    Fl_RGB_Image*   fltk_img = nullptr;
-    /* Separate display buffer: FLTK wants top-down RGB (3 channels) */
     std::vector<uint8_t> display_buf;
+    Fl_RGB_Image*        fltk_img = nullptr;
 
-    /* Sync callback: called after local camera changes */
     std::function<void(CoinPanel*)> on_camera_changed;
 
     explicit CoinPanel(int X, int Y, int W, int H, const char* lbl = "")
@@ -150,51 +459,47 @@ public:
         color(FL_BLACK);
     }
 
-    ~CoinPanel() {
-        destroyScene();
-        delete fltk_img; fltk_img = nullptr;
-    }
+    ~CoinPanel() { delete fltk_img; }
 
-    /* ------------------------------------------------------------------
-     * Scene management
-     * ------------------------------------------------------------------ */
+    void loadScene(const char* name) {
+        /* find scene factory */
+        const SceneEntry* entry = nullptr;
+        for (int i = 0; i < s_scene_count; ++i)
+            if (strcmp(s_scenes[i].name, name) == 0) { entry = &s_scenes[i]; break; }
+        if (!entry) { status_text = std::string("Unknown scene: ") + name; redraw(); return; }
 
-    void createScene(const char* name) {
-        destroyScene();
-        if (!bridge) return;
-        scene = bridge->fn_scene_create(name, w(), h());
-        if (!scene) {
-            status_text = std::string("Failed to create scene '") + name + "'";
-        } else {
-            status_text = "";
-        }
+        state.reset(new SceneState);
+        state->width  = std::max(w(), 1);
+        state->height = std::max(h(), 1);
+        state->root   = entry->factory(state->width, state->height);
+        state->cam    = state->root ? SceneState::findCamera(state->root) : nullptr;
+        status_text.clear();
         refreshRender();
     }
 
-    void destroyScene() {
-        if (scene && bridge) { bridge->fn_scene_destroy(scene); scene = nullptr; }
-        delete fltk_img; fltk_img = nullptr;
-    }
+    void clearScene() { state.reset(); delete fltk_img; fltk_img = nullptr; redraw(); }
 
-    /* Render scene via bridge, update FLTK image, redraw widget. */
     void refreshRender() {
-        if (!scene || !bridge) { redraw(); return; }
+        if (!state || !state->root) { redraw(); return; }
         int pw = std::max(w(), 1);
         int ph = std::max(h(), 1);
-        pixel_buf.resize((size_t)pw * ph * 4);
-        if (bridge->fn_scene_render(scene, pixel_buf.data(), pw, ph) != 0) {
-            status_text = "Render failed";
-            redraw();
-            return;
+        SoOffscreenRenderer* r = getRenderer(pw, ph);
+        SbViewportRegion vp(pw, ph);
+        r->setViewportRegion(vp);
+        r->setComponents(SoOffscreenRenderer::RGB_TRANSPARENCY);
+        r->setBackgroundColor(SbColor(0.15f, 0.15f, 0.2f));
+        if (!r->render(state->root)) {
+            status_text = "Render failed"; redraw(); return;
         }
-        /* Convert bottom-up RGBA → top-down RGB for FLTK */
+        const unsigned char* src = r->getBuffer();
+        if (!src) { status_text = "No buffer"; redraw(); return; }
+        /* convert bottom-up RGBA → top-down RGB */
         display_buf.resize((size_t)pw * ph * 3);
         for (int row = 0; row < ph; ++row) {
-            const uint8_t* src = pixel_buf.data() + (size_t)(ph - 1 - row) * pw * 4;
-            uint8_t*       dst = display_buf.data() + (size_t)row * pw * 3;
+            const uint8_t* s = src + (size_t)(ph-1-row) * pw * 4;
+            uint8_t*       d = display_buf.data() + (size_t)row * pw * 3;
             for (int col = 0; col < pw; ++col) {
-                dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2];
-                src += 4; dst += 3;
+                d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; s+=4; d+=3;
             }
         }
         delete fltk_img;
@@ -202,89 +507,165 @@ public:
         redraw();
     }
 
-    /* ------------------------------------------------------------------
-     * Camera state sync helpers
-     * ------------------------------------------------------------------ */
-
     void getCamera(float pos[3], float orient[4], float& dist) const {
-        if (scene && bridge)
-            bridge->fn_scene_get_camera(scene, pos, orient, &dist);
+        if (!state || !state->cam) return;
+        SbVec3f p = state->cam->position.getValue();
+        pos[0]=p[0]; pos[1]=p[1]; pos[2]=p[2];
+        SbRotation rot = state->cam->orientation.getValue();
+        SbVec3f axis; float angle; rot.getValue(axis,angle);
+        float s2 = sinf(angle*0.5f);
+        orient[0]=axis[0]*s2; orient[1]=axis[1]*s2; orient[2]=axis[2]*s2; orient[3]=cosf(angle*0.5f);
+        dist = state->cam->focalDistance.getValue();
     }
 
     void setCamera(const float pos[3], const float orient[4], float dist) {
-        if (scene && bridge) {
-            bridge->fn_scene_set_camera(scene, pos, orient, dist);
-            refreshRender();
-        }
+        if (!state || !state->cam) return;
+        state->cam->position.setValue(pos[0],pos[1],pos[2]);
+        float qx=orient[0],qy=orient[1],qz=orient[2],qw=orient[3];
+        float len = sqrtf(qx*qx+qy*qy+qz*qz+qw*qw);
+        if (len > 1e-6f) { qx/=len; qy/=len; qz/=len; qw/=len; }
+        float angle = 2.0f*acosf(qw);
+        SbVec3f ax(qx,qy,qz);
+        if (ax.length() < 1e-6f) { ax=SbVec3f(0,1,0); angle=0; }
+        else ax.normalize();
+        state->cam->orientation.setValue(SbRotation(ax, angle));
+        if (dist > 0.0f) state->cam->focalDistance.setValue(dist);
+        refreshRender();
     }
 
-    /* ------------------------------------------------------------------
-     * FLTK overrides
-     * ------------------------------------------------------------------ */
+    /* ---- FLTK overrides ---- */
 
     void draw() override {
-        fl_rectf(x(), y(), w(), h(), FL_BLACK);
+        fl_rectf(x(),y(),w(),h(),FL_BLACK);
         if (fltk_img) {
-            fltk_img->draw(x(), y(), w(), h(), 0, 0);
+            fltk_img->draw(x(),y(),w(),h(),0,0);
         } else {
-            /* No scene loaded: draw a placeholder message */
-            fl_color(FL_WHITE);
-            fl_font(FL_HELVETICA, 14);
-            fl_draw("(no scene loaded)", x() + w()/2 - 60, y() + h()/2);
+            fl_color(FL_WHITE); fl_font(FL_HELVETICA,14);
+            fl_draw("(no scene)", x()+w()/2-40, y()+h()/2);
         }
-        /* Backend label top-left */
         if (!label_text.empty()) {
-            fl_color(fl_rgb_color(255,255,100));
-            fl_font(FL_HELVETICA_BOLD, 13);
+            fl_color(fl_rgb_color(255,255,100)); fl_font(FL_HELVETICA_BOLD,13);
             fl_draw(label_text.c_str(), x()+6, y()+16);
         }
-        /* Status text bottom-left */
         if (!status_text.empty()) {
-            fl_color(fl_rgb_color(255,80,80));
-            fl_font(FL_HELVETICA, 12);
+            fl_color(fl_rgb_color(255,80,80)); fl_font(FL_HELVETICA,12);
             fl_draw(status_text.c_str(), x()+6, y()+h()-6);
         }
     }
 
     int handle(int event) override {
-        if (!scene || !bridge) return Fl_Box::handle(event);
-
+        if (!state || !state->root) return Fl_Box::handle(event);
+        int h_ = h();
         switch (event) {
         case FL_PUSH:
             take_focus();
-            bridge->fn_scene_mouse_press(scene,
-                Fl::event_x() - x(), Fl::event_y() - y(),
-                Fl::event_button());
-            if (Fl::event_button() != FL_MIDDLE_MOUSE)
-                return 1; /* consume for drag */
-            break;
+            if (state) {
+                state->dragging = true;
+                state->drag_btn = Fl::event_button();
+                state->last_x   = Fl::event_x() - x();
+                state->last_y   = Fl::event_y() - y();
+                SoMouseButtonEvent ev;
+                ev.setButton(state->drag_btn==1 ? SoMouseButtonEvent::BUTTON1 :
+                             state->drag_btn==2 ? SoMouseButtonEvent::BUTTON2 :
+                                                  SoMouseButtonEvent::BUTTON3);
+                ev.setState(SoButtonEvent::DOWN);
+                ev.setPosition(SbVec2s((short)(Fl::event_x()-x()),
+                                       (short)(h_-(Fl::event_y()-y()))));
+                ev.setTime(SbTime::getTimeOfDay());
+                SbViewportRegion vp(state->width, state->height);
+                SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(state->root);
+            }
+            return 1;
         case FL_RELEASE:
-            bridge->fn_scene_mouse_release(scene,
-                Fl::event_x() - x(), Fl::event_y() - y(),
-                Fl::event_button());
-            notifyCameraChanged();
-            refreshRender();
+            if (state) {
+                state->dragging = false;
+                SoMouseButtonEvent ev;
+                ev.setButton(Fl::event_button()==1 ? SoMouseButtonEvent::BUTTON1 :
+                             Fl::event_button()==2 ? SoMouseButtonEvent::BUTTON2 :
+                                                     SoMouseButtonEvent::BUTTON3);
+                ev.setState(SoButtonEvent::UP);
+                ev.setPosition(SbVec2s((short)(Fl::event_x()-x()),
+                                       (short)(h_-(Fl::event_y()-y()))));
+                ev.setTime(SbTime::getTimeOfDay());
+                SbViewportRegion vp(state->width, state->height);
+                SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(state->root);
+                notifyCameraChanged();
+                refreshRender();
+            }
             return 1;
         case FL_DRAG:
-            bridge->fn_scene_mouse_move(scene,
-                Fl::event_x() - x(), Fl::event_y() - y());
-            notifyCameraChanged();
-            refreshRender();
+            if (state && state->dragging && state->cam) {
+                int ex = Fl::event_x()-x(), ey = Fl::event_y()-y();
+                int dx = ex - state->last_x, dy = ey - state->last_y;
+                state->last_x = ex; state->last_y = ey;
+                if (state->drag_btn == 1) {
+                    /* orbit */
+                    float az = -(float)dx * 0.01f;
+                    float el =  (float)dy * 0.01f;
+                    SbVec3f center(0,0,0);
+                    SbVec3f offset = state->cam->position.getValue() - center;
+                    SbRotation azR(SbVec3f(0,1,0), az); azR.multVec(offset,offset);
+                    SbVec3f viewDir = -offset; viewDir.normalize();
+                    SbVec3f right = SbVec3f(0,1,0).cross(viewDir);
+                    float rl = right.length();
+                    if (rl > 1e-4f) right *= 1.0f/rl; else right = SbVec3f(1,0,0);
+                    SbRotation elR(right, el); elR.multVec(offset,offset);
+                    state->cam->position.setValue(center+offset);
+                    state->cam->pointAt(center, SbVec3f(0,1,0));
+                } else if (state->drag_btn == 3) {
+                    /* dolly */
+                    float dist = state->cam->focalDistance.getValue();
+                    dist *= (1.0f + dy * 0.01f);
+                    if (dist < 0.1f) dist = 0.1f;
+                    SbVec3f dir = state->cam->position.getValue(); dir.normalize();
+                    state->cam->position.setValue(dir * dist);
+                    state->cam->focalDistance.setValue(dist);
+                }
+                SoLocation2Event ev;
+                ev.setPosition(SbVec2s((short)ex,(short)(h_-ey)));
+                ev.setTime(SbTime::getTimeOfDay());
+                SbViewportRegion vp(state->width, state->height);
+                SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(state->root);
+                notifyCameraChanged();
+                refreshRender();
+            }
             return 1;
-        case FL_MOUSEWHEEL:
-            bridge->fn_scene_scroll(scene, -(float)Fl::event_dy());
-            notifyCameraChanged();
-            refreshRender();
+        case FL_MOUSEWHEEL: {
+            if (state && state->cam) {
+                float delta = -(float)Fl::event_dy();
+                float dist = state->cam->focalDistance.getValue();
+                dist *= (1.0f - delta * 0.1f);
+                if (dist < 0.1f) dist = 0.1f;
+                SbVec3f dir = state->cam->position.getValue(); dir.normalize();
+                state->cam->position.setValue(dir * dist);
+                state->cam->focalDistance.setValue(dist);
+                notifyCameraChanged();
+                refreshRender();
+            }
             return 1;
+        }
         case FL_KEYDOWN:
-            bridge->fn_scene_key_press(scene, Fl::event_key());
-            refreshRender();
+            if (state && state->root) {
+                SoKeyboardEvent ev;
+                ev.setKey((SoKeyboardEvent::Key)Fl::event_key());
+                ev.setState(SoButtonEvent::DOWN);
+                ev.setTime(SbTime::getTimeOfDay());
+                SbViewportRegion vp(state->width, state->height);
+                SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(state->root);
+                refreshRender();
+            }
             return 1;
         case FL_KEYUP:
-            bridge->fn_scene_key_release(scene, Fl::event_key());
+            if (state && state->root) {
+                SoKeyboardEvent ev;
+                ev.setKey((SoKeyboardEvent::Key)Fl::event_key());
+                ev.setState(SoButtonEvent::UP);
+                ev.setTime(SbTime::getTimeOfDay());
+                SbViewportRegion vp(state->width, state->height);
+                SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(state->root);
+            }
             return 1;
-        case FL_FOCUS: case FL_UNFOCUS:
-            return 1;
+        case FL_FOCUS: case FL_UNFOCUS: return 1;
         default: break;
         }
         return Fl_Box::handle(event);
@@ -292,350 +673,381 @@ public:
 
     void resize(int X, int Y, int W, int H) override {
         Fl_Box::resize(X, Y, W, H);
-        if (scene && bridge) bridge->fn_scene_resize(scene, W, H);
+        if (state) { state->width = W; state->height = H; }
         refreshRender();
     }
 
 private:
-    void notifyCameraChanged() {
-        if (on_camera_changed) on_camera_changed(this);
-    }
+    void notifyCameraChanged() { if (on_camera_changed) on_camera_changed(this); }
 };
 
 /* =========================================================================
- * Main window
+ * NanoRTPanel  –  application-supplied CPU raytracing panel (optional)
+ *
+ * Renders the same scene graph as CoinPanel but via SoNanoRTContextManager
+ * called directly as a plain method call — completely independent of the
+ * GL context manager singleton that was registered with SoDB::init().
+ * This is the "application-supplied renderer" pattern: the viewer owns the
+ * NanoRT renderer object and drives it without any Coin involvement beyond
+ * the scene graph traversal inside renderScene() itself.
  * ======================================================================= */
+#ifdef OBOL_VIEWER_NANORT
+class NanoRTPanel : public Fl_Box {
+public:
+    /* The scene root to render – shared with the CoinPanel (same graph). */
+    SoSeparator*         root       = nullptr;
+    SoPerspectiveCamera* cam        = nullptr;
+    std::string          label_text;
+    std::string          status_text;
+
+    std::vector<uint8_t> pixel_buf;   /* RGBA, bottom-up from renderScene() */
+    std::vector<uint8_t> display_buf; /* RGB, top-down for FLTK */
+    Fl_RGB_Image*        fltk_img  = nullptr;
+
+    std::function<void(NanoRTPanel*)> on_camera_changed;
+
+    explicit NanoRTPanel(int X, int Y, int W, int H, const char* lbl = "")
+        : Fl_Box(X, Y, W, H, ""), label_text(lbl ? lbl : "")
+    {
+        box(FL_FLAT_BOX);
+        color(FL_BLACK);
+    }
+
+    ~NanoRTPanel() { delete fltk_img; }
+
+    void setScene(SoSeparator* r, SoPerspectiveCamera* c) {
+        root = r; cam = c; status_text.clear();
+        refreshRender();
+    }
+
+    void refreshRender() {
+        if (!root) { redraw(); return; }
+        int pw = std::max(w(), 1);
+        int ph = std::max(h(), 1);
+        /* renderScene() fills pixels bottom-up in RGBA order. */
+        pixel_buf.resize((size_t)pw * ph * 4, 0);
+        const float bg[3] = { 0.15f, 0.15f, 0.2f };
+        /* Direct call: s_nanort_mgr is an application-owned object.
+         * We never registered it with SoDB::init(), so the GL context
+         * manager singleton is completely untouched. */
+        SbBool ok = s_nanort_mgr.renderScene(root,
+                                             (unsigned int)pw,
+                                             (unsigned int)ph,
+                                             pixel_buf.data(),
+                                             4u, bg);
+        if (!ok) {
+            status_text = "NanoRT render failed"; redraw(); return;
+        }
+        /* Convert bottom-up RGBA → top-down RGB for FLTK. */
+        display_buf.resize((size_t)pw * ph * 3);
+        for (int row = 0; row < ph; ++row) {
+            const uint8_t* s = pixel_buf.data() + (size_t)(ph-1-row) * pw * 4;
+            uint8_t*       d = display_buf.data() + (size_t)row * pw * 3;
+            for (int col = 0; col < pw; ++col) {
+                d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; s+=4; d+=3;
+            }
+        }
+        delete fltk_img;
+        fltk_img = new Fl_RGB_Image(display_buf.data(), pw, ph, 3);
+        redraw();
+    }
+
+    void getCamera(float pos[3], float orient[4], float& dist) const {
+        if (!cam) return;
+        SbVec3f p = cam->position.getValue();
+        pos[0]=p[0]; pos[1]=p[1]; pos[2]=p[2];
+        SbRotation rot = cam->orientation.getValue();
+        SbVec3f axis; float angle; rot.getValue(axis, angle);
+        float s2 = sinf(angle*0.5f);
+        orient[0]=axis[0]*s2; orient[1]=axis[1]*s2;
+        orient[2]=axis[2]*s2; orient[3]=cosf(angle*0.5f);
+        dist = cam->focalDistance.getValue();
+    }
+
+    void setCamera(const float pos[3], const float orient[4], float dist) {
+        if (!cam) return;
+        cam->position.setValue(pos[0], pos[1], pos[2]);
+        float qx=orient[0], qy=orient[1], qz=orient[2], qw=orient[3];
+        float len = sqrtf(qx*qx+qy*qy+qz*qz+qw*qw);
+        if (len > 1e-6f) { qx/=len; qy/=len; qz/=len; qw/=len; }
+        float angle = 2.0f*acosf(qw);
+        SbVec3f ax(qx,qy,qz);
+        if (ax.length() < 1e-6f) { ax=SbVec3f(0,1,0); angle=0; } else ax.normalize();
+        cam->orientation.setValue(SbRotation(ax, angle));
+        if (dist > 0.0f) cam->focalDistance.setValue(dist);
+        refreshRender();
+    }
+
+    /* ---- FLTK overrides ---- */
+
+    void draw() override {
+        fl_rectf(x(), y(), w(), h(), FL_BLACK);
+        if (fltk_img) {
+            fltk_img->draw(x(), y(), w(), h(), 0, 0);
+        } else {
+            fl_color(FL_WHITE); fl_font(FL_HELVETICA, 14);
+            fl_draw("(no scene)", x()+w()/2-40, y()+h()/2);
+        }
+        if (!label_text.empty()) {
+            fl_color(fl_rgb_color(255, 200, 80)); fl_font(FL_HELVETICA_BOLD, 13);
+            fl_draw(label_text.c_str(), x()+6, y()+16);
+        }
+        if (!status_text.empty()) {
+            fl_color(fl_rgb_color(255, 80, 80)); fl_font(FL_HELVETICA, 12);
+            fl_draw(status_text.c_str(), x()+6, y()+h()-6);
+        }
+    }
+
+    int handle(int event) override {
+        if (!root || !cam) return Fl_Box::handle(event);
+        switch (event) {
+        case FL_PUSH:
+            take_focus(); return 1;
+        case FL_RELEASE:
+            notifyCameraChanged(); refreshRender(); return 1;
+        case FL_DRAG: {
+            /* Mirror CoinPanel orbit/dolly so sync works correctly. */
+            static int last_x = 0, last_y = 0;
+            static int drag_btn = 0;
+            if (Fl::event_is_click()) { last_x = Fl::event_x(); last_y = Fl::event_y(); drag_btn = Fl::event_button(); }
+            int dx = Fl::event_x() - last_x, dy = Fl::event_y() - last_y;
+            last_x = Fl::event_x(); last_y = Fl::event_y();
+            if (drag_btn == 1) {
+                float az = -(float)dx * 0.01f, el = (float)dy * 0.01f;
+                SbVec3f center(0,0,0), offset = cam->position.getValue() - center;
+                SbRotation(SbVec3f(0,1,0), az).multVec(offset, offset);
+                SbVec3f viewDir = -offset; viewDir.normalize();
+                SbVec3f right = SbVec3f(0,1,0).cross(viewDir);
+                float rl = right.length();
+                if (rl > 1e-4f) right *= 1.0f/rl; else right = SbVec3f(1,0,0);
+                SbRotation(right, el).multVec(offset, offset);
+                cam->position.setValue(center + offset);
+                cam->pointAt(center, SbVec3f(0,1,0));
+            } else if (drag_btn == 3) {
+                float dist = cam->focalDistance.getValue() * (1.0f + dy*0.01f);
+                if (dist < 0.1f) dist = 0.1f;
+                SbVec3f dir = cam->position.getValue(); dir.normalize();
+                cam->position.setValue(dir * dist);
+                cam->focalDistance.setValue(dist);
+            }
+            notifyCameraChanged(); refreshRender(); return 1;
+        }
+        case FL_MOUSEWHEEL: {
+            float dist = cam->focalDistance.getValue() * (1.0f + (float)Fl::event_dy()*0.1f);
+            if (dist < 0.1f) dist = 0.1f;
+            SbVec3f dir = cam->position.getValue(); dir.normalize();
+            cam->position.setValue(dir * dist);
+            cam->focalDistance.setValue(dist);
+            notifyCameraChanged(); refreshRender(); return 1;
+        }
+        case FL_FOCUS: case FL_UNFOCUS: return 1;
+        default: break;
+        }
+        return Fl_Box::handle(event);
+    }
+
+    void resize(int X, int Y, int W, int H) override {
+        Fl_Box::resize(X, Y, W, H);
+        refreshRender();
+    }
+
+private:
+    void notifyCameraChanged() { if (on_camera_changed) on_camera_changed(this); }
+};
+#endif /* OBOL_VIEWER_NANORT */
+
 
 class ObolViewerWindow : public Fl_Double_Window {
-    /* UI widgets */
     Fl_Hold_Browser*  browser_;
-    CoinPanel*        left_panel_;    /* system GL  */
-    CoinPanel*        right_panel_;   /* OSMesa     */
-    CoinPanel*        nanort_panel_;  /* NanoRT     */
-    Fl_Check_Button*  sync_btn_;
-    Fl_Box*           status_bar_;
+    CoinPanel*        coin_panel_;
     Fl_Button*        reload_btn_;
-    Fl_Button*        render_btn_;
-
-    /* Bridges */
-    ObolBridgeAPI*    sys_api_    = nullptr;
-    ObolBridgeAPI*    osmesa_api_ = nullptr;
-    ObolBridgeAPI*    nanort_api_ = nullptr;
-
-    /* Sync guard (prevents recursive sync) */
-    bool syncing_ = false;
+    Fl_Button*        save_btn_;
+    Fl_Box*           status_bar_;
+#ifdef OBOL_VIEWER_NANORT
+    NanoRTPanel*      nrt_panel_  = nullptr;
+    Fl_Check_Button*  sync_btn_   = nullptr;
+    bool              syncing_    = false;
+#endif
 
     static const int BROWSER_W = 220;
     static const int TOOLBAR_H = 32;
     static const int STATUS_H  = 22;
 
 public:
-    ObolViewerWindow(int W, int H,
-                     ObolBridgeAPI* sys_api, ObolBridgeAPI* osmesa_api,
-                     ObolBridgeAPI* nanort_api = nullptr)
-        : Fl_Double_Window(W, H, "Obol Scene Viewer"),
-          sys_api_(sys_api), osmesa_api_(osmesa_api), nanort_api_(nanort_api)
+    ObolViewerWindow(int W, int H)
+        : Fl_Double_Window(W, H, "Obol Scene Viewer")
     {
         begin();
         buildUI(W, H);
         end();
-
-        /* Populate the scene browser from the OSMesa bridge (always present) */
-        ObolBridgeAPI* cat_api = osmesa_api_ ? osmesa_api_ : sys_api_;
-        if (cat_api) {
-            int n = cat_api->fn_scene_count();
-            for (int i = 0; i < n; ++i) {
-                std::string entry =
-                    std::string(cat_api->fn_scene_category(i)) + "/" +
-                    cat_api->fn_scene_name(i);
-                browser_->add(entry.c_str());
-            }
-        }
-
-        /* Wire up camera-sync callbacks */
-        left_panel_->on_camera_changed = [this](CoinPanel* src) {
-            if (!syncing_ && sync_btn_->value()) syncCamerasFrom(src);
-        };
-        right_panel_->on_camera_changed = [this](CoinPanel* src) {
-            if (!syncing_ && sync_btn_->value()) syncCamerasFrom(src);
-        };
-        if (nanort_panel_) {
-            nanort_panel_->on_camera_changed = [this](CoinPanel* src) {
-                if (!syncing_ && sync_btn_->value()) syncCamerasFrom(src);
-            };
-        }
-
-        updateStatusBar();
         resizable(this);
     }
 
-    /* ------------------------------------------------------------------
-     * Public: load a named scene into all available panels
-     * ------------------------------------------------------------------ */
     void loadScene(const char* name) {
-        left_panel_->createScene(name);
-        right_panel_->createScene(name);
-        if (nanort_panel_) nanort_panel_->createScene(name);
-        updateStatusBar();
+        coin_panel_->loadScene(name);
+#ifdef OBOL_VIEWER_NANORT
+        /* NanoRT panel shares the same scene root and camera as the Coin
+         * panel.  Both renderers traverse the same graph, so camera state
+         * set in either panel is immediately visible in the other. */
+        if (nrt_panel_ && coin_panel_->state && coin_panel_->state->root) {
+            nrt_panel_->setScene(coin_panel_->state->root,
+                                 coin_panel_->state->cam);
+        }
+        /* Wire up cross-panel camera sync callbacks once per load. */
+        coin_panel_->on_camera_changed = [this](CoinPanel* src) {
+            if (!syncing_ && sync_btn_ && sync_btn_->value() && nrt_panel_) {
+                syncing_ = true;
+                float pos[3], orient[4], dist = 1.0f;
+                src->getCamera(pos, orient, dist);
+                nrt_panel_->setCamera(pos, orient, dist);
+                syncing_ = false;
+            }
+        };
+        if (nrt_panel_) {
+            nrt_panel_->on_camera_changed = [this](NanoRTPanel* src) {
+                if (!syncing_ && sync_btn_ && sync_btn_->value()) {
+                    syncing_ = true;
+                    float pos[3], orient[4], dist = 1.0f;
+                    src->getCamera(pos, orient, dist);
+                    coin_panel_->setCamera(pos, orient, dist);
+                    syncing_ = false;
+                }
+            };
+        }
+#endif
+        std::string s = "Scene: "; s += name;
+        status_bar_->copy_label(s.c_str());
     }
 
 private:
-    /* ------------------------------------------------------------------
-     * UI construction
-     * ------------------------------------------------------------------ */
+    /* ---- coin panel label, chosen at compile time ---- */
+    static const char* coinLabel() {
+#if defined(COIN3D_BUILD_DUAL_GL)
+        return "Dual GL (system + OSMesa)";
+#elif defined(COIN3D_OSMESA_BUILD)
+        return "OSMesa (headless)";
+#else
+        return "System OpenGL";
+#endif
+    }
+
     void buildUI(int W, int H) {
         int content_h = H - TOOLBAR_H - STATUS_H;
 
-        /* ---- Left browser ---- */
         browser_ = new Fl_Hold_Browser(0, 0, BROWSER_W, content_h);
         browser_->textsize(12);
         browser_->callback(browserCB, this);
+        for (int i = 0; i < s_scene_count; ++i) {
+            std::string e = std::string(s_scenes[i].category) + "/" + s_scenes[i].name;
+            browser_->add(e.c_str());
+        }
 
-        /* ---- Render area (Fl_Tile for resizable split) ---- */
-        Fl_Tile* tile = new Fl_Tile(BROWSER_W, 0,
-                                    W - BROWSER_W, content_h);
+        /* Render area: Fl_Tile so panels can be resized by dragging */
+        Fl_Tile* tile = new Fl_Tile(BROWSER_W, 0, W - BROWSER_W, content_h);
         {
-            int num_panels  = nanort_api_ ? 3 : 2;
-            int panel_w     = (W - BROWSER_W) / num_panels;
-            int x           = BROWSER_W;
-
-            /* Left panel: system GL */
-            left_panel_ = new CoinPanel(x, 0, panel_w, content_h,
-                                        sys_api_
-                                            ? sys_api_->fn_backend_name()
-                                            : "System GL (unavailable)");
-            left_panel_->bridge = sys_api_;
-            x += panel_w;
-
-            /* Middle panel: OSMesa */
-            int osmesa_w = nanort_api_ ? panel_w : W - BROWSER_W - panel_w;
-            right_panel_ = new CoinPanel(x, 0, osmesa_w, content_h,
-                                         osmesa_api_
-                                             ? osmesa_api_->fn_backend_name()
-                                             : "OSMesa (unavailable)");
-            right_panel_->bridge = osmesa_api_;
-            x += osmesa_w;
-
-            /* Right panel: NanoRT (optional) */
-            if (nanort_api_) {
-                nanort_panel_ = new CoinPanel(x, 0,
-                                              W - BROWSER_W - 2 * panel_w,
-                                              content_h,
-                                              nanort_api_->fn_backend_name());
-                nanort_panel_->bridge = nanort_api_;
-            } else {
-                nanort_panel_ = nullptr;
-            }
+#ifdef OBOL_VIEWER_NANORT
+            int cpw = (W - BROWSER_W) / 2;
+            coin_panel_ = new CoinPanel(BROWSER_W, 0, cpw, content_h, coinLabel());
+            nrt_panel_  = new NanoRTPanel(BROWSER_W + cpw, 0,
+                                          W - BROWSER_W - cpw, content_h,
+                                          "NanoRT (app-supplied renderer)");
+#else
+            coin_panel_ = new CoinPanel(BROWSER_W, 0, W - BROWSER_W, content_h,
+                                        coinLabel());
+#endif
         }
         tile->end();
 
-        /* ---- Toolbar ---- */
-        Fl_Group* toolbar = new Fl_Group(0, content_h, W, TOOLBAR_H);
-        toolbar->box(FL_UP_BOX);
+        /* Toolbar */
+        Fl_Group* tb = new Fl_Group(0, content_h, W, TOOLBAR_H);
+        tb->box(FL_UP_BOX);
         {
-            int bx = 6, by = content_h + 4, bh = TOOLBAR_H - 8;
-
+            int bx = 6, by = content_h+4, bh = TOOLBAR_H-8;
             reload_btn_ = new Fl_Button(bx, by, 70, bh, "Reload");
-            reload_btn_->callback(reloadCB, this);
-            bx += 76;
-
-            render_btn_ = new Fl_Button(bx, by, 80, bh, "Render…");
-            render_btn_->callback(renderCB, this);
-            bx += 86;
-
-            sync_btn_ = new Fl_Check_Button(bx, by, 100, bh, "Sync views");
-            sync_btn_->value(1);   /* default: synced */
-            bx += 106;
-
-            /* status label fills remaining space */
-            status_bar_ = new Fl_Box(bx, by, W - bx - 6, bh, "");
-            status_bar_->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+            reload_btn_->callback(reloadCB, this); bx += 76;
+            save_btn_ = new Fl_Button(bx, by, 80, bh, "Save RGB...");
+            save_btn_->callback(saveCB, this); bx += 86;
+#ifdef OBOL_VIEWER_NANORT
+            sync_btn_ = new Fl_Check_Button(bx, by, 110, bh, "Sync views");
+            sync_btn_->value(1); bx += 116;
+#endif
+            status_bar_ = new Fl_Box(bx, by, W-bx-6, bh, "Ready");
+            status_bar_->align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE);
             status_bar_->labelsize(12);
         }
-        toolbar->end();
+        tb->end();
 
-        /* ---- Status bar ---- */
-        Fl_Box* statusbox = new Fl_Box(0, content_h + TOOLBAR_H,
-                                       W, STATUS_H, "");
-        statusbox->box(FL_ENGRAVED_BOX);
-        statusbox->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-        statusbox->labelsize(11);
+        Fl_Box* sbar = new Fl_Box(0, content_h+TOOLBAR_H, W, STATUS_H, "");
+        sbar->box(FL_ENGRAVED_BOX);
+        sbar->align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE);
+        sbar->labelsize(11);
     }
 
-    /* ------------------------------------------------------------------
-     * Camera synchronisation
-     * ------------------------------------------------------------------ */
-    void syncCamerasFrom(CoinPanel* src) {
-        float pos[3], orient[4], dist = 1.0f;
-        src->getCamera(pos, orient, dist);
-        syncing_ = true;
-        for (CoinPanel* dst : {left_panel_, right_panel_, nanort_panel_}) {
-            if (dst && dst != src && dst->scene && dst->bridge)
-                dst->setCamera(pos, orient, dist);
-        }
-        syncing_ = false;
-    }
-
-    /* ------------------------------------------------------------------
-     * Status bar
-     * ------------------------------------------------------------------ */
-    void updateStatusBar() {
-        std::string msg;
-        if (sys_api_)
-            msg += std::string("Left: ") + sys_api_->fn_backend_name();
-        else
-            msg += "Left: System GL (NOT available – using OSMesa fallback)";
-        msg += "   |   ";
-        if (osmesa_api_)
-            msg += std::string("Mid: ") + osmesa_api_->fn_backend_name();
-        else
-            msg += "Mid: OSMesa (NOT available)";
-        if (nanort_api_) {
-            msg += "   |   ";
-            msg += std::string("Right: ") + nanort_api_->fn_backend_name();
-        }
-        status_bar_->copy_label(msg.c_str());
-    }
-
-    /* ------------------------------------------------------------------
-     * Callbacks
-     * ------------------------------------------------------------------ */
     static void browserCB(Fl_Widget*, void* data) {
         auto* self = static_cast<ObolViewerWindow*>(data);
         int sel = self->browser_->value();
         if (sel < 1) return;
         const char* entry = self->browser_->text(sel);
-        /* entry format: "Category/scene_name" */
         const char* slash = strrchr(entry, '/');
-        const char* name  = slash ? slash + 1 : entry;
-        self->loadScene(name);
+        self->loadScene(slash ? slash+1 : entry);
     }
 
-    static void reloadCB(Fl_Widget*, void* data) {
-        auto* self = static_cast<ObolViewerWindow*>(data);
-        int sel = self->browser_->value();
-        if (sel < 1) return;
-        const char* entry = self->browser_->text(sel);
-        const char* slash = strrchr(entry, '/');
-        const char* name  = slash ? slash + 1 : entry;
-        self->loadScene(name);
-    }
+    static void reloadCB(Fl_Widget*, void* data) { browserCB(nullptr, data); }
 
-    static void renderCB(Fl_Widget*, void* data) {
+    static void saveCB(Fl_Widget*, void* data) {
         auto* self = static_cast<ObolViewerWindow*>(data);
-        /* Ask which backend to render */
-        int choice = fl_choice(
-            "Render to PNG from which backend?",
-            "Cancel", "System GL", "OSMesa");
-        if (choice == 0) return;  /* Cancel */
-        const char* path = fl_file_chooser(
-            "Save rendered image", "*.rgb", "output.rgb");
+        if (!self->coin_panel_->state || !self->coin_panel_->state->root) {
+            fl_message("No scene loaded."); return;
+        }
+        const char* path = fl_file_chooser("Save RGB", "*.rgb", "scene.rgb");
         if (!path) return;
-
-        int sel = self->browser_->value();
-        if (sel < 1) { fl_message("Please select a scene first."); return; }
-        const char* entry = self->browser_->text(sel);
-        const char* slash = strrchr(entry, '/');
-        const char* name  = slash ? slash + 1 : entry;
-
-        ObolBridgeAPI* api = (choice == 1) ? self->sys_api_
-                                            : self->osmesa_api_;
-        if (!api) { fl_message("Selected backend is not available."); return; }
-
-        int pw = 800, ph = 600;
-        std::vector<uint8_t> buf((size_t)pw * ph * 4);
-        ObolScene sc = api->fn_scene_create(name, pw, ph);
-        if (!sc) { fl_message("Failed to create scene."); return; }
-        int rc = api->fn_scene_render(sc, buf.data(), pw, ph);
-        api->fn_scene_destroy(sc);
-        if (rc != 0) { fl_message("Render failed."); return; }
-
-        /* Write raw RGB (drop alpha) – convert bottom-up to top-down */
-        FILE* f = fopen(path, "wb");
-        if (!f) { fl_message("Cannot open output file."); return; }
-        for (int row = ph - 1; row >= 0; --row) {
-            const uint8_t* src = buf.data() + (size_t)row * pw * 4;
+        int pw = self->coin_panel_->w(), ph = self->coin_panel_->h();
+        SoOffscreenRenderer* r = getRenderer(pw, ph);
+        SbViewportRegion vp(pw, ph);
+        r->setViewportRegion(vp);
+        r->setComponents(SoOffscreenRenderer::RGB_TRANSPARENCY);
+        r->setBackgroundColor(SbColor(0.15f, 0.15f, 0.2f));
+        if (!r->render(self->coin_panel_->state->root)) {
+            fl_message("Render failed."); return;
+        }
+        const unsigned char* src = r->getBuffer();
+        std::vector<uint8_t> rgb((size_t)pw*ph*3);
+        for (int row = 0; row < ph; ++row) {
+            const uint8_t* s = src + (size_t)(ph-1-row)*pw*4;
+            uint8_t*       d = rgb.data() + (size_t)row*pw*3;
             for (int col = 0; col < pw; ++col) {
-                fputc(src[0], f); fputc(src[1], f); fputc(src[2], f);
-                src += 4;
+                d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; s+=4; d+=3;
             }
         }
-        fclose(f);
-        fl_message("Saved %d×%d RGB image to:\n%s", pw, ph, path);
+        /* Write as SGI-RGB (.rgb) since SoOffscreenRenderer::writeToRGB is
+         * always available without extra library dependencies. */
+        std::string outpath(path);
+        if (outpath.size() >= 4 && outpath.substr(outpath.size()-4) == ".png")
+            outpath = outpath.substr(0, outpath.size()-4) + ".rgb";
+        if (r->writeToRGB(outpath.c_str()))
+            fl_message("Saved to:\n%s", outpath.c_str());
+        else
+            fl_message("Failed to write file.");
     }
 };
 
 /* =========================================================================
  * main()
  * ======================================================================= */
-
 int main(int argc, char** argv)
 {
-    /* ---- Load bridge libraries ---- */
+    /* Initialise Obol using the same context manager pattern as the tests */
+    initCoinHeadless();
 
-    /* Determine a fallback search directory: same dir as the executable */
-    std::string exe_dir;
-    if (argc > 0 && argv[0]) {
-        std::string exe(argv[0]);
-        auto sep = exe.rfind('/');
-        if (sep != std::string::npos) exe_dir = exe.substr(0, sep);
-    }
-    const char* extra = exe_dir.empty() ? nullptr : exe_dir.c_str();
-
-    ObolBridgeAPI* sys_api    = try_load_bridge("libobol_bridge_sys.so",    extra);
-    ObolBridgeAPI* osmesa_api = try_load_bridge("libobol_bridge_osmesa.so", extra);
-    ObolBridgeAPI* nanort_api = try_load_bridge("libobol_bridge_nanort.so", extra);
-
-    if (nanort_api)
-        fprintf(stdout, "obol_viewer: NanoRT bridge loaded\n");
-    else
-        fprintf(stdout, "obol_viewer: NanoRT bridge not found – NanoRT panel disabled\n");
-
-    /* Graceful fallback: if system GL bridge is unavailable, use OSMesa for
-     * both panels so the viewer is still functional. */
-    bool sys_fallback = false;
-    if (!sys_api && osmesa_api) {
-        fprintf(stderr,
-            "obol_viewer: system GL bridge unavailable – using OSMesa for both panels\n");
-        sys_api = osmesa_api;
-        sys_fallback = true;
-    }
-
-    if (!sys_api && !osmesa_api) {
-        fprintf(stderr,
-            "obol_viewer: ERROR: could not load either bridge library.\n"
-            "  Run from the superbuild output directory, or set LD_LIBRARY_PATH.\n");
-        return 1;
-    }
-
-    /* ---- Build and show the window ---- */
     Fl::scheme("gtk+");
     Fl::visual(FL_RGB | FL_DOUBLE);
 
-    ObolViewerWindow* win = new ObolViewerWindow(
-        1280, 720, sys_api, osmesa_api, nanort_api);
+    ObolViewerWindow* win = new ObolViewerWindow(1100, 700);
     win->show(argc, argv);
 
-    if (sys_fallback) {
-        fl_message("System GL bridge (libobol_bridge_sys.so) was not found.\n"
-                   "Both panels are using the OSMesa backend.\n\n"
-                   "To enable side-by-side comparison, build the viewer\n"
-                   "using the superbuild in tests/obol_superbuild/.");
-    }
-
     /* Load the first scene automatically */
-    ObolBridgeAPI* cat_api = osmesa_api ? osmesa_api : sys_api;
-    if (cat_api && cat_api->fn_scene_count() > 0) {
-        win->loadScene(cat_api->fn_scene_name(0));
-    }
+    if (s_scene_count > 0)
+        win->loadScene(s_scenes[0].name);
 
-    int ret = Fl::run();
-
-    /* Cleanup */
-    delete win;
-    if (nanort_api) delete nanort_api;
-    if (osmesa_api && osmesa_api != sys_api) delete osmesa_api;
-    if (sys_api) delete sys_api;
-
-    return ret;
+    return Fl::run();
 }

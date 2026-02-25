@@ -672,7 +672,7 @@ SoGLContext_getprocaddress(const SoGLContext * glue, const char * symname)
      find the function through the shared library. */
   ptr = cc_dl_sym(SoGLContext_dl_handle(glue), symname);
 
-#ifdef COIN3D_OSMESA_BUILD
+#if defined(COIN3D_OSMESA_BUILD) || defined(SOGL_PREFIX_SET)
   /* OSMesa uses MGL name mangling, so if the standard name lookup fails,
      try the MGL-mangled version by prefixing with "mgl" instead of "gl" */
   if (ptr == NULL && strncmp(symname, "gl", 2) == 0) {
@@ -4731,6 +4731,21 @@ SoGLContext_context_max_dimensions(unsigned int * width, unsigned int * height)
   }
 
   vendor = (const char *)glGetString(GL_VENDOR);
+  if (!vendor) {
+    /* glGetString(GL_VENDOR) returns NULL when no system GL context is current
+     * (e.g. an OSMesa context was made current but system GL has a separate
+     * context slot).  System glGetIntegerv(GL_MAX_VIEWPORT_DIMS) also has no
+     * current context in this scenario so size[] is unreliable.
+     * Provide a large default: OSMesa's size limit is RAM-only, so 16384 is
+     * safe and covers any reasonable offscreen rendering request. */
+    *width  = 16384;
+    *height = 16384;
+    dim[0]  = *width;
+    dim[1]  = *height;
+    SoGLContext_context_reinstate_previous(ctx);
+    SoGLContext_context_destruct(ctx);
+    return;
+  }
   if (strcmp(vendor, "NVIDIA Corporation") == 0) {
 
     /* NVIDIA seems to have a bug where max render size is limited

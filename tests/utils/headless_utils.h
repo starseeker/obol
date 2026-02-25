@@ -146,7 +146,11 @@ inline bool renderToFile(
 
 #elif defined(COIN3D_OSMESA_BUILD)
 // ============================================================================
-// OSMesa Backend: For offscreen/headless rendering without display server
+// OSMesa Backend: For offscreen/headless rendering without display server.
+// Used for pure-OSMesa builds only.  In COIN3D_BUILD_DUAL_GL builds the
+// Coin scene traversal still uses system GL symbols, so tests for that build
+// fall through to the system-GL / GLX path below (requires Xvfb).
+// Headers come from the project's own submodule (external/osmesa/include/OSMesa/)
 // ============================================================================
 #include <OSMesa/osmesa.h>
 #include <OSMesa/gl.h>
@@ -206,6 +210,15 @@ public:
     virtual void* createOffscreenContext(unsigned int width, unsigned int height) override {
         auto* ctx = new CoinOSMesaContext(width, height);
         return ctx->isValid() ? ctx : (delete ctx, nullptr);
+    }
+
+    virtual SbBool isOSMesaContext(void* /*context*/) override {
+        /* All contexts created by this manager are OSMesa contexts.
+         * Returning TRUE lets CoinOffscreenGLCanvas call
+         * coingl_register_osmesa_context() so that SoGLContext_instance()
+         * routes to the osmesa_ GL dispatch path instead of the system GL path
+         * (which would crash on NULL glGetString results). */
+        return TRUE;
     }
     
     virtual SbBool makeContextCurrent(void* context) override {

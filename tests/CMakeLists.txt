@@ -56,6 +56,11 @@ target_include_directories(simple_test_utils PUBLIC
     ${PROJECT_BINARY_DIR}/include
     ${COIN_TARGET_INCLUDE_DIRECTORIES}
 )
+# headless_utils.h needs the OSMesa submodule headers for pure osmesa builds
+if(COIN3D_USE_OSMESA)
+    target_include_directories(simple_test_utils PUBLIC
+        "${PROJECT_SOURCE_DIR}/external/osmesa/include")
+endif()
 
 # -----------------------------------------------------------------------
 # Existing top-level unit tests (SimpleTest framework)
@@ -134,54 +139,6 @@ if(USE_PTHREAD)
     target_link_libraries(obol_test pthread)
 endif()
 add_test(NAME obol_test_all COMMAND obol_test)
-
-# -----------------------------------------------------------------------
-# FLTK GUI viewer
-#
-# The new obol_viewer uses the dual-backend bridge architecture:
-#   - It loads libobol_bridge_sys.so and libobol_bridge_osmesa.so at
-#     runtime via dlopen(RTLD_LOCAL) so Coin C++ symbols in each bridge
-#     stay isolated.
-#   - At build time the viewer only links against FLTK and libdl.
-#   - The bridge .so files are built by the superbuild in
-#     tests/obol_superbuild/ (see that directory's CMakeLists.txt).
-#
-# When FLTK is available and COIN_BUILD_BRIDGE=ON, we also build a
-# single-backend viewer variant that links one bridge directly (useful
-# for quick iteration without the full superbuild).
-#
-# For the full dual-backend experience use:
-#   cd tests/obol_superbuild && cmake -B build && cmake --build build
-# -----------------------------------------------------------------------
-find_package(FLTK QUIET)
-if(FLTK_FOUND)
-    message(STATUS "FLTK found – building obol_viewer (bridge-based)")
-    add_executable(obol_viewer obol_viewer.cpp)
-    target_include_directories(obol_viewer PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
-        ${PROJECT_SOURCE_DIR}/src/bridge   # obol_bridge.h
-        ${FLTK_INCLUDE_DIR}
-    )
-    # Runtime-only: FLTK + libdl.  Bridge .so files loaded at runtime.
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        target_link_libraries(obol_viewer ${FLTK_LIBRARIES} dl)
-    else()
-        target_link_libraries(obol_viewer ${FLTK_LIBRARIES})
-    endif()
-    # Embed the build-time bridge output dir so the viewer can find .so files
-    # when run from the build tree.
-    if(TARGET obol_bridge_sys OR TARGET obol_bridge_osmesa)
-        target_compile_definitions(obol_viewer PRIVATE
-            OBOL_BRIDGE_DIR="${CMAKE_BINARY_DIR}/src/bridge")
-    endif()
-    if(USE_PTHREAD)
-        target_link_libraries(obol_viewer pthread)
-    endif()
-    message(STATUS "  Full dual-backend viewer: build tests/obol_superbuild/")
-else()
-    message(STATUS "FLTK not found – obol_viewer will not be built")
-    message(STATUS "  Install FLTK: sudo apt-get install libfltk1.3-dev")
-endif()
 
 # -----------------------------------------------------------------------
 # Subdirectory tests

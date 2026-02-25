@@ -21,6 +21,8 @@ if(DEFINED COIN3D_USE_OSMESA)
 else()
     set(RENDERING_USE_OSMESA OFF CACHE BOOL "Use OSMesa for rendering tests")
 endif()
+# Note: COIN3D_BUILD_DUAL_GL builds use system GL (GLX+Xvfb) for rendering
+# tests; the OSMesa layer is in the library but scene traversal uses system GL.
 
 if(RENDERING_USE_OSMESA)
     set(OSMESA_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/external/osmesa/include")
