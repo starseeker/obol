@@ -4731,6 +4731,15 @@ SoGLContext_context_max_dimensions(unsigned int * width, unsigned int * height)
   }
 
   vendor = (const char *)glGetString(GL_VENDOR);
+  if (!vendor) {
+    /* glGetString(GL_VENDOR) can return NULL when no system GL context is
+     * current (e.g. when only an OSMesa context is active in a dual-GL build).
+     * In that case skip the NVIDIA workaround; the size[] values from
+     * GL_MAX_VIEWPORT_DIMS are either zero (safe default) or already set. */
+    SoGLContext_context_reinstate_previous(ctx);
+    SoGLContext_context_destruct(ctx);
+    return;
+  }
   if (strcmp(vendor, "NVIDIA Corporation") == 0) {
 
     /* NVIDIA seems to have a bug where max render size is limited

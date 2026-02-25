@@ -83,7 +83,7 @@ endif()
 option(BUILD_SHARED_LIBS "Build shared library when ON, static when OFF" ON)
 option(COIN_BUILD_TESTS "Build unit tests" ON)
 option(COIN_BUILD_EXAMPLES "Build examples" OFF)
-option(COIN_BUILD_BRIDGE "Build the obol C bridge library (libobol_bridge_<suffix>.so) for the dual-backend viewer superbuild" OFF)
+option(COIN_BUILD_VIEWER "Build the FLTK scene viewer (obol_viewer); requires FLTK" OFF)
 
 # Compatibility alias for legacy code
 set(COIN_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
@@ -540,21 +540,57 @@ if(COIN_BUILD_EXAMPLES)
   add_subdirectory(examples)
 endif()
 
-if(COIN_BUILD_BRIDGE)
-  # Determine the bridge suffix from the backend so callers don't have to
-  # pass -DCOIN_BRIDGE_SUFFIX explicitly; they only need -DCOIN_BUILD_BRIDGE=ON.
-  # When -DCOIN_BRIDGE_SUFFIX=nanort is passed explicitly, that takes precedence.
-  if(NOT DEFINED COIN_BRIDGE_SUFFIX OR COIN_BRIDGE_SUFFIX STREQUAL "")
-    if(COIN3D_BUILD_DUAL_GL)
-      set(COIN_BRIDGE_SUFFIX "dual" CACHE STRING "" FORCE)
-    elseif(COIN3D_USE_OSMESA)
-      set(COIN_BRIDGE_SUFFIX "osmesa" CACHE STRING "" FORCE)
-    else()
-      set(COIN_BRIDGE_SUFFIX "sys" CACHE STRING "" FORCE)
-    endif()
+if(COIN_BUILD_VIEWER)
+  # ---- FLTK ----------------------------------------------------------------
+  find_package(FLTK REQUIRED)
+
+  # ---- Viewer executable ---------------------------------------------------
+  add_executable(obol_viewer tests/obol_viewer.cpp)
+
+  target_include_directories(obol_viewer PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+    ${PROJECT_BINARY_DIR}/include
+    ${PROJECT_SOURCE_DIR}/tests/utils     # headless_utils.h
+    ${COIN_TARGET_INCLUDE_DIRECTORIES}
+    ${FLTK_INCLUDE_DIRS}
+  )
+
+  # OSMesa submodule headers for headless_utils.h (dual or osmesa builds)
+  if(COIN3D_BUILD_DUAL_GL OR COIN3D_USE_OSMESA)
+    target_include_directories(obol_viewer PRIVATE
+      "${PROJECT_SOURCE_DIR}/external/osmesa/include")
   endif()
-  add_subdirectory(src/bridge)
-endif()
+
+  # Compile definitions matching the Coin library build
+  if(COIN3D_BUILD_DUAL_GL)
+    target_compile_definitions(obol_viewer PRIVATE COIN3D_BUILD_DUAL_GL)
+  elseif(COIN3D_USE_OSMESA)
+    target_compile_definitions(obol_viewer PRIVATE COIN3D_OSMESA_BUILD)
+  endif()
+
+  # Optional NanoRT panel: enabled when nanort.h is found in external/nanort/
+  if(EXISTS "${PROJECT_SOURCE_DIR}/external/nanort/nanort.h")
+    target_compile_definitions(obol_viewer PRIVATE OBOL_VIEWER_NANORT)
+    target_include_directories(obol_viewer PRIVATE
+      "${PROJECT_SOURCE_DIR}/external/nanort"
+      "${PROJECT_SOURCE_DIR}/tests/utils"   # nanort_context_manager.h
+    )
+    message(STATUS "obol_viewer: NanoRT panel enabled (external/nanort/nanort.h found)")
+  else()
+    message(STATUS "obol_viewer: NanoRT panel disabled (external/nanort/nanort.h not found)")
+  endif()
+
+  target_link_libraries(obol_viewer
+    PRIVATE
+      Coin
+      ${COIN_TARGET_LINK_LIBRARIES}
+      ${FLTK_LIBRARIES}
+      ${COIN_OSMESA_LIBRARIES}   # needed when headless_utils.h uses OSMesa directly
+  )
+
+  install(TARGETS obol_viewer RUNTIME DESTINATION bin)
+endif() # COIN_BUILD_VIEWER
 
 if(COIN_BUILD_TESTS)
   # Build libpng from the bundled submodule so that rgb_to_png and

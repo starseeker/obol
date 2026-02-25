@@ -144,9 +144,13 @@ inline bool renderToFile(
     return true;
 }
 
-#elif defined(COIN3D_OSMESA_BUILD)
+#elif defined(COIN3D_OSMESA_BUILD) || defined(COIN3D_BUILD_DUAL_GL)
 // ============================================================================
-// OSMesa Backend: For offscreen/headless rendering without display server
+// OSMesa Backend: For offscreen/headless rendering without display server.
+// Used for both pure-OSMesa builds (COIN3D_OSMESA_BUILD) and dual-GL builds
+// (COIN3D_BUILD_DUAL_GL) since the viewer renders to off-screen buffers.
+// Headers come from the project's own submodule (external/osmesa/include/OSMesa/)
+// which provides the name-mangled mgl* symbols required by dual-GL builds.
 // ============================================================================
 #include <OSMesa/osmesa.h>
 #include <OSMesa/gl.h>
