@@ -451,7 +451,7 @@ SoDB::init(ContextManager * context_manager)
   SoHUD::init();
 
   // Note: OSMesa context initialization has been moved to test applications
-  // Applications must provide context creation callbacks via cc_glglue_context_set_offscreen_cb_functions()
+  // Applications must provide context creation callbacks via SoGLContext_context_set_offscreen_cb_functions()
   // See examples/osmesa_example.h for reference implementation
 
   // Debugging for memory leaks will be easier if we can clean up the

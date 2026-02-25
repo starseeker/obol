@@ -48,7 +48,7 @@
 // major versions down the road. What we should do with it is to mark
 // it as obsolete, then refactor the functionality out of it,
 // preferably into a nice, *clean* little C API to complement the
-// stuff contained in cc_glglue_*(), then convert all internal code to
+// stuff contained in SoGLContext_*(), then convert all internal code to
 // use that instead.
 //
 // 20030312 mortene.
@@ -410,9 +410,9 @@ fast_mipmap(SoState * state, int width, int height, int nc,
             const unsigned char *data, const SbBool useglsubimage,
             SbBool compress)
 {
-  const cc_glglue * glw = sogl_glue_instance(state);
-  GLint internalFormat = coin_glglue_get_internal_texture_format(glw, nc, compress);
-  GLenum format = coin_glglue_get_texture_format(glw, nc);
+  const SoGLContext * glw = sogl_glue_instance(state);
+  GLint internalFormat = SoGLContext_get_internal_texture_format(glw, nc, compress);
+  GLenum format = SoGLContext_get_texture_format(glw, nc);
   int levels = compute_log(width);
   int level = compute_log(height);
   if (level > levels) levels = level;
@@ -422,7 +422,7 @@ fast_mipmap(SoState * state, int width, int height, int nc,
 
   if (useglsubimage) {
     if (SoGLDriverDatabase::isSupported(glw, SO_GL_TEXSUBIMAGE)) {
-      cc_glglue_glTexSubImage2D(glw, GL_TEXTURE_2D, 0, 0, 0,
+      SoGLContext_glTexSubImage2D(glw, GL_TEXTURE_2D, 0, 0, 0,
                                 width, height, format,
                                 GL_UNSIGNED_BYTE, data);
     }
@@ -439,7 +439,7 @@ fast_mipmap(SoState * state, int width, int height, int nc,
     src = mipmap_buffer;
     if (useglsubimage) {
       if (SoGLDriverDatabase::isSupported(glw, SO_GL_TEXSUBIMAGE)) {
-        cc_glglue_glTexSubImage2D(glw, GL_TEXTURE_2D, level, 0, 0,
+        SoGLContext_glTexSubImage2D(glw, GL_TEXTURE_2D, level, 0, 0,
                                   width, height, format,
                                   GL_UNSIGNED_BYTE, src);
       }
@@ -457,9 +457,9 @@ fast_mipmap(SoState * state, int width, int height, int depth,
             int nc, const unsigned char *data, const SbBool useglsubimage,
             SbBool compress)
 {
-  const cc_glglue * glw = sogl_glue_instance(state);
-  GLint internalFormat = coin_glglue_get_internal_texture_format(glw, nc, compress);
-  GLenum format = coin_glglue_get_texture_format(glw, nc);
+  const SoGLContext * glw = sogl_glue_instance(state);
+  GLint internalFormat = SoGLContext_get_internal_texture_format(glw, nc, compress);
+  GLenum format = SoGLContext_get_texture_format(glw, nc);
   int levels = compute_log(SbMax(SbMax(width, height), depth));
 
   int memreq = (SbMax(width>>1,1))*(SbMax(height>>1,1))*(SbMax(depth>>1,1))*nc;
@@ -468,14 +468,14 @@ fast_mipmap(SoState * state, int width, int height, int depth,
   // Send level 0 (original image) to OpenGL
   if (useglsubimage) {
     if (SoGLDriverDatabase::isSupported(glw, SO_GL_3D_TEXTURES)) {
-      cc_glglue_glTexSubImage3D(glw, GL_TEXTURE_3D, 0, 0, 0, 0,
+      SoGLContext_glTexSubImage3D(glw, GL_TEXTURE_3D, 0, 0, 0, 0,
                                 width, height, depth, format,
                                 GL_UNSIGNED_BYTE, data);
     }
   }
   else {
     if (SoGLDriverDatabase::isSupported(glw, SO_GL_3D_TEXTURES)) {
-      cc_glglue_glTexImage3D(glw, GL_TEXTURE_3D, 0, internalFormat,
+      SoGLContext_glTexImage3D(glw, GL_TEXTURE_3D, 0, internalFormat,
                              width, height, depth, 0, format,
                              GL_UNSIGNED_BYTE, data);
     }
@@ -489,14 +489,14 @@ fast_mipmap(SoState * state, int width, int height, int depth,
     src = mipmap_buffer;
     if (useglsubimage) {
       if (SoGLDriverDatabase::isSupported(glw, SO_GL_3D_TEXTURES)) {
-        cc_glglue_glTexSubImage3D(glw, GL_TEXTURE_3D, level, 0, 0, 0,
+        SoGLContext_glTexSubImage3D(glw, GL_TEXTURE_3D, level, 0, 0, 0,
                                   width, height, depth, format,
                                   GL_UNSIGNED_BYTE, src);
       }
     }
     else {
       if (SoGLDriverDatabase::isSupported(glw, SO_GL_3D_TEXTURES)) {
-        cc_glglue_glTexImage3D(glw, GL_TEXTURE_3D, level, internalFormat,
+        SoGLContext_glTexImage3D(glw, GL_TEXTURE_3D, level, internalFormat,
                                width, height, depth, 0, format,
                                GL_UNSIGNED_BYTE, src);
       }
@@ -892,7 +892,7 @@ SoGLImage::setPBuffer(SoState * state,
   if (PRIVATE(this)->pbuffer && state) {
     // bind texture before releasing pbuffer
     this->getGLDisplayList(state)->call(state);
-    cc_glglue_context_release_pbuffer(PRIVATE(this)->pbuffer);
+    SoGLContext_context_release_pbuffer(PRIVATE(this)->pbuffer);
   }
 
   if (PRIVATE(this)->isregistered) SoGLImage::unregisterImage(this);
@@ -999,8 +999,8 @@ SoGLImage::setData(const SbImage *image,
 
   // check for special case where glTexSubImage can be used.
   // faster for most drivers.
-  if (createinstate) { // We need the state for cc_glglue
-    const cc_glglue * glw = sogl_glue_instance(createinstate);
+  if (createinstate) { // We need the state for SoGLContext
+    const SoGLContext * glw = sogl_glue_instance(createinstate);
     SoGLDisplayList *dl = NULL;
 
     SbBool copyok =
@@ -1044,15 +1044,15 @@ SoGLImage::setData(const SbImage *image,
                       TRUE, compress);
       }
       else {
-        GLenum format = coin_glglue_get_texture_format(glw, nc);
+        GLenum format = SoGLContext_get_texture_format(glw, nc);
         if (is3D) {
-          cc_glglue_glTexSubImage3D(glw, GL_TEXTURE_3D, 0, 0, 0, 0,
+          SoGLContext_glTexSubImage3D(glw, GL_TEXTURE_3D, 0, 0, 0, 0,
                                     size[0], size[1], size[2],
                                     format, GL_UNSIGNED_BYTE,
                                     (void*) bytes);
         }
         else {
-          cc_glglue_glTexSubImage2D(glw, GL_TEXTURE_2D, 0, 0, 0,
+          SoGLContext_glTexSubImage2D(glw, GL_TEXTURE_2D, 0, 0, 0,
                                     size[0], size[1],
                                     format, GL_UNSIGNED_BYTE,
                                     (void*) bytes);
@@ -1368,7 +1368,7 @@ SoGLImageP::resizeImage(SoState * state, unsigned char *& imageptr,
 
 
   // downscale to legal GL size (implementation dependent)
-  const cc_glglue * glw = sogl_glue_instance(state);
+  const SoGLContext * glw = sogl_glue_instance(state);
   SbBool sizeok = FALSE;
 #if COIN_DEBUG
   uint32_t orgsize[3] = { newx, newy, newz };
@@ -1383,10 +1383,10 @@ SoGLImageP::resizeImage(SoState * state, unsigned char *& imageptr,
       sizeok = (newx <= maxrectsize) && (newy <= maxrectsize);
     }
     else {
-      GLenum internalformat = coin_glglue_get_internal_texture_format(glw, numcomponents, compressed);
-      GLenum format = coin_glglue_get_texture_format(glw, numcomponents);
+      GLenum internalformat = SoGLContext_get_internal_texture_format(glw, numcomponents, compressed);
+      GLenum format = SoGLContext_get_texture_format(glw, numcomponents);
 
-      sizeok = coin_glglue_is_texture_size_legal(glw, newx, newy, newz,
+      sizeok = SoGLContext_is_texture_size_legal(glw, newx, newy, newz,
                                                  internalformat,
                                                  format,
                                                  GL_UNSIGNED_BYTE,
@@ -1527,7 +1527,7 @@ SoGLImageP::createGLDisplayList(SoState *state)
   // these might change if image is resized
   unsigned char *imageptr = (unsigned char *) bytes;
 
-  const cc_glglue * glw = sogl_glue_instance(state);
+  const SoGLContext * glw = sogl_glue_instance(state);
   SbBool mipmap = this->shouldCreateMipmap();
 
   if (imageptr) {
@@ -1625,12 +1625,12 @@ translate_wrap(SoState *state, const SoGLImage::Wrap wrap)
   if (wrap == SoGLImage::CLAMP_TO_BORDER) return (GLenum) GL_CLAMP_TO_BORDER;
   if (COIN_ENABLE_CONFORMANT_GL_CLAMP) {
     if (wrap == SoGLImage::CLAMP_TO_EDGE) {
-      const cc_glglue * glw = sogl_glue_instance(state);
+      const SoGLContext * glw = sogl_glue_instance(state);
       if (SoGLDriverDatabase::isSupported(glw, SO_GL_TEXTURE_EDGE_CLAMP)) return (GLenum) GL_CLAMP_TO_EDGE;
     }
     return (GLenum) GL_CLAMP;
   }
-  const cc_glglue * glw = sogl_glue_instance(state);
+  const SoGLContext * glw = sogl_glue_instance(state);
   if (SoGLDriverDatabase::isSupported(glw, SO_GL_TEXTURE_EDGE_CLAMP)) return (GLenum) GL_CLAMP_TO_EDGE;
   return (GLenum) GL_CLAMP;
 }
@@ -1659,7 +1659,7 @@ SoGLImageP::reallyBindPBuffer(SoState * state)
 #endif // disabled
 
   this->applyFilter(mipmap);
-  cc_glglue_context_bind_pbuffer(this->pbuffer);
+  SoGLContext_context_bind_pbuffer(this->pbuffer);
 }
 
 void
@@ -1671,7 +1671,7 @@ SoGLImageP::reallyCreateTexture(SoState *state,
                                 const SbBool mipmap,
                                 const int border)
 {
-  const cc_glglue * glw = sogl_glue_instance(state);
+  const SoGLContext * glw = sogl_glue_instance(state);
   this->glsize = SbVec3s((short) w, (short) h, (short) d);
   this->glcomp = numComponents;
 
@@ -1679,12 +1679,12 @@ SoGLImageP::reallyCreateTexture(SoState *state,
     (this->flags & SoGLImage::COMPRESSED) &&
     SoGLDriverDatabase::isSupported(glw, SO_GL_TEXTURE_COMPRESSION);
   GLint internalFormat =
-    coin_glglue_get_internal_texture_format(glw, numComponents, compress);
-  GLenum dataFormat = coin_glglue_get_texture_format(glw, numComponents);
+    SoGLContext_get_internal_texture_format(glw, numComponents, compress);
+  GLenum dataFormat = SoGLContext_get_texture_format(glw, numComponents);
 
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-  //FIXME: Check cc_glglue capability as well? (kintel 20011129)
+  //FIXME: Check SoGLContext capability as well? (kintel 20011129)
   if (SoMultiTextureEnabledElement::getMode(state) == 
       SoMultiTextureEnabledElement::TEXTURE3D) { // 3D textures
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S,
@@ -1699,7 +1699,7 @@ SoGLImageP::reallyCreateTexture(SoState *state,
 
     if (!mipmap) {
       if (SoGLDriverDatabase::isSupported(glw, SO_GL_3D_TEXTURES)) {
-        cc_glglue_glTexImage3D(glw, GL_TEXTURE_3D, 0, internalFormat, w, h, d,
+        SoGLContext_glTexImage3D(glw, GL_TEXTURE_3D, 0, internalFormat, w, h, d,
                                border, dataFormat, GL_UNSIGNED_BYTE, texture);
       }
     }
@@ -1735,7 +1735,7 @@ SoGLImageP::reallyCreateTexture(SoState *state,
       mipmapimage = FALSE;
 #ifdef COIN3D_OSMESA_BUILD
       // WORKAROUND: Disable automatic mipmap generation for OSMesa to avoid memory bug
-      if (coin_glglue_debug()) {
+      if (SoGLContext_debug()) {
         SoDebugError::postInfo("SoGLImageP::reallyCreateTexture",
                                "Disabling GL_SGIS_generate_mipmap for OSMesa (RECTANGLE texture)");
       }
@@ -1752,7 +1752,7 @@ SoGLImageP::reallyCreateTexture(SoState *state,
     else if (mipmap && SoGLDriverDatabase::isSupported(glw, "GL_SGIS_generate_mipmap")) {
 #ifdef COIN3D_OSMESA_BUILD
       // WORKAROUND: Disable automatic mipmap generation for OSMesa to avoid memory bug
-      if (coin_glglue_debug()) {
+      if (SoGLContext_debug()) {
         SoDebugError::postInfo("SoGLImageP::reallyCreateTexture",
                                "Disabling GL_SGIS_generate_mipmap for OSMesa (regular texture)");
       }
@@ -1774,7 +1774,7 @@ SoGLImageP::reallyCreateTexture(SoState *state,
     if ((this->quality > COIN_TEX2_ANISOTROPIC_LIMIT) &&
         SoGLDriverDatabase::isSupported(glw, SO_GL_ANISOTROPIC_FILTERING)) {
       glTexParameterf(target, GL_TEXTURE_MAX_ANISOTROPY_EXT,
-                      cc_glglue_get_max_anisotropy(glw));
+                      SoGLContext_get_max_anisotropy(glw));
     }
     if (!mipmapimage) {
       // Create only level 0 texture. Mimpamps might be created by glGenerateMipmap
@@ -1787,7 +1787,7 @@ SoGLImageP::reallyCreateTexture(SoState *state,
         // OSMesa's _mesa_generate_mipmap() in mipmap.c:971 calls free() on non-malloc'd memory
         // This causes crashes when texture data is allocated by Coin3D's memory management.
         // See: https://github.com/starseeker/coin3d/issues/XXX
-        if (coin_glglue_debug()) {
+        if (SoGLContext_debug()) {
           SoDebugError::postInfo("SoGLImageP::reallyCreateTexture", 
                                  "Skipping mipmap generation for OSMesa (memory bug workaround)");
         }
@@ -1805,7 +1805,7 @@ SoGLImageP::reallyCreateTexture(SoState *state,
             glEnable(GL_TEXTURE_2D);
           }
         }
-        cc_glglue_glGenerateMipmap(glw, target);
+        SoGLContext_glGenerateMipmap(glw, target);
         if (!wasenabled) glDisable(GL_TEXTURE_2D);
 #endif // COIN3D_OSMESA_BUILD
       }
