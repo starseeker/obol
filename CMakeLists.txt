@@ -83,6 +83,7 @@ endif()
 option(BUILD_SHARED_LIBS "Build shared library when ON, static when OFF" ON)
 option(COIN_BUILD_TESTS "Build unit tests" ON)
 option(COIN_BUILD_EXAMPLES "Build examples" OFF)
+option(COIN_BUILD_BRIDGE "Build the obol C bridge library (libobol_bridge_<suffix>.so) for the dual-backend viewer superbuild" OFF)
 
 # Compatibility alias for legacy code
 set(COIN_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
@@ -463,6 +464,17 @@ add_subdirectory(src)
 
 if(COIN_BUILD_EXAMPLES)
   add_subdirectory(examples)
+endif()
+
+if(COIN_BUILD_BRIDGE)
+  # Determine the bridge suffix from the backend so callers don't have to
+  # pass -DCOIN_BRIDGE_SUFFIX explicitly; they only need -DCOIN_BUILD_BRIDGE=ON.
+  if(COIN3D_USE_OSMESA)
+    set(COIN_BRIDGE_SUFFIX "osmesa" CACHE STRING "" FORCE)
+  else()
+    set(COIN_BRIDGE_SUFFIX "sys" CACHE STRING "" FORCE)
+  endif()
+  add_subdirectory(src/bridge)
 endif()
 
 if(COIN_BUILD_TESTS)
