@@ -161,6 +161,22 @@ public:
      */
     virtual SbBool isOSMesaContext(void * /*context*/) { return FALSE; }
 
+    /**
+     * Report the maximum offscreen rendering dimensions supported by this
+     * backend.  CoinOffscreenGLCanvas calls this instead of probing the
+     * global GL pipeline so that per-instance managers (e.g. an OSMesa
+     * renderer living alongside a system-GL renderer) can declare the right
+     * limits for their backend.
+     *
+     * The default implementation returns {0,0}, which causes CoinOffscreenGLCanvas
+     * to fall back to its global GL-probing logic (the traditional behaviour for
+     * the global context manager).  An OSMesa implementation should return a
+     * large value (e.g. 16384 × 16384) since OSMesa is only RAM-limited.
+     */
+    virtual void maxOffscreenDimensions(unsigned int & width,
+                                        unsigned int & height) const
+    { width = 0; height = 0; }
+
     // --- Optional alternative rendering path -------------------------------
     // If this returns TRUE, SoOffscreenRenderer uses 'pixels' directly and
     // skips the GL pipeline.  'pixels' is a pre-allocated row-major buffer of
@@ -176,6 +192,34 @@ public:
   };
 
   static ContextManager * getContextManager(void);
+
+  /**
+   * Replace the active context manager at runtime without re-running
+   * SoDB initialisation.  Useful for temporarily switching to a different
+   * rendering backend (e.g. swapping between system GL and OSMesa) within
+   * the same process.  The caller is responsible for ensuring that no
+   * render is in progress when this is called.  Passing NULL is a no-op.
+   */
+  static void setContextManager(ContextManager * manager);
+
+  /**
+   * Create a new OSMesa-backed context manager.  Returns NULL when the
+   * library was not built with OSMesa support (i.e. COIN3D_OSMESA_BUILD
+   * and COIN3D_BUILD_DUAL_GL are both absent).
+   *
+   * The caller owns the returned object and is responsible for deleting it
+   * after all SoOffscreenRenderer instances that reference it have been
+   * destroyed.  A typical use is to store it in a std::unique_ptr:
+   *
+   *   auto mgr = std::unique_ptr<SoDB::ContextManager>(
+   *                   SoDB::createOSMesaContextManager());
+   *   if (mgr) renderer->setContextManager(mgr.get());
+   *
+   * This API lets applications use a dedicated OSMesa rendering backend
+   * per SoOffscreenRenderer instance without needing to include any
+   * OSMesa headers or link directly against the OSMesa library.
+   */
+  static ContextManager * createOSMesaContextManager();
 
 private:
   static SoGroup * readAllWrapper(SoInput * input, const SoType & grouptype);

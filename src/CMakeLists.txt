@@ -97,6 +97,17 @@ set(COIN_ADDITIONAL_HDRS
 
 # Create the main library target
 if(COIN_BUILD_SINGLE_LIB)
+    # In single-lib dual-GL builds, both gl_osmesa.cpp and SoDBOSMesa.cpp need
+    # the OSMesa include directories.  Apply them per-file so they don't pollute
+    # the rest of the build (system GL headers and OSMesa headers can conflict).
+    if(COIN3D_BUILD_DUAL_GL AND COIN_OSMESA_INCLUDE_DIRS)
+        foreach(_osmesa_src
+                "${CMAKE_CURRENT_SOURCE_DIR}/glue/gl_osmesa.cpp"
+                "${CMAKE_CURRENT_SOURCE_DIR}/misc/SoDBOSMesa.cpp")
+            set_source_files_properties(${_osmesa_src} PROPERTIES
+                INCLUDE_DIRECTORIES "${COIN_OSMESA_INCLUDE_DIRS}")
+        endforeach()
+    endif()
     add_library(${PROJECT_NAME} ${COIN_SOURCE} ${COIN_ADDITIONAL_HDRS})
 else()
     set(_coin_objects
@@ -134,6 +145,7 @@ else()
     )
     if(COIN3D_BUILD_DUAL_GL)
         list(APPEND _coin_objects $<TARGET_OBJECTS:glue_osmesa>)
+        list(APPEND _coin_objects $<TARGET_OBJECTS:misc_osmesa>)
     endif()
     add_library(${PROJECT_NAME} ${COIN_SOURCE} ${COIN_ADDITIONAL_HDRS} ${_coin_objects})
 endif()

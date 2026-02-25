@@ -559,6 +559,9 @@ if(COIN_BUILD_VIEWER)
   # Compile definitions matching the Coin library build
   if(COIN3D_BUILD_DUAL_GL)
     target_compile_definitions(obol_viewer PRIVATE COIN3D_BUILD_DUAL_GL)
+    # Dual-GL builds enable the OSMesa panel (OBOL_VIEWER_OSMESA_PANEL defined
+    # in obol_viewer.cpp when COIN3D_BUILD_DUAL_GL is set).  The panel uses
+    # SoDB::createOSMesaContextManager() – no direct OSMesa dependency needed.
   elseif(COIN3D_USE_OSMESA)
     # Pure-OSMesa build: headless_utils.h uses OSMesa context manager
     target_compile_definitions(obol_viewer PRIVATE COIN3D_OSMESA_BUILD)
