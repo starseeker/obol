@@ -223,6 +223,7 @@ add_nanort_rendering_test(render_materials)
 add_nanort_rendering_test(render_transforms)
 add_nanort_rendering_test(render_colored_cube)
 add_nanort_rendering_test(render_scene)
+add_nanort_rendering_test(render_rt_proxy_shapes)
 
 # ---- Standalone nanort demo (original, uses its own context manager) --------
 # render_nanort.cpp is the original proof-of-concept demo that builds its own

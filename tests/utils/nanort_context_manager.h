@@ -46,13 +46,19 @@
  *   - SoSeparator / SoGroup scene-graph structure
  *
  * Rendering features NOT supported (fall back to rendering nothing extra):
- *   - SoText2, SoText3 (no triangle callback – would need rasterisation)
- *   - SoLineSet, SoIndexedLineSet (no triangle geometry)
- *   - SoPointSet (no triangle geometry)
+ *   - SoText2 (screen-aligned 2D text; requires rasterisation;
+ *     use SoText2::getTextQuad() to obtain a bounding quad for the text)
  *   - Textures (texture images not applied)
  *   - SoGLRenderAction-specific effects (shadow maps, FBOs, GLSL shaders)
  *   - SoPath rendering (only SoNode* root is handled; SoPath falls through
  *     to GL unless an SoNode is available)
+ *
+ * Rendering features with proxy-geometry fallback:
+ *   - SoLineSet, SoIndexedLineSet – rendered as thin cylinders via
+ *     SoLineSet::createCylinderProxy() / SoIndexedLineSet::createCylinderProxy()
+ *   - SoPointSet – rendered as small spheres via SoPointSet::createSphereProxy()
+ *   - SoText3 – uses generatePrimitives() which produces extruded triangle
+ *     geometry directly; no extra work needed
  *
  * Dependencies:
  *   - nanort.h (external/nanort/nanort.h)
@@ -78,6 +84,17 @@
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
 #include <Inventor/nodes/SoShape.h>
+#include <Inventor/nodes/SoLineSet.h>
+#include <Inventor/nodes/SoIndexedLineSet.h>
+#include <Inventor/nodes/SoPointSet.h>
+#include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoMaterial.h>
+#include <Inventor/nodes/SoMatrixTransform.h>
+#include <Inventor/elements/SoCoordinateElement.h>
+#include <Inventor/elements/SoLineWidthElement.h>
+#include <Inventor/elements/SoPointSizeElement.h>
+#include <Inventor/elements/SoViewVolumeElement.h>
+#include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/SoPrimitiveVertex.h>
 #include <Inventor/SoPath.h>
 
@@ -151,6 +168,163 @@ static void nrtTriangleCB(void * userdata,
     tri.mat.shininess   = shininess;
 
     col->tris.push_back(tri);
+}
+
+// ==========================================================================
+// Proxy-geometry callbacks – fired for shape types that produce no triangles
+// ==========================================================================
+// These pre-callbacks intercept SoLineSet, SoIndexedLineSet and SoPointSet
+// nodes during SoCallbackAction traversal and substitute rendered proxy
+// geometry (cylinders for lines, spheres for points) so that ray-tracing
+// backends can visualise them.
+
+struct NrtProxyData {
+    NrtSceneCollector * collector;
+    SbViewportRegion    vp;
+};
+
+// Helper: wrap \a proxy in a separator that injects the current material and
+// model matrix from \a action, then collect its triangles into \a collector.
+static void nrtCollectProxy(SoCallbackAction * action,
+                            NrtProxyData * data,
+                            SoSeparator * proxy)
+{
+    // Transfer the material currently on the traversal state.
+    SbColor ambient, diffuse, specular, emission;
+    float   shininess, transparency;
+    action->getMaterial(ambient, diffuse, specular, emission,
+                        shininess, transparency, 0);
+
+    SoMaterial * mat = new SoMaterial;
+    mat->ambientColor .setValue(ambient);
+    mat->diffuseColor .setValue(diffuse);
+    mat->specularColor.setValue(specular);
+    mat->emissiveColor.setValue(emission);
+    mat->shininess    .setValue(shininess);
+    mat->transparency .setValue(transparency);
+
+    // Apply the current model matrix so the proxy ends up in world space.
+    SoMatrixTransform * mt = new SoMatrixTransform;
+    mt->matrix.setValue(action->getModelMatrix());
+
+    SoSeparator * wrapper = new SoSeparator;
+    wrapper->ref();
+    wrapper->addChild(mat);
+    wrapper->addChild(mt);
+    wrapper->addChild(proxy);
+
+    SoCallbackAction subCba(data->vp);
+    subCba.addTriangleCallback(SoShape::getClassTypeId(),
+                               nrtTriangleCB, data->collector);
+    subCba.apply(wrapper);
+
+    wrapper->unref();
+}
+
+// Compute the world-space radius for a line or point given the current state.
+static float nrtLineWorldRadius(SoCallbackAction * action,
+                                float sizePx,
+                                float viewportHeightPx)
+{
+    const SbViewVolume & vv =
+        SoViewVolumeElement::get(action->getState());
+    float worldHeight = vv.getHeight();
+    // For perspective cameras vv.getHeight() is the frustum height at the
+    // near plane, which is typically very small.  Scale to the viewing
+    // distance of the current object so that the proxy radius corresponds
+    // to sizePx pixels at that depth.
+    if (vv.getProjectionType() == SbViewVolume::PERSPECTIVE) {
+        const float nearDist = vv.getNearDist();
+        if (nearDist > 1e-6f) {
+            // Estimate the object's world-space position from the model
+            // matrix translation column, then measure its distance from
+            // the camera projection point.
+            const SbMatrix & mm = action->getModelMatrix();
+            const SbVec3f objPos(mm[3][0], mm[3][1], mm[3][2]);
+            const float dist = (objPos - vv.getProjectionPoint()).length();
+            const float refDist = (dist > nearDist) ? dist : nearDist;
+            worldHeight = worldHeight * refDist / nearDist;
+        }
+    }
+    return sizePx * worldHeight / viewportHeightPx * 0.5f;
+}
+
+static SoCallbackAction::Response
+nrtLineSetPreCB(void * ud, SoCallbackAction * action, const SoNode * node)
+{
+    NrtProxyData * data = static_cast<NrtProxyData *>(ud);
+    const SoLineSet * ls = static_cast<const SoLineSet *>(node);
+
+    const SoCoordinateElement * coords =
+        SoCoordinateElement::getInstance(action->getState());
+    if (!coords || coords->getNum() == 0)
+        return SoCallbackAction::CONTINUE;
+
+    // SoLineWidthElement default is 0 (meaning "use GL default of 1px")
+    float lineW = SoLineWidthElement::get(action->getState());
+    if (lineW <= 0.0f) lineW = 1.0f;
+    const float vpH    = static_cast<float>(
+        data->vp.getViewportSizePixels()[1]);
+    const float radius = nrtLineWorldRadius(action, lineW, vpH);
+
+    SoSeparator * proxy = ls->createCylinderProxy(coords, radius);
+    proxy->ref();
+    nrtCollectProxy(action, data, proxy);
+    proxy->unref();
+
+    return SoCallbackAction::PRUNE;
+}
+
+static SoCallbackAction::Response
+nrtIndexedLineSetPreCB(void * ud, SoCallbackAction * action, const SoNode * node)
+{
+    NrtProxyData * data = static_cast<NrtProxyData *>(ud);
+    const SoIndexedLineSet * ils =
+        static_cast<const SoIndexedLineSet *>(node);
+
+    const SoCoordinateElement * coords =
+        SoCoordinateElement::getInstance(action->getState());
+    if (!coords || coords->getNum() == 0)
+        return SoCallbackAction::CONTINUE;
+
+    float lineW = SoLineWidthElement::get(action->getState());
+    if (lineW <= 0.0f) lineW = 1.0f;
+    const float vpH    = static_cast<float>(
+        data->vp.getViewportSizePixels()[1]);
+    const float radius = nrtLineWorldRadius(action, lineW, vpH);
+
+    SoSeparator * proxy = ils->createCylinderProxy(coords, radius);
+    proxy->ref();
+    nrtCollectProxy(action, data, proxy);
+    proxy->unref();
+
+    return SoCallbackAction::PRUNE;
+}
+
+static SoCallbackAction::Response
+nrtPointSetPreCB(void * ud, SoCallbackAction * action, const SoNode * node)
+{
+    NrtProxyData * data = static_cast<NrtProxyData *>(ud);
+    const SoPointSet * ps = static_cast<const SoPointSet *>(node);
+
+    const SoCoordinateElement * coords =
+        SoCoordinateElement::getInstance(action->getState());
+    if (!coords || coords->getNum() == 0)
+        return SoCallbackAction::CONTINUE;
+
+    // SoPointSizeElement default is 0 (meaning "use GL default of 1px")
+    float ptSz = SoPointSizeElement::get(action->getState());
+    if (ptSz <= 0.0f) ptSz = 1.0f;
+    const float vpH    = static_cast<float>(
+        data->vp.getViewportSizePixels()[1]);
+    const float radius = nrtLineWorldRadius(action, ptSz, vpH);
+
+    SoSeparator * proxy = ps->createSphereProxy(coords, radius);
+    proxy->ref();
+    nrtCollectProxy(action, data, proxy);
+    proxy->unref();
+
+    return SoCallbackAction::PRUNE;
 }
 
 // ==========================================================================
@@ -272,9 +446,19 @@ public:
         // --- 1. Extract triangles via SoCallbackAction ----------------------
         NrtSceneCollector collector;
         {
+            NrtProxyData proxyData;
+            proxyData.collector = &collector;
+            proxyData.vp        = vp;
+
             SoCallbackAction cba(vp);
             cba.addTriangleCallback(SoShape::getClassTypeId(),
                                     nrtTriangleCB, &collector);
+            cba.addPreCallback(SoLineSet::getClassTypeId(),
+                               nrtLineSetPreCB, &proxyData);
+            cba.addPreCallback(SoIndexedLineSet::getClassTypeId(),
+                               nrtIndexedLineSetPreCB, &proxyData);
+            cba.addPreCallback(SoPointSet::getClassTypeId(),
+                               nrtPointSetPreCB, &proxyData);
             cba.apply(scene);
         }
         if (collector.tris.empty()) {
