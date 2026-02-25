@@ -53,9 +53,7 @@
 
 #include "config.h"
 
-#ifdef HAVE_TIME_H
 #include <ctime> // struct timeval (Linux)
-#endif // HAVE_TIME_H
 
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h> // struct timeval (IRIX)
@@ -69,7 +67,6 @@
 #include "C/CoinTidbits.h"
 #include "misc/CoinUtilities.h"
 #include <thread>
-#include <chrono>
 #include <chrono>
 
 

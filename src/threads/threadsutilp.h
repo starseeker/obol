@@ -39,11 +39,11 @@
 
 #include "config.h"
 
-#ifdef HAVE_THREADS
-
 // Threading migration: Global locking replaced with no-ops since C++17 migration eliminated 
 // the need for global locks with properly designed modern threading primitives
 // The original CC_GLOBAL_LOCK/CC_GLOBAL_UNLOCK are now no-ops to maintain compatibility
+//
+// TODO - we don't need to maintain compatibility - remove these and this header
 
 #define CC_MUTEX_CONSTRUCT(_mymutex_)  do { } while (0)
 #define CC_MUTEX_DESTRUCT(_mymutex_)  do { } while (0)
@@ -53,18 +53,5 @@
 #define CC_SYNC_END(_myid_)  do { } while (0)
 #define CC_GLOBAL_LOCK  do { } while (0)
 #define CC_GLOBAL_UNLOCK  do { } while (0)
-
-#else /* ! HAVE_THREADS */
-
-#define CC_MUTEX_CONSTRUCT(_mymutex_)  do { } while (0)
-#define CC_MUTEX_DESTRUCT(_mymutex_)  do { } while (0)
-#define CC_MUTEX_LOCK(_mymutex_)  do { } while (0)
-#define CC_MUTEX_UNLOCK(_mymutex_)  do { } while (0)
-#define CC_SYNC_BEGIN(_myid_)  do { } while (0)
-#define CC_SYNC_END(_myid_)  do { } while (0)
-#define CC_GLOBAL_LOCK  do { } while (0)
-#define CC_GLOBAL_UNLOCK  do { } while (0)
-
-#endif /* ! HAVE_THREADS */
 
 #endif /* CC_THREADUTILP_H */

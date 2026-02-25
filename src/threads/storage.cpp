@@ -60,16 +60,6 @@
 #include <cstdlib>
 #include <cassert>
 
-
-/* FIXME: instead of doing all the HAVE_THREADS wrapping in the code
-   of this file, perhaps it would be cleaner to make the cc_thread and
-   cc_mutex interfaces *working*, dummy skeletons when no thread
-   abstractions are available?  20040615 mortene. */
-#ifdef HAVE_THREADS
-
-
-#endif /* HAVE_THREADS */
-
 #include "threads/storagep.h"
 #include "threads/storage_cxx17.h"
 

@@ -89,7 +89,6 @@
 
 /*
  FIXME:
- - copy struct malloc/free/init/clean setup scheme from cc_string
  - use static table of cc_thread structures?
  - use cc_storage to reference self-structure for cc_thread_get_self()?
 */
