@@ -25,6 +25,7 @@ include_directories(BEFORE
   "${PROJECT_SOURCE_DIR}/include"
   "${CMAKE_CURRENT_BINARY_DIR}"
   "${CMAKE_CURRENT_SOURCE_DIR}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/misc"
   "${PROJECT_SOURCE_DIR}/include/Inventor/annex"
   "${PROJECT_BINARY_DIR}/src/shadows"
   "${PROJECT_SOURCE_DIR}"
@@ -71,7 +72,7 @@ if(COIN_USE_PRECOMPILED_HEADERS AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
     foreach(_subdir ${COIN_SUBDIRS})
         if(TARGET ${_subdir})
             target_precompile_headers(${_subdir} PRIVATE
-                "${CMAKE_CURRENT_SOURCE_DIR}/CoinPCH.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/misc/CoinPCH.h"
             )
         endif()
     endforeach()
@@ -154,7 +155,7 @@ endif()
 if(COIN_USE_PRECOMPILED_HEADERS AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
     message(STATUS "Enabling precompiled headers for faster compilation")
     target_precompile_headers(${PROJECT_NAME} PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/CoinPCH.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/misc/CoinPCH.h"
     )
 elseif(COIN_USE_PRECOMPILED_HEADERS)
     message(WARNING "Precompiled headers requested but require CMake 3.16+. Current version: ${CMAKE_VERSION}")
@@ -177,6 +178,7 @@ target_include_directories(${PROJECT_NAME}
         "${PROJECT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_BINARY_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/misc"
         "${PROJECT_SOURCE_DIR}/include/Inventor/annex"
         "${PROJECT_BINARY_DIR}/src/shadows"
         ${COIN_TARGET_INCLUDE_DIRECTORIES}
