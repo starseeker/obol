@@ -1182,7 +1182,9 @@ SoDB::readAllWrapper(SoInput * in, const SoType & grouptype)
     return NULL;
   }
 
+#ifndef NDEBUG
   const int stackdepth = in->filestack.getLength();
+#endif
 
   SoGroup * root = (SoGroup *)grouptype.createInstance();
   SoNode * topnode;
@@ -1235,8 +1237,10 @@ SoDB::readAllWrapper(SoInput * in, const SoType & grouptype)
                  // the stack
 
   // Detect problems with missing pops from the SoInput file stack.
+#ifndef NDEBUG
   assert((stackdepth == 1 && in->filestack.getLength() == 1) ||
          (stackdepth - 1 == in->filestack.getLength()));
+#endif
 
   // Strip off extra root group node if it was unnecessary (i.e. if
   // the file only had a single top-level root, and it was of the same
@@ -1556,7 +1560,7 @@ SoDB::createRoute(SoNode * fromnode, const char * eventout,
       }
     }
 
-    SbBool ok;
+    [[maybe_unused]] SbBool ok;
     if (from) ok = to->connectFrom(from, notnotify, append);
     else ok = to->connectFrom(output, notnotify, append);
     // Both known possible failure points are caught above.

@@ -864,7 +864,7 @@ SoProto::createInstanceRoot(SoProtoInstance * inst) const
           }
         }
 
-        SbBool ok;
+        [[maybe_unused]] SbBool ok;
         if (from) ok = to->connectFrom(from, notnotify, append);
         else ok = to->connectFrom(output, notnotify, append);
         // Both known possible failure points are caught above.

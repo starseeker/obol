@@ -87,7 +87,7 @@ typedef struct {
 static SbList <so_glext_info *> * extsupportlist;
 static SbList <SoGLDisplayList*> * scheduledeletelist;
 static SbList <so_scheduledeletecb_info*> * scheduledeletecblist;
-static void * glcache_mutex;
+[[maybe_unused]] static void * glcache_mutex;
 
 // needed to be able to remove the callback in the cleanup function
 // (SoGLCacheContextElement::cleanupContext() is private)
