@@ -102,9 +102,10 @@
 #include "headless_utils.h"
 
 /* ---- Optional OSMesa panel: only available in dual-GL builds ----------- */
+/* SoDB::createOSMesaContextManager() provides the OSMesa backend without   */
+/* requiring the viewer to include any OSMesa headers directly.             */
 #ifdef COIN3D_BUILD_DUAL_GL
 #  define OBOL_VIEWER_OSMESA_PANEL
-#  include "osmesa_context_manager.h"
 #endif
 
 /* ---- Optional NanoRT application-supplied renderer ---- */
@@ -872,12 +873,14 @@ private:
 /* =========================================================================
  * OSMesaPanel  –  OSMesa offscreen rendering panel (dual-GL builds only)
  *
- * Renders the same scene graph as CoinPanel but via a dedicated
- * SoOffscreenRenderer whose context manager is set to CoinOSMesaContextManager.
- * This is completely independent of the global context manager singleton:
+ * Renders the same scene graph as CoinPanel but through a dedicated
+ * SoOffscreenRenderer whose context manager is an OSMesa backend obtained
+ * from SoDB::createOSMesaContextManager().  No OSMesa headers are needed
+ * here – all OSMesa details are encapsulated inside the Obol library.
+ *
  * SoOffscreenRenderer::setContextManager() pins the OSMesa backend to this
- * specific renderer instance, so system-GL and OSMesa renders can coexist
- * in the same process without any global state mutation.
+ * specific renderer instance, so system-GL and OSMesa renders coexist in
+ * the same process without any global state mutation.
  * ======================================================================= */
 #ifdef OBOL_VIEWER_OSMESA_PANEL
 class OSMesaPanel : public Fl_Box {
@@ -898,13 +901,21 @@ public:
         box(FL_FLAT_BOX);
         color(FL_BLACK);
 
+        /* Obtain an OSMesa-backed context manager from Obol.  No OSMesa
+         * headers are needed here – the library handles the details. */
+        osmesa_mgr_.reset(SoDB::createOSMesaContextManager());
+
         SbViewportRegion vp(W, H);
         renderer_.reset(new SoOffscreenRenderer(vp));
         renderer_->setComponents(SoOffscreenRenderer::RGB_TRANSPARENCY);
         renderer_->setBackgroundColor(SbColor(0.15f, 0.15f, 0.2f));
-        /* Pin this renderer to the OSMesa backend – completely independent
-         * of the global context manager used by CoinPanel. */
-        renderer_->setContextManager(&osmesa_mgr_);
+        if (osmesa_mgr_) {
+            /* Pin this renderer to the OSMesa backend – completely independent
+             * of the global context manager used by CoinPanel. */
+            renderer_->setContextManager(osmesa_mgr_.get());
+        } else {
+            status_text = "OSMesa not available in this build";
+        }
     }
 
     ~OSMesaPanel() { delete fltk_img; }
@@ -1043,8 +1054,10 @@ public:
     }
 
 private:
-    CoinOSMesaContextManager           osmesa_mgr_;
-    std::unique_ptr<SoOffscreenRenderer> renderer_;
+    /* The OSMesa context manager is created via SoDB::createOSMesaContextManager()
+     * – no OSMesa headers needed in this file. */
+    std::unique_ptr<SoDB::ContextManager>  osmesa_mgr_;
+    std::unique_ptr<SoOffscreenRenderer>   renderer_;
 
     void notifyCameraChanged() { if (on_camera_changed) on_camera_changed(this); }
 };

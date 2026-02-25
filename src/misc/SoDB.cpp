@@ -1668,5 +1668,27 @@ extern "C" {
   }
 }
 
+/* -----------------------------------------------------------------------
+ * SoDB::createOSMesaContextManager() factory
+ *
+ * The actual implementation lives in SoDBOSMesa.cpp which is compiled with
+ * the OSMesa include paths.  In OSMesa-capable builds that TU exports the
+ * C helper coin_create_osmesa_context_manager_impl(); we forward to it.
+ * In builds without OSMesa support the function returns nullptr.
+ * --------------------------------------------------------------------- */
+#if defined(COIN3D_OSMESA_BUILD) || defined(COIN3D_BUILD_DUAL_GL)
+extern "C" SoDB::ContextManager * coin_create_osmesa_context_manager_impl();
+#endif
+
+SoDB::ContextManager *
+SoDB::createOSMesaContextManager()
+{
+#if defined(COIN3D_OSMESA_BUILD) || defined(COIN3D_BUILD_DUAL_GL)
+  return coin_create_osmesa_context_manager_impl();
+#else
+  return nullptr;
+#endif
+}
+
 /* *********************************************************************** */
 

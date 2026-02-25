@@ -186,6 +186,25 @@ public:
    */
   static void setContextManager(ContextManager * manager);
 
+  /**
+   * Create a new OSMesa-backed context manager.  Returns NULL when the
+   * library was not built with OSMesa support (i.e. COIN3D_OSMESA_BUILD
+   * and COIN3D_BUILD_DUAL_GL are both absent).
+   *
+   * The caller owns the returned object and is responsible for deleting it
+   * after all SoOffscreenRenderer instances that reference it have been
+   * destroyed.  A typical use is to store it in a std::unique_ptr:
+   *
+   *   auto mgr = std::unique_ptr<SoDB::ContextManager>(
+   *                   SoDB::createOSMesaContextManager());
+   *   if (mgr) renderer->setContextManager(mgr.get());
+   *
+   * This API lets applications use a dedicated OSMesa rendering backend
+   * per SoOffscreenRenderer instance without needing to include any
+   * OSMesa headers or link directly against the OSMesa library.
+   */
+  static ContextManager * createOSMesaContextManager();
+
 private:
   static SoGroup * readAllWrapper(SoInput * input, const SoType & grouptype);
 };
