@@ -138,32 +138,4 @@ To coin_assert_cast(ScXMLObject * ptr) { return coin_internal_assert_cast<To>(pt
 template<typename To>
 To coin_assert_cast(const ScXMLObject * ptr) { return coin_internal_assert_cast<To>(ptr); }
 
-//FIXME Should we remove this? - BFG 20080801
-//Strictly for internal use, until we know exactly how to handle these
-template <typename To>
-To
-reclassify_cast(SoPath * ptr) {
-  return reinterpret_cast<To>(ptr);
-}
-template <typename To>
-To
-reclassify_cast(const SoPath * ptr) {
-  return reinterpret_cast<To>(ptr);
-}
-
-//NOTE: function_to_object_cast is technically non-standard C++, but all
-//C++17 compilers support reinterpret_cast for this purpose.
-template <typename To, typename From>
-To
-function_to_object_cast(From ptr) {
-  return reinterpret_cast<To>(ptr);
-}
-
-//Casting the other way of function_to_object_cast, implemented by
-//calling function_to_object_cast.
-template <typename To, typename From>
-To
-object_to_function_cast(From obj) {
-  return function_to_object_cast<To>(obj);
-}
 #endif // !COIN_SBBASICP_H

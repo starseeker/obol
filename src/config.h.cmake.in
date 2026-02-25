@@ -5,8 +5,22 @@
 #error this is a private header file
 #endif
 
-#include <setup.h>
+/* =========================================================================
+ * Feature toggles (previously in setup.h)
+ * These control which optional subsystems are compiled into the library.
+ * ========================================================================= */
 
+#cmakedefine HAVE_NODEKITS
+#cmakedefine HAVE_DRAGGERS
+#cmakedefine HAVE_MANIPULATORS
+#cmakedefine HAVE_SOUND
+#cmakedefine COIN_THREADSAFE
+#cmakedefine HAVE_3DS_IMPORT_CAPABILITIES
+#cmakedefine COIN_HAVE_JAVASCRIPT
+
+/* =========================================================================
+ * Auto-detected platform / compiler settings
+ * ========================================================================= */
 
 /* define this to the libCoin beta version letter */
 #define COIN_BETA_VERSION @COIN_BETA_VERSION@
