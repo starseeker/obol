@@ -179,10 +179,8 @@ SoGLLightIdElement::getMaxGLSources(void)
   GLint val;
   glGetIntegerv(GL_MAX_LIGHTS, &val);
 
-  GLenum err = sogl_glerror_debugging() ? glGetError() : GL_NO_ERROR;
-  assert(err == GL_NO_ERROR &&
+  assert((!sogl_glerror_debugging() || glGetError() == GL_NO_ERROR) &&
          "GL error when calling glGetInteger() -- no current GL context?");
-  (void)err;
 
   return (int32_t)val;
 }

@@ -552,9 +552,6 @@ SoVectorizeActionP::pre_text2_cb(void * userdata,
   if (nilpoint[2] < 0.0f || nilpoint[2] > 1.0f) 
     return SoCallbackAction::CONTINUE;;
 
-  const SbViewportRegion & vp = SoViewportRegionElement::get(state);
-  (void)vp;
-
   SbName fontname = SoFontNameElement::get(state);
   float fontsize = SoFontSizeElement::get(state); // in pixels
 

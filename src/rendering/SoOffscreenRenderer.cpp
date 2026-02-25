@@ -887,13 +887,11 @@ SoOffscreenRendererP::renderFromBase(SoBase * base)
 
           FILE * f = fopen(s.getString(), "wb");
 		  if (f) {
-            SbBool w = SoOffscreenRendererP::writeToRGB(f, fullsize[0], fullsize[1],
+            [[maybe_unused]] SbBool w = SoOffscreenRendererP::writeToRGB(f, fullsize[0], fullsize[1],
                                                         nrcomp, this->buffer);
             assert(w);
-            (void)w;
-            const int r = fclose(f);
+            [[maybe_unused]] const int r = fclose(f);
             assert(r == 0);
-            (void)r;
 		  }
         }
       }
@@ -1117,9 +1115,8 @@ SoOffscreenRendererP::writeToRGB(FILE * fp, unsigned int w, unsigned int h,
   (void)memset(buf, 0, BUFSIZE);
   buf[7] = 255; // set maximum pixel value to 255
   strcpy((char *)buf+8, "https://github.com/coin3d/");
-  const size_t wrote = fwrite(buf, 1, BUFSIZE, fp);
+  [[maybe_unused]] const size_t wrote = fwrite(buf, 1, BUFSIZE, fp);
   assert(wrote == BUFSIZE);
-  (void)wrote;
 
   unsigned char * tmpbuf = new unsigned char[w];
 

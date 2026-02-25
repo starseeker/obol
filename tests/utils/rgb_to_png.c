@@ -84,8 +84,7 @@ int main(int argc, char **argv) {
     unsigned short magic   = read_be_u16(fp_in);
     unsigned char  storage = (unsigned char)fgetc(fp_in); /* 0=verbatim, 1=RLE */
     unsigned char  bpc     = (unsigned char)fgetc(fp_in); /* bytes per channel */
-    unsigned short dim     = read_be_u16(fp_in);
-    (void)dim;
+    read_be_u16(fp_in); /* dimension field - not used */
     unsigned short xsize   = read_be_u16(fp_in);          /* width */
     unsigned short ysize   = read_be_u16(fp_in);          /* height */
     unsigned short zsize   = read_be_u16(fp_in);          /* channels */
