@@ -68,7 +68,7 @@
 #include <Inventor/nodes/SoTranslation.h>
 #include <Inventor/nodes/SoVertexProperty.h>
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 
 struct TextureImageData {
   int width;

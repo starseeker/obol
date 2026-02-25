@@ -158,7 +158,7 @@
 #include "config.h"
 
 #include "glue/glp.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include <Inventor/SbImage.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>

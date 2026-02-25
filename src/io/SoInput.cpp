@@ -110,7 +110,7 @@
 
 #include <Inventor/SoInput.h>
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include <Inventor/SbName.h>
 #include <Inventor/SoDB.h>
 #include <Inventor/errors/SoDebugError.h>

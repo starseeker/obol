@@ -85,7 +85,7 @@
 #include "config.h"
 
 #include "glue/glp.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include <Inventor/SbBox2s.h>
 #include <Inventor/SbBox3f.h>
 #include <Inventor/SbMatrix.h>

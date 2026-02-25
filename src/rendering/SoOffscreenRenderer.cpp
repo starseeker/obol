@@ -316,7 +316,7 @@
 #include <climits> // SHRT_MAX
 
 #include "glue/glp.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include <Inventor/SoDB.h>
 #include <Inventor/SbMatrix.h>
 #include <Inventor/SbVec2f.h>

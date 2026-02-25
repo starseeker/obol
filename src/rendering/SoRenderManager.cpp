@@ -83,7 +83,7 @@
 #include <Inventor/SoDB.h>
 
 #include "config.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 
 
 /* Legacy MSVC6 workaround removed - not needed for C++17 */

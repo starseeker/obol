@@ -64,7 +64,7 @@
 #endif // HAVE_WINDOWS_H
 
 #include <Inventor/errors/SoDebugError.h>
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "misc/CoinUtilities.h"
 #include <thread>
 #include <chrono>

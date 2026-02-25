@@ -53,7 +53,7 @@
 #include <Inventor/misc/SoContextHandler.h>
 #include <Inventor/system/gl.h>
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "glue/glp.h"
 #include "rendering/SoGL.h"
 

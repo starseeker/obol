@@ -83,7 +83,7 @@
 #include <windows.h>
 #endif // HAVE_WINDOWS_H
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/SbName.h>
 #include <Inventor/SbString.h>

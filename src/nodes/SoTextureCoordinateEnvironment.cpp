@@ -85,7 +85,7 @@
 #include <Inventor/system/gl.h>
 #include "glue/glp.h"
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "nodes/SoSubNodeP.h"
 
 // *************************************************************************

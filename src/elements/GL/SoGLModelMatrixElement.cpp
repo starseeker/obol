@@ -47,7 +47,7 @@
 #include "config.h"
 
 #include <Inventor/system/gl.h>
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 
 #include "misc/SoEnvironment.h"
 

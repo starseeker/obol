@@ -45,7 +45,7 @@
 
 #include <Inventor/errors/SoDebugError.h>
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "config.h" // COIN_OBSOLETED()
 
 /*!

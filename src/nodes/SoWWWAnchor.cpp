@@ -82,7 +82,7 @@
 
 #include "nodes/SoSubNodeP.h"
 #include "config.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 
 
 /*!

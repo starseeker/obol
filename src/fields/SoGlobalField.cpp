@@ -64,7 +64,7 @@
 #include <Inventor/lists/SoBaseList.h>
 
 #include "config.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "SbBasicP.h"
 
 // *************************************************************************

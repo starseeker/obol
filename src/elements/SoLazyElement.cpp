@@ -67,7 +67,7 @@
 */
 
 #include "config.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "SbBasicP.h"
 
 #include <Inventor/elements/SoLazyElement.h>

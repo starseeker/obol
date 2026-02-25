@@ -80,7 +80,7 @@
 
 #include <cstdlib>
 
-#include "../C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include <Inventor/SoDB.h>
 #include <Inventor/SoInput.h>
 #include <Inventor/actions/SoSearchAction.h>
@@ -94,7 +94,7 @@
 #include <Inventor/nodes/SoText2.h>
 #include <Inventor/sensors/SoFieldSensor.h>
 
-#include "../C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "nodekits/SoSubKitP.h"
 
 /*!

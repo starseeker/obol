@@ -151,7 +151,7 @@
 #endif // COIN_MACOS_10
 
 #include "errors/CoinInternalError.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include <Inventor/system/gl.h> /* for glGetString */
 #include <Inventor/SbString.h>
 

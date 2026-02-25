@@ -37,7 +37,7 @@
 #include <cstdio>
 #include <cstring>
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "errors/CoinInternalError.h"
 
 

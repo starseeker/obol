@@ -39,7 +39,7 @@
 #include <functional>
 
 #include "threads/threadsutilp.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "config.h"
 
 // Simple, reliable string hash function  

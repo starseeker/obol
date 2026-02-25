@@ -87,7 +87,7 @@
 #include <Inventor/lists/SbList.h>
 
 #include "config.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 
 #ifndef COIN_WORKAROUND_NO_USING_STD_FUNCS
 using std::strcmp;
