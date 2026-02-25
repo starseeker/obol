@@ -150,7 +150,22 @@ static void bridge_init_coin() {
     SoInteraction::init();
 }
 
+#elif defined(COIN3D_NANORT_BUILD) /* NanoRT CPU raytracing backend ---------- */
+
+/* nanort_context_manager.h ships in tests/utils/ and in external/nanort/.
+ * The bridge CMakeLists adds both directories to the include path when
+ * COIN3D_NANORT_BUILD is defined. */
+#include "nanort_context_manager.h"
+
+static void bridge_init_coin() {
+    static SoNanoRTContextManager mgr;
+    SoDB::init(&mgr);
+    SoNodeKit::init();
+    SoInteraction::init();
+}
+
 #else /* System OpenGL / GLX ------------------------------------------------ */
+
 #  ifdef __unix__
 #    include <X11/Xlib.h>
 #    include <GL/glx.h>
@@ -305,7 +320,7 @@ static void bridge_init_coin() {
     SoNodeKit::init();
     SoInteraction::init();
 }
-#endif /* COIN3D_OSMESA_BUILD */
+#endif /* COIN3D_OSMESA_BUILD / COIN3D_NANORT_BUILD / system GL */
 
 /* =========================================================================
  * Scene factories
@@ -677,6 +692,8 @@ OBOL_EXPORT int obol_init(void) {
 OBOL_EXPORT const char* obol_backend_name(void) {
 #ifdef COIN3D_OSMESA_BUILD
     return "OSMesa (headless)";
+#elif defined(COIN3D_NANORT_BUILD)
+    return "NanoRT (raytracing)";
 #else
     return "OpenGL/GLX (system)";
 #endif

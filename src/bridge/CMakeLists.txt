@@ -31,17 +31,23 @@ cmake_minimum_required(VERSION 3.16)
 # ---- Options ----------------------------------------------------------------
 
 set(COIN_BRIDGE_SUFFIX "sys" CACHE STRING
-    "Bridge library suffix (sys | osmesa).  Set by the top-level project.")
+    "Bridge library suffix (sys | osmesa | nanort).  Set by the top-level project.")
 
 set(COIN_BRIDGE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}" CACHE PATH
     "Directory where the bridge .so will be placed.")
 
-# ---- OSMesa detection -------------------------------------------------------
+# ---- Backend detection -------------------------------------------------------
 
 if(DEFINED COIN3D_USE_OSMESA AND COIN3D_USE_OSMESA)
     set(_bridge_osmesa TRUE)
 else()
     set(_bridge_osmesa FALSE)
+endif()
+
+if(COIN_BRIDGE_SUFFIX STREQUAL "nanort")
+    set(_bridge_nanort TRUE)
+else()
+    set(_bridge_nanort FALSE)
 endif()
 
 # ---- Shared library target --------------------------------------------------
@@ -73,8 +79,15 @@ target_link_libraries(obol_bridge_${COIN_BRIDGE_SUFFIX}
     Coin ${COIN_TARGET_LINK_LIBRARIES}
 )
 
-# OSMesa-specific settings
-if(_bridge_osmesa)
+if(_bridge_nanort)
+    # NanoRT: no GL or OSMesa needed; needs nanort.h and nanort_context_manager.h
+    target_compile_definitions(obol_bridge_${COIN_BRIDGE_SUFFIX} PRIVATE
+        COIN3D_NANORT_BUILD)
+    target_include_directories(obol_bridge_${COIN_BRIDGE_SUFFIX} PRIVATE
+        "${PROJECT_SOURCE_DIR}/external/nanort"
+        "${PROJECT_SOURCE_DIR}/tests/utils"
+    )
+elseif(_bridge_osmesa)
     target_compile_definitions(obol_bridge_${COIN_BRIDGE_SUFFIX} PRIVATE
         COIN3D_OSMESA_BUILD)
     set(_osmesa_inc "${CMAKE_SOURCE_DIR}/external/osmesa/include")

@@ -498,10 +498,13 @@ endif()
 if(COIN_BUILD_BRIDGE)
   # Determine the bridge suffix from the backend so callers don't have to
   # pass -DCOIN_BRIDGE_SUFFIX explicitly; they only need -DCOIN_BUILD_BRIDGE=ON.
-  if(COIN3D_USE_OSMESA)
-    set(COIN_BRIDGE_SUFFIX "osmesa" CACHE STRING "" FORCE)
-  else()
-    set(COIN_BRIDGE_SUFFIX "sys" CACHE STRING "" FORCE)
+  # When -DCOIN_BRIDGE_SUFFIX=nanort is passed explicitly, that takes precedence.
+  if(NOT DEFINED COIN_BRIDGE_SUFFIX OR COIN_BRIDGE_SUFFIX STREQUAL "")
+    if(COIN3D_USE_OSMESA)
+      set(COIN_BRIDGE_SUFFIX "osmesa" CACHE STRING "" FORCE)
+    else()
+      set(COIN_BRIDGE_SUFFIX "sys" CACHE STRING "" FORCE)
+    endif()
   endif()
   add_subdirectory(src/bridge)
 endif()

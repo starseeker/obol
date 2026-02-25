@@ -1,11 +1,11 @@
 # =============================================================================
 # tests/obol_superbuild/CMakeLists.txt
 #
-# Superbuild that compiles both Obol backends (system GL + OSMesa) and their
-# C bridge shared libraries, then builds the obol_viewer FLTK application
-# that loads both at runtime via dlopen.
+# Superbuild that compiles all Obol backends (system GL, OSMesa, NanoRT) and
+# their C bridge shared libraries, then builds the obol_viewer FLTK application
+# that loads them at runtime via dlopen.
 #
-# This is the ONLY CMakeLists you need to drive the full dual-backend viewer
+# This is the ONLY CMakeLists you need to drive the full triple-backend viewer
 # build.  You do NOT need to configure the top-level Obol project first.
 #
 # Quick start:
@@ -25,23 +25,28 @@
 #                         USE_MGL_NAMESPACE, same trick as Mesa itself)
 #     → libobol_bridge_osmesa.so (C bridge, all C++ symbols hidden)
 #
+#   obol_nanort_build/ ← Obol with NanoRT CPU raytracing backend
+#                        (no OpenGL context required; uses COIN3D_NANORT_BUILD)
+#     → libobol_bridge_nanort.so (C bridge, all C++ symbols hidden)
+#
 #   viewer/
 #     → obol_viewer              (FLTK app, links only FLTK + dl)
 #
 # Symbol isolation
 # ────────────────
-# Both bridge .so files are compiled with -fvisibility=hidden so all C++
+# All bridge .so files are compiled with -fvisibility=hidden so all C++
 # Obol symbols (SoDB, SoSeparator, …) remain library-private.  Only the
 # twenty obol_* C functions listed in src/bridge/obol_bridge.map are
-# exported.  The viewer loads both with dlopen(RTLD_LOCAL) so even the
-# exported names live in separate scopes and never collide.
+# exported.  The viewer loads all bridges with dlopen(RTLD_LOCAL) so even
+# the exported names live in separate scopes and never collide.
 #
 # Runtime fallback
 # ────────────────
 # If libobol_bridge_sys.so cannot be opened (no DISPLAY, missing libGL,
 # headless CI runner), the viewer automatically falls back to
-# libobol_bridge_osmesa.so for both panels.  A status line in the UI
+# libobol_bridge_osmesa.so for both GL panels.  A status line in the UI
 # reports which backend is active.
+# The NanoRT panel is shown only when libobol_bridge_nanort.so is available.
 # =============================================================================
 
 cmake_minimum_required(VERSION 3.16)
@@ -128,7 +133,28 @@ ExternalProject_Add(obol_osmesa
 )
 
 # -----------------------------------------------------------------------
-# Sub-project 3: obol_viewer FLTK application
+# Sub-project 3: NanoRT CPU raytracing backend
+# This backend uses the same OSMesa-built Coin (no system GL needed) but
+# configures the bridge to use SoNanoRTContextManager instead of OSMesa.
+# -----------------------------------------------------------------------
+ExternalProject_Add(obol_nanort
+    SOURCE_DIR        "${OBOL_SOURCE_DIR}"
+    BINARY_DIR        "${CMAKE_CURRENT_BINARY_DIR}/obol_nanort_build"
+    INSTALL_DIR       "${CMAKE_CURRENT_BINARY_DIR}/obol_nanort_install"
+    CMAKE_ARGS
+        ${_common_cmake_args}
+        -DCOIN3D_USE_OSMESA=ON    # Build Coin headless (avoids GL dependency)
+        -DCOIN_BRIDGE_SUFFIX=nanort
+        -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    BUILD_COMMAND     ${CMAKE_COMMAND} --build <BINARY_DIR>
+                          --target obol_bridge_nanort ${_jobs}
+    INSTALL_COMMAND   ""
+    LOG_CONFIGURE ON  LOG_BUILD ON
+    COMMENT           "Building Obol (NanoRT) + bridge"
+)
+
+# -----------------------------------------------------------------------
+# Sub-project 4: obol_viewer FLTK application
 #
 # The viewer sub-project is a thin wrapper so we can declare it as an
 # ExternalProject and express the dependency on the bridge builds.
@@ -144,13 +170,13 @@ ExternalProject_Add(obol_viewer_build
         -DOBOL_BRIDGE_HEADER=${OBOL_SOURCE_DIR}/src/bridge/obol_bridge.h
         -DOBOL_VIEWER_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/../obol_viewer.cpp
     INSTALL_COMMAND   ""
-    DEPENDS           obol_sys obol_osmesa
+    DEPENDS           obol_sys obol_osmesa obol_nanort
     LOG_CONFIGURE ON  LOG_BUILD ON
     COMMENT           "Building obol_viewer (FLTK)"
 )
 
 # -----------------------------------------------------------------------
-# Convenience: copy both bridge .so files next to the viewer binary after
+# Convenience: copy all bridge .so files next to the viewer binary after
 # the viewer build completes so it can find them with a relative path.
 # -----------------------------------------------------------------------
 ExternalProject_Get_Property(obol_viewer_build BINARY_DIR)
@@ -163,6 +189,9 @@ add_custom_target(copy_bridges ALL
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${BRIDGE_OUTPUT_DIR}/libobol_bridge_osmesa.so"
         "${_viewer_bin_dir}/libobol_bridge_osmesa.so"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${BRIDGE_OUTPUT_DIR}/libobol_bridge_nanort.so"
+        "${_viewer_bin_dir}/libobol_bridge_nanort.so"
     DEPENDS obol_viewer_build
     COMMENT "Copying bridge libraries next to obol_viewer"
 )

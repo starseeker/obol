@@ -1,12 +1,13 @@
 /*
- * obol_viewer.cpp  –  FLTK dual-backend scene viewer for Obol
+ * obol_viewer.cpp  –  FLTK triple-backend scene viewer for Obol
  *
  * Architecture
  * ────────────
- * The viewer loads two bridge shared libraries at startup:
+ * The viewer loads up to three bridge shared libraries at startup:
  *
  *   libobol_bridge_sys.so    – Obol built against system OpenGL / GLX
  *   libobol_bridge_osmesa.so – Obol built against OSMesa (headless)
+ *   libobol_bridge_nanort.so – Obol with NanoRT CPU raytracing (no GL)
  *
  * Both bridges export the same C API (obol_bridge.h), and each bridge
  * embeds its corresponding Obol static library with -fvisibility=hidden
@@ -17,28 +18,28 @@
  * If libobol_bridge_sys.so is unavailable (no DISPLAY, missing libGL,
  * CI headless runner) the viewer falls back to using the OSMesa bridge
  * for both panels and shows a status message.
+ * The NanoRT panel is omitted when libobol_bridge_nanort.so is not found.
  *
  * Layout
  * ──────
- *   ┌─────────┬──────────────────────────────────────┐
- *   │  Test   │  [System GL]      │  [OSMesa]         │
- *   │ browser │  CoinPanel (left) │  CoinPanel (right)│
- *   │         │                   │                   │
- *   ├─────────┴───────────────────┴───────────────────┤
- *   │ [Reload] [Render…]  [×] Sync views  status text │
- *   └──────────────────────────────────────────────────┘
+ *   ┌─────────┬──────────────────────────────────────────────────┐
+ *   │  Test   │  [System GL]  │  [OSMesa]  │  [NanoRT]           │
+ *   │ browser │  CoinPanel    │  CoinPanel │  CoinPanel (if avail)│
+ *   ├─────────┴───────────────┴────────────┴─────────────────────┤
+ *   │ [Reload] [Render…]  [×] Sync views  status text            │
+ *   └──────────────────────────────────────────────────────────────┘
  *
- * Interaction (both panels)
+ * Interaction (all panels)
  *   Left-drag   → orbit camera
  *   Right-drag  → dolly (zoom along view axis)
  *   Scroll      → zoom
- *   When "Sync views" is checked, moving the camera in either panel
- *   immediately mirrors to the other.
+ *   When "Sync views" is checked, moving the camera in any panel
+ *   immediately mirrors to the others.
  *
  * Building
  * ────────
  * This file is built as part of tests/obol_superbuild/ (see that
- * directory's CMakeLists.txt).  The superbuild compiles both Obol
+ * directory's CMakeLists.txt).  The superbuild compiles all Obol
  * variants and the bridge libraries, then builds this file linking
  * only FLTK and libdl.
  *
@@ -308,8 +309,9 @@ private:
 class ObolViewerWindow : public Fl_Double_Window {
     /* UI widgets */
     Fl_Hold_Browser*  browser_;
-    CoinPanel*        left_panel_;   /* system GL */
-    CoinPanel*        right_panel_;  /* OSMesa    */
+    CoinPanel*        left_panel_;    /* system GL  */
+    CoinPanel*        right_panel_;   /* OSMesa     */
+    CoinPanel*        nanort_panel_;  /* NanoRT     */
     Fl_Check_Button*  sync_btn_;
     Fl_Box*           status_bar_;
     Fl_Button*        reload_btn_;
@@ -318,6 +320,7 @@ class ObolViewerWindow : public Fl_Double_Window {
     /* Bridges */
     ObolBridgeAPI*    sys_api_    = nullptr;
     ObolBridgeAPI*    osmesa_api_ = nullptr;
+    ObolBridgeAPI*    nanort_api_ = nullptr;
 
     /* Sync guard (prevents recursive sync) */
     bool syncing_ = false;
@@ -328,9 +331,10 @@ class ObolViewerWindow : public Fl_Double_Window {
 
 public:
     ObolViewerWindow(int W, int H,
-                     ObolBridgeAPI* sys_api, ObolBridgeAPI* osmesa_api)
+                     ObolBridgeAPI* sys_api, ObolBridgeAPI* osmesa_api,
+                     ObolBridgeAPI* nanort_api = nullptr)
         : Fl_Double_Window(W, H, "Obol Scene Viewer"),
-          sys_api_(sys_api), osmesa_api_(osmesa_api)
+          sys_api_(sys_api), osmesa_api_(osmesa_api), nanort_api_(nanort_api)
     {
         begin();
         buildUI(W, H);
@@ -355,17 +359,23 @@ public:
         right_panel_->on_camera_changed = [this](CoinPanel* src) {
             if (!syncing_ && sync_btn_->value()) syncCamerasFrom(src);
         };
+        if (nanort_panel_) {
+            nanort_panel_->on_camera_changed = [this](CoinPanel* src) {
+                if (!syncing_ && sync_btn_->value()) syncCamerasFrom(src);
+            };
+        }
 
         updateStatusBar();
         resizable(this);
     }
 
     /* ------------------------------------------------------------------
-     * Public: load a named scene into both panels
+     * Public: load a named scene into all available panels
      * ------------------------------------------------------------------ */
     void loadScene(const char* name) {
         left_panel_->createScene(name);
         right_panel_->createScene(name);
+        if (nanort_panel_) nanort_panel_->createScene(name);
         updateStatusBar();
     }
 
@@ -385,23 +395,37 @@ private:
         Fl_Tile* tile = new Fl_Tile(BROWSER_W, 0,
                                     W - BROWSER_W, content_h);
         {
-            int panel_w = (W - BROWSER_W) / 2;
+            int num_panels  = nanort_api_ ? 3 : 2;
+            int panel_w     = (W - BROWSER_W) / num_panels;
+            int x           = BROWSER_W;
 
             /* Left panel: system GL */
-            left_panel_ = new CoinPanel(BROWSER_W, 0,
-                                        panel_w, content_h,
+            left_panel_ = new CoinPanel(x, 0, panel_w, content_h,
                                         sys_api_
                                             ? sys_api_->fn_backend_name()
                                             : "System GL (unavailable)");
             left_panel_->bridge = sys_api_;
+            x += panel_w;
 
-            /* Right panel: OSMesa */
-            right_panel_ = new CoinPanel(BROWSER_W + panel_w, 0,
-                                         W - BROWSER_W - panel_w, content_h,
+            /* Middle panel: OSMesa */
+            int osmesa_w = nanort_api_ ? panel_w : W - BROWSER_W - panel_w;
+            right_panel_ = new CoinPanel(x, 0, osmesa_w, content_h,
                                          osmesa_api_
                                              ? osmesa_api_->fn_backend_name()
                                              : "OSMesa (unavailable)");
             right_panel_->bridge = osmesa_api_;
+            x += osmesa_w;
+
+            /* Right panel: NanoRT (optional) */
+            if (nanort_api_) {
+                nanort_panel_ = new CoinPanel(x, 0,
+                                              W - BROWSER_W - 2 * panel_w,
+                                              content_h,
+                                              nanort_api_->fn_backend_name());
+                nanort_panel_->bridge = nanort_api_;
+            } else {
+                nanort_panel_ = nullptr;
+            }
         }
         tile->end();
 
@@ -442,12 +466,13 @@ private:
      * Camera synchronisation
      * ------------------------------------------------------------------ */
     void syncCamerasFrom(CoinPanel* src) {
-        CoinPanel* dst = (src == left_panel_) ? right_panel_ : left_panel_;
-        if (!dst->scene || !dst->bridge) return;
-        syncing_ = true;
         float pos[3], orient[4], dist = 1.0f;
         src->getCamera(pos, orient, dist);
-        dst->setCamera(pos, orient, dist);
+        syncing_ = true;
+        for (CoinPanel* dst : {left_panel_, right_panel_, nanort_panel_}) {
+            if (dst && dst != src && dst->scene && dst->bridge)
+                dst->setCamera(pos, orient, dist);
+        }
         syncing_ = false;
     }
 
@@ -462,9 +487,13 @@ private:
             msg += "Left: System GL (NOT available – using OSMesa fallback)";
         msg += "   |   ";
         if (osmesa_api_)
-            msg += std::string("Right: ") + osmesa_api_->fn_backend_name();
+            msg += std::string("Mid: ") + osmesa_api_->fn_backend_name();
         else
-            msg += "Right: OSMesa (NOT available)";
+            msg += "Mid: OSMesa (NOT available)";
+        if (nanort_api_) {
+            msg += "   |   ";
+            msg += std::string("Right: ") + nanort_api_->fn_backend_name();
+        }
         status_bar_->copy_label(msg.c_str());
     }
 
@@ -555,6 +584,12 @@ int main(int argc, char** argv)
 
     ObolBridgeAPI* sys_api    = try_load_bridge("libobol_bridge_sys.so",    extra);
     ObolBridgeAPI* osmesa_api = try_load_bridge("libobol_bridge_osmesa.so", extra);
+    ObolBridgeAPI* nanort_api = try_load_bridge("libobol_bridge_nanort.so", extra);
+
+    if (nanort_api)
+        fprintf(stdout, "obol_viewer: NanoRT bridge loaded\n");
+    else
+        fprintf(stdout, "obol_viewer: NanoRT bridge not found – NanoRT panel disabled\n");
 
     /* Graceful fallback: if system GL bridge is unavailable, use OSMesa for
      * both panels so the viewer is still functional. */
@@ -578,7 +613,7 @@ int main(int argc, char** argv)
     Fl::visual(FL_RGB | FL_DOUBLE);
 
     ObolViewerWindow* win = new ObolViewerWindow(
-        1280, 720, sys_api, osmesa_api);
+        1280, 720, sys_api, osmesa_api, nanort_api);
     win->show(argc, argv);
 
     if (sys_fallback) {
@@ -598,6 +633,7 @@ int main(int argc, char** argv)
 
     /* Cleanup */
     delete win;
+    if (nanort_api) delete nanort_api;
     if (osmesa_api && osmesa_api != sys_api) delete osmesa_api;
     if (sys_api) delete sys_api;
 
