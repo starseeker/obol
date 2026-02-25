@@ -869,6 +869,7 @@ SoProto::createInstanceRoot(SoProtoInstance * inst) const
         else ok = to->connectFrom(output, notnotify, append);
         // Both known possible failure points are caught above.
         assert(ok && "unexpected connection error");
+        (void)ok;
 
       }
     }

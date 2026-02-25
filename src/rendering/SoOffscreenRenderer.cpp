@@ -890,8 +890,10 @@ SoOffscreenRendererP::renderFromBase(SoBase * base)
             SbBool w = SoOffscreenRendererP::writeToRGB(f, fullsize[0], fullsize[1],
                                                         nrcomp, this->buffer);
             assert(w);
+            (void)w;
             const int r = fclose(f);
             assert(r == 0);
+            (void)r;
 		  }
         }
       }
@@ -1117,6 +1119,7 @@ SoOffscreenRendererP::writeToRGB(FILE * fp, unsigned int w, unsigned int h,
   strcpy((char *)buf+8, "https://github.com/coin3d/");
   const size_t wrote = fwrite(buf, 1, BUFSIZE, fp);
   assert(wrote == BUFSIZE);
+  (void)wrote;
 
   unsigned char * tmpbuf = new unsigned char[w];
 

@@ -208,6 +208,7 @@ static void enable_vbo(const Key & COIN_UNUSED_ARG(key),
   const SoCoordinateElement * coords =
     SoCoordinateElement::getInstance(action->getState());
   assert(coords->getNum() == attribdata->data->getNum());
+  (void)coords;
 
   const void * dataptr = NULL;
 

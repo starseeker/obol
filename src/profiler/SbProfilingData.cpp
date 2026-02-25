@@ -679,6 +679,7 @@ SbProfilingData::getIndexForwardCreate(const SoFullPath * fullpath, int pathlen,
 
   assert(parent == PRIVATE(this)->nodeData[parentidx].node);
   assert(pidx == PRIVATE(this)->nodeData[parentidx].childidx);
+  (void)parent; (void)pidx;
 
   const int nodedatacount = (int)PRIVATE(this)->nodeData.size();
   for (int idx = parentidx + 1; idx < nodedatacount; ++idx) {
@@ -719,6 +720,7 @@ SbProfilingData::getIndexForwardNoCreate(const SoFullPath * fullpath, int pathle
 
   assert(parent == PRIVATE(this)->nodeData[parentidx].node);
   assert(pidx == PRIVATE(this)->nodeData[parentidx].childidx);
+  (void)parent; (void)pidx;
 
   const int nodedatacount = (int)PRIVATE(this)->nodeData.size();
   for (int idx = parentidx + 1; idx < nodedatacount; ++idx) {

@@ -659,6 +659,7 @@ register_convertfunc(convert_func * f, SoType from, SoType to)
   uint32_t val = (static_cast<uint32_t>(from.getKey()) << 16) + to.getKey();
   SbBool nonexist = convertfunc_dict->put(val, f);
   assert(nonexist);
+  (void)nonexist;
 }
 
 extern "C" {

@@ -352,12 +352,13 @@ class SbHash {
   Type & operator[](const Key & key) {
     Type * obj = NULL;
     if (!getP(key,obj)) {
-      Type dummy;
+      Type dummy{};
       SbBool ok;
       ok = put(key,dummy);
       assert(ok);
       ok = getP(key,obj);
       assert(ok);
+      (void)ok;
     }
     return *obj;
   }

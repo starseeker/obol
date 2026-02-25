@@ -956,6 +956,7 @@ SoShadowGroupP::updateShadowLights(SoGLRenderAction * action)
   if (!this->shadowlightsvalid) {
     int lightidoffset = SoLightElement::getLights(state).getLength();
     float smoothing = PUBLIC(this)->smoothBorder.getValue();
+    (void)smoothing;
     smoothing = 0.0f; // FIXME: temporary until we have time to fix this feature
 
     int gaussmatrixsize = 0;

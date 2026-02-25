@@ -662,6 +662,7 @@ SoNodeVisualize::handleEvent(SoHandleEventAction * action)
   //from an example source
   if (path->containsNode(shapenode) && pp->getDetail(shapenode) == NULL) {
     SbVec3f point = pp->getPoint();
+    (void)point;
     this->clicked();
   }
 }

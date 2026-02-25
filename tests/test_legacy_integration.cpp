@@ -107,6 +107,7 @@ bool testInventorFileIO() {
 bool testMemoryManagement() {
     // Test reference counting
     int initialRefCount = 0;
+    (void)initialRefCount;
     
     {
         SoSeparator* root = new SoSeparator;

@@ -131,6 +131,7 @@ SoPath *createTransformPath(SoPath *inputPath)
     SoTransform *editXf = NULL;
     SoGroup     *parent;
     SbBool      existedBefore = FALSE;
+    (void)existedBefore;
 
     // CASE 2: The tail is not a group.
     SbBool isTailGroup;

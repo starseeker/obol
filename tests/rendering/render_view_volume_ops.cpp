@@ -101,13 +101,17 @@ static bool test1_perspectiveVV()
 
     // getPlane / getSightPoint / getPlanePoint
     SbPlane plane = vv.getPlane(10.0f);
+    (void)plane;
     SbVec3f sp    = vv.getSightPoint(10.0f);
     SbVec3f pp    = vv.getPlanePoint(10.0f, SbVec2f(0.5f, 0.5f));
+    (void)pp;
     printf("  sightPt@10: (%.2f,%.2f,%.2f)\n", sp[0], sp[1], sp[2]);
 
     // getAlignRotation
     SbRotation r1 = vv.getAlignRotation(FALSE);
+    (void)r1;
     SbRotation r2 = vv.getAlignRotation(TRUE);
+    (void)r2;
 
     // getWorldToScreenScale
     float scale = vv.getWorldToScreenScale(SbVec3f(0,0,-10.0f), 0.5f);
@@ -267,6 +271,7 @@ static bool test4_dpViewVolume()
     printf("  dpvv projectToScreen: (%.3f,%.3f,%.3f)\n",
            ndc2[0], ndc2[1], ndc2[2]);
     bool hit = (ndc2[2] > 0.0);
+    (void)hit;
 
     // ortho path
     SbDPViewVolume dportho;

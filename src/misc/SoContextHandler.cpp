@@ -123,7 +123,7 @@ socontexthandler_qsortcb(const void * p0, const void * p1)
 
 static SbHash<socontexthandler_cbitem, uint32_t> * socontexthandler_hashlist;
 static uint32_t socontexthandler_idx = 0;
-static void * socontexthandler_mutex;
+[[maybe_unused]] static void * socontexthandler_mutex;
 
 // *************************************************************************
 
@@ -260,6 +260,7 @@ SoContextHandler::removeContextDestructionCallback(ContextDestructionCB * func, 
   CC_MUTEX_LOCK(socontexthandler_mutex);
   size_t didremove = socontexthandler_hashlist->erase(item);
   assert(didremove);
+  (void)didremove;
   CC_MUTEX_UNLOCK(socontexthandler_mutex);
 }
 
