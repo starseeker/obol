@@ -226,7 +226,11 @@ SoProfiler::enable(SbBool enable)
 SbBool
 SoProfiler::isEnabled(void)
 {
+#ifdef COIN_PROFILING
   return profiler::enabled;
+#else
+  return FALSE;
+#endif
 }
 
 SbBool

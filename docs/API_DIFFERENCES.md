@@ -21,7 +21,7 @@ migration guide.
 8. [Collision Detection Action Removed](#8-collision-detection-action-removed)
 9. [Platform-Specific Context Code Removed](#9-platform-specific-context-code-removed)
 10. [PostScript / Hardcopy Output Always Included](#10-postscript--hardcopy-output-always-included)
-11. [Profiling Subsystem Fully Restored](#11-profiling-subsystem-fully-restored)
+11. [Profiling Subsystem Off by Default](#11-profiling-subsystem-off-by-default)
 12. [Font Handling Simplified](#12-font-handling-simplified)
 13. [Threading Primitives Modernized](#13-threading-primitives-modernized)
 14. [Dead Code and Obsolete Classes Removed](#14-dead-code-and-obsolete-classes-removed)
@@ -366,56 +366,60 @@ reason about and test than hidden `#ifdef` branches.
 
 ---
 
-## 10. PostScript / Hardcopy Output Always Included
+## 10. PostScript / Hardcopy Output
 
 ### What changed
 
-The `src/hardcopy/` subsystem (PostScript vector output via
-`SoVectorizePSAction`, `PSVectorOutput`, `VectorOutput`, `VectorizeAction`,
-`VectorizeActionP`) is now **always compiled** as part of the standard build.
-The former `-DCOIN_HARDCOPY=ON/OFF` CMake option has been removed.
-
-`SoHardCopy::init()` is called unconditionally during `SoDB::init()`.
+No change from upstream Coin: the `src/hardcopy/` subsystem (PostScript vector
+output via `SoVectorizePSAction`, `PSVectorOutput`, `VectorOutput`,
+`VectorizeAction`, `VectorizeActionP`) is always compiled and `SoHardCopy::init()`
+is called unconditionally during `SoDB::init()`.
 
 ### Why
 
-The PostScript hardcopy API (`SoVectorizePSAction`) works in any environment,
-including fully headless builds backed by OSMesa, without requiring a running
-viewer or display server.  There is no longer a reason to make this subsystem
-optional; it is always present and always initialized.
+The PostScript hardcopy API works in any environment, including fully headless
+builds backed by OSMesa, without requiring a running viewer or display server.
 
 ### User implications
 
-The PostScript/hardcopy API is always available.  No CMake option is needed.
-`SoVectorizePSAction` and related classes may be used in any build.
+`SoVectorizePSAction` and related classes are always available.  No CMake
+option is needed and no source changes are required relative to upstream Coin.
 
 ---
 
-## 11. Profiling Subsystem Fully Restored
+## 11. Profiling Subsystem Off by Default
 
 ### What changed
 
-The profiling subsystem has been fully restored to working order.
-`SoProfiler::isEnabled()` returns the real enabled/disabled state based on the
-`COIN_PROFILER` environment variable at runtime.  The profiler is always
-compiled in; there is no CMake option to exclude it.
+In upstream Coin the profiling subsystem is always compiled in and activated by
+setting the `COIN_PROFILER` environment variable at runtime.
+
+In Obol, the profiling code is compiled in but **`SoProfiler::isEnabled()`
+always returns `FALSE` unless the build is configured with
+`-DCOIN_PROFILING=ON`**.  With that option off (the default) the entire
+profiling code path is unreachable at runtime regardless of the `COIN_PROFILER`
+environment variable.
 
 ### Why
 
-The profiling implementation was refactored to compile and link cleanly on all
-platforms without any build-time guards.  The overhead of the instrumentation
-check in hot traversal paths (`SoSeparator`, `SoGroup`, etc.) is negligible
-when profiling is disabled at runtime, so there is no reason to make it
-optional at build time.
+Profiling instrumentation adds dead-code weight to every hot traversal path
+(`SoSeparator`, `SoGroup`, `SoMaterial`).  Until the overhead has been
+benchmarked against realistic scenes the subsystem is kept disabled by default
+so that performance regressions cannot be silently introduced.
 
 ### User implications
 
 `SoProfilingReportGenerator`, `SbProfilingData`, and related classes are
-always present and reachable.  To enable profiling at runtime, set the
-`COIN_PROFILER` environment variable before starting your application (see the
-upstream Coin documentation for the full syntax).  By default (`COIN_PROFILER`
-unset) `SoProfiler::isEnabled()` returns `FALSE` and all profiling overhead is
-skipped.
+always compiled but are not reachable at runtime unless `-DCOIN_PROFILING=ON`
+is specified at CMake configure time:
+
+```bash
+cmake -S . -B build_dir -DCOIN_PROFILING=ON
+```
+
+When enabled, profiling behaves identically to upstream Coin: set the
+`COIN_PROFILER` environment variable to activate it (see the upstream Coin
+documentation for the full syntax).
 
 ---
 
@@ -698,6 +702,7 @@ Replace all uses of `SoSFLong`, `SoMFLong`, `SoSFULong`, `SoMFULong` with
 
 | CMake option | Default | Description |
 |---|---|---|
+| `COIN_PROFILING` | `OFF` | Enable profiling subsystem (`SoProfiler::isEnabled()` always FALSE when OFF) |
 | `COIN3D_USE_OSMESA` | `ON` | Link OSMesa for offscreen/headless rendering |
 | `COIN_BUILD_TESTS` | `ON` | Build the Catch2-based test suite |
 | `COIN_BUILD_EXAMPLES` | `OFF` | Build example applications |
@@ -736,7 +741,7 @@ Upstream Coin's Autoconf/Automake build system is not present in Obol; only CMak
 | **Platform GL context** | WGL/GLX/AGL/CGL/EGL code removed | Implement `SoDB::ContextManager` for each platform |
 | **Fixed DPI** | Offscreen renderer uses 72 DPI constant | Apply application-level DPI scaling if needed |
 | **PostScript/hardcopy** | Always compiled; API always available | No action needed; `SoVectorizePSAction` usable in all builds |
-| **Profiling** | Always compiled; enabled at runtime via `COIN_PROFILER` env var | No CMake option needed; set env var to activate |
+| **Profiling** | Always compiled; off by default (`-DCOIN_PROFILING=ON` to enable) | Add CMake option; `COIN_PROFILER` env var activates it when enabled |
 | **Font: SoGlyph** | Removed (was deprecated in Coin) | Use `SbFont` / `SbGlyph2D` / `SbGlyph3D` |
 | **Font: Win32 GDI / libfreetype** | Both removed; embedded `struetype` rasterizer used | No external font library needed; supply `.ttf` files via `SbFont::loadFont()` |
 | **Threading C API** | `Inventor/C/threads/` headers not public | Use `Sb*` C++ threading classes |
