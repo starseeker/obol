@@ -44,9 +44,7 @@
 
 #include <Inventor/nodekits/SoNodeKit.h>
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif // HAVE_CONFIG_H
 
 #include <Inventor/SbBasic.h>
 #include <Inventor/SoDB.h>

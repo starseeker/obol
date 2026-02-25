@@ -66,7 +66,7 @@
   unknown.
 */
 
-#include "coindefs.h"
+#include "config.h"
 #include "C/CoinTidbits.h"
 #include "SbBasicP.h"
 

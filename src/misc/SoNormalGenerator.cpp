@@ -46,7 +46,7 @@
 #include <Inventor/errors/SoDebugError.h>
 
 #include "C/CoinTidbits.h"
-#include "coindefs.h" // COIN_OBSOLETED()
+#include "config.h" // COIN_OBSOLETED()
 
 /*!
   Constructor with \a isccw indicating if polygons are specified

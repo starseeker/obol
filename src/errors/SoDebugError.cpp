@@ -86,7 +86,7 @@
 #include <Inventor/SoType.h>
 #include <Inventor/lists/SbList.h>
 
-#include "coindefs.h"
+#include "config.h"
 #include "C/CoinTidbits.h"
 
 #ifndef COIN_WORKAROUND_NO_USING_STD_FUNCS

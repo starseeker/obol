@@ -186,9 +186,7 @@
 
 #include <string>
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif /* HAVE_CONFIG_H */
 
 // *************************************************************************
 
@@ -244,7 +242,6 @@
 #include "C/CoinTidbits.h"
 #include "base/list.h"
 
-#include "coindefs.h"
 
 #include "base/dict.h"
 #include "base/namemap.h"

@@ -58,7 +58,7 @@
 // *************************************************************************
 
 #include <Inventor/nodes/SoFile.h>
-#include "coindefs.h"
+#include "config.h"
 
 #include <cstring>
 

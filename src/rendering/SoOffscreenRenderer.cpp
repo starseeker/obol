@@ -308,9 +308,7 @@
 
 #include <Inventor/SoOffscreenRenderer.h>
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif // HAVE_CONFIG_H
 
 #include <cassert>
 #include <cstring> // memset(), memcpy()
@@ -344,7 +342,6 @@
 #include "base/SbImageFormatHandler.h"
 #include "base/SbJpegImageHandler.h"
 
-#include "coindefs.h" // COIN_STUB()
 #include "misc/SoEnvironment.h"
 
 // boost/current_function.hpp replaced with C++11 __func__

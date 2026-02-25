@@ -31,7 +31,7 @@
 \**************************************************************************/
 
 #include <Inventor/annex/Profiler/utils/SoProfilingReportGenerator.h>
-#include "coindefs.h"
+#include "config.h"
 
 #include <cassert>
 #include <cstdlib>

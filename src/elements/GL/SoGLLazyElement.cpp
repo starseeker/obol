@@ -69,7 +69,7 @@
 #include "C/CoinTidbits.h"
 #include "misc/CoinUtilities.h"
 #include "rendering/SoVBO.h"
-#include <coindefs.h> // COIN_OBSOLETED
+#include "config.h" // COIN_OBSOLETED
 
 #include "shaders/SoGLShaderProgram.h"
 
@@ -85,9 +85,7 @@
 #define GLLAZY_DEBUG(x)
 #endif
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif // HAVE_CONFIG_H
+#include "config.h"
 
 // Some data and functions to create Bayer dither matrices (used for
 // screen door transparency)

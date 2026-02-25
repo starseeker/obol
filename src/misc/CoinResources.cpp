@@ -74,9 +74,7 @@
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/SbByteBuffer.h>
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif // HAVE_CONFIG_H
 
 #if defined(COIN_MACOS_10) && defined(COIN_MACOSX_FRAMEWORK)
 #include <CoreFoundation/CFBundle.h>
@@ -84,7 +82,6 @@
 #endif // COIN_MACOS_10 && COIN_MACOSX_FRAMEWORK
 
 
-#include "coindefs.h"
 #include "SoEnvironment.h"
 
 /* Legacy MSVC6 workaround removed - not needed for C++17 */

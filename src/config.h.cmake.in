@@ -5,6 +5,9 @@
 #error this is a private header file
 #endif
 
+#ifndef COIN_CONFIG_H
+#define COIN_CONFIG_H
+
 /* =========================================================================
  * Feature toggles (previously in setup.h)
  * These control which optional subsystems are compiled into the library.
@@ -346,3 +349,5 @@ inline std::thread::id& coin_get_thread()
 #define COIN_INIT_CHECK_THREAD() do { } while (0)
 #define COIN_CHECK_THREAD()      do { } while (0)
 #endif /* COIN_DEBUG_CHECK_THREAD */
+
+#endif /* COIN_CONFIG_H */

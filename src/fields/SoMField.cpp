@@ -255,7 +255,7 @@
 
 #include "threads/threadsutilp.h"
 #include "C/CoinTidbits.h"
-#include "coindefs.h" // COIN_WORKAROUND_*
+#include "config.h" // COIN_WORKAROUND_*
 
 #ifndef COIN_WORKAROUND_NO_USING_STD_FUNCS
 using std::memcpy;

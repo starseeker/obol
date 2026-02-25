@@ -197,9 +197,7 @@ SbUniqueId is not really a class, just a \c typedef.
 
 #include <Inventor/nodes/SoNode.h>
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif // HAVE_CONFIG_H
 
 #include <cassert>
 #include <cstdlib>
@@ -224,7 +222,6 @@ SbUniqueId is not really a class, just a \c typedef.
 #include "threads/threadsutilp.h"
 #include "glue/glp.h"
 #include "misc/SoDBP.h" // for global envvar COIN_PROFILER
-#include "coindefs.h"   // COIN_CHECK_THREAD
 
 // *************************************************************************
 

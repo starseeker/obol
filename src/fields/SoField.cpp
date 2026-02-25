@@ -127,9 +127,7 @@
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/sensors/SoDataSensor.h>
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif // HAVE_CONFIG_H
 #include "SbBasicP.h"
 #include "engines/SoConvertAll.h"
 #include "fields/SoGlobalField.h"
@@ -143,7 +141,6 @@ inline unsigned int SbHashFunc(const void * key)
 {
   return SbHashFunc(reinterpret_cast<size_t>(key));
 }
-#include "coindefs.h" // COIN_STUB(), COIN_CHECK_THREAD()
 
 #ifdef COIN_THREADSAFE
 #include "threads/recmutexp.h"

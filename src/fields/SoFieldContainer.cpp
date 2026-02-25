@@ -53,9 +53,7 @@
 #include <cstring>
 #include <cassert>
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif // HAVE_CONFIG_H
 
 #include <Inventor/SbName.h>
 #include <Inventor/SoInput.h>
@@ -83,7 +81,6 @@
 #include "C/CoinTidbits.h"
 #include "misc/SbHash.h"
 #include "io/SoWriterefCounter.h"
-#include "coindefs.h" // COIN_STUB()
 #include "SbBasicP.h"
 
 // *************************************************************************

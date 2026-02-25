@@ -31,13 +31,10 @@
 \**************************************************************************/
 
 #include "shapenodes/soshape_bigtexture.h"
-#include "coindefs.h"
+#include "config.h"
 
 #include <cstdlib>
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif // HAVE_CONFIG_H
 
 #include <Inventor/SbClip.h>
 #include <Inventor/SbPlane.h>

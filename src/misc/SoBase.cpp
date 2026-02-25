@@ -87,12 +87,9 @@
 
 #include "io/SoInputP.h"
 #include "io/SoWriterefCounter.h"
-#include "coindefs.h"
+#include "config.h"
 #include "SoEnvironment.h"
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif // HAVE_CONFIG_H
 
 // *************************************************************************
 

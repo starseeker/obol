@@ -64,9 +64,7 @@
 
 #include <Inventor/SoDB.h>
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif // HAVE_CONFIG_H
 
 #include <cstdlib>
 #include <cassert>
@@ -103,7 +101,6 @@
 #include <Inventor/misc/SoGLDriverDatabase.h>
 #include <Inventor/misc/CoinResources.h>
 
-#include "coindefs.h" // COIN_STUB(), COIN_INIT_CHECK_THREAD()
 #include "shaders/SoShader.h"
 /* glue/glp.h include removed - no longer needed for old callback system */
 
