@@ -40,7 +40,7 @@
 #include <Inventor/misc/SoContextHandler.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "misc/SoEnvironment.h"
 
 #include "config.h"

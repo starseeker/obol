@@ -58,7 +58,7 @@
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include <Inventor/SbImage.h>
 #include "glue/glp.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 
 
 #ifdef COIN_THREADSAFE

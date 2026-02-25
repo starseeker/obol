@@ -170,7 +170,7 @@
 
 #include "config.h"
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include <Inventor/SbPlane.h>
 #include <Inventor/SoPrimitiveVertex.h>
 #include <Inventor/actions/SoGLRenderAction.h>

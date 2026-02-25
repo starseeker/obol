@@ -43,7 +43,7 @@
 #include <Inventor/misc/SoProto.h>
 #include <Inventor/nodes/SoNode.h>
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 
 // *************************************************************************
 

@@ -126,7 +126,7 @@
 
 #include <cstdlib>
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include <Inventor/actions/SoCallbackAction.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoPickAction.h>

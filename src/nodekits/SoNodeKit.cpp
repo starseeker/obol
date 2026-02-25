@@ -60,7 +60,7 @@
 #include <Inventor/annex/HUD/nodekits/SoHUDKit.h>
 #endif // HAVE_NODEKITS
 
-#include "../C/CoinTidbits.h"
+#include "CoinTidbits.h"
 
 static SbBool nodekit_isinitialized = FALSE;
 

@@ -221,7 +221,7 @@
 #include <Inventor/system/gl.h>
 #include <Inventor/errors/SoDebugError.h>
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "actions/SoActionP.h"
 #include "misc/SoDBP.h" // for global envvar COIN_PROFILER
 #include "misc/SoCompactPathList.h"

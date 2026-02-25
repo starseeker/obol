@@ -43,7 +43,7 @@
 #include <cstring>
 
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include <Inventor/SoOffscreenRenderer.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/bundles/SoMaterialBundle.h>

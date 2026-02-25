@@ -107,7 +107,7 @@
 #include <Inventor/threads/SbStorage.h>
 #include <Inventor/system/gl.h>
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "nodes/SoSubNodeP.h"
 
 // *************************************************************************

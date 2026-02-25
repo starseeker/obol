@@ -64,7 +64,7 @@
 #include <cassert>
 #include <cstring>
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include <Inventor/SoDB.h>
 #include <Inventor/SoInput.h>
 #include <Inventor/SoOutput.h>

@@ -69,7 +69,7 @@
 #include "threads/mutexp.h"
 #endif /* COIN_THREADSAFE */
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 
 /* ********************************************************************** */
 

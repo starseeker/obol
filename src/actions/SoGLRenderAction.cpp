@@ -67,7 +67,7 @@
 #include <memory>
 
 #include "glue/glp.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include <Inventor/SbColor.h>
 #include <Inventor/SbPlane.h>
 #include <Inventor/SoFullPath.h>

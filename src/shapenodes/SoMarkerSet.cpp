@@ -96,7 +96,7 @@
 #include <Inventor/errors/SoDebugError.h>
 #endif // COIN_DEBUG
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "nodes/SoSubNodeP.h"
 
 /*!

@@ -55,7 +55,7 @@
 #include <Inventor/lists/SbList.h>
 #include "base/memalloc.h"
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "config.h"
 #include "SbBasicP.h"
 

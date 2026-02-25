@@ -239,7 +239,7 @@
 #endif /* HAVE_EGL */
 
 #include "errors/CoinInternalError.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "base/list.h"
 
 

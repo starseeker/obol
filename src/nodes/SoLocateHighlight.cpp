@@ -74,7 +74,7 @@
 #include <Inventor/threads/SbStorage.h>
 #endif // COIN_THREADSAFE
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "nodes/SoSubNodeP.h"
 
 // *************************************************************************

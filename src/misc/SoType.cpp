@@ -143,7 +143,7 @@
 #include <Inventor/SbString.h>
 #include <Inventor/SoDB.h>
 #include <Inventor/lists/SbList.h>
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "glue/dlp.h"
 
 

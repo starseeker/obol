@@ -61,7 +61,7 @@
 #include <cstdio>
 #include <cstdlib>
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include <Inventor/SbName.h>
 #include <Inventor/SoPath.h>
 #include <Inventor/engines/SoEngine.h>

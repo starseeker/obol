@@ -60,7 +60,7 @@
 #include <Inventor/threads/SbStorage.h>
 #include <Inventor/errors/SoDebugError.h>
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "nodes/SoSubNodeP.h"
 
 // *************************************************************************

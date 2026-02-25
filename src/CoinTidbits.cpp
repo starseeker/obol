@@ -43,7 +43,7 @@
  * specific in Coin, but which are included to keep Coin portable.
  */
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 
 #include "config.h"
 

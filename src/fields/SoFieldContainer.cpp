@@ -78,7 +78,7 @@
 #include <Inventor/SbVec.h>
 #define COIN_INTERNAL
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "misc/SbHash.h"
 #include "io/SoWriterefCounter.h"
 #include "SbBasicP.h"

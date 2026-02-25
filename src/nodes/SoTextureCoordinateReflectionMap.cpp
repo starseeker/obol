@@ -65,7 +65,7 @@
 #include <Inventor/system/gl.h>
 
 #include "nodes/SoSubNodeP.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 
 // *************************************************************************
 

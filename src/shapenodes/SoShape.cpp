@@ -51,7 +51,7 @@
 #include "config.h"
 
 #include "glue/glp.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include <Inventor/SbBox2f.h>
 #include <Inventor/SbClip.h>
 #include <Inventor/SbPlane.h>

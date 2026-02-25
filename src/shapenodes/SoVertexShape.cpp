@@ -60,7 +60,7 @@
 #include <Inventor/threads/SbRWMutex.h>
 
 #include "nodes/SoSubNodeP.h"
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 
 // *************************************************************************
 

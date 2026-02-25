@@ -54,7 +54,7 @@
 #include <Inventor/nodekits/SoBaseKit.h>
 #include <Inventor/actions/SoSearchAction.h>
 
-#include "../C/CoinTidbits.h"
+#include "CoinTidbits.h"
 
 #if COIN_DEBUG
 #include <Inventor/errors/SoDebugError.h>

@@ -54,7 +54,7 @@
 #include <Inventor/threads/SbTypedStorage.h>
 #endif // COIN_THREADSAFE
 
-#include "C/CoinTidbits.h"
+#include "CoinTidbits.h"
 #include "SbBasicP.h"
 
 // *************************************************************************
