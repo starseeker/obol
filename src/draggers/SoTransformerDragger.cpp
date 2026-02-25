@@ -1851,7 +1851,7 @@ SoTransformerDragger::updateAntiSquishList(void)
 
     SoPathList &pl = sa.getPaths();
     for (int i = 0; i < pl.getLength(); i++) {
-      SoFullPath * path = reclassify_cast<SoFullPath *>(pl[i]);
+      SoFullPath * path = static_cast<SoFullPath *>(pl[i]);
       SoNode * tail = path->getTail();
       int j, n = this->antiSquishList.getLength();
       for (j = 0; j < n; j++) {

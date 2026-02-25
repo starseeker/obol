@@ -14,8 +14,6 @@ file(GENERATE
     INPUT "${CMAKE_CURRENT_BINARY_DIR}/config.h_at_configured"
 )
 
-configure_file(setup.h.cmake.in setup.h)
-
 add_compile_options(-DHAVE_CONFIG_H -DCOIN_INTERNAL -DCOIN_DEBUG=$<CONFIG:Debug>)
 
 if(COIN_PROFILING)

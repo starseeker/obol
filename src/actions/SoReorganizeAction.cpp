@@ -463,7 +463,7 @@ void
 SoReorganizeAction::apply(SoPath * path)
 {
   PRIVATE(this)->cbaction.apply(path);
-  PRIVATE(this)->replaceNode(reclassify_cast<SoFullPath *>(path));
+  PRIVATE(this)->replaceNode(static_cast<SoFullPath *>(path));
 }
 
 void

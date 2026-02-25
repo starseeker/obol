@@ -49,7 +49,7 @@
 
 /* Removed BOOST_WORKAROUND dependency - no longer needed for C++17 */
 
-#include "Inventor/basic.h" /* For COMPILE_ONLY_BEFORE */
+#include "Inventor/basic.h"
 
 #ifdef __FILE__
 #define COIN_STUB_FILE __FILE__
@@ -146,21 +146,12 @@
 #endif
 
 
-/* COIN_CT_ASSERT() - a macro for doing compile-time asserting */
-#define COIN_CT_ASSERT(expr) \
-  do { switch ( 0 ) { case 0: case (expr): break; } } while ( 0 )
+/* COMPILE_ONLY_BEFORE() - C++17 static_assert-based compile-time version guard */
+#define COMPILE_ONLY_BEFORE(MAJOR,MINOR,MICRO,REASON) \
+  static_assert( (COIN_MAJOR_VERSION < MAJOR) || (COIN_MAJOR_VERSION == MAJOR && ((COIN_MINOR_VERSION < MINOR) || (COIN_MINOR_VERSION == MINOR && (COIN_MICRO_VERSION < MICRO)))), REASON )
 
-#define COMPILE_ONLY_BEFORE(MAJOR,MINOR,MICRO,REASON)                            \
-COIN_CT_ASSERT( (COIN_MAJOR_VERSION < MAJOR) || (COIN_MAJOR_VERSION == MAJOR && ((COIN_MINOR_VERSION < MINOR) || ( COIN_MINOR_VERSION == MINOR && (COIN_MICRO_VERSION < MICRO )))))
-
-#define COIN_CONCAT( X, Y ) COIN_CONCAT_INTERNAL( X, Y )
-#define COIN_CONCAT_INTERNAL( X, Y ) COIN_CONCAT_INTERNAL2(X,Y)
-#define COIN_CONCAT_INTERNAL2( X, Y ) X##Y
-
-#define COMPILE_ONLY_BEFORE_NOFUNCTION(MAJOR,MINOR,MICRO,REASON)              \
-static void inline COIN_CONCAT(compile_only_before_nofunction,__LINE__) () { \
-  COMPILE_ONLY_BEFORE(MAJOR,MINOR,MICRO,REASON);                              \
-}
+#define COMPILE_ONLY_BEFORE_NOFUNCTION(MAJOR,MINOR,MICRO,REASON) \
+  COMPILE_ONLY_BEFORE(MAJOR,MINOR,MICRO,REASON)
 
 /*
   Grep for POTENTIAL_ROTTING_DOCUMENTATION and update the version
@@ -170,18 +161,6 @@ static void inline COIN_CONCAT(compile_only_before_nofunction,__LINE__) () { \
 */
 #define POTENTIAL_ROTTING_DOCUMENTATION COMPILE_ONLY_BEFORE_NOFUNCTION(4,0,1,"This piece of documentation may potentially be outdated in the future.")
 
-#ifdef _MSC_VER
-#define COIN_MSVC _MSC_VER
-#endif /* _MSC_VER */
-
-/* MSVC version defines - kept for reference but workarounds not needed for C++17 */
-#define COIN_MSVC_6_0_VERSION 1200
-#define COIN_MSVC_7_0_VERSION 1300
-#define COIN_MSVC_7_1_VERSION 1310
-#define COIN_MSVC_8_0_VERSION 1400
-#define COIN_MSVC_9_0_VERSION 1500
-
-/* Legacy workaround macros removed - no longer needed for C++17 */
 
 #ifdef HAVE___BUILTIN_EXPECT
 /* for branch-prediction hint optimization */
