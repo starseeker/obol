@@ -96,9 +96,7 @@
 #include <Inventor/misc/SoProtoInstance.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/sensors/SoTimerSensor.h>
-#ifdef COIN_HARDCOPY
 #include <Inventor/annex/HardCopy/SoHardCopy.h>
-#endif
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/annex/FXViz/nodes/SoShadowGroup.h>
 
@@ -348,9 +346,7 @@ SoDB::init(ContextManager * context_manager)
   SoGLImage::initClass();
   SoGLBigImage::initClass();
 
-#ifdef COIN_HARDCOPY
   SoHardCopy::init();
-#endif
 
   SoShader::init();
   SoVBO::init();

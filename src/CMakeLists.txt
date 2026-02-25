@@ -18,8 +18,8 @@ configure_file(setup.h.cmake.in setup.h)
 
 add_compile_options(-DHAVE_CONFIG_H -DCOIN_INTERNAL -DCOIN_DEBUG=$<CONFIG:Debug>)
 
-if(COIN_HARDCOPY)
-  add_compile_options(-DCOIN_HARDCOPY)
+if(COIN_PROFILING)
+  add_compile_options(-DCOIN_PROFILING)
 endif()
 
 include_directories(BEFORE
@@ -53,9 +53,7 @@ set(COIN_SUBDIRS
   shadows threads shaders tools
 )
 
-if(COIN_HARDCOPY)
-  list(APPEND COIN_SUBDIRS hardcopy)
-endif()
+list(APPEND COIN_SUBDIRS hardcopy)
 
 # Add nodekits and related components if enabled
 list(APPEND COIN_SUBDIRS nodekits profiler hud)
@@ -136,10 +134,8 @@ else()
         $<TARGET_OBJECTS:shapenodes>
         $<TARGET_OBJECTS:threads>
         $<TARGET_OBJECTS:tools>
+        $<TARGET_OBJECTS:hardcopy>
     )
-    if(COIN_HARDCOPY)
-        list(APPEND _coin_objects $<TARGET_OBJECTS:hardcopy>)
-    endif()
     add_library(${PROJECT_NAME} ${COIN_SOURCE} ${COIN_ADDITIONAL_HDRS} ${_coin_objects})
 endif()
 

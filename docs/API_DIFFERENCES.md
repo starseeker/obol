@@ -20,8 +20,8 @@ migration guide.
 7. [NURBS Nodes Removed](#7-nurbs-nodes-removed)
 8. [Collision Detection Action Removed](#8-collision-detection-action-removed)
 9. [Platform-Specific Context Code Removed](#9-platform-specific-context-code-removed)
-10. [PostScript / Hardcopy Output Made Optional](#10-postscript--hardcopy-output-made-optional)
-11. [Profiling Subsystem Made Optional](#11-profiling-subsystem-made-optional)
+10. [PostScript / Hardcopy Output Always Included](#10-postscript--hardcopy-output-always-included)
+11. [Profiling Subsystem Off by Default](#11-profiling-subsystem-off-by-default)
 12. [Font Handling Simplified](#12-font-handling-simplified)
 13. [Threading Primitives Modernized](#13-threading-primitives-modernized)
 14. [Dead Code and Obsolete Classes Removed](#14-dead-code-and-obsolete-classes-removed)
@@ -339,8 +339,9 @@ SbVec2f pixmmres(72.0f / 25.4f, 72.0f / 25.4f);
 `wglGetProcAddress` and `glXGetProcAddressARB` paths are gone.
 `coin_gl_current_context()` always returns `NULL`.
 
-**Font rendering** now uses FreeType exclusively on all platforms; the Win32
-GDI font path (`cc_flww32_*`) has been removed.
+**Font rendering** now uses the embedded `struetype` rasterizer on all
+platforms; the Win32 GDI font path (`cc_flww32_*`) and the system
+`libfreetype` dependency have both been removed (see §12).
 
 ### Why
 
@@ -365,58 +366,60 @@ reason about and test than hidden `#ifdef` branches.
 
 ---
 
-## 10. PostScript / Hardcopy Output Made Optional
+## 10. PostScript / Hardcopy Output
 
 ### What changed
 
-The `src/hardcopy/` subsystem (PostScript vector output via
-`SoVectorizePSAction`, `PSVectorOutput`, `VectorOutput`, `VectorizeAction`,
-`VectorizeActionP`) is compiled only when the CMake option
-`-DCOIN_HARDCOPY=ON` is set.  It is **off by default**.
-
-`SoHardCopy::init()` is likewise guarded by `#if COIN_HARDCOPY`.
+No change from upstream Coin: the `src/hardcopy/` subsystem (PostScript vector
+output via `SoVectorizePSAction`, `PSVectorOutput`, `VectorOutput`,
+`VectorizeAction`, `VectorizeActionP`) is always compiled and `SoHardCopy::init()`
+is called unconditionally during `SoDB::init()`.
 
 ### Why
 
-PostScript output requires a running render loop and viewer integration that
-Obol does not provide.  In a headless test environment the hardcopy subsystem
-has ~1.4% code coverage and accounts for over 1,200 lines of effectively dead
-code in the default configuration.
+The PostScript hardcopy API works in any environment, including fully headless
+builds backed by OSMesa, without requiring a running viewer or display server.
 
 ### User implications
 
-Applications that use `SoVectorizePSAction` to render vector PostScript output
-must enable the option at CMake configure time:
-
-```bash
-cmake -S . -B build_dir -DCOIN_HARDCOPY=ON
-```
-
-No source-level changes are required; the API is unchanged when the option is
-enabled.
+`SoVectorizePSAction` and related classes are always available.  No CMake
+option is needed and no source changes are required relative to upstream Coin.
 
 ---
 
-## 11. Profiling Subsystem Made Optional
+## 11. Profiling Subsystem Off by Default
 
 ### What changed
 
-`SoProfiler::isEnabled()` is stubbed to always return `FALSE` in the default
-build, making the entire profiling code path unreachable.  A CMake option
-`-DCOIN_PROFILING=ON` will enable the full profiler subsystem in the future;
-for now the default is `OFF`.
+In upstream Coin the profiling subsystem is always compiled in and activated by
+setting the `COIN_PROFILER` environment variable at runtime.
+
+In Obol, the profiling code is compiled in but **`SoProfiler::isEnabled()`
+always returns `FALSE` unless the build is configured with
+`-DCOIN_PROFILING=ON`**.  With that option off (the default) the entire
+profiling code path is unreachable at runtime regardless of the `COIN_PROFILER`
+environment variable.
 
 ### Why
 
-Profiling instrumentation in Coin adds dead-code weight to every hot traversal
-path (`SoSeparator`, `SoGroup`, `SoMaterial`).  Keeping it disabled by default
-avoids the overhead and the dead conditional branches.
+Profiling instrumentation adds dead-code weight to every hot traversal path
+(`SoSeparator`, `SoGroup`, `SoMaterial`).  Until the overhead has been
+benchmarked against realistic scenes the subsystem is kept disabled by default
+so that performance regressions cannot be silently introduced.
 
 ### User implications
 
-`SoProfilingReportGenerator`, `SbProfilingData`, and related classes exist in
-the source tree but are not reachable at runtime unless the option is enabled.
-Applications should not depend on profiler output in the default build.
+`SoProfilingReportGenerator`, `SbProfilingData`, and related classes are
+always compiled but are not reachable at runtime unless `-DCOIN_PROFILING=ON`
+is specified at CMake configure time:
+
+```bash
+cmake -S . -B build_dir -DCOIN_PROFILING=ON
+```
+
+When enabled, profiling behaves identically to upstream Coin: set the
+`COIN_PROFILER` environment variable to activate it (see the upstream Coin
+documentation for the full syntax).
 
 ---
 
@@ -425,8 +428,9 @@ Applications should not depend on profiler output in the default build.
 ### What changed
 
 * The Win32 GDI font backend (`cc_flww32_*`) has been removed.
-* All platforms now use **FreeType exclusively** via the embedded `struetype`
-  TrueType rasterizer.
+* All platforms now use the embedded **`struetype`** TrueType rasterizer
+  directly; the system `libfreetype` library is **not** used and is **not**
+  required as a build or runtime dependency.
 * An embedded fallback bitmap font (ProFont) is used when no TrueType font
   file is available.
 * A new public `SbFont` class (§16) provides a clean C++ API for font
@@ -438,8 +442,10 @@ Applications should not depend on profiler output in the default build.
 
 Multi-platform font enumeration and two separate font backends added
 significant complexity while providing little benefit in a headless or
-single-platform context.  The FreeType-only approach covers all platforms with
-a single code path and a well-understood dependency.
+single-platform context.  Replacing the libfreetype dependency with the
+self-contained `struetype` rasterizer eliminates an external dependency
+entirely: fonts are handled by the embedded rasterizer on all platforms with a
+single, auditable code path.
 
 ### User implications
 
@@ -447,8 +453,8 @@ a single code path and a well-understood dependency.
   updated to use `SbFont` / `SbGlyph2D` / `SbGlyph3D` instead.
 * Windows applications that relied on system font enumeration through
   `cc_flww32_*` must supply font files explicitly via `SbFont::loadFont()`.
-* The FreeType library (`libfreetype`) is required at build time on all
-  platforms.
+* **`libfreetype` is not required** and does not need to be installed.  The
+  `struetype` rasterizer is bundled with the source tree.
 
 ---
 
@@ -696,8 +702,7 @@ Replace all uses of `SoSFLong`, `SoMFLong`, `SoSFULong`, `SoMFULong` with
 
 | CMake option | Default | Description |
 |---|---|---|
-| `COIN_HARDCOPY` | `OFF` | Include PostScript/hardcopy output subsystem |
-| `COIN_PROFILING` | `OFF` | Include profiling subsystem |
+| `COIN_PROFILING` | `OFF` | Enable profiling subsystem (`SoProfiler::isEnabled()` always FALSE when OFF) |
 | `COIN3D_USE_OSMESA` | `ON` | Link OSMesa for offscreen/headless rendering |
 | `COIN_BUILD_TESTS` | `ON` | Build the Catch2-based test suite |
 | `COIN_BUILD_EXAMPLES` | `OFF` | Build example applications |
@@ -735,10 +740,10 @@ Upstream Coin's Autoconf/Automake build system is not present in Obol; only CMak
 | **Collision** | `SoIntersectionDetectionAction` removed | Perform intersection tests externally |
 | **Platform GL context** | WGL/GLX/AGL/CGL/EGL code removed | Implement `SoDB::ContextManager` for each platform |
 | **Fixed DPI** | Offscreen renderer uses 72 DPI constant | Apply application-level DPI scaling if needed |
-| **PostScript/hardcopy** | Off by default (`-DCOIN_HARDCOPY=ON` to enable) | Add CMake option; API unchanged |
-| **Profiling** | Off by default; `isEnabled()` always FALSE | Add CMake option if needed |
+| **PostScript/hardcopy** | Always compiled; API always available | No action needed; `SoVectorizePSAction` usable in all builds |
+| **Profiling** | Always compiled; off by default (`-DCOIN_PROFILING=ON` to enable) | Add CMake option; `COIN_PROFILER` env var activates it when enabled |
 | **Font: SoGlyph** | Removed (was deprecated in Coin) | Use `SbFont` / `SbGlyph2D` / `SbGlyph3D` |
-| **Font: Win32 GDI** | Win32 font backend removed | Supply font files via `SbFont::loadFont()` |
+| **Font: Win32 GDI / libfreetype** | Both removed; embedded `struetype` rasterizer used | No external font library needed; supply `.ttf` files via `SbFont::loadFont()` |
 | **Threading C API** | `Inventor/C/threads/` headers not public | Use `Sb*` C++ threading classes |
 | **C header tier** | `Inventor/C/` subtree not in public headers | Use equivalent C++ APIs (see §18) |
 | **XML headers** | `Inventor/C/XML/` removed | Not available; handle XML externally |
