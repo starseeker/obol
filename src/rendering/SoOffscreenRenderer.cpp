@@ -362,7 +362,10 @@ static void init_format_handlers(void) {
 
 // Note: Platform-specific resolution detection has been removed.
 // The system now uses a standard 72 DPI default, which is appropriate
-// for most offscreen rendering use cases.
+// for most offscreen rendering use cases.  Applications can override
+// this value via SoOffscreenRenderer::setScreenPixelsPerInch().
+
+static float s_screen_pixels_per_inch = 72.0f;
 
 // *************************************************************************
 
@@ -518,22 +521,27 @@ SoOffscreenRenderer::~SoOffscreenRenderer()
 }
 
 /*!
-  Returns the screen pixels per inch resolution of your monitor.
+  Returns the screen pixels per inch resolution used for offscreen rendering.
+  The default value is 72 DPI.  Use setScreenPixelsPerInch() to change it.
 */
 float
 SoOffscreenRenderer::getScreenPixelsPerInch(void)
 {
-  // Use standard 72 DPI for offscreen rendering. This is appropriate
-  // for most use cases and eliminates platform-specific dependencies.
-  // Applications requiring specific DPI can scale their rendering accordingly.
-  SbVec2f pixmmres(72.0f / 25.4f, 72.0f / 25.4f);
+  return s_screen_pixels_per_inch;
+}
 
-  // The API-signature of this method is not what it should be: it
-  // assumes the same resolution in the vertical and horizontal
-  // directions.
-  float pixprmm = (pixmmres[0] + pixmmres[1]) / 2.0f; // find average
-
-  return pixprmm * 25.4f; // an inch is 25.4 mm.
+/*!
+  Sets the screen pixels per inch resolution used for offscreen rendering.
+  This affects PostScript output scaling and any other calculations that
+  depend on the assumed display DPI.  The value must be greater than zero.
+  The default is 72 DPI.
+*/
+void
+SoOffscreenRenderer::setScreenPixelsPerInch(float dpi)
+{
+  if (dpi > 0.0f) {
+    s_screen_pixels_per_inch = dpi;
+  }
 }
 
 /*!
