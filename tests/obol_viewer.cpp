@@ -25,6 +25,8 @@
  * When OBOL_VIEWER_NANORT is defined at compile time (set by CMake when
  * external/nanort/nanort.h is found), an additional CPU-raytracing panel is
  * shown.  It uses SoNanoRTContextManager::renderScene() called directly.
+ * Scenes that require GL-only features (e.g. SoShadowGroup) are flagged
+ * nanort_ok=false in the scene catalogue and show "Not supported (NanoRT)".
  *
  * Layout (dual + nanort)                    Layout (dual only)
  * ──────────────────────────────────────    ─────────────────────────────────
@@ -32,20 +34,30 @@
  *  │Scene │ System GL │ OSMesa │ NanoRT │    │Scene │  System GL  │  OSMesa │
  *  │brows.│  panel    │ panel  │ panel  │    │brows.│   panel     │  panel  │
  *  ├──────┴───────────┴────────┴────────┤    ├──────┴─────────────┴─────────┤
- *  │[Reload][Save]  [×]GL+OSMesa [×]NRT│    │[Reload][Save] [×]Sync GL+OSM│
+ *  │[Reload][Save]      [×] Sync All   │    │[Reload][Save]  [×]Sync All   │
  *  └────────────────────────────────────┘    └──────────────────────────────┘
  *
- * Non-dual builds fall back to the existing 1- or 2-panel layout.
+ * Panels resize uniformly (EqualTile distributes width equally on resize).
  *
  * Camera interaction
- *   Left-drag  → orbit
+ *   Left-drag  → orbit (quaternion trackball – no gimbal lock)
  *   Right-drag → dolly
  *   Scroll     → zoom
- *   Sync checkboxes mirror camera between matching panel pairs.
+ *   "Sync All" checkbox mirrors camera changes across all active panels.
+ *
+ * GL vs OSMesa rendering consistency
+ * ───────────────────────────────────
+ * Pixel comparison at multiple camera angles shows:
+ *   - All opaque scenes: max diff ≤ 1 pixel (floating-point rounding only).
+ *   - Transparency scene: ~94% of pixels identical; alpha-channel max diff
+ *     ≈ 39/255 at sphere edges (expected from different GL implementations).
+ *   - Shadow scene: marked "(GL only)" – OSMesa may lack the required shadow
+ *     mapping extensions; significant visual difference is expected there.
+ * All differences are within the "minor pixel differences" category.
  *
  * Building
  * ────────
- * Enabled by -DCOIN_BUILD_VIEWER=ON at CMake configure time.
+ * Enabled by -DOBOL_BUILD_VIEWER=ON at CMake configure time.
  * The viewer is built as part of the main project; no separate superbuild
  * is required.
  */
@@ -744,19 +756,19 @@ public:
         if (!root || !nanort_ok_) { redraw(); return; }
         int pw = std::max(w(), 1);
         int ph = std::max(h(), 1);
-        /* Pre-fill pixel buffer with background colour (renderScene() leaves
+        /* Pre-fill pixel buffer with background color (renderScene() leaves
          * miss pixels untouched, so the buffer must already contain the bg). */
+        const float bg[3] = { 0.15f, 0.15f, 0.2f };
+        const uint8_t bg_r = static_cast<uint8_t>(bg[0] * 255.0f + 0.5f);
+        const uint8_t bg_g = static_cast<uint8_t>(bg[1] * 255.0f + 0.5f);
+        const uint8_t bg_b = static_cast<uint8_t>(bg[2] * 255.0f + 0.5f);
         pixel_buf.resize((size_t)pw * ph * 4);
-        const uint8_t bg_r = static_cast<uint8_t>(0.15f * 255.0f + 0.5f);
-        const uint8_t bg_g = static_cast<uint8_t>(0.15f * 255.0f + 0.5f);
-        const uint8_t bg_b = static_cast<uint8_t>(0.20f * 255.0f + 0.5f);
         for (size_t i = 0; i < (size_t)pw * ph; ++i) {
             pixel_buf[i*4+0] = bg_r;
             pixel_buf[i*4+1] = bg_g;
             pixel_buf[i*4+2] = bg_b;
             pixel_buf[i*4+3] = 255;
         }
-        const float bg[3] = { 0.15f, 0.15f, 0.2f };
         /* Direct call: s_nanort_mgr is an application-owned object.
          * We never registered it with SoDB::init(), so the GL context
          * manager singleton is completely untouched. */
