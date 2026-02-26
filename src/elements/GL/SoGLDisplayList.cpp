@@ -63,9 +63,9 @@
 #include "rendering/SoGL.h"
 #include "config.h"
 
-#ifndef COIN_WORKAROUND_NO_USING_STD_FUNCS
+#ifndef OBOL_WORKAROUND_NO_USING_STD_FUNCS
 using std::strcmp;
-#endif // !COIN_WORKAROUND_NO_USING_STD_FUNCS
+#endif // !OBOL_WORKAROUND_NO_USING_STD_FUNCS
 
 class SoGLDisplayListP {
  public:
@@ -97,7 +97,7 @@ SoGLDisplayList::SoGLDisplayList(SoState * state, Type type, int allocnum,
   PRIVATE(this)->mipmap = mipmaptexobj;
   PRIVATE(this)->texturetarget = 0;
 
-#if COIN_DEBUG && 0 // debug
+#if OBOL_DEBUG && 0 // debug
   SoDebugError::postInfo("SoGLDisplayList::SoGLDisplayList", "%p", this);
 #endif // debug
 
@@ -182,7 +182,7 @@ SoGLDisplayList::SoGLDisplayList(SoState * state, Type type, int allocnum,
       // FIXME: be more robust in handling this -- the rendering will
       // gradually go bonkers after we hit this problem. 20020619 mortene.
     }
-#if COIN_DEBUG && 0 // debug
+#if OBOL_DEBUG && 0 // debug
     SoDebugError::postInfo("SoGLDisplayList::SoGLDisplayList",
                            "firstindex==%d", PRIVATE(this)->firstindex);
 #endif // debug
@@ -192,7 +192,7 @@ SoGLDisplayList::SoGLDisplayList(SoState * state, Type type, int allocnum,
 // private destructor. Use ref()/unref()
 SoGLDisplayList::~SoGLDisplayList()
 {
-#if COIN_DEBUG && 0 // debug
+#if OBOL_DEBUG && 0 // debug
   SoDebugError::postInfo("SoGLDisplayList::~SoGLDisplayList", "%p", this);
 #endif // debug
 
@@ -261,7 +261,7 @@ SoGLDisplayList::open(SoState * state, int index)
   Close this display list/texture object.
 */
 void
-SoGLDisplayList::close(SoState * COIN_UNUSED_ARG(state))
+SoGLDisplayList::close(SoState * OBOL_UNUSED_ARG(state))
 {
   if (PRIVATE(this)->type == DISPLAY_LIST) {
     glEndList();
@@ -389,12 +389,12 @@ SoGLDisplayList::getTextureTarget(void) const
 /*!
   \COININTERNAL
 
-  \COIN_FUNCTION_EXTENSION
+  \OBOL_FUNCTION_EXTENSION
 
   \since Coin 2.0
 */
 void
-SoGLDisplayList::bindTexture(SoState * COIN_UNUSED_ARG(state))
+SoGLDisplayList::bindTexture(SoState * OBOL_UNUSED_ARG(state))
 {
   const SoGLContext * glw = SoGLContext_instance(PRIVATE(this)->context);
   assert(SoGLContext_has_texture_objects(glw));

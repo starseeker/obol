@@ -65,8 +65,8 @@
  *   - stb_image_write.h is NOT needed here (pixel writing is done by Coin)
  */
 
-#ifndef COIN_NANORT_CONTEXT_MANAGER_H
-#define COIN_NANORT_CONTEXT_MANAGER_H
+#ifndef OBOL_NANORT_CONTEXT_MANAGER_H
+#define OBOL_NANORT_CONTEXT_MANAGER_H
 
 // ---- Obol/Coin includes ---------------------------------------------------
 #include <Inventor/SoDB.h>
@@ -615,4 +615,4 @@ public:
     }
 };
 
-#endif // COIN_NANORT_CONTEXT_MANAGER_H
+#endif // OBOL_NANORT_CONTEXT_MANAGER_H

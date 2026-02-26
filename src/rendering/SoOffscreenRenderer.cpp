@@ -476,14 +476,14 @@ private:
 // Set the environment variable below to get the individual tiles
 // written out for debugging purposes. E.g.
 //
-//   $ export COIN_DEBUG_SOOFFSCREENRENDERER_TILEPREFIX="/tmp/offscreentile_"
+//   $ export OBOL_DEBUG_SOOFFSCREENRENDERER_TILEPREFIX="/tmp/offscreentile_"
 //
 // Tile X and Y position, plus the ".rgb" suffix, will be added when
 // writing.
 const char *
 SoOffscreenRendererP::debugTileOutputPrefix(void)
 {
-  return CoinInternal::getEnvironmentVariableRaw("COIN_DEBUG_SOOFFSCREENRENDERER_TILEPREFIX");
+  return CoinInternal::getEnvironmentVariableRaw("OBOL_DEBUG_SOOFFSCREENRENDERER_TILEPREFIX");
 }
 
 // *************************************************************************
@@ -988,7 +988,7 @@ SoOffscreenRendererP::renderFromBase(SoBase * base)
   // the reason noted below.)
   static int forcetiled = -1;
   if (forcetiled == -1) {
-    const char * env = CoinInternal::getEnvironmentVariableRaw("COIN_FORCE_TILED_OFFSCREENRENDERING");
+    const char * env = CoinInternal::getEnvironmentVariableRaw("OBOL_FORCE_TILED_OFFSCREENRENDERING");
     forcetiled = (env && (atoi(env) > 0)) ? 1 : 0;
     if (forcetiled) {
       SoDebugError::postInfo("SoOffscreenRendererP::renderFromBase",
@@ -1788,7 +1788,7 @@ SoOffscreenRenderer::writeToFile(const SbString & filename, const SbName & filet
   \since Coin 3.1
 */
 void
-SoOffscreenRenderer::setPbufferEnable(SbBool COIN_UNUSED_ARG(enable))
+SoOffscreenRenderer::setPbufferEnable(SbBool OBOL_UNUSED_ARG(enable))
 {
   // FIXME: change the semantics of this function from just ignoring
   // the input argument, to using it for shutting off pbuffers if
@@ -2152,7 +2152,7 @@ SoOffscreenRendererP::offscreenContextsNotSupported(void)
   return FALSE;
 #elif defined(HAVE_WGL)
   return FALSE;
-#elif defined(COIN_MACOS_10)
+#elif defined(OBOL_MACOS_10)
   return FALSE;
 #elif defined(HAVE_OSMESA)
   // OSMesa provides offscreen rendering via software Mesa implementation

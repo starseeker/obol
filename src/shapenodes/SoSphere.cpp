@@ -175,7 +175,7 @@ SoSphere::GLRender(SoGLRenderAction * action)
 
 // Documented in superclass.
 void
-SoSphere::computeBBox(SoAction * COIN_UNUSED_ARG(action), SbBox3f & box, SbVec3f & center)
+SoSphere::computeBBox(SoAction * OBOL_UNUSED_ARG(action), SbBox3f & box, SbVec3f & center)
 {
   float r = this->radius.getValue();
 
