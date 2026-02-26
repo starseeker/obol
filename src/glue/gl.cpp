@@ -244,7 +244,6 @@
 #include "glue/glp.h"
 #include "glue/dlp.h"
 /* Platform-specific glue headers are no longer needed with callback-based contexts */
-#include "threads/threadsutilp.h"
 #include "misc/SoEnvironment.h"
 
 // Include for SoDB context manager - minimal include to avoid circular dependencies
@@ -2268,7 +2267,6 @@ SoGLContext_instance(int contextid)
   }
 #endif
 
-  CC_SYNC_BEGIN(SoGLContext_instance);
 
   /* check environment variables */
 #ifdef COIN3D_OSMESA_BUILD
@@ -2640,7 +2638,6 @@ SoGLContext_instance(int contextid)
     gi = (SoGLContext *)ptr;
   }
 
-  CC_SYNC_END(SoGLContext_instance);
 
 #ifdef COIN3D_OSMESA_BUILD
   if (SoGLContext_debug()) {
@@ -2688,7 +2685,6 @@ SoGLContext_destruct(uint32_t contextid)
 {
   SbBool found;
   void * ptr;
-  CC_SYNC_BEGIN(SoGLContext_instance);
   if (gldict) { // might happen if a context is destructed without using the SoGLContext interface
     found = cc_dict_get(gldict, (uintptr_t)contextid, &ptr);
     if (found) {
@@ -2703,7 +2699,6 @@ SoGLContext_destruct(uint32_t contextid)
       }
     }
   }
-  CC_SYNC_END(SoGLContext_instance);
 }
 
 SbBool
