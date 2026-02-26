@@ -79,7 +79,8 @@ endif()
 # Core build options
 option(BUILD_SHARED_LIBS "Build shared library when ON, static when OFF" ON)
 option(OBOL_BUILD_TESTS "Build unit tests" ON)
-option(OBOL_BUILD_VIEWER "Build the FLTK scene viewer (obol_viewer); requires FLTK" OFF)
+find_package(FLTK QUIET)
+option(OBOL_BUILD_VIEWER "Build the FLTK scene viewer (obol_viewer); requires FLTK" ${FLTK_FOUND})
 
 # Internal alias used throughout src/ for Windows shared/static detection
 set(OBOL_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
