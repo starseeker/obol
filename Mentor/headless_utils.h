@@ -6,7 +6,7 @@
  * produce reference images for validation.
  *
  * Backend selection (compile-time):
- *   COIN3D_OSMESA_BUILD: use OSMesa for truly headless operation
+ *   OBOL_OSMESA_BUILD: use OSMesa for truly headless operation
  *   default:             use system OpenGL (GLX on Linux) with Xvfb
  *
  * Both paths require a SoDB::ContextManager since this Coin fork's
@@ -41,7 +41,7 @@
 #define DEFAULT_WIDTH 800
 #define DEFAULT_HEIGHT 600
 
-#ifdef COIN3D_OSMESA_BUILD
+#ifdef OBOL_OSMESA_BUILD
 // ============================================================================
 // OSMesa Backend: For offscreen/headless rendering without display server
 // ============================================================================
@@ -153,7 +153,7 @@ inline SoOffscreenRenderer* getSharedRenderer() {
     return s_renderer;
 }
 
-#else // !COIN3D_OSMESA_BUILD
+#else // !OBOL_OSMESA_BUILD
 // ============================================================================
 // System OpenGL Backend: GLX on Linux (use Xvfb for headless operation)
 // ============================================================================
@@ -185,8 +185,8 @@ struct GLXOffscreenCtx {
 /**
  * GLX context manager for system OpenGL headless rendering.
  * Requires a running X server (real or Xvfb).
- * Set COIN_GLXGLUE_NO_PBUFFERS=1 to skip pbuffer and use pixmap fallback.
- * Set COIN_GLX_PIXMAP_DIRECT_RENDERING=1 to request direct rendering.
+ * Set OBOL_GLXGLUE_NO_PBUFFERS=1 to skip pbuffer and use pixmap fallback.
+ * Set OBOL_GLX_PIXMAP_DIRECT_RENDERING=1 to request direct rendering.
  */
 class GLXContextManager : public SoDB::ContextManager {
 public:
@@ -219,7 +219,7 @@ public:
         ctx->prev_read  = 0;
 
         bool no_pbuffer = false;
-        const char *env = getenv("COIN_GLXGLUE_NO_PBUFFERS");
+        const char *env = getenv("OBOL_GLXGLUE_NO_PBUFFERS");
         if (env && env[0] != '0') no_pbuffer = true;
 
         if (!no_pbuffer) {
@@ -259,9 +259,9 @@ public:
 
         // Fallback: Pixmap
         // Modern X servers disable indirect rendering (BadValue from X_GLXCreateContext
-        // when direct=False). Check COIN_GLX_PIXMAP_DIRECT_RENDERING to use direct.
+        // when direct=False). Check OBOL_GLX_PIXMAP_DIRECT_RENDERING to use direct.
         Bool direct = False;
-        const char *dr = getenv("COIN_GLX_PIXMAP_DIRECT_RENDERING");
+        const char *dr = getenv("OBOL_GLX_PIXMAP_DIRECT_RENDERING");
         if (dr && dr[0] != '0') direct = True;
 
         int vattribs[] = {
@@ -431,7 +431,7 @@ inline bool renderToFile(
     return true;
 }
 
-#endif // COIN3D_OSMESA_BUILD
+#endif // OBOL_OSMESA_BUILD
 
 /**
  * Find camera in scene graph

@@ -11,17 +11,17 @@
 # the test fails, indicating a rendering regression.
 #
 # Backend selection (inherits from parent project):
-#   COIN3D_USE_OSMESA=ON  → define COIN3D_OSMESA_BUILD, link OSMesa
+#   OBOL_USE_OSMESA=ON  → define OBOL_OSMESA_BUILD, link OSMesa
 #   default               → system OpenGL via GLX (needs X server / Xvfb)
 # =============================================================================
 
 # ---- Backend detection -------------------------------------------------------
-if(DEFINED COIN3D_USE_OSMESA)
-    set(RENDERING_USE_OSMESA ${COIN3D_USE_OSMESA})
+if(DEFINED OBOL_USE_OSMESA)
+    set(RENDERING_USE_OSMESA ${OBOL_USE_OSMESA})
 else()
     set(RENDERING_USE_OSMESA OFF CACHE BOOL "Use OSMesa for rendering tests")
 endif()
-# Note: COIN3D_BUILD_DUAL_GL builds use system GL (GLX+Xvfb) for rendering
+# Note: OBOL_BUILD_DUAL_GL builds use system GL (GLX+Xvfb) for rendering
 # tests; the OSMesa layer is in the library but scene traversal uses system GL.
 
 if(RENDERING_USE_OSMESA)
@@ -49,11 +49,11 @@ macro(add_rendering_test name)
         ${PROJECT_SOURCE_DIR}/include
         ${PROJECT_SOURCE_DIR}/include/Inventor/annex
         ${PROJECT_BINARY_DIR}/include
-        ${COIN_TARGET_INCLUDE_DIRECTORIES}
+        ${OBOL_TARGET_INCLUDE_DIRECTORIES}
     )
-    target_link_libraries(${name} Coin ${COIN_TARGET_LINK_LIBRARIES})
+    target_link_libraries(${name} Coin ${OBOL_TARGET_LINK_LIBRARIES})
     if(RENDERING_USE_OSMESA)
-        target_compile_definitions(${name} PRIVATE COIN3D_OSMESA_BUILD)
+        target_compile_definitions(${name} PRIVATE OBOL_OSMESA_BUILD)
         if(OSMESA_INCLUDE_DIR)
             target_include_directories(${name} PRIVATE ${OSMESA_INCLUDE_DIR})
         endif()
@@ -62,7 +62,7 @@ macro(add_rendering_test name)
         endif()
     elseif(X11_FOUND)
         # When building as a subdirectory of the main Coin project, Coin already
-        # brings in OpenGL transitively via COIN_TARGET_LINK_LIBRARIES.
+        # brings in OpenGL transitively via OBOL_TARGET_LINK_LIBRARIES.
         # We only need X11 explicitly for the GLX headless_utils.h context manager.
         target_link_libraries(${name} ${X11_X11_LIB})
         if(OpenGL_FOUND AND TARGET OpenGL::GL)
@@ -181,7 +181,7 @@ add_rendering_test(render_sogl_bindings)
 # add_nanort_rendering_test(name)
 #
 # Compiles <name>.cpp with:
-#   - COIN3D_NANORT_BUILD defined  →  headless_utils.h uses SoNanoRTContextManager
+#   - OBOL_NANORT_BUILD defined  →  headless_utils.h uses SoNanoRTContextManager
 #   - nanort.h and stb_image_write.h on the include path
 #
 # Tests built this way work without a display server and without OpenGL.
@@ -196,12 +196,12 @@ macro(add_nanort_rendering_test name)
         ${PROJECT_SOURCE_DIR}/include
         ${PROJECT_SOURCE_DIR}/include/Inventor/annex
         ${PROJECT_BINARY_DIR}/include
-        ${COIN_TARGET_INCLUDE_DIRECTORIES}
+        ${OBOL_TARGET_INCLUDE_DIRECTORIES}
         ${PROJECT_SOURCE_DIR}/external/nanort
         ${PROJECT_SOURCE_DIR}/external/nanort/examples/common
     )
-    target_compile_definitions(nrt_${name} PRIVATE COIN3D_NANORT_BUILD)
-    target_link_libraries(nrt_${name} Coin ${COIN_TARGET_LINK_LIBRARIES})
+    target_compile_definitions(nrt_${name} PRIVATE OBOL_NANORT_BUILD)
+    target_link_libraries(nrt_${name} Coin ${OBOL_TARGET_LINK_LIBRARIES})
     set_target_properties(nrt_${name} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
     )
@@ -240,11 +240,11 @@ target_include_directories(render_nanort PRIVATE
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_SOURCE_DIR}/include/Inventor/annex
     ${PROJECT_BINARY_DIR}/include
-    ${COIN_TARGET_INCLUDE_DIRECTORIES}
+    ${OBOL_TARGET_INCLUDE_DIRECTORIES}
     ${PROJECT_SOURCE_DIR}/external/nanort
     ${PROJECT_SOURCE_DIR}/external/nanort/examples/common
 )
-target_link_libraries(render_nanort Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_link_libraries(render_nanort Coin ${OBOL_TARGET_LINK_LIBRARIES})
 set_target_properties(render_nanort PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
 )

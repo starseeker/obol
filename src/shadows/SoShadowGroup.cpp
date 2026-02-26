@@ -687,7 +687,7 @@ public:
       }
     }
   }
-  void getQuality(SoState * COIN_UNUSED_ARG(state), SbBool & perpixelspot, SbBool & perpixelother) {
+  void getQuality(SoState * OBOL_UNUSED_ARG(state), SbBool & perpixelspot, SbBool & perpixelother) {
     float quality = this->master->quality.getValue();
     perpixelspot = FALSE;
     perpixelother = FALSE;
@@ -807,7 +807,7 @@ SoShadowGroup::~SoShadowGroup()
 void
 SoShadowGroup::initClass(void)
 {
-  SO_NODE_INTERNAL_INIT_CLASS(SoShadowGroup, SO_FROM_COIN_2_5);
+  SO_NODE_INTERNAL_INIT_CLASS(SoShadowGroup, SO_FROM_OBOL_2_5);
 }
 
 void
@@ -1137,7 +1137,7 @@ SoShadowLightCache::toCameraSpace(const SbXfBox3f & worldbox) const
 }
 
 void
-SoShadowGroupP::updateSpotCamera(SoState * COIN_UNUSED_ARG(state), SoShadowLightCache * cache, const SbMatrix & transform)
+SoShadowGroupP::updateSpotCamera(SoState * OBOL_UNUSED_ARG(state), SoShadowLightCache * cache, const SbMatrix & transform)
 {
   SoCamera * cam = cache->camera;
   SoSpotLight * light = static_cast<SoSpotLight*> (cache->light);
@@ -2316,7 +2316,7 @@ SoShadowLightCache::createGaussSG(SoShaderProgram * program, SoSceneTexture2 * t
 }
 
 void
-SoShadowLightCache::shadowmap_glcallback(void * COIN_UNUSED_ARG(closure), SoAction * action)
+SoShadowLightCache::shadowmap_glcallback(void * OBOL_UNUSED_ARG(closure), SoAction * action)
 {
   if (action->isOfType(SoGLRenderAction::getClassTypeId())) {
     SoState * state = action->getState();
@@ -2334,7 +2334,7 @@ SoShadowLightCache::shadowmap_glcallback(void * COIN_UNUSED_ARG(closure), SoActi
 }
 
 void
-SoShadowLightCache::shadowmap_post_glcallback(void * COIN_UNUSED_ARG(closure), SoAction * action)
+SoShadowLightCache::shadowmap_post_glcallback(void * OBOL_UNUSED_ARG(closure), SoAction * action)
 {
   if (action->isOfType(SoGLRenderAction::getClassTypeId())) {
     // for debugging the shadow map

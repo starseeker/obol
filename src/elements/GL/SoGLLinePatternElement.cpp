@@ -101,7 +101,7 @@ SoGLLinePatternElement::push(SoState * state)
 */
 
 void
-SoGLLinePatternElement::pop(SoState * COIN_UNUSED_ARG(state),
+SoGLLinePatternElement::pop(SoState * OBOL_UNUSED_ARG(state),
                             const SoElement * prevTopElement)
 {
   SoGLLinePatternElement * prev = (SoGLLinePatternElement*) prevTopElement;

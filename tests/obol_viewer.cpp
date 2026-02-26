@@ -11,7 +11,7 @@
  * (OSMesa for headless/dual builds, GLX for sys-only builds) is set up
  * via headless_utils.h, exactly as the rendering tests do.
  *
- * OSMesa panel (dual-GL builds only: COIN3D_BUILD_DUAL_GL)
+ * OSMesa panel (dual-GL builds only: OBOL_BUILD_DUAL_GL)
  * ─────────────────────────────────────────────────────────
  * In dual-GL builds a second "OSMesa" panel is shown alongside the system-GL
  * panel.  It uses its own SoOffscreenRenderer whose context manager is set to
@@ -116,7 +116,7 @@
 /* ---- Optional OSMesa panel: only available in dual-GL builds ----------- */
 /* SoDB::createOSMesaContextManager() provides the OSMesa backend without   */
 /* requiring the viewer to include any OSMesa headers directly.             */
-#ifdef COIN3D_BUILD_DUAL_GL
+#ifdef OBOL_BUILD_DUAL_GL
 #  define OBOL_VIEWER_OSMESA_PANEL
 #endif
 
@@ -1263,9 +1263,9 @@ public:
 private:
     /* ---- coin panel label, chosen at compile time ---- */
     static const char* coinLabel() {
-#if defined(COIN3D_BUILD_DUAL_GL)
+#if defined(OBOL_BUILD_DUAL_GL)
         return "System GL";
-#elif defined(COIN3D_OSMESA_BUILD)
+#elif defined(OBOL_OSMESA_BUILD)
         return "OSMesa (headless)";
 #else
         return "System OpenGL";

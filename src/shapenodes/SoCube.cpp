@@ -212,7 +212,7 @@ SoCube::generatePrimitives(SoAction * action)
 
 // Doc in parent.
 void
-SoCube::computeBBox(SoAction * COIN_UNUSED_ARG(action), SbBox3f & box, SbVec3f & center)
+SoCube::computeBBox(SoAction * OBOL_UNUSED_ARG(action), SbBox3f & box, SbVec3f & center)
 {
   center.setValue(0.0f, 0.0f, 0.0f);
   float w, h, d;

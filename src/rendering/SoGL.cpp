@@ -2102,9 +2102,9 @@ sogl_render_tristrip(const SoGLCoordinateElement * const vertexlist,
 
 static void
 sogl_render_pointset_m0n0t0(const SoGLCoordinateElement * coords,
-                            const SbVec3f * COIN_UNUSED_ARG(normals),
-                            SoMaterialBundle * COIN_UNUSED_ARG(mb),
-                            const SoTextureCoordinateBundle * COIN_UNUSED_ARG(tb),
+                            const SbVec3f * OBOL_UNUSED_ARG(normals),
+                            SoMaterialBundle * OBOL_UNUSED_ARG(mb),
+                            const SoTextureCoordinateBundle * OBOL_UNUSED_ARG(tb),
                             int32_t numpts,
                             int32_t idx)
 {
@@ -2129,8 +2129,8 @@ sogl_render_pointset_m0n0t0(const SoGLCoordinateElement * coords,
 
 static void
 sogl_render_pointset_m0n0t1(const SoGLCoordinateElement * coords,
-                            const SbVec3f * COIN_UNUSED_ARG(normals),
-                            SoMaterialBundle * COIN_UNUSED_ARG(mb),
+                            const SbVec3f * OBOL_UNUSED_ARG(normals),
+                            SoMaterialBundle * OBOL_UNUSED_ARG(mb),
                             const SoTextureCoordinateBundle * tb,
                             int32_t numpts,
                             int32_t idx)
@@ -2149,8 +2149,8 @@ sogl_render_pointset_m0n0t1(const SoGLCoordinateElement * coords,
 static void
 sogl_render_pointset_m0n1t0(const SoGLCoordinateElement * coords,
                             const SbVec3f * normals,
-                            SoMaterialBundle * COIN_UNUSED_ARG(mb),
-                            const SoTextureCoordinateBundle * COIN_UNUSED_ARG(tb),
+                            SoMaterialBundle * OBOL_UNUSED_ARG(mb),
+                            const SoTextureCoordinateBundle * OBOL_UNUSED_ARG(tb),
                             int32_t numpts,
                             int32_t idx)
 {
@@ -2165,7 +2165,7 @@ sogl_render_pointset_m0n1t0(const SoGLCoordinateElement * coords,
 static void
 sogl_render_pointset_m0n1t1(const SoGLCoordinateElement * coords,
                             const SbVec3f * normals,
-                            SoMaterialBundle * COIN_UNUSED_ARG(mb),
+                            SoMaterialBundle * OBOL_UNUSED_ARG(mb),
                             const SoTextureCoordinateBundle * tb,
                             int32_t numpts,
                             int32_t idx)
@@ -2184,9 +2184,9 @@ sogl_render_pointset_m0n1t1(const SoGLCoordinateElement * coords,
 
 static void
 sogl_render_pointset_m1n0t0(const SoGLCoordinateElement * coords,
-                            const SbVec3f * COIN_UNUSED_ARG(normals),
+                            const SbVec3f * OBOL_UNUSED_ARG(normals),
                             SoMaterialBundle * mb,
-                            const SoTextureCoordinateBundle * COIN_UNUSED_ARG(tb),
+                            const SoTextureCoordinateBundle * OBOL_UNUSED_ARG(tb),
                             int32_t numpts,
                             int32_t idx)
 {
@@ -2217,7 +2217,7 @@ sogl_render_pointset_m1n0t0(const SoGLCoordinateElement * coords,
 
 static void
 sogl_render_pointset_m1n0t1(const SoGLCoordinateElement * coords,
-                            const SbVec3f * COIN_UNUSED_ARG(normals),
+                            const SbVec3f * OBOL_UNUSED_ARG(normals),
                             SoMaterialBundle * mb,
                             const SoTextureCoordinateBundle * tb,
                             int32_t numpts,
@@ -2240,7 +2240,7 @@ static void
 sogl_render_pointset_m1n1t0(const SoGLCoordinateElement * coords,
                             const SbVec3f * normals,
                             SoMaterialBundle * mb,
-                            const SoTextureCoordinateBundle * COIN_UNUSED_ARG(tb),
+                            const SoTextureCoordinateBundle * OBOL_UNUSED_ARG(tb),
                             int32_t numpts,
                             int32_t idx)
 {
@@ -2326,12 +2326,12 @@ sogl_render_pointset(const SoGLCoordinateElement * coords,
 SbBool
 sogl_glerror_debugging(void)
 {
-  static int COIN_GLERROR_DEBUGGING = -1;
-  if (COIN_GLERROR_DEBUGGING == -1) {
-    const char * str = CoinInternal::getEnvironmentVariableRaw("COIN_GLERROR_DEBUGGING");
-    COIN_GLERROR_DEBUGGING = str ? atoi(str) : 0;
+  static int OBOL_GLERROR_DEBUGGING = -1;
+  if (OBOL_GLERROR_DEBUGGING == -1) {
+    const char * str = CoinInternal::getEnvironmentVariableRaw("OBOL_GLERROR_DEBUGGING");
+    OBOL_GLERROR_DEBUGGING = str ? atoi(str) : 0;
   }
-  return (COIN_GLERROR_DEBUGGING == 0) ? FALSE : TRUE;
+  return (OBOL_GLERROR_DEBUGGING == 0) ? FALSE : TRUE;
 }
 
 static int SOGL_AUTOCACHE_REMOTE_MIN = 500000;
@@ -2350,23 +2350,23 @@ sogl_autocache_update(SoState * state, const int numprimitives, SbBool didusevbo
   static SbBool didtestenv = FALSE;
   if (!didtestenv) {
     const char * env;
-    env = CoinInternal::getEnvironmentVariableRaw("COIN_AUTOCACHE_REMOTE_MIN");
+    env = CoinInternal::getEnvironmentVariableRaw("OBOL_AUTOCACHE_REMOTE_MIN");
     if (env) {
       SOGL_AUTOCACHE_REMOTE_MIN = atoi(env);
     }
-    env = CoinInternal::getEnvironmentVariableRaw("COIN_AUTOCACHE_REMOTE_MAX");
+    env = CoinInternal::getEnvironmentVariableRaw("OBOL_AUTOCACHE_REMOTE_MAX");
     if (env) {
       SOGL_AUTOCACHE_REMOTE_MAX = atoi(env);
     }
-    env = CoinInternal::getEnvironmentVariableRaw("COIN_AUTOCACHE_LOCAL_MIN");
+    env = CoinInternal::getEnvironmentVariableRaw("OBOL_AUTOCACHE_LOCAL_MIN");
     if (env) {
       SOGL_AUTOCACHE_LOCAL_MIN = atoi(env);
     }
-    env = CoinInternal::getEnvironmentVariableRaw("COIN_AUTOCACHE_LOCAL_MAX");
+    env = CoinInternal::getEnvironmentVariableRaw("OBOL_AUTOCACHE_LOCAL_MAX");
     if (env) {
       SOGL_AUTOCACHE_LOCAL_MAX = atoi(env);
     }
-    env = CoinInternal::getEnvironmentVariableRaw("COIN_AUTOCACHE_VBO_LIMIT");
+    env = CoinInternal::getEnvironmentVariableRaw("OBOL_AUTOCACHE_VBO_LIMIT");
     if (env) {
       SOGL_AUTOCACHE_VBO_LIMIT = atoi(env);
     }
