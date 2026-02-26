@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 project(MentorHeadlessExamples)
 
-# Detect how parent Coin was built (OSMesa or system OpenGL)
+# Detect how parent Obol was built (OSMesa or system OpenGL)
 if(DEFINED OBOL_USE_OSMESA)
     set(EXAMPLES_USE_OSMESA ${OBOL_USE_OSMESA})
 else()
@@ -10,9 +10,9 @@ else()
 endif()
 
 if(EXAMPLES_USE_OSMESA)
-    if(TARGET Coin)
+    if(TARGET Obol)
         set(OSMESA_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../external/osmesa/include")
-        # When building as a subdirectory of the main Coin project, the osmesa target
+        # When building as a subdirectory of the main Obol project, the osmesa target
         # is available via the parent project's FindOSMesa.cmake
         if(TARGET osmesa_interface)
             set(OSMESA_LINK_TARGET osmesa_interface)
@@ -40,15 +40,15 @@ set(IMAGE_COMPARISON_HASH_THRESHOLD "5" CACHE STRING "Perceptual hash comparison
 set(IMAGE_COMPARISON_RMSE_THRESHOLD "5.0" CACHE STRING "RMSE comparison threshold (0-255)")
 set(IMAGE_COMPARISON_TEST_TIMEOUT "30" CACHE STRING "Timeout in seconds for each test (default 30)")
 
-# Find Coin package
+# Find Obol package
 # Priority:
-# 1. When built as part of the main Coin project the Coin target is available directly.
-# 2. Try to locate an installed or build-tree package via find_package(Coin).
+# 1. When built as part of the main Obol project the Obol target is available directly.
+# 2. Try to locate an installed or build-tree package via find_package(Obol).
 # 3. Fall back to referencing the build directory directly (standalone build).
-if(TARGET Coin)
-    # Building inside the main project: Coin target already defined.
+if(TARGET Obol)
+    # Building inside the main project: Obol target already defined.
     # Set a local alias so the macro below uses the correct target name.
-    set(_OBOL_LINK_TARGET Coin)
+    set(_OBOL_LINK_TARGET Obol)
     set(Obol_FOUND TRUE)
     include_directories(${CMAKE_CURRENT_SOURCE_DIR})
     if(OBOL_TARGET_INCLUDE_DIRECTORIES)
@@ -65,7 +65,7 @@ if(TARGET Coin)
             ${PROJECT_BINARY_DIR}/include
             ${OBOL_TARGET_INCLUDE_DIRECTORIES}
         )
-        target_link_libraries(${name} Coin ${OBOL_TARGET_LINK_LIBRARIES})
+        target_link_libraries(${name} ${_OBOL_LINK_TARGET} ${OBOL_TARGET_LINK_LIBRARIES})
         if(EXAMPLES_USE_OSMESA)
             target_compile_definitions(${name} PRIVATE OBOL_OSMESA_BUILD)
             if(OSMESA_INCLUDE_DIR)
@@ -86,10 +86,10 @@ if(TARGET Coin)
     endmacro()
 else()
     set(Obol_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../build")
-    find_package(Coin QUIET)
+    find_package(Obol QUIET)
 
     if(Obol_FOUND)
-        # Use found Coin package (Coin::Coin imported target)
+        # Use found Obol package (Obol::Obol imported target)
         include_directories(${Obol_INCLUDE_DIRS})
         include_directories(${CMAKE_CURRENT_SOURCE_DIR})
         find_package(X11 QUIET)
@@ -97,7 +97,7 @@ else()
         macro(add_headless_example name)
             add_executable(${name} ${name}.cpp)
             target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-            target_link_libraries(${name} Coin::Coin)
+            target_link_libraries(${name} Obol::Obol)
             if(EXAMPLES_USE_OSMESA)
                 target_compile_definitions(${name} PRIVATE OBOL_OSMESA_BUILD)
                 if(OSMESA_INCLUDE_DIR)
@@ -131,7 +131,7 @@ else()
                 ${OBOL_BUILD_INCLUDE_DIR}
                 ${OBOL_INCLUDE_DIR}
                 ${CMAKE_CURRENT_SOURCE_DIR})
-            target_link_libraries(${name} Coin ${OPENGL_LIBRARIES})
+            target_link_libraries(${name} Obol ${OPENGL_LIBRARIES})
             if(EXAMPLES_USE_OSMESA)
                 target_compile_definitions(${name} PRIVATE OBOL_OSMESA_BUILD)
                 if(OSMESA_INCLUDE_DIR)

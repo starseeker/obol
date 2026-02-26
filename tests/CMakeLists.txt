@@ -39,7 +39,7 @@ add_library(simple_test_utils STATIC
     test_utils.cpp
     utils/scene_graph_utils.cpp
 )
-target_link_libraries(simple_test_utils Coin ${OBOL_TARGET_LINK_LIBRARIES})
+target_link_libraries(simple_test_utils ${PROJECT_NAME} ${OBOL_TARGET_LINK_LIBRARIES})
 target_include_directories(simple_test_utils PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}/include
@@ -78,10 +78,10 @@ add_executable(obol_test obol_test.cpp)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_link_libraries(obol_test
         -Wl,--whole-archive obol_testlib -Wl,--no-whole-archive
-        Coin ${OBOL_TARGET_LINK_LIBRARIES}
+        ${PROJECT_NAME} ${OBOL_TARGET_LINK_LIBRARIES}
     )
 else()
-    target_link_libraries(obol_test obol_testlib Coin ${OBOL_TARGET_LINK_LIBRARIES})
+    target_link_libraries(obol_test obol_testlib ${PROJECT_NAME} ${OBOL_TARGET_LINK_LIBRARIES})
 endif()
 target_include_directories(obol_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

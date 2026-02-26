@@ -5,7 +5,7 @@
 # an SGI RGB file.  CTest compares that output against a PNG control image
 # stored in tests/control_images/.
 #
-# Control images are generated from vanilla (upstream) Coin + GLX and committed
+# Control images are generated from vanilla (upstream) Obol + GLX and committed
 # once to the repository.  On every subsequent run the same source is compiled
 # against Obol; if the pixel output diverges beyond the configured thresholds
 # the test fails, indicating a rendering regression.
@@ -39,7 +39,7 @@ else()
 endif()
 
 # ---- Build macro -------------------------------------------------------------
-# Compile one rendering-test executable; links against Coin and the chosen
+# Compile one rendering-test executable; links against Obol and the chosen
 # OpenGL backend.  The headless_utils.h lives in tests/utils/.
 macro(add_rendering_test name)
     add_executable(${name} ${name}.cpp)
@@ -51,7 +51,7 @@ macro(add_rendering_test name)
         ${PROJECT_BINARY_DIR}/include
         ${OBOL_TARGET_INCLUDE_DIRECTORIES}
     )
-    target_link_libraries(${name} Coin ${OBOL_TARGET_LINK_LIBRARIES})
+    target_link_libraries(${name} ${PROJECT_NAME} ${OBOL_TARGET_LINK_LIBRARIES})
     if(RENDERING_USE_OSMESA)
         target_compile_definitions(${name} PRIVATE OBOL_OSMESA_BUILD)
         if(OSMESA_INCLUDE_DIR)
@@ -61,7 +61,7 @@ macro(add_rendering_test name)
             target_link_libraries(${name} ${OSMESA_LINK_TARGET})
         endif()
     elseif(X11_FOUND)
-        # When building as a subdirectory of the main Coin project, Coin already
+        # When building as a subdirectory of the main Obol project, Obol already
         # brings in OpenGL transitively via OBOL_TARGET_LINK_LIBRARIES.
         # We only need X11 explicitly for the GLX headless_utils.h context manager.
         target_link_libraries(${name} ${X11_X11_LIB})
@@ -201,7 +201,7 @@ macro(add_nanort_rendering_test name)
         ${PROJECT_SOURCE_DIR}/external/nanort/examples/common
     )
     target_compile_definitions(nrt_${name} PRIVATE OBOL_NANORT_BUILD)
-    target_link_libraries(nrt_${name} Coin ${OBOL_TARGET_LINK_LIBRARIES})
+    target_link_libraries(nrt_${name} ${PROJECT_NAME} ${OBOL_TARGET_LINK_LIBRARIES})
     set_target_properties(nrt_${name} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
     )
@@ -244,7 +244,7 @@ target_include_directories(render_nanort PRIVATE
     ${PROJECT_SOURCE_DIR}/external/nanort
     ${PROJECT_SOURCE_DIR}/external/nanort/examples/common
 )
-target_link_libraries(render_nanort Coin ${OBOL_TARGET_LINK_LIBRARIES})
+target_link_libraries(render_nanort ${PROJECT_NAME} ${OBOL_TARGET_LINK_LIBRARIES})
 set_target_properties(render_nanort PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
 )

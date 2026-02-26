@@ -18,7 +18,7 @@ else()
     set(TESTLIB_USE_OSMESA OFF)
 endif()
 # Note: OBOL_BUILD_DUAL_GL builds use system GL (GLX+Xvfb) for rendering
-# tests, not OSMesa, because the Coin scene traversal uses system GL symbols.
+# tests, not OSMesa, because the Obol scene traversal uses system GL symbols.
 # Only pure OBOL_USE_OSMESA builds use the OSMesa context path here.
 
 # ---- Library target -------------------------------------------------------
@@ -40,7 +40,7 @@ target_include_directories(obol_testlib PUBLIC
 
 target_link_libraries(obol_testlib
     simple_test_utils
-    Coin
+    ${PROJECT_NAME}
     ${OBOL_TARGET_LINK_LIBRARIES}
 )
 

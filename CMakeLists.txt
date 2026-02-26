@@ -49,7 +49,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 message(STATUS "Setting C++ standard: C++${CMAKE_CXX_STANDARD} (required)")
 
-# Add path for Coin-specific utility scripts
+# Add path for Obol-specific utility scripts
 list(PREPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 # Standard CMake modules
@@ -119,7 +119,7 @@ check_include_file_cxx(thread HAVE_STD_THREAD)
 # Installation paths configuration
 # ============================================================================
 
-# Coin-specific data directory
+# Obol-specific data directory
 set(CMAKE_INSTALL_DATADIR "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}")
 
 # ============================================================================
@@ -494,7 +494,7 @@ endif()
 #
 # When OBOL_COVERAGE=ON (and the compiler is GCC or Clang), add --coverage
 # to the compile and link flags for the entire project.  This must be done
-# BEFORE the source subdirectories are added so that the Coin library and all
+# BEFORE the source subdirectories are added so that the Obol library and all
 # test executables are instrumented.
 #
 # After building, run:
@@ -548,7 +548,7 @@ if(OBOL_BUILD_VIEWER)
     ${FLTK_INCLUDE_DIRS}
   )
 
-  # Compile definitions matching the Coin library build
+  # Compile definitions matching the Obol library build
   if(OBOL_BUILD_DUAL_GL)
     target_compile_definitions(obol_viewer PRIVATE OBOL_BUILD_DUAL_GL)
     # Dual-GL builds enable the OSMesa panel (OBOL_VIEWER_OSMESA_PANEL defined
@@ -575,7 +575,7 @@ if(OBOL_BUILD_VIEWER)
 
   target_link_libraries(obol_viewer
     PRIVATE
-      Coin
+      ${PROJECT_NAME}
       ${OBOL_TARGET_LINK_LIBRARIES}
       ${FLTK_LIBRARIES}
   )

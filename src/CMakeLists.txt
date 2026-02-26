@@ -150,10 +150,6 @@ else()
     add_library(${PROJECT_NAME} ${OBOL_SOURCE} ${OBOL_ADDITIONAL_HDRS} ${_coin_objects})
 endif()
 
-# Provide a "Coin" alias so that tests and downstream code can link against
-# the Coin target by its traditional name regardless of the Obol project name.
-add_library(Coin ALIAS ${PROJECT_NAME})
-
 # Set target properties
 set_target_properties(${PROJECT_NAME} PROPERTIES
     CXX_STANDARD 17
