@@ -16,7 +16,7 @@ file(GENERATE
 
 add_compile_options(-DHAVE_CONFIG_H -DCOIN_INTERNAL -DCOIN_DEBUG=$<CONFIG:Debug>)
 
-if(COIN_PROFILING)
+if(OBOL_PROFILING)
   add_compile_options(-DCOIN_PROFILING)
 endif()
 
@@ -67,7 +67,7 @@ add_subdirectory(doc)
 # ============================================================================
 
 # Enable precompiled headers for all object libraries if requested and supported
-if(COIN_USE_PRECOMPILED_HEADERS AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
+if(OBOL_USE_PRECOMPILED_HEADERS AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
     message(STATUS "Applying precompiled headers to object libraries")
     foreach(_subdir ${COIN_SUBDIRS})
         if(TARGET ${_subdir})
@@ -150,6 +150,10 @@ else()
     add_library(${PROJECT_NAME} ${COIN_SOURCE} ${COIN_ADDITIONAL_HDRS} ${_coin_objects})
 endif()
 
+# Provide a "Coin" alias so that tests and downstream code can link against
+# the Coin target by its traditional name regardless of the Obol project name.
+add_library(Coin ALIAS ${PROJECT_NAME})
+
 # Set target properties
 set_target_properties(${PROJECT_NAME} PROPERTIES
     CXX_STANDARD 17
@@ -167,12 +171,12 @@ endif()
 # ============================================================================
 
 # Enable precompiled headers if requested and supported (CMake 3.16+)
-if(COIN_USE_PRECOMPILED_HEADERS AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
+if(OBOL_USE_PRECOMPILED_HEADERS AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
     message(STATUS "Enabling precompiled headers for faster compilation")
     target_precompile_headers(${PROJECT_NAME} PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/misc/CoinPCH.h"
     )
-elseif(COIN_USE_PRECOMPILED_HEADERS)
+elseif(OBOL_USE_PRECOMPILED_HEADERS)
     message(WARNING "Precompiled headers requested but require CMake 3.16+. Current version: ${CMAKE_VERSION}")
 endif()
 
