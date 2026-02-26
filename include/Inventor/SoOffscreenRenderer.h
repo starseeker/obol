@@ -68,6 +68,7 @@ public:
   ~SoOffscreenRenderer();
 
   static float getScreenPixelsPerInch(void);
+  static void setScreenPixelsPerInch(float dpi);
   static SbVec2s getMaximumResolution(void);
   void setComponents(const Components components);
   Components getComponents(void) const;
