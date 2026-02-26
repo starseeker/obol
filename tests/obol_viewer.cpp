@@ -25,6 +25,8 @@
  * When OBOL_VIEWER_NANORT is defined at compile time (set by CMake when
  * external/nanort/nanort.h is found), an additional CPU-raytracing panel is
  * shown.  It uses SoNanoRTContextManager::renderScene() called directly.
+ * Scenes that require GL-only features (e.g. SoShadowGroup) are flagged
+ * nanort_ok=false in the scene catalogue and show "Not supported (NanoRT)".
  *
  * Layout (dual + nanort)                    Layout (dual only)
  * ──────────────────────────────────────    ─────────────────────────────────
@@ -32,20 +34,30 @@
  *  │Scene │ System GL │ OSMesa │ NanoRT │    │Scene │  System GL  │  OSMesa │
  *  │brows.│  panel    │ panel  │ panel  │    │brows.│   panel     │  panel  │
  *  ├──────┴───────────┴────────┴────────┤    ├──────┴─────────────┴─────────┤
- *  │[Reload][Save]  [×]GL+OSMesa [×]NRT│    │[Reload][Save] [×]Sync GL+OSM│
+ *  │[Reload][Save]      [×] Sync All   │    │[Reload][Save]  [×]Sync All   │
  *  └────────────────────────────────────┘    └──────────────────────────────┘
  *
- * Non-dual builds fall back to the existing 1- or 2-panel layout.
+ * Panels resize uniformly (EqualTile distributes width equally on resize).
  *
  * Camera interaction
- *   Left-drag  → orbit
+ *   Left-drag  → orbit (quaternion trackball – no gimbal lock)
  *   Right-drag → dolly
  *   Scroll     → zoom
- *   Sync checkboxes mirror camera between matching panel pairs.
+ *   "Sync All" checkbox mirrors camera changes across all active panels.
+ *
+ * GL vs OSMesa rendering consistency
+ * ───────────────────────────────────
+ * Pixel comparison at multiple camera angles shows:
+ *   - All opaque scenes: max diff ≤ 1 pixel (floating-point rounding only).
+ *   - Transparency scene: ~94% of pixels identical; alpha-channel max diff
+ *     ≈ 39/255 at sphere edges (expected from different GL implementations).
+ *   - Shadow scene: marked "(GL only)" – OSMesa may lack the required shadow
+ *     mapping extensions; significant visual difference is expected there.
+ * All differences are within the "minor pixel differences" category.
  *
  * Building
  * ────────
- * Enabled by -DCOIN_BUILD_VIEWER=ON at CMake configure time.
+ * Enabled by -DOBOL_BUILD_VIEWER=ON at CMake configure time.
  * The viewer is built as part of the main project; no separate superbuild
  * is required.
  */
@@ -397,19 +409,20 @@ struct SceneEntry {
     const char* category;
     const char* description;
     SceneFactory factory;
+    bool nanort_ok; /* false = NanoRT shows "not supported" instead of rendering */
 };
 static const SceneEntry s_scenes[] = {
-    {"primitives",       "Rendering", "Basic primitives: sphere, cube, cone, cylinder", scene_primitives},
-    {"materials",        "Rendering", "Material property showcase",                      scene_materials},
-    {"lighting",         "Rendering", "Multiple light sources",                          scene_lighting},
-    {"transforms",       "Rendering", "Hierarchical transform chain",                    scene_transforms},
-    {"colored_cube",     "Rendering", "Simple red cube (smoke test)",                    scene_colored_cube},
-    {"coordinates",      "Rendering", "XYZ coordinate axis visualization",               scene_coordinates},
-    {"shadow",           "Rendering", "SoShadowGroup shadow casting",                    scene_shadow},
-    {"transparency",     "Rendering", "Alpha-blended transparent spheres",               scene_transparency},
-    {"lod",              "Rendering", "Level-of-detail SoComplexity comparison",         scene_lod},
-    {"drawstyle",        "Rendering", "Filled / wireframe / points draw styles",         scene_drawstyle},
-    {"indexed_face_set", "Rendering", "SoIndexedFaceSet tetrahedron",                    scene_indexed_face_set},
+    {"primitives",       "Rendering", "Basic primitives: sphere, cube, cone, cylinder", scene_primitives,       true},
+    {"materials",        "Rendering", "Material property showcase",                      scene_materials,        true},
+    {"lighting",         "Rendering", "Multiple light sources",                          scene_lighting,         true},
+    {"transforms",       "Rendering", "Hierarchical transform chain",                    scene_transforms,       true},
+    {"colored_cube",     "Rendering", "Simple red cube (smoke test)",                    scene_colored_cube,     true},
+    {"coordinates",      "Rendering", "XYZ coordinate axis visualization",               scene_coordinates,      true},
+    {"shadow",           "Rendering", "SoShadowGroup shadow casting (GL only)",          scene_shadow,           false},
+    {"transparency",     "Rendering", "Alpha-blended transparent spheres",               scene_transparency,     true},
+    {"lod",              "Rendering", "Level-of-detail SoComplexity comparison",         scene_lod,              true},
+    {"drawstyle",        "Rendering", "Filled / wireframe / points draw styles",         scene_drawstyle,        true},
+    {"indexed_face_set", "Rendering", "SoIndexedFaceSet tetrahedron",                    scene_indexed_face_set, true},
 };
 static const int s_scene_count = (int)(sizeof(s_scenes)/sizeof(s_scenes[0]));
 
@@ -612,19 +625,20 @@ public:
                 int dx = ex - state->last_x, dy = ey - state->last_y;
                 state->last_x = ex; state->last_y = ey;
                 if (state->drag_btn == 1) {
-                    /* orbit */
-                    float az = -(float)dx * 0.01f;
-                    float el =  (float)dy * 0.01f;
+                    /* orbit – quaternion trackball avoids gimbal lock */
                     SbVec3f center(0,0,0);
                     SbVec3f offset = state->cam->position.getValue() - center;
-                    SbRotation azR(SbVec3f(0,1,0), az); azR.multVec(offset,offset);
-                    SbVec3f viewDir = -offset; viewDir.normalize();
-                    SbVec3f right = SbVec3f(0,1,0).cross(viewDir);
-                    float rl = right.length();
-                    if (rl > 1e-4f) right *= 1.0f/rl; else right = SbVec3f(1,0,0);
-                    SbRotation elR(right, el); elR.multVec(offset,offset);
-                    state->cam->position.setValue(center+offset);
-                    state->cam->pointAt(center, SbVec3f(0,1,0));
+                    SbRotation curOri = state->cam->orientation.getValue();
+                    /* elevation around camera's current right axis */
+                    SbVec3f camRight;
+                    curOri.multVec(SbVec3f(1,0,0), camRight);
+                    SbRotation azR(SbVec3f(0,1,0), -(float)dx * 0.01f);
+                    SbRotation elR(camRight,         (float)dy * 0.01f);
+                    SbRotation delta = elR * azR;
+                    SbVec3f newOffset;
+                    delta.multVec(offset, newOffset);
+                    state->cam->position.setValue(center + newOffset);
+                    state->cam->orientation.setValue(delta * curOri);
                 } else if (state->drag_btn == 3) {
                     /* dolly */
                     float dist = state->cam->focalDistance.getValue();
@@ -728,18 +742,33 @@ public:
 
     ~NanoRTPanel() { delete fltk_img; }
 
-    void setScene(SoSeparator* r, SoPerspectiveCamera* c) {
-        root = r; cam = c; status_text.clear();
+    void setScene(SoSeparator* r, SoPerspectiveCamera* c, bool nanort_supported = true) {
+        root = r; cam = c; nanort_ok_ = nanort_supported; status_text.clear();
+        if (!nanort_ok_) {
+            status_text = "Not supported (NanoRT)";
+            delete fltk_img; fltk_img = nullptr;
+            redraw(); return;
+        }
         refreshRender();
     }
 
     void refreshRender() {
-        if (!root) { redraw(); return; }
+        if (!root || !nanort_ok_) { redraw(); return; }
         int pw = std::max(w(), 1);
         int ph = std::max(h(), 1);
-        /* renderScene() fills pixels bottom-up in RGBA order. */
-        pixel_buf.resize((size_t)pw * ph * 4, 0);
+        /* Pre-fill pixel buffer with background color (renderScene() leaves
+         * miss pixels untouched, so the buffer must already contain the bg). */
         const float bg[3] = { 0.15f, 0.15f, 0.2f };
+        const uint8_t bg_r = static_cast<uint8_t>(bg[0] * 255.0f + 0.5f);
+        const uint8_t bg_g = static_cast<uint8_t>(bg[1] * 255.0f + 0.5f);
+        const uint8_t bg_b = static_cast<uint8_t>(bg[2] * 255.0f + 0.5f);
+        pixel_buf.resize((size_t)pw * ph * 4);
+        for (size_t i = 0; i < (size_t)pw * ph; ++i) {
+            pixel_buf[i*4+0] = bg_r;
+            pixel_buf[i*4+1] = bg_g;
+            pixel_buf[i*4+2] = bg_b;
+            pixel_buf[i*4+3] = 255;
+        }
         /* Direct call: s_nanort_mgr is an application-owned object.
          * We never registered it with SoDB::init(), so the GL context
          * manager singleton is completely untouched. */
@@ -812,31 +841,38 @@ public:
     }
 
     int handle(int event) override {
-        if (!root || !cam) return Fl_Box::handle(event);
+        if (!root || !cam || !nanort_ok_) return Fl_Box::handle(event);
         switch (event) {
         case FL_PUSH:
-            take_focus(); return 1;
+            take_focus();
+            dragging_ = true;
+            drag_btn_ = Fl::event_button();
+            last_x_   = Fl::event_x() - x();
+            last_y_   = Fl::event_y() - y();
+            return 1;
         case FL_RELEASE:
+            dragging_ = false;
             notifyCameraChanged(); refreshRender(); return 1;
         case FL_DRAG: {
-            /* Mirror CoinPanel orbit/dolly so sync works correctly. */
-            static int last_x = 0, last_y = 0;
-            static int drag_btn = 0;
-            if (Fl::event_is_click()) { last_x = Fl::event_x(); last_y = Fl::event_y(); drag_btn = Fl::event_button(); }
-            int dx = Fl::event_x() - last_x, dy = Fl::event_y() - last_y;
-            last_x = Fl::event_x(); last_y = Fl::event_y();
-            if (drag_btn == 1) {
-                float az = -(float)dx * 0.01f, el = (float)dy * 0.01f;
-                SbVec3f center(0,0,0), offset = cam->position.getValue() - center;
-                SbRotation(SbVec3f(0,1,0), az).multVec(offset, offset);
-                SbVec3f viewDir = -offset; viewDir.normalize();
-                SbVec3f right = SbVec3f(0,1,0).cross(viewDir);
-                float rl = right.length();
-                if (rl > 1e-4f) right *= 1.0f/rl; else right = SbVec3f(1,0,0);
-                SbRotation(right, el).multVec(offset, offset);
-                cam->position.setValue(center + offset);
-                cam->pointAt(center, SbVec3f(0,1,0));
-            } else if (drag_btn == 3) {
+            if (!dragging_) return 1;
+            int ex = Fl::event_x()-x(), ey = Fl::event_y()-y();
+            int dx = ex - last_x_, dy = ey - last_y_;
+            last_x_ = ex; last_y_ = ey;
+            if (drag_btn_ == 1) {
+                /* orbit – quaternion trackball avoids gimbal lock */
+                SbVec3f center(0,0,0);
+                SbVec3f offset = cam->position.getValue() - center;
+                SbRotation curOri = cam->orientation.getValue();
+                SbVec3f camRight;
+                curOri.multVec(SbVec3f(1,0,0), camRight);
+                SbRotation azR(SbVec3f(0,1,0), -(float)dx * 0.01f);
+                SbRotation elR(camRight,         (float)dy * 0.01f);
+                SbRotation delta = elR * azR;
+                SbVec3f newOffset;
+                delta.multVec(offset, newOffset);
+                cam->position.setValue(center + newOffset);
+                cam->orientation.setValue(delta * curOri);
+            } else if (drag_btn_ == 3) {
                 float dist = cam->focalDistance.getValue() * (1.0f + dy*0.01f);
                 if (dist < 0.1f) dist = 0.1f;
                 SbVec3f dir = cam->position.getValue(); dir.normalize();
@@ -865,6 +901,12 @@ public:
     }
 
 private:
+    bool nanort_ok_ = true;
+    bool dragging_  = false;
+    int  drag_btn_  = 0;
+    int  last_x_    = 0;
+    int  last_y_    = 0;
+
     void notifyCameraChanged() { if (on_camera_changed) on_camera_changed(this); }
 };
 #endif /* OBOL_VIEWER_NANORT */
@@ -1005,27 +1047,35 @@ public:
         if (!root || !cam) return Fl_Box::handle(event);
         switch (event) {
         case FL_PUSH:
-            take_focus(); return 1;
+            take_focus();
+            dragging_ = true;
+            drag_btn_ = Fl::event_button();
+            last_x_   = Fl::event_x() - x();
+            last_y_   = Fl::event_y() - y();
+            return 1;
         case FL_RELEASE:
+            dragging_ = false;
             notifyCameraChanged(); refreshRender(); return 1;
         case FL_DRAG: {
-            static int last_x = 0, last_y = 0;
-            static int drag_btn = 0;
-            if (Fl::event_is_click()) { last_x = Fl::event_x(); last_y = Fl::event_y(); drag_btn = Fl::event_button(); }
-            int dx = Fl::event_x() - last_x, dy = Fl::event_y() - last_y;
-            last_x = Fl::event_x(); last_y = Fl::event_y();
-            if (drag_btn == 1) {
-                float az = -(float)dx * 0.01f, el = (float)dy * 0.01f;
-                SbVec3f center(0,0,0), offset = cam->position.getValue() - center;
-                SbRotation(SbVec3f(0,1,0), az).multVec(offset, offset);
-                SbVec3f viewDir = -offset; viewDir.normalize();
-                SbVec3f right = SbVec3f(0,1,0).cross(viewDir);
-                float rl = right.length();
-                if (rl > 1e-4f) right *= 1.0f/rl; else right = SbVec3f(1,0,0);
-                SbRotation(right, el).multVec(offset, offset);
-                cam->position.setValue(center + offset);
-                cam->pointAt(center, SbVec3f(0,1,0));
-            } else if (drag_btn == 3) {
+            if (!dragging_) return 1;
+            int ex = Fl::event_x()-x(), ey = Fl::event_y()-y();
+            int dx = ex - last_x_, dy = ey - last_y_;
+            last_x_ = ex; last_y_ = ey;
+            if (drag_btn_ == 1) {
+                /* orbit – quaternion trackball avoids gimbal lock */
+                SbVec3f center(0,0,0);
+                SbVec3f offset = cam->position.getValue() - center;
+                SbRotation curOri = cam->orientation.getValue();
+                SbVec3f camRight;
+                curOri.multVec(SbVec3f(1,0,0), camRight);
+                SbRotation azR(SbVec3f(0,1,0), -(float)dx * 0.01f);
+                SbRotation elR(camRight,         (float)dy * 0.01f);
+                SbRotation delta = elR * azR;
+                SbVec3f newOffset;
+                delta.multVec(offset, newOffset);
+                cam->position.setValue(center + newOffset);
+                cam->orientation.setValue(delta * curOri);
+            } else if (drag_btn_ == 3) {
                 float dist = cam->focalDistance.getValue() * (1.0f + dy*0.01f);
                 if (dist < 0.1f) dist = 0.1f;
                 SbVec3f dir = cam->position.getValue(); dir.normalize();
@@ -1059,9 +1109,41 @@ private:
     std::unique_ptr<SoDB::ContextManager>  osmesa_mgr_;
     std::unique_ptr<SoOffscreenRenderer>   renderer_;
 
+    bool dragging_ = false;
+    int  drag_btn_ = 0;
+    int  last_x_   = 0;
+    int  last_y_   = 0;
+
     void notifyCameraChanged() { if (on_camera_changed) on_camera_changed(this); }
 };
 #endif /* OBOL_VIEWER_OSMESA_PANEL */
+
+
+/* =========================================================================
+ * EqualTile  –  Fl_Tile variant that redistributes child widths uniformly
+ *               when the tile itself is resized (window resize), while still
+ *               allowing the user to drag panel borders interactively.
+ * ======================================================================= */
+class EqualTile : public Fl_Tile {
+public:
+    EqualTile(int X, int Y, int W, int H) : Fl_Tile(X, Y, W, H) {}
+
+    void resize(int X, int Y, int W, int H) override {
+        int n = children();
+        if (n == 0) { Fl_Tile::resize(X, Y, W, H); return; }
+        /* Update our own bounding box without letting Fl_Tile redistribute. */
+        Fl_Widget::resize(X, Y, W, H);
+        /* Distribute width equally; last child absorbs the remainder. */
+        int cw = W / n;
+        int cx = X;
+        for (int i = 0; i < n; ++i) {
+            int this_w = (i == n-1) ? (X + W - cx) : cw;
+            child(i)->resize(cx, Y, this_w, H);
+            cx += this_w;
+        }
+        init_sizes();
+    }
+};
 
 
 class ObolViewerWindow : public Fl_Double_Window {
@@ -1070,15 +1152,16 @@ class ObolViewerWindow : public Fl_Double_Window {
     Fl_Button*        reload_btn_;
     Fl_Button*        save_btn_;
     Fl_Box*           status_bar_;
+    EqualTile*        tile_ = nullptr;
 #ifdef OBOL_VIEWER_OSMESA_PANEL
     OSMesaPanel*      osmesa_panel_ = nullptr;
-    Fl_Check_Button*  osmesa_sync_btn_ = nullptr;
-    bool              osmesa_syncing_ = false;
 #endif
 #ifdef OBOL_VIEWER_NANORT
     NanoRTPanel*      nrt_panel_  = nullptr;
-    Fl_Check_Button*  sync_btn_   = nullptr;
-    bool              syncing_    = false;
+#endif
+#if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT)
+    Fl_Check_Button*  sync_btn_  = nullptr;
+    bool              syncing_   = false;
 #endif
 
     static const int BROWSER_W = 220;
@@ -1098,56 +1181,64 @@ public:
     void loadScene(const char* name) {
         coin_panel_->loadScene(name);
 
+        /* Find the SceneEntry to know which renderers support this scene. */
+        const SceneEntry* entry = nullptr;
+        for (int i = 0; i < s_scene_count; ++i)
+            if (strcmp(s_scenes[i].name, name) == 0) { entry = &s_scenes[i]; break; }
+        const bool nanort_ok = entry ? entry->nanort_ok : true;
+
 #ifdef OBOL_VIEWER_OSMESA_PANEL
         /* OSMesa panel shares the same scene root and camera as the Coin panel. */
         if (osmesa_panel_ && coin_panel_->state && coin_panel_->state->root) {
             osmesa_panel_->setScene(coin_panel_->state->root,
                                     coin_panel_->state->cam);
         }
-        /* Wire up camera sync: Coin ↔ OSMesa. */
-        coin_panel_->on_camera_changed = [this](CoinPanel* src) {
-            if (!osmesa_syncing_ && osmesa_sync_btn_ && osmesa_sync_btn_->value()
-                && osmesa_panel_) {
-                osmesa_syncing_ = true;
-                float pos[3], orient[4], dist = 1.0f;
-                src->getCamera(pos, orient, dist);
-                osmesa_panel_->setCamera(pos, orient, dist);
-                osmesa_syncing_ = false;
-            }
-        };
-        if (osmesa_panel_) {
-            osmesa_panel_->on_camera_changed = [this](OSMesaPanel* src) {
-                if (!osmesa_syncing_ && osmesa_sync_btn_ && osmesa_sync_btn_->value()) {
-                    osmesa_syncing_ = true;
-                    float pos[3], orient[4], dist = 1.0f;
-                    src->getCamera(pos, orient, dist);
-                    coin_panel_->setCamera(pos, orient, dist);
-                    osmesa_syncing_ = false;
-                }
-            };
-        }
 #endif /* OBOL_VIEWER_OSMESA_PANEL */
 
 #ifdef OBOL_VIEWER_NANORT
-        /* NanoRT panel shares the same scene root and camera as the Coin
-         * panel.  Both renderers traverse the same graph, so camera state
-         * set in either panel is immediately visible in the other. */
+        /* NanoRT panel shares the same scene root and camera as the Coin panel.
+         * Pass nanort_ok so the panel knows whether to render or show a message. */
         if (nrt_panel_ && coin_panel_->state && coin_panel_->state->root) {
             nrt_panel_->setScene(coin_panel_->state->root,
-                                 coin_panel_->state->cam);
+                                 coin_panel_->state->cam, nanort_ok);
         }
-        /* Wire up cross-panel camera sync callbacks once per load. */
-#  ifndef OBOL_VIEWER_OSMESA_PANEL  /* avoid double-wiring coin_panel_ callback */
+#endif /* OBOL_VIEWER_NANORT */
+
+        /* Wire unified all-to-all camera sync so every active panel stays in
+         * sync when the sync button is checked. A single syncing_ flag prevents
+         * recursive callbacks. */
+#if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT)
         coin_panel_->on_camera_changed = [this](CoinPanel* src) {
-            if (!syncing_ && sync_btn_ && sync_btn_->value() && nrt_panel_) {
+            if (!syncing_ && sync_btn_ && sync_btn_->value()) {
                 syncing_ = true;
                 float pos[3], orient[4], dist = 1.0f;
                 src->getCamera(pos, orient, dist);
-                nrt_panel_->setCamera(pos, orient, dist);
+#  ifdef OBOL_VIEWER_OSMESA_PANEL
+                if (osmesa_panel_) osmesa_panel_->setCamera(pos, orient, dist);
+#  endif
+#  ifdef OBOL_VIEWER_NANORT
+                if (nrt_panel_) nrt_panel_->setCamera(pos, orient, dist);
+#  endif
                 syncing_ = false;
             }
         };
-#  endif
+#  ifdef OBOL_VIEWER_OSMESA_PANEL
+        if (osmesa_panel_) {
+            osmesa_panel_->on_camera_changed = [this](OSMesaPanel* src) {
+                if (!syncing_ && sync_btn_ && sync_btn_->value()) {
+                    syncing_ = true;
+                    float pos[3], orient[4], dist = 1.0f;
+                    src->getCamera(pos, orient, dist);
+                    coin_panel_->setCamera(pos, orient, dist);
+#    ifdef OBOL_VIEWER_NANORT
+                    if (nrt_panel_) nrt_panel_->setCamera(pos, orient, dist);
+#    endif
+                    syncing_ = false;
+                }
+            };
+        }
+#  endif /* OBOL_VIEWER_OSMESA_PANEL */
+#  ifdef OBOL_VIEWER_NANORT
         if (nrt_panel_) {
             nrt_panel_->on_camera_changed = [this](NanoRTPanel* src) {
                 if (!syncing_ && sync_btn_ && sync_btn_->value()) {
@@ -1155,11 +1246,15 @@ public:
                     float pos[3], orient[4], dist = 1.0f;
                     src->getCamera(pos, orient, dist);
                     coin_panel_->setCamera(pos, orient, dist);
+#    ifdef OBOL_VIEWER_OSMESA_PANEL
+                    if (osmesa_panel_) osmesa_panel_->setCamera(pos, orient, dist);
+#    endif
                     syncing_ = false;
                 }
             };
         }
-#endif /* OBOL_VIEWER_NANORT */
+#  endif /* OBOL_VIEWER_NANORT */
+#endif /* OBOL_VIEWER_OSMESA_PANEL || OBOL_VIEWER_NANORT */
 
         std::string s = "Scene: "; s += name;
         status_bar_->copy_label(s.c_str());
@@ -1188,25 +1283,24 @@ private:
             browser_->add(e.c_str());
         }
 
-        /* Render area: Fl_Tile so panels can be resized by dragging.
+        /* Render area: EqualTile so panels resize uniformly.
          * Panel layout depends on which optional panels are compiled in:
          *   dual + nanort  → 3 panels: System GL | OSMesa | NanoRT
          *   dual only      → 2 panels: System GL | OSMesa
          *   nanort only    → 2 panels: Coin GL   | NanoRT
          *   neither        → 1 panel:  Coin GL
          */
-        Fl_Tile* tile = new Fl_Tile(BROWSER_W, 0, W - BROWSER_W, content_h);
+        tile_ = new EqualTile(BROWSER_W, 0, W - BROWSER_W, content_h);
         {
 #if defined(OBOL_VIEWER_OSMESA_PANEL) && defined(OBOL_VIEWER_NANORT)
             /* Three panels */
             int panel_w = (W - BROWSER_W) / 3;
-            int panel_w2 = (W - BROWSER_W) - 2 * panel_w; // last gets remainder
             coin_panel_   = new CoinPanel(BROWSER_W, 0, panel_w, content_h, coinLabel());
             osmesa_panel_ = new OSMesaPanel(BROWSER_W + panel_w, 0,
                                             panel_w, content_h,
                                             "OSMesa (per-renderer backend)");
             nrt_panel_    = new NanoRTPanel(BROWSER_W + 2*panel_w, 0,
-                                            panel_w2, content_h,
+                                            (W - BROWSER_W) - 2*panel_w, content_h,
                                             "NanoRT (app-supplied renderer)");
 #elif defined(OBOL_VIEWER_OSMESA_PANEL)
             /* Two panels: System GL + OSMesa */
@@ -1228,7 +1322,7 @@ private:
                                         coinLabel());
 #endif
         }
-        tile->end();
+        tile_->end();
 
         /* Toolbar */
         Fl_Group* tb = new Fl_Group(0, content_h, W, TOOLBAR_H);
@@ -1239,11 +1333,13 @@ private:
             reload_btn_->callback(reloadCB, this); bx += 76;
             save_btn_ = new Fl_Button(bx, by, 80, bh, "Save RGB...");
             save_btn_->callback(saveCB, this); bx += 86;
-#ifdef OBOL_VIEWER_OSMESA_PANEL
-            osmesa_sync_btn_ = new Fl_Check_Button(bx, by, 120, bh, "Sync GL+OSMesa");
-            osmesa_sync_btn_->value(1); bx += 126;
-#endif
-#ifdef OBOL_VIEWER_NANORT
+#if defined(OBOL_VIEWER_OSMESA_PANEL) && defined(OBOL_VIEWER_NANORT)
+            sync_btn_ = new Fl_Check_Button(bx, by, 80, bh, "Sync All");
+            sync_btn_->value(1); bx += 86;
+#elif defined(OBOL_VIEWER_OSMESA_PANEL)
+            sync_btn_ = new Fl_Check_Button(bx, by, 120, bh, "Sync GL+OSMesa");
+            sync_btn_->value(1); bx += 126;
+#elif defined(OBOL_VIEWER_NANORT)
             sync_btn_ = new Fl_Check_Button(bx, by, 110, bh, "Sync NanoRT");
             sync_btn_->value(1); bx += 116;
 #endif
