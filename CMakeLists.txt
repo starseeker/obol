@@ -80,7 +80,14 @@ endif()
 option(BUILD_SHARED_LIBS "Build shared library when ON, static when OFF" ON)
 option(OBOL_BUILD_TESTS "Build unit tests" ON)
 find_package(FLTK QUIET)
-option(OBOL_BUILD_VIEWER "Build the FLTK scene viewer (obol_viewer); requires FLTK" ${FLTK_FOUND})
+# obol_viewer uses obol_testlib for its scene catalogue, so it can only be
+# built when OBOL_BUILD_TESTS is also ON.  cmake_dependent_option enforces
+# this: the viewer is silently disabled if FLTK is absent or tests are off.
+cmake_dependent_option(OBOL_BUILD_VIEWER
+  "Build the FLTK scene viewer (obol_viewer); requires FLTK and OBOL_BUILD_TESTS"
+  "${FLTK_FOUND}"
+  "OBOL_BUILD_TESTS;FLTK_FOUND"
+  OFF)
 
 # Internal alias used throughout src/ for Windows shared/static detection
 set(OBOL_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
