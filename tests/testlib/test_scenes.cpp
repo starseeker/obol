@@ -84,6 +84,8 @@
 #include <Inventor/nodes/SoIndexedLineSet.h>
 #include <Inventor/manips/SoTrackballManip.h>
 #include <Inventor/manips/SoTabBoxManip.h>
+#include <Inventor/annex/HUD/nodekits/SoHUDKit.h>
+#include <Inventor/annex/HUD/nodes/SoHUDLabel.h>
 
 #ifdef OBOL_OSMESA_BUILD
 #  include <OSMesa/gl.h>
@@ -442,9 +444,10 @@ SoSeparator* createText(int width, int height)
     root->addChild(t3sep);
 
     // SoText2 label (2-D billboard, screen-space)
+    // Anchor placed within the camera frustum that viewAll sets for SoText3.
     SoSeparator* t2sep = new SoSeparator;
     SoTranslation* t2pos = new SoTranslation;
-    t2pos->translation.setValue(-1.0f, -1.0f, 0.0f);
+    t2pos->translation.setValue(0.0f, 0.5f, 0.0f);
     t2sep->addChild(t2pos);
     SoMaterial* t2mat = new SoMaterial;
     t2mat->diffuseColor.setValue(0.2f, 0.8f, 0.3f);
@@ -459,6 +462,9 @@ SoSeparator* createText(int width, int height)
 
     SbViewportRegion vp(width, height);
     cam->viewAll(root, vp);
+    // Pull back along Z so the SoText2 anchor (below SoText3) stays visible.
+    SbVec3f pos = cam->position.getValue();
+    cam->position.setValue(pos[0], pos[1], pos[2] * 1.8f);
     return root;
 }
 
@@ -693,8 +699,7 @@ SoSeparator* createDraggers(int width, int height)
 // =========================================================================
 SoSeparator* createHUD(int width, int height)
 {
-    // Root with two sub-cameras: perspective for the 3-D scene,
-    // orthographic for the 2-D HUD overlay drawn on top.
+    // Root: perspective 3-D scene + SoHUDKit pixel-space overlay.
     SoSeparator* root = new SoSeparator;
     root->ref();
 
@@ -709,33 +714,16 @@ SoSeparator* createHUD(int width, int height)
     cam3d->viewAll(scene3d, vp);
     root->addChild(scene3d);
 
-    // --- 2-D HUD overlay ---
-    SoSeparator* hud = new SoSeparator;
+    // --- 2-D HUD overlay (pixel-space, 1 unit = 1 pixel, origin = lower-left) ---
+    SoHUDKit* hud = new SoHUDKit;
 
-    SoOrthographicCamera* hudcam = new SoOrthographicCamera;
-    hudcam->position.setValue(0.0f, 0.0f, 1.0f);
-    hudcam->viewportMapping.setValue(SoCamera::LEAVE_ALONE);
-    hudcam->height.setValue(2.0f);
-    hud->addChild(hudcam);
-
-    SoLightModel* lm = new SoLightModel;
-    lm->model.setValue(SoLightModel::BASE_COLOR);
-    hud->addChild(lm);
-
-    SoSeparator* label_sep = new SoSeparator;
-    SoTranslation* label_pos = new SoTranslation;
-    label_pos->translation.setValue(-0.9f, 0.85f, 0.0f);
-    label_sep->addChild(label_pos);
-    SoBaseColor* label_col = new SoBaseColor;
-    label_col->rgb.setValue(1.0f, 1.0f, 0.2f);
-    label_sep->addChild(label_col);
-    SoFont* label_font = new SoFont;
-    label_font->size.setValue(14.0f);
-    label_sep->addChild(label_font);
-    SoText2* label = new SoText2;
+    SoHUDLabel* label = new SoHUDLabel;
+    label->position.setValue(10.0f, (float)height - 30.0f);
     label->string.setValue("HUD Overlay");
-    label_sep->addChild(label);
-    hud->addChild(label_sep);
+    label->color.setValue(SbColor(1.0f, 1.0f, 0.2f));
+    label->fontSize.setValue(14.0f);
+    label->justification.setValue(SoHUDLabel::LEFT);
+    hud->addWidget(label);
 
     root->addChild(hud);
     return root;

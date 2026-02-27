@@ -77,6 +77,19 @@ macro(add_rendering_test name)
     )
 endmacro()
 
+# Variant of add_rendering_test for tests that use the shared testlib scene
+# factories.  These link against obol_testlib so the CLI test and the
+# interactive obol_viewer render identical scenes from the same source.
+macro(add_testlib_rendering_test name)
+    add_rendering_test(${name})
+    if(TARGET obol_testlib)
+        target_link_libraries(${name} obol_testlib)
+        target_include_directories(${name} PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests/testlib
+        )
+    endif()
+endmacro()
+
 # ---- Test executables --------------------------------------------------------
 add_rendering_test(render_primitives)
 add_rendering_test(render_materials)
@@ -133,6 +146,10 @@ add_rendering_test(render_marker_set)
 add_rendering_test(render_hud_overlay)
 add_rendering_test(render_hud_no3d)
 add_rendering_test(render_hud_interaction)
+# Testlib demo scenes: these use the shared scene factories so CLI and
+# obol_viewer render identical output.
+add_testlib_rendering_test(render_text_demo)
+add_testlib_rendering_test(render_hud_demo)
 add_rendering_test(render_procedural_shape)
 add_rendering_test(render_arb8_draggers)
 add_rendering_test(render_arb8_edit_cycle)
@@ -445,6 +462,10 @@ endif()
 # subpixel font differences between platforms / backends).
 add_rendering_image_test(render_hud_overlay  RMSE_THRESHOLD 25.0)
 add_rendering_image_test(render_hud_no3d     RMSE_THRESHOLD 25.0)
+
+# Testlib demo scenes (shared scene factories; match obol_viewer output).
+add_rendering_image_test(render_text_demo    RMSE_THRESHOLD 25.0)
+add_rendering_image_test(render_hud_demo     RMSE_THRESHOLD 25.0)
 
 # SoProceduralShape visual regression test: solid filled + wireframe cone.
 add_rendering_image_test(render_procedural_shape RMSE_THRESHOLD 15.0)

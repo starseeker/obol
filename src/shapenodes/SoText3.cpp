@@ -1218,15 +1218,6 @@ SoText3P::generate(SoAction * action, const cc_font_specification * fontspec,
             }
             counter++;
 
-            v0[0] = v0[0] * fontspec->size;
-            v0[1] = v0[1] * fontspec->size;
-            v1[0] = v1[0] * fontspec->size;
-            v1[1] = v1[1] * fontspec->size;
-            vleft[0] = vleft[0] * fontspec->size;
-            vleft[1] = vleft[1] * fontspec->size;
-            vright[0] = vright[0] * fontspec->size;
-            vright[1] = vright[1] * fontspec->size;
-
             // create two 'normal' vectors pointing out from the edges
             SbVec3f normala(vright[0] - v0[0], vright[1] - v0[1], 0.0f);
             normala = normala.cross(SbVec3f(0.0f, 0.0f,  1.0f));
