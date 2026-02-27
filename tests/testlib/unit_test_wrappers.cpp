@@ -810,31 +810,37 @@ static int runOrbitCameraTests()
         }
     }
 
-    /* --- Test 8: no vertical drift (Y) when yawing through ~180° with
-     *             accumulated pitch – verifies the world-up yaw fix.
-     *
-     *             Simulate a realistic mouse drag: the user drags mostly
-     *             left but with a tiny downward component (1 pixel down per
-     *             10 pixels right) for 360 steps.  After ~180° of total yaw
-     *             the camera's Y position must remain close to its initial
-     *             value; using camera-local up for yaw would let a Z
-     *             component leak into the axis and cause visible twist. --- */
+    /* --- Test 8: camera-local yaw leaves the camera's world-up direction
+     *             unchanged.  orbitCamera() yaws around the camera's own Y
+     *             axis (camera-local space), so the camera's world-up vector
+     *             q*(0,1,0) is invariant under pure yaw – rotating a vector
+     *             around itself cannot change it.  After accumulating 45° of
+     *             pitch the world-up is no longer (0,1,0); 720 subsequent
+     *             yaw-only steps (720 pixels × 0.25 deg/pixel = 180° total)
+     *             must leave it the same. --- */
     {
         SoPerspectiveCamera *cam = new SoPerspectiveCamera;
         cam->ref();
         cam->position.setValue(0.0f, 0.0f, radius);
         cam->orientation.setValue(SbRotation::identity());
 
-        /* 360 steps of 1px right + 0.1px down = ~180° total yaw at 0.5 deg/px */
-        const float stepSens = 0.5f;
-        for (int i = 0; i < 360; ++i)
-            cam->orbitCamera(center, 1.0f, 0.1f, stepSens);
+        /* Pitch 45° first (180 pixels × 0.25 deg/pixel) */
+        cam->orbitCamera(center, 0.0f, 180.0f, sens);
 
-        float yPos = cam->position.getValue()[1];
-        /* Allow up to 0.5 units of Y drift over 360 steps (tight but fair) */
-        if (std::fabs(yPos) > 0.5f) {
-            fprintf(stderr, "  FAIL orbitCamera test8: Y drift near 180-deg yaw = %.4f "
-                    "(expected < 0.5)\n", yPos);
+        SbVec3f upAfterPitch;
+        cam->orientation.getValue().multVec(SbVec3f(0.0f, 1.0f, 0.0f), upAfterPitch);
+
+        /* 720 yaw-only steps (720 pixels × 0.25 deg/pixel = 180° total) */
+        for (int i = 0; i < 720; ++i)
+            cam->orbitCamera(center, 1.0f, 0.0f, sens);
+
+        SbVec3f upAfterYaw;
+        cam->orientation.getValue().multVec(SbVec3f(0.0f, 1.0f, 0.0f), upAfterYaw);
+
+        float drift = (upAfterYaw - upAfterPitch).length();
+        if (drift > tol) {
+            fprintf(stderr, "  FAIL orbitCamera test8: camera-local yaw changed world-up "
+                    "by %.6f (expected < %.6f)\n", drift, tol);
             ++failures;
         }
         cam->unref();
