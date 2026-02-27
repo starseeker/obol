@@ -220,7 +220,11 @@ endmacro()
 # ---- NanoRT versions of standard rendering tests ----------------------------
 # These tests use SoOffscreenRenderer + the generalized ContextManager hook to
 # produce pixel output via nanort.  They operate on triangle-based geometry;
-# tests that rely on text, lines, or OpenGL-specific features are omitted.
+# line geometry is rendered via cylinder proxies (createCylinderProxy /
+# createSphereProxy), so dragger/manipulator tests whose parts include
+# SoIndexedLineSet feedback geometry are fully supported.
+# Tests that rely on text or OpenGL-specific effects (GLSL shaders, FBOs,
+# shadow maps) are omitted.
 add_nanort_rendering_test(render_primitives)
 add_nanort_rendering_test(render_materials)
 add_nanort_rendering_test(render_transforms)
@@ -228,6 +232,21 @@ add_nanort_rendering_test(render_colored_cube)
 add_nanort_rendering_test(render_scene)
 add_nanort_rendering_test(render_rt_proxy_shapes)
 add_nanort_rendering_test(render_background_gradient)
+
+# ---- NanoRT dragger and manipulator tests ------------------------------------
+# Dragger/manipulator parts use SoCube, SoCone, SoCylinder, SoSphere,
+# SoIndexedLineSet, and SoIndexedFaceSet — all of which are fully supported
+# by the nanort context manager (line/point geometry via cylinder/sphere
+# proxies).  SoCallbackAction traverses SoNodeKit (the dragger base class)
+# normally, collecting triangles from whichever SoSwitch branch is active.
+# SoSurroundScale and SoAntiSquish execute correctly during traversal and
+# apply the correct world-space transforms to the collected geometry.
+# Note: SoClipPlane (used by SoClipPlaneManip) has no nanort equivalent;
+# geometry renders without clipping, which is a cosmetic difference only.
+add_nanort_rendering_test(render_simple_draggers)
+add_nanort_rendering_test(render_draggers)
+add_nanort_rendering_test(render_light_manips)
+add_nanort_rendering_test(render_manip_sequences)
 
 # ---- Standalone nanort demo (original, uses its own context manager) --------
 # render_nanort.cpp is the original proof-of-concept demo that builds its own
