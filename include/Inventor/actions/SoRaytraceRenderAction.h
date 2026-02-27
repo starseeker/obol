@@ -113,6 +113,8 @@
 
 #include <Inventor/actions/SoCallbackAction.h>
 #include <Inventor/SbViewportRegion.h>
+#include <Inventor/SbMatrix.h>
+#include <Inventor/lists/SbList.h>
 #include <Inventor/lists/SoNodeList.h>
 
 class OBOL_DLL_API SoRaytraceRenderAction : public SoCallbackAction {
@@ -129,6 +131,14 @@ public:
   void setViewportRegion(const SbViewportRegion & newregion);
   const SbViewportRegion & getViewportRegion(void) const;
 
+  // Implementation detail: callback userdata struct used by the internal
+  // light-collection callback.  Public to allow access from the file-scope
+  // static callback function in the .cpp.
+  struct LightCbData {
+    SoNodeList *       lights;
+    SbList<SbMatrix> * transforms;
+  };
+
   /*!
     Returns the list of \c SoLight nodes that were visited during the most
     recent \c apply() traversal.  Each entry is a \c SoLight subclass
@@ -136,7 +146,8 @@ public:
 
     To query a light's world-space transform at the time it was encountered,
     register an additional pre-callback on \c SoLight::getClassTypeId() and
-    call \c getModelMatrix() inside it.
+    call \c getModelMatrix() inside it, or use the parallel list returned by
+    \c getLightTransforms().
 
     \note Call this after \c apply(); the list is populated during traversal.
     \note All \c SoLight nodes encountered are listed regardless of their
@@ -145,12 +156,31 @@ public:
   */
   const SoNodeList & getLights(void) const;
 
+  /*!
+    Returns the world-space model matrix for each light in \c getLights(),
+    captured at the moment the light node was first encountered during
+    traversal.  The \a i-th entry corresponds to \c getLights()[i].
+
+    This is particularly important for positional lights (\c SoPointLight,
+    \c SoSpotLight) whose position and direction fields are defined in
+    object space and must be transformed to world space for shading.
+
+    For \c SoDirectionalLight the direction field is typically already in
+    world space (i.e. the light is placed at the top of the graph outside
+    any transform), but using \c getLightTransforms() is more robust.
+
+    \note Call this after \c apply(); the list is populated during traversal.
+  */
+  const SbList<SbMatrix> & getLightTransforms(void) const;
+
 protected:
   virtual void beginTraversal(SoNode * node);
 
 private:
   SbViewportRegion vpregion;
   SoNodeList lights_cache;
+  SbList<SbMatrix> light_transforms_cache;
+  LightCbData light_cb_data;
 
   SoRaytraceRenderAction(const SoRaytraceRenderAction & rhs);
   SoRaytraceRenderAction & operator=(const SoRaytraceRenderAction & rhs);
