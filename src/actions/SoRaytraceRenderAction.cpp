@@ -53,15 +53,18 @@
 
 SO_ACTION_SOURCE(SoRaytraceRenderAction);
 
-// Internal pre-callback used to collect enabled light nodes during traversal.
+// Internal pre-callback used to collect enabled light nodes and their
+// world-space transforms during traversal.
 static SoCallbackAction::Response
-raytrace_light_pre_cb(void * userdata, SoCallbackAction * /*action*/,
+raytrace_light_pre_cb(void * userdata, SoCallbackAction * action,
                       const SoNode * node)
 {
-  SoNodeList * cache = static_cast<SoNodeList *>(userdata);
+  SoRaytraceRenderAction::LightCbData * data =
+    static_cast<SoRaytraceRenderAction::LightCbData *>(userdata);
   // Capture the light node.  We cast away const since SoNodeList stores
   // non-const SoNode pointers, and we only read the light data later.
-  cache->append(const_cast<SoNode *>(node));
+  data->lights->append(const_cast<SoNode *>(node));
+  data->transforms->append(action->getModelMatrix());
   return SoCallbackAction::CONTINUE;
 }
 
@@ -85,11 +88,16 @@ SoRaytraceRenderAction::SoRaytraceRenderAction(const SbViewportRegion & viewport
 {
   SO_ACTION_CONSTRUCTOR(SoRaytraceRenderAction);
 
+  // Initialize the callback data struct with pointers to the two caches.
+  this->light_cb_data.lights     = &this->lights_cache;
+  this->light_cb_data.transforms = &this->light_transforms_cache;
+
   // Register a pre-callback for all SoLight subclasses so that each
-  // enabled light node is captured into lights_cache during traversal.
+  // light node and its world-space transform are captured into the
+  // caches during traversal.
   this->addPreCallback(SoLight::getClassTypeId(),
                        raytrace_light_pre_cb,
-                       &this->lights_cache);
+                       &this->light_cb_data);
 }
 
 /*!
@@ -148,13 +156,27 @@ SoRaytraceRenderAction::getLights(void) const
   return this->lights_cache;
 }
 
-// Override beginTraversal to clear the lights cache before each traversal,
+// Override beginTraversal to clear the lights caches before each traversal,
 // then delegate to SoCallbackAction which sets up the state and traverses
 // the scene graph.  The raytrace_light_pre_cb callback registered in the
-// constructor populates lights_cache as each SoLight node is visited.
+// constructor populates both caches as each SoLight node is visited.
 void
 SoRaytraceRenderAction::beginTraversal(SoNode * node)
 {
   this->lights_cache.truncate(0);
+  this->light_transforms_cache.truncate(0);
   this->inherited::beginTraversal(node);
+}
+
+/*!
+  Returns the world-space model matrix for each light in getLights(),
+  captured at the moment the light node was first encountered during
+  traversal.
+
+  \note Call this after apply(); the list is populated during traversal.
+*/
+const SbList<SbMatrix> &
+SoRaytraceRenderAction::getLightTransforms(void) const
+{
+  return this->light_transforms_cache;
 }
