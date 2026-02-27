@@ -440,10 +440,7 @@ public:
                 ev.setTime(SbTime::getTimeOfDay());
                 SbViewportRegion vp(state->width, state->height);
                 SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(state->root);
-                /* Do NOT sync to other panels during drag: each notifyCameraChanged()
-                 * triggers a full re-render in the synced panel (e.g. NanoRT ~30-60 ms
-                 * per frame), which blocks the event loop and makes interaction feel
-                 * sluggish.  Sync happens once on FL_RELEASE instead. */
+                notifyCameraChanged();
                 refreshRender();
             }
             return 1;
@@ -558,14 +555,20 @@ public:
         if (!root || !nanort_ok_) { redraw(); return; }
         int pw = std::max(w(), 1);
         int ph = std::max(h(), 1);
+        /* During active camera motion render at 1/4 resolution (coarse_=true) for
+         * interactive speed, then a refinement timer fires to re-render at full
+         * resolution once the view is stable. */
+        const int scale = coarse_ ? 4 : 1;
+        const int rw = std::max(pw / scale, 1);
+        const int rh = std::max(ph / scale, 1);
         /* Pre-fill pixel buffer with background color (renderScene() leaves
          * miss pixels untouched, so the buffer must already contain the bg). */
         const float bg[3] = { 0.15f, 0.15f, 0.2f };
         const uint8_t bg_r = static_cast<uint8_t>(bg[0] * 255.0f + 0.5f);
         const uint8_t bg_g = static_cast<uint8_t>(bg[1] * 255.0f + 0.5f);
         const uint8_t bg_b = static_cast<uint8_t>(bg[2] * 255.0f + 0.5f);
-        pixel_buf.resize((size_t)pw * ph * 4);
-        for (size_t i = 0; i < (size_t)pw * ph; ++i) {
+        pixel_buf.resize((size_t)rw * rh * 4);
+        for (size_t i = 0; i < (size_t)rw * rh; ++i) {
             pixel_buf[i*4+0] = bg_r;
             pixel_buf[i*4+1] = bg_g;
             pixel_buf[i*4+2] = bg_b;
@@ -575,20 +578,24 @@ public:
          * We never registered it with SoDB::init(), so the GL context
          * manager singleton is completely untouched. */
         SbBool ok = s_nanort_mgr.renderScene(root,
-                                             (unsigned int)pw,
-                                             (unsigned int)ph,
+                                             (unsigned int)rw,
+                                             (unsigned int)rh,
                                              pixel_buf.data(),
                                              4u, bg);
         if (!ok) {
             status_text = "NanoRT render failed"; redraw(); return;
         }
-        /* Convert bottom-up RGBA → top-down RGB for FLTK. */
+        /* Convert bottom-up RGBA (possibly coarse) → top-down full-res RGB for FLTK.
+         * Nearest-neighbour upscale handles the coarse case; when scale==1 it is a
+         * straight flip-and-pack. */
         display_buf.resize((size_t)pw * ph * 3);
         for (int row = 0; row < ph; ++row) {
-            const uint8_t* s = pixel_buf.data() + (size_t)(ph-1-row) * pw * 4;
-            uint8_t*       d = display_buf.data() + (size_t)row * pw * 3;
+            int src_row = (rh - 1) - (row * rh / ph);   /* flip + nearest-neighbour */
+            const uint8_t* s_base = pixel_buf.data() + (size_t)src_row * rw * 4;
+            uint8_t* d = display_buf.data() + (size_t)row * pw * 3;
             for (int col = 0; col < pw; ++col) {
-                d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; s+=4; d+=3;
+                const uint8_t* s = s_base + (col * rw / pw) * 4;
+                d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; d+=3;
             }
         }
         delete fltk_img;
@@ -620,6 +627,12 @@ public:
         if (ax.length() < 1e-6f) { ax=SbVec3f(0,1,0); angle=0; } else ax.normalize();
         cam->orientation.setValue(SbRotation(ax, angle));
         if (dist > 0.0f) cam->focalDistance.setValue(dist);
+        /* Camera is being moved (driven by sync from another panel or own drag):
+         * switch to coarse mode for this render and schedule a full-resolution
+         * refinement pass once the view has been stable for kRefineDelaySec. */
+        coarse_ = true;
+        Fl::remove_timeout(doRefine, this);
+        Fl::add_timeout(kRefineDelaySec, doRefine, this);
         refreshRender();
     }
 
