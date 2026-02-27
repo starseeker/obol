@@ -988,7 +988,7 @@ class ObolViewerWindow : public Fl_Double_Window {
 
     static const int BROWSER_W = 220;
     static const int TOOLBAR_H = 32;
-    static const int STATUS_H  = 22;
+    static const int STATUS_H  = 48; /* tall enough for up to 3 comparison lines */
 
 public:
     ObolViewerWindow(int W, int H)
@@ -1190,8 +1190,12 @@ private:
 
         diff_bar_ = new Fl_Box(0, content_h+TOOLBAR_H, W, STATUS_H, "");
         diff_bar_->box(FL_ENGRAVED_BOX);
-        diff_bar_->align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE);
+        diff_bar_->align(FL_ALIGN_TOP|FL_ALIGN_LEFT|FL_ALIGN_INSIDE);
         diff_bar_->labelsize(11);
+        diff_bar_->tooltip(
+            "max_diff: maximum per-channel difference (0-255)\n"
+            "RMSE: root mean square error across all channels\n"
+            "rows_with_diff: % of rows containing any channel diff > 1");
     }
 
     static void browserCB(Fl_Widget*, void* data) {
@@ -1241,7 +1245,14 @@ private:
             return;
         }
 
-        /* Compare each pair and build a compact single-line report. */
+        /* Compare each pair and build a multi-line report (one pair per line).
+         * Strip the parenthetical suffix from verbose label_text strings so
+         * each line stays short enough to be read without truncation. */
+        auto shortLabel = [](const std::string& lbl) -> std::string {
+            size_t p = lbl.find(" (");
+            return p != std::string::npos ? lbl.substr(0, p) : lbl;
+        };
+
         std::string msg;
         for (size_t a = 0; a < panels.size(); ++a) {
             for (size_t b = a+1; b < panels.size(); ++b) {
@@ -1276,10 +1287,11 @@ private:
                 double pct_diff = 100.0 * diff_rows / (double)ch;
 
                 char line[256];
-                if (!msg.empty()) msg += "  |  ";
+                if (!msg.empty()) msg += '\n';
                 std::snprintf(line, sizeof(line),
-                    "%s vs %s: max_diff=%d  RMSE=%.2f  rows_with_diff=%.1f%%",
-                    pa.label, pb.label, max_diff, rmse, pct_diff);
+                    "%s vs %s:  max_diff=%d  RMSE=%.2f  rows_with_diff=%.1f%%",
+                    shortLabel(pa.label).c_str(), shortLabel(pb.label).c_str(),
+                    max_diff, rmse, pct_diff);
                 msg += line;
             }
         }
