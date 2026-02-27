@@ -431,6 +431,23 @@ public:
                 int ex = Fl::event_x()-x(), ey = Fl::event_y()-y();
                 int dx = ex - state->last_x, dy = ey - state->last_y;
                 state->last_x = ex; state->last_y = ey;
+                if (state->drag_btn == 1) {
+                    /* orbit – yaw around world up, pitch around camera right:
+                     * horizon stays level; no twist near 180° of yaw */
+                    state->cam->orbitCamera(state->scene_center,
+                                            (float)dx, (float)dy,
+                                            0.01f * (180.0f / static_cast<float>(M_PI)));
+                } else if (state->drag_btn == 3) {
+                    /* dolly toward/away from scene centre */
+                    float dist = state->cam->focalDistance.getValue();
+                    dist *= (1.0f + dy * 0.01f);
+                    if (dist < 0.1f) dist = 0.1f;
+                    SbVec3f dir = state->cam->position.getValue() - state->scene_center;
+                    dir.normalize();
+                    state->cam->position.setValue(state->scene_center + dir * dist);
+                    state->cam->focalDistance.setValue(dist);
+                    state->updateClipping();
+                }
                 SoLocation2Event ev;
                 ev.setPosition(SbVec2s((short)ex,(short)(h_-ey)));
                 ev.setTime(SbTime::getTimeOfDay());
@@ -702,8 +719,8 @@ public:
             int dx = ex - last_x_, dy = ey - last_y_;
             last_x_ = ex; last_y_ = ey;
             if (drag_btn_ == 1) {
-                /* orbit – incremental rotation in camera-local space (BRL-CAD style):
-                 * no world-up reference → smooth at all orientations, no gimbal lock */
+                /* orbit – yaw around world up, pitch around camera right:
+                 * horizon stays level; no twist near 180° of yaw */
                 cam->orbitCamera(scene_center_,
                             (float)dx, (float)dy,
                             0.01f * (180.0f / static_cast<float>(M_PI)));
@@ -938,8 +955,8 @@ public:
             int dx = ex - last_x_, dy = ey - last_y_;
             last_x_ = ex; last_y_ = ey;
             if (drag_btn_ == 1) {
-                /* orbit – incremental rotation in camera-local space (BRL-CAD style):
-                 * no world-up reference → smooth at all orientations, no gimbal lock */
+                /* orbit – yaw around world up, pitch around camera right:
+                 * horizon stays level; no twist near 180° of yaw */
                 cam->orbitCamera(scene_center_,
                             (float)dx, (float)dy,
                             0.01f * (180.0f / static_cast<float>(M_PI)));
