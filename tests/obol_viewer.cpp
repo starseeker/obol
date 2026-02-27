@@ -144,6 +144,7 @@ static SoNanoRTContextManager s_nanort_mgr;
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 #include <functional>
 #include <string>
 #include <vector>
@@ -174,12 +175,14 @@ static SoSeparator* scene_primitives(int w, int h) {
         sep->addChild(t);
         SoMaterial* m = new SoMaterial;
         m->diffuseColor.setValue(p.r,p.g,p.b);
+        m->ambientColor.setValue(p.r,p.g,p.b);
         m->specularColor.setValue(0.6f,0.6f,0.6f);
         m->shininess.setValue(0.5f);
         sep->addChild(m); sep->addChild(p.shape); root->addChild(sep);
     }
     SbViewportRegion vp(w,h); cam->viewAll(root,vp);
     cam->position.setValue(cam->position.getValue()*1.1f);
+    cam->focalDistance.setValue(cam->focalDistance.getValue()*1.1f);
     return root;
 }
 
@@ -201,6 +204,7 @@ static SoSeparator* scene_materials(int w, int h) {
         sep->addChild(t);
         SoMaterial* mat = new SoMaterial;
         mat->diffuseColor.setValue(m.dr,m.dg,m.db);
+        mat->ambientColor.setValue(m.dr,m.dg,m.db);
         mat->specularColor.setValue(m.sr,m.sg,m.sb);
         mat->shininess.setValue(m.sh);
         sep->addChild(mat); sep->addChild(new SoSphere); root->addChild(sep);
@@ -220,6 +224,7 @@ static SoSeparator* scene_lighting(int w, int h) {
     root->addChild(pl);
     SoMaterial* mat = new SoMaterial;
     mat->diffuseColor.setValue(0.7f,0.7f,0.7f);
+    mat->ambientColor.setValue(0.7f,0.7f,0.7f);
     mat->specularColor.setValue(1,1,1); mat->shininess.setValue(0.7f);
     root->addChild(mat); root->addChild(new SoSphere);
     SbViewportRegion vp(w,h); cam->viewAll(root,vp);
@@ -233,6 +238,7 @@ static SoSeparator* scene_transforms(int w, int h) {
     li->direction.setValue(-1,-1,-1); root->addChild(li);
     SoMaterial* mat = new SoMaterial;
     mat->diffuseColor.setValue(0.5f,0.7f,0.9f);
+    mat->ambientColor.setValue(0.5f,0.7f,0.9f);
     mat->specularColor.setValue(0.8f,0.8f,0.8f); mat->shininess.setValue(0.6f);
     root->addChild(mat);
     for (int i = 0; i < 5; ++i) {
@@ -254,6 +260,7 @@ static SoSeparator* scene_colored_cube(int w, int h) {
     li->direction.setValue(-1,-1,-1); root->addChild(li);
     SoMaterial* mat = new SoMaterial;
     mat->diffuseColor.setValue(0.85f,0.10f,0.10f);
+    mat->ambientColor.setValue(0.85f,0.10f,0.10f);
     mat->specularColor.setValue(0.50f,0.50f,0.50f); mat->shininess.setValue(0.40f);
     root->addChild(mat); root->addChild(new SoCube);
     SbViewportRegion vp(w,h); cam->viewAll(root,vp);
@@ -299,13 +306,17 @@ static SoSeparator* scene_shadow(int w, int h) {
     SoShadowDirectionalLight* sdl = new SoShadowDirectionalLight;
     sdl->direction.setValue(-1,-2,-1); sg->addChild(sdl);
     SoMaterial* floor_mat = new SoMaterial;
-    floor_mat->diffuseColor.setValue(0.7f,0.6f,0.5f); sg->addChild(floor_mat);
+    floor_mat->diffuseColor.setValue(0.7f,0.6f,0.5f);
+    floor_mat->ambientColor.setValue(0.7f,0.6f,0.5f);
+    sg->addChild(floor_mat);
     SoTransform* floor_xf = new SoTransform;
     floor_xf->scaleFactor.setValue(8,0.1f,8);
     floor_xf->translation.setValue(0,-0.5f,0); sg->addChild(floor_xf);
     sg->addChild(new SoCube);
     SoMaterial* sphere_mat = new SoMaterial;
-    sphere_mat->diffuseColor.setValue(0.2f,0.4f,0.9f); sg->addChild(sphere_mat);
+    sphere_mat->diffuseColor.setValue(0.2f,0.4f,0.9f);
+    sphere_mat->ambientColor.setValue(0.2f,0.4f,0.9f);
+    sg->addChild(sphere_mat);
     SoTranslation* sph_t = new SoTranslation;
     sph_t->translation.setValue(0,1,0); sg->addChild(sph_t);
     sg->addChild(new SoSphere); outer->addChild(sg);
@@ -329,6 +340,7 @@ static SoSeparator* scene_transparency(int w, int h) {
         sep->addChild(t);
         SoMaterial* mat = new SoMaterial;
         mat->diffuseColor.setValue(s.r,s.g,s.b);
+        mat->ambientColor.setValue(s.r,s.g,s.b);
         mat->transparency.setValue(1.0f-s.a);
         sep->addChild(mat); sep->addChild(new SoSphere); root->addChild(sep);
     }
@@ -343,6 +355,7 @@ static SoSeparator* scene_lod(int w, int h) {
     li->direction.setValue(-1,-1,-1); root->addChild(li);
     SoMaterial* mat = new SoMaterial;
     mat->diffuseColor.setValue(0.3f,0.6f,1.0f);
+    mat->ambientColor.setValue(0.3f,0.6f,1.0f);
     mat->specularColor.setValue(0.9f,0.9f,0.9f); mat->shininess.setValue(0.8f);
     root->addChild(mat);
     for (int i = 0; i < 3; ++i) {
@@ -367,7 +380,9 @@ static SoSeparator* scene_drawstyle(int w, int h) {
         {SoDrawStyle::POINTS,  3.0f},
     };
     SoMaterial* mat = new SoMaterial;
-    mat->diffuseColor.setValue(0.5f,0.7f,0.3f); root->addChild(mat);
+    mat->diffuseColor.setValue(0.5f,0.7f,0.3f);
+    mat->ambientColor.setValue(0.5f,0.7f,0.3f);
+    root->addChild(mat);
     for (auto& st : styles) {
         SoSeparator* sep = new SoSeparator;
         SoTranslation* t = new SoTranslation; t->translation.setValue(st.tx,0,0);
@@ -385,7 +400,9 @@ static SoSeparator* scene_indexed_face_set(int w, int h) {
     SoDirectionalLight* li = new SoDirectionalLight;
     li->direction.setValue(-1,-1,-1); root->addChild(li);
     SoMaterial* mat = new SoMaterial;
-    mat->diffuseColor.setValue(0.9f,0.5f,0.1f); root->addChild(mat);
+    mat->diffuseColor.setValue(0.9f,0.5f,0.1f);
+    mat->ambientColor.setValue(0.9f,0.5f,0.1f);
+    root->addChild(mat);
     static const float pts[4][3] = {
         {0,1,0},{-1,-1,1},{1,-1,1},{0,-1,-1}
     };
@@ -430,8 +447,9 @@ static const int s_scene_count = (int)(sizeof(s_scenes)/sizeof(s_scenes[0]));
  * Scene state
  * ======================================================================= */
 struct SceneState {
-    SoSeparator*         root   = nullptr;
-    SoPerspectiveCamera* cam    = nullptr;
+    SoSeparator*         root         = nullptr;
+    SoPerspectiveCamera* cam          = nullptr;
+    SbVec3f              scene_center = SbVec3f(0,0,0);
     int width  = 800;
     int height = 600;
     /* drag state */
@@ -450,6 +468,26 @@ struct SceneState {
         if (sa.getPath())
             return static_cast<SoPerspectiveCamera*>(sa.getPath()->getTail());
         return nullptr;
+    }
+
+    /* Compute and store the bounding-box centre of the scene. */
+    void computeCenter() {
+        if (!root) return;
+        SoGetBoundingBoxAction bba(SbViewportRegion(width, height));
+        bba.apply(root);
+        SbBox3f bbox = bba.getBoundingBox();
+        if (!bbox.isEmpty())
+            scene_center = bbox.getCenter();
+    }
+
+    /* Keep near/far clipping in a sane ratio relative to the focal distance
+     * so geometry never clips when orbiting or dollying. */
+    void updateClipping() {
+        if (!cam) return;
+        float d = cam->focalDistance.getValue();
+        if (d < 1e-4f) d = 1e-4f;
+        cam->nearDistance.setValue(d * 0.001f);
+        cam->farDistance.setValue(d * 10000.0f);
     }
 };
 
@@ -499,6 +537,8 @@ public:
         state->height = std::max(h(), 1);
         state->root   = entry->factory(state->width, state->height);
         state->cam    = state->root ? SceneState::findCamera(state->root) : nullptr;
+        state->computeCenter();
+        state->updateClipping();
         status_text.clear();
         refreshRender();
     }
@@ -625,8 +665,9 @@ public:
                 int dx = ex - state->last_x, dy = ey - state->last_y;
                 state->last_x = ex; state->last_y = ey;
                 if (state->drag_btn == 1) {
-                    /* orbit – quaternion trackball avoids gimbal lock */
-                    SbVec3f center(0,0,0);
+                    /* orbit – quaternion trackball avoids gimbal lock,
+                     * rotating around the scene's bounding-box centre */
+                    SbVec3f center = state->scene_center;
                     SbVec3f offset = state->cam->position.getValue() - center;
                     SbRotation curOri = state->cam->orientation.getValue();
                     /* elevation around camera's current right axis */
@@ -640,13 +681,15 @@ public:
                     state->cam->position.setValue(center + newOffset);
                     state->cam->orientation.setValue(delta * curOri);
                 } else if (state->drag_btn == 3) {
-                    /* dolly */
+                    /* dolly toward/away from scene centre */
                     float dist = state->cam->focalDistance.getValue();
                     dist *= (1.0f + dy * 0.01f);
                     if (dist < 0.1f) dist = 0.1f;
-                    SbVec3f dir = state->cam->position.getValue(); dir.normalize();
-                    state->cam->position.setValue(dir * dist);
+                    SbVec3f dir = state->cam->position.getValue() - state->scene_center;
+                    dir.normalize();
+                    state->cam->position.setValue(state->scene_center + dir * dist);
                     state->cam->focalDistance.setValue(dist);
+                    state->updateClipping();
                 }
                 SoLocation2Event ev;
                 ev.setPosition(SbVec2s((short)ex,(short)(h_-ey)));
@@ -663,9 +706,11 @@ public:
                 float dist = state->cam->focalDistance.getValue();
                 dist *= (1.0f - delta * 0.1f);
                 if (dist < 0.1f) dist = 0.1f;
-                SbVec3f dir = state->cam->position.getValue(); dir.normalize();
-                state->cam->position.setValue(dir * dist);
+                SbVec3f dir = state->cam->position.getValue() - state->scene_center;
+                dir.normalize();
+                state->cam->position.setValue(state->scene_center + dir * dist);
                 state->cam->focalDistance.setValue(dist);
+                state->updateClipping();
                 notifyCameraChanged();
                 refreshRender();
             }
@@ -748,6 +793,15 @@ public:
             status_text = "Not supported (NanoRT)";
             delete fltk_img; fltk_img = nullptr;
             redraw(); return;
+        }
+        /* Compute scene bounding-box centre for orbit/dolly */
+        scene_center_ = SbVec3f(0,0,0);
+        if (root) {
+            SoGetBoundingBoxAction bba(SbViewportRegion(std::max(w(),1), std::max(h(),1)));
+            bba.apply(root);
+            SbBox3f bbox = bba.getBoundingBox();
+            if (!bbox.isEmpty())
+                scene_center_ = bbox.getCenter();
         }
         refreshRender();
     }
@@ -859,8 +913,9 @@ public:
             int dx = ex - last_x_, dy = ey - last_y_;
             last_x_ = ex; last_y_ = ey;
             if (drag_btn_ == 1) {
-                /* orbit – quaternion trackball avoids gimbal lock */
-                SbVec3f center(0,0,0);
+                /* orbit – quaternion trackball avoids gimbal lock,
+                 * rotating around the scene's bounding-box centre */
+                SbVec3f center = scene_center_;
                 SbVec3f offset = cam->position.getValue() - center;
                 SbRotation curOri = cam->orientation.getValue();
                 SbVec3f camRight;
@@ -875,18 +930,22 @@ public:
             } else if (drag_btn_ == 3) {
                 float dist = cam->focalDistance.getValue() * (1.0f + dy*0.01f);
                 if (dist < 0.1f) dist = 0.1f;
-                SbVec3f dir = cam->position.getValue(); dir.normalize();
-                cam->position.setValue(dir * dist);
+                SbVec3f dir = cam->position.getValue() - scene_center_;
+                dir.normalize();
+                cam->position.setValue(scene_center_ + dir * dist);
                 cam->focalDistance.setValue(dist);
+                updateClipping_();
             }
             notifyCameraChanged(); refreshRender(); return 1;
         }
         case FL_MOUSEWHEEL: {
             float dist = cam->focalDistance.getValue() * (1.0f + (float)Fl::event_dy()*0.1f);
             if (dist < 0.1f) dist = 0.1f;
-            SbVec3f dir = cam->position.getValue(); dir.normalize();
-            cam->position.setValue(dir * dist);
+            SbVec3f dir = cam->position.getValue() - scene_center_;
+            dir.normalize();
+            cam->position.setValue(scene_center_ + dir * dist);
             cam->focalDistance.setValue(dist);
+            updateClipping_();
             notifyCameraChanged(); refreshRender(); return 1;
         }
         case FL_FOCUS: case FL_UNFOCUS: return 1;
@@ -901,11 +960,20 @@ public:
     }
 
 private:
+    SbVec3f scene_center_ = SbVec3f(0,0,0);
     bool nanort_ok_ = true;
     bool dragging_  = false;
     int  drag_btn_  = 0;
     int  last_x_    = 0;
     int  last_y_    = 0;
+
+    void updateClipping_() {
+        if (!cam) return;
+        float d = cam->focalDistance.getValue();
+        if (d < 1e-4f) d = 1e-4f;
+        cam->nearDistance.setValue(d * 0.001f);
+        cam->farDistance.setValue(d * 10000.0f);
+    }
 
     void notifyCameraChanged() { if (on_camera_changed) on_camera_changed(this); }
 };
@@ -964,6 +1032,15 @@ public:
 
     void setScene(SoSeparator* r, SoPerspectiveCamera* c) {
         root = r; cam = c; status_text.clear();
+        /* Compute scene bounding-box centre for orbit/dolly */
+        scene_center_ = SbVec3f(0,0,0);
+        if (root) {
+            SoGetBoundingBoxAction bba(SbViewportRegion(std::max(w(),1), std::max(h(),1)));
+            bba.apply(root);
+            SbBox3f bbox = bba.getBoundingBox();
+            if (!bbox.isEmpty())
+                scene_center_ = bbox.getCenter();
+        }
         refreshRender();
     }
 
@@ -1062,8 +1139,9 @@ public:
             int dx = ex - last_x_, dy = ey - last_y_;
             last_x_ = ex; last_y_ = ey;
             if (drag_btn_ == 1) {
-                /* orbit – quaternion trackball avoids gimbal lock */
-                SbVec3f center(0,0,0);
+                /* orbit – quaternion trackball avoids gimbal lock,
+                 * rotating around the scene's bounding-box centre */
+                SbVec3f center = scene_center_;
                 SbVec3f offset = cam->position.getValue() - center;
                 SbRotation curOri = cam->orientation.getValue();
                 SbVec3f camRight;
@@ -1078,18 +1156,22 @@ public:
             } else if (drag_btn_ == 3) {
                 float dist = cam->focalDistance.getValue() * (1.0f + dy*0.01f);
                 if (dist < 0.1f) dist = 0.1f;
-                SbVec3f dir = cam->position.getValue(); dir.normalize();
-                cam->position.setValue(dir * dist);
+                SbVec3f dir = cam->position.getValue() - scene_center_;
+                dir.normalize();
+                cam->position.setValue(scene_center_ + dir * dist);
                 cam->focalDistance.setValue(dist);
+                updateClipping_();
             }
             notifyCameraChanged(); refreshRender(); return 1;
         }
         case FL_MOUSEWHEEL: {
             float dist = cam->focalDistance.getValue() * (1.0f + (float)Fl::event_dy()*0.1f);
             if (dist < 0.1f) dist = 0.1f;
-            SbVec3f dir = cam->position.getValue(); dir.normalize();
-            cam->position.setValue(dir * dist);
+            SbVec3f dir = cam->position.getValue() - scene_center_;
+            dir.normalize();
+            cam->position.setValue(scene_center_ + dir * dist);
             cam->focalDistance.setValue(dist);
+            updateClipping_();
             notifyCameraChanged(); refreshRender(); return 1;
         }
         case FL_FOCUS: case FL_UNFOCUS: return 1;
@@ -1109,10 +1191,19 @@ private:
     std::unique_ptr<SoDB::ContextManager>  osmesa_mgr_;
     std::unique_ptr<SoOffscreenRenderer>   renderer_;
 
+    SbVec3f scene_center_ = SbVec3f(0,0,0);
     bool dragging_ = false;
     int  drag_btn_ = 0;
     int  last_x_   = 0;
     int  last_y_   = 0;
+
+    void updateClipping_() {
+        if (!cam) return;
+        float d = cam->focalDistance.getValue();
+        if (d < 1e-4f) d = 1e-4f;
+        cam->nearDistance.setValue(d * 0.001f);
+        cam->farDistance.setValue(d * 10000.0f);
+    }
 
     void notifyCameraChanged() { if (on_camera_changed) on_camera_changed(this); }
 };
@@ -1151,6 +1242,9 @@ class ObolViewerWindow : public Fl_Double_Window {
     CoinPanel*        coin_panel_;
     Fl_Button*        reload_btn_;
     Fl_Button*        save_btn_;
+#if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT)
+    Fl_Button*        compare_btn_ = nullptr;
+#endif
     Fl_Box*           status_bar_;
     EqualTile*        tile_ = nullptr;
 #ifdef OBOL_VIEWER_OSMESA_PANEL
@@ -1333,6 +1427,10 @@ private:
             reload_btn_->callback(reloadCB, this); bx += 76;
             save_btn_ = new Fl_Button(bx, by, 80, bh, "Save RGB...");
             save_btn_->callback(saveCB, this); bx += 86;
+#if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT)
+            compare_btn_ = new Fl_Button(bx, by, 80, bh, "Compare");
+            compare_btn_->callback(compareCB, this); bx += 86;
+#endif
 #if defined(OBOL_VIEWER_OSMESA_PANEL) && defined(OBOL_VIEWER_NANORT)
             sync_btn_ = new Fl_Check_Button(bx, by, 80, bh, "Sync All");
             sync_btn_->value(1); bx += 86;
@@ -1365,6 +1463,92 @@ private:
     }
 
     static void reloadCB(Fl_Widget*, void* data) { browserCB(nullptr, data); }
+
+#if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT)
+    /* Compare rendered images across all panels and report pixel statistics. */
+    static void compareCB(Fl_Widget*, void* data) {
+        auto* self = static_cast<ObolViewerWindow*>(data);
+        if (!self->coin_panel_->state || !self->coin_panel_->state->root) {
+            fl_message("No scene loaded."); return;
+        }
+
+        /* Collect (label, buf, w, h) for every panel that has a rendered image */
+        struct PanelImg {
+            const char*        label;
+            const uint8_t*     buf;   /* RGB top-down */
+            int                pw, ph;
+        };
+        std::vector<PanelImg> panels;
+
+        if (!self->coin_panel_->display_buf.empty())
+            panels.push_back({self->coin_panel_->label_text.c_str(),
+                              self->coin_panel_->display_buf.data(),
+                              self->coin_panel_->w(), self->coin_panel_->h()});
+#  ifdef OBOL_VIEWER_OSMESA_PANEL
+        if (self->osmesa_panel_ && !self->osmesa_panel_->display_buf.empty())
+            panels.push_back({self->osmesa_panel_->label_text.c_str(),
+                              self->osmesa_panel_->display_buf.data(),
+                              self->osmesa_panel_->w(), self->osmesa_panel_->h()});
+#  endif
+#  ifdef OBOL_VIEWER_NANORT
+        if (self->nrt_panel_ && !self->nrt_panel_->display_buf.empty())
+            panels.push_back({self->nrt_panel_->label_text.c_str(),
+                              self->nrt_panel_->display_buf.data(),
+                              self->nrt_panel_->w(), self->nrt_panel_->h()});
+#  endif
+
+        if (panels.size() < 2) {
+            fl_message("Need at least 2 rendered panels to compare."); return;
+        }
+
+        /* Compare each pair and accumulate results */
+        std::string report;
+        for (size_t a = 0; a < panels.size(); ++a) {
+            for (size_t b = a+1; b < panels.size(); ++b) {
+                const PanelImg& pa = panels[a];
+                const PanelImg& pb = panels[b];
+                int cw = std::min(pa.pw, pb.pw);
+                int ch = std::min(pa.ph, pb.ph);
+                if (cw <= 0 || ch <= 0) continue;
+
+                int    max_diff  = 0;
+                double sum_sq    = 0.0;
+                int    diff_rows = 0;  /* rows containing at least one channel diff > 1 */
+
+                for (int row = 0; row < ch; ++row) {
+                    const uint8_t* sa = pa.buf + (size_t)row * pa.pw * 3;
+                    const uint8_t* sb = pb.buf + (size_t)row * pb.pw * 3;
+                    bool row_diff = false;
+                    for (int col = 0; col < cw; ++col) {
+                        for (int c = 0; c < 3; ++c) {
+                            int d = (int)sa[c] - (int)sb[c];
+                            if (d < 0) d = -d;
+                            if (d > max_diff) max_diff = d;
+                            sum_sq += (double)d * d;
+                            if (d > 1) row_diff = true;
+                        }
+                        sa += 3; sb += 3;
+                    }
+                    if (row_diff) ++diff_rows;
+                }
+
+                double rmse = std::sqrt(sum_sq / ((double)cw * ch * 3));
+                double pct_diff = 100.0 * diff_rows / (double)ch;
+
+                char line[256];
+                std::snprintf(line, sizeof(line),
+                    "%s vs %s:\n"
+                    "  size %dx%d  max_diff=%d  RMSE=%.2f  "
+                    "rows_with_diff=%.1f%%\n",
+                    pa.label, pb.label,
+                    cw, ch, max_diff, rmse, pct_diff);
+                report += line;
+            }
+        }
+
+        fl_message("%s", report.c_str());
+    }
+#endif /* OBOL_VIEWER_OSMESA_PANEL || OBOL_VIEWER_NANORT */
 
     static void saveCB(Fl_Widget*, void* data) {
         auto* self = static_cast<ObolViewerWindow*>(data);
