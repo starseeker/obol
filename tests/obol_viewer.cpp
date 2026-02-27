@@ -429,8 +429,8 @@ public:
                 int dx = ex - state->last_x, dy = ey - state->last_y;
                 state->last_x = ex; state->last_y = ey;
                 if (state->drag_btn == 1) {
-                    /* orbit – incremental rotation in camera-local space (BRL-CAD style):
-                     * no world-up reference → smooth at all orientations, no gimbal lock */
+                    /* orbit – yaw around world up, pitch around camera right:
+                     * horizon stays level; no twist near 180° of yaw */
                     state->cam->orbitCamera(state->scene_center,
                                             (float)dx, (float)dy,
                                             0.01f * (180.0f / static_cast<float>(M_PI)));
@@ -697,8 +697,8 @@ public:
             int dx = ex - last_x_, dy = ey - last_y_;
             last_x_ = ex; last_y_ = ey;
             if (drag_btn_ == 1) {
-                /* orbit – incremental rotation in camera-local space (BRL-CAD style):
-                 * no world-up reference → smooth at all orientations, no gimbal lock */
+                /* orbit – yaw around world up, pitch around camera right:
+                 * horizon stays level; no twist near 180° of yaw */
                 cam->orbitCamera(scene_center_,
                             (float)dx, (float)dy,
                             0.01f * (180.0f / static_cast<float>(M_PI)));
@@ -933,8 +933,8 @@ public:
             int dx = ex - last_x_, dy = ey - last_y_;
             last_x_ = ex; last_y_ = ey;
             if (drag_btn_ == 1) {
-                /* orbit – incremental rotation in camera-local space (BRL-CAD style):
-                 * no world-up reference → smooth at all orientations, no gimbal lock */
+                /* orbit – yaw around world up, pitch around camera right:
+                 * horizon stays level; no twist near 180° of yaw */
                 cam->orbitCamera(scene_center_,
                             (float)dx, (float)dy,
                             0.01f * (180.0f / static_cast<float>(M_PI)));

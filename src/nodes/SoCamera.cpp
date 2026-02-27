@@ -541,17 +541,17 @@ SoCamera::orbitCamera(const SbVec3f & center, float dx, float dy,
   const float yawRad   = dx * sensitivity * deg2rad;
   const float pitchRad = dy * sensitivity * deg2rad;
 
-  /* Use the camera's current local axes (expressed in world space) as the
-   * rotation axes so that dragging always moves the scene in the direction
-   * the user sees on screen regardless of the camera's current orientation.
-   * Left-multiplying the orientation quaternion applies the rotation in
-   * world space using the camera-local axes, matching BRL-CAD _bv_rot(). */
+  /* Yaw around the world up axis so the horizon stays level regardless of
+   * how far the camera has been rotated.  Using camera-local up instead
+   * would cause camUp to develop a view-direction component after any
+   * accumulated pitch, introducing a visible twist near 180° of yaw.
+   * Pitch still uses the camera-local right axis so it always tilts the
+   * scene in the direction the user drags vertically on screen. */
   const SbRotation & q = this->orientation.getValue();
-  SbVec3f camRight, camUp;
+  SbVec3f camRight;
   q.multVec(SbVec3f(1.0f, 0.0f, 0.0f), camRight);
-  q.multVec(SbVec3f(0.0f, 1.0f, 0.0f), camUp);
 
-  const SbRotation rotYaw  (camUp,    -yawRad);
+  const SbRotation rotYaw  (SbVec3f(0.0f, 1.0f, 0.0f), -yawRad);
   const SbRotation rotPitch(camRight, -pitchRad);
   const SbRotation newOrient = (rotYaw * rotPitch) * q;
   this->orientation.setValue(newOrient);
