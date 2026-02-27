@@ -332,12 +332,11 @@ namespace { namespace SoGL { namespace TriStripSet {
         mb->send(matnr++, TRUE);
       }
 
-      // workaround for nvidia color-per-face-bug
+      // re-send per-face material for each vertex to ensure correct colour on all drivers
       if ((AttributeBinding)MaterialBinding == PER_FACE ||
           (AttributeBinding)MaterialBinding == PER_STRIP) {
         mb->send(matnr-1, TRUE);
       }
-      // end of nvidia workaround
 
       if (TexturingEnabled == TRUE) {
         tb->send(texnr++, coords->get3(idx), *currnormal);
@@ -356,12 +355,11 @@ namespace { namespace SoGL { namespace TriStripSet {
           mb->send(matnr++, TRUE);
         }
 
-        // workaround for nvidia color-per-face-bug
+        // re-send per-face material for each vertex to ensure correct colour on all drivers
         if ((AttributeBinding)MaterialBinding == PER_STRIP) {
           mb->send(matnr-1, TRUE);
         }
-        // end of nvidia workaround
-
+  
         if (TexturingEnabled == TRUE) {
           tb->send(texnr++, coords->get3(idx), *currnormal);
         }

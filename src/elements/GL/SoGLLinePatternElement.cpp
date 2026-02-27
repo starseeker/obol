@@ -133,8 +133,7 @@ SoGLLinePatternElement::updategl()
     glDisable(GL_LINE_STIPPLE);
   }
   else {
-    // Enable line stipple before setting the pattern. This is
-    // needed to work around a bug in the nVidia 2.1.1 drivers.
+    // Enable line stipple before setting the pattern (required by OpenGL spec).
     glEnable(GL_LINE_STIPPLE);
     glLineStipple((GLint) (this->data >> 16), (GLushort) (this->data & 0xffff));
   }

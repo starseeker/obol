@@ -245,12 +245,7 @@ SoCylinder::GLRender(SoGLRenderAction * action)
   SoMaterialBundle mb(action);
   mb.sendFirst();
 
-  SbBool sendNormals = !mb.isColorOnly() ||
-    (SoMultiTextureCoordinateElement::getType(state) == SoMultiTextureCoordinateElement::FUNCTION);
-
-  unsigned int flags = 0;
-  if (sendNormals)
-    flags |= SOGL_NEED_NORMALS;
+  unsigned int flags = SOGL_NEED_NORMALS;
   if (SoGLMultiTextureEnabledElement::get(state, 0)) {
     if (SoGLMultiTextureEnabledElement::getMode(state, 0) ==
         SoMultiTextureEnabledElement::TEXTURE3D) {

@@ -101,60 +101,6 @@ SoGLDisplayList::SoGLDisplayList(SoState * state, Type type, int allocnum,
   SoDebugError::postInfo("SoGLDisplayList::SoGLDisplayList", "%p", this);
 #endif // debug
 
-  // Check for known buggy OpenGL driver.
-  const char * versionstr = (const char *)glGetString(GL_VERSION);
-  assert(versionstr && "glGetString() returned 0 -- no valid GL context?");
-  if (strcmp(versionstr, "1.3.1 NVIDIA 28.02") == 0) {
-    // (From NVidia's changelog, it looks like the problem we've been
-    // seeing with the 28.02 driver and displaylists *might* have been
-    // fixed for the next version (28.80)).
-
-    // Here's an Inventor file which can be used to reproduce the bug:
-    // -----8<----- [snip] ----------8<----- [snip] ----------8<------
-    // #Inventor V2.1 ascii
-    //
-    // # This dead simple scene graph causes the examiner viewer to go blank
-    // # on a Linux box with GeForce2 card and version 1.3.1 28.02 of the
-    // # NVidia OpenGL drivers. The problem is gone for version 1.3.1 29.60
-    // # of the drivers, so this seems _very_ much like a driver bug with
-    // # OpenGL display lists.
-    // #
-    // # The bug is also present for SGI Inventor.
-    // #
-    // # <mortene@sim.no>.
-    //
-    // Separator {
-    //    renderCaching ON
-    //    ShapeHints {
-    //       vertexOrdering COUNTERCLOCKWISE
-    //       faceType UNKNOWN_FACE_TYPE
-    //    }
-    //    Cube { }
-    // }
-    // -----8<----- [snip] ----------8<----- [snip] ----------8<------
-
-
-    // FIXME: should be more robust, and rather just disable the use
-    // of GL displaylists (but still issuing an
-    // SoDebugError::postWarning()). This should be straightforward to
-    // do when the FIXME below on better handling of the case where we
-    // are not able to allocate displaylist indices is taken care
-    // of. 20020911 mortene.
-
-    static SbBool first = TRUE;
-    if (first) {
-      SoDebugError::post("SoGLDisplayList::SoGLDisplayList",
-                         "This OpenGL driver ('%s') is known to contain serious "
-                         "bugs in GL displaylist handling, and we strongly urge "
-                         "you to upgrade! As long as you are using this driver, "
-                         "GL rendering is likely to cause all sorts of nasty "
-                         "problems.",
-                         versionstr);
-      first = FALSE;
-    }
-  }
-
-
   // Reserve displaylist IDs.
 
   if (PRIVATE(this)->type == TEXTURE_OBJECT) {

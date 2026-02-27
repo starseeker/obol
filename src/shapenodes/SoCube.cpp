@@ -162,10 +162,7 @@ SoCube::GLRender(SoGLRenderAction * action)
   SoMaterialBundle mb(action);
   mb.sendFirst();
 
-  SbBool sendNormals = !mb.isColorOnly() ||
-    (SoMultiTextureCoordinateElement::getType(state) == SoMultiTextureCoordinateElement::FUNCTION);
-
-  unsigned int flags = 0;
+  unsigned int flags = SOGL_NEED_NORMALS;
   if (materialPerPart) flags |= SOGL_MATERIAL_PER_PART;
   if (doTextures) {
     switch (SoMultiTextureEnabledElement::getMode(state, 0)) {
@@ -178,7 +175,6 @@ SoCube::GLRender(SoGLRenderAction * action)
     }
   }
   else if (do3DTextures) flags |= SOGL_NEED_3DTEXCOORDS;
-  if (sendNormals) flags |= SOGL_NEED_NORMALS;
 
   sogl_render_cube(width.getValue(),
                    height.getValue(),
