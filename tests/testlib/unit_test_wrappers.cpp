@@ -514,31 +514,12 @@ static int runSensorsTests()
 }
 
 // =========================================================================
-// Unit test: orbitCamera() – BRL-CAD-style smooth camera orbit math
+// Unit test: SoCamera::orbitCamera() – BRL-CAD-style smooth camera orbit math
 // =========================================================================
 static int runOrbitCameraTests()
 {
     int failures = 0;
     const float tol = 1e-3f;
-
-    /* Helper: apply the same rotation logic as orbitCamera() without needing
-     * a full SoCamera node.  We work directly with SbRotation and SbVec3f. */
-    auto applyOrbit = [](SbRotation orient, SbVec3f pos,
-                         const SbVec3f &center, float dx, float dy, float sens)
-        -> std::pair<SbRotation, SbVec3f>
-    {
-        const float deg2rad = static_cast<float>(M_PI) / 180.0f;
-        float yawRad   = dx * sens * deg2rad;
-        float pitchRad = dy * sens * deg2rad;
-        SbRotation rotY(SbVec3f(0.0f, 1.0f, 0.0f), -yawRad);
-        SbRotation rotX(SbVec3f(1.0f, 0.0f, 0.0f), -pitchRad);
-        SbRotation newOrient = orient * (rotY * rotX);
-        float radius = (pos - center).length();
-        SbVec3f viewDir;
-        newOrient.multVec(SbVec3f(0.0f, 0.0f, -1.0f), viewDir);
-        SbVec3f newPos = center - viewDir * radius;
-        return {newOrient, newPos};
-    };
 
     const SbVec3f center(0.0f, 0.0f, 0.0f);
     const float radius = 5.0f;
@@ -546,92 +527,110 @@ static int runOrbitCameraTests()
 
     /* --- Test 1: yaw-only (dx=80, dy=0) preserves orbit radius --- */
     {
-        SbRotation orient = SbRotation::identity();
-        SbVec3f pos(0.0f, 0.0f, radius);
-        auto [newOrient, newPos] = applyOrbit(orient, pos, center, 80.0f, 0.0f, sens);
+        SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+        cam->ref();
+        cam->position.setValue(0.0f, 0.0f, radius);
+        cam->orientation.setValue(SbRotation::identity());
+        cam->orbitCamera(center, 80.0f, 0.0f, sens);
 
-        float dist = (newPos - center).length();
+        float dist = (cam->position.getValue() - center).length();
         if (std::fabs(dist - radius) > tol) {
             fprintf(stderr, "  FAIL orbitCamera test1: radius after yaw=%.6f (expected %.6f)\n",
                     dist, radius);
             ++failures;
         }
+        cam->unref();
     }
 
     /* --- Test 2: yaw-only camera still looks toward center --- */
     {
-        SbRotation orient = SbRotation::identity();
-        SbVec3f pos(0.0f, 0.0f, radius);
-        auto [newOrient, newPos] = applyOrbit(orient, pos, center, 80.0f, 0.0f, sens);
+        SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+        cam->ref();
+        cam->position.setValue(0.0f, 0.0f, radius);
+        cam->orientation.setValue(SbRotation::identity());
+        cam->orbitCamera(center, 80.0f, 0.0f, sens);
 
         SbVec3f viewDir;
-        newOrient.multVec(SbVec3f(0.0f, 0.0f, -1.0f), viewDir);
-        /* toCenter (camera → center) and viewDir (camera forward) must be parallel */
-        SbVec3f toCenter = center - newPos;
+        cam->orientation.getValue().multVec(SbVec3f(0.0f, 0.0f, -1.0f), viewDir);
+        SbVec3f toCenter = center - cam->position.getValue();
         toCenter.normalize();
         float dot = toCenter.dot(viewDir);
         if (std::fabs(dot - 1.0f) > tol) {
             fprintf(stderr, "  FAIL orbitCamera test2: camera not looking at center (dot=%.6f)\n", dot);
             ++failures;
         }
+        cam->unref();
     }
 
     /* --- Test 3: pitch-only (dx=0, dy=80) preserves orbit radius --- */
     {
-        SbRotation orient = SbRotation::identity();
-        SbVec3f pos(0.0f, 0.0f, radius);
-        auto [newOrient, newPos] = applyOrbit(orient, pos, center, 0.0f, 80.0f, sens);
+        SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+        cam->ref();
+        cam->position.setValue(0.0f, 0.0f, radius);
+        cam->orientation.setValue(SbRotation::identity());
+        cam->orbitCamera(center, 0.0f, 80.0f, sens);
 
-        float dist = (newPos - center).length();
+        float dist = (cam->position.getValue() - center).length();
         if (std::fabs(dist - radius) > tol) {
             fprintf(stderr, "  FAIL orbitCamera test3: radius after pitch=%.6f (expected %.6f)\n",
                     dist, radius);
             ++failures;
         }
+        cam->unref();
     }
 
     /* --- Test 4: pitch-only camera still looks toward center --- */
     {
-        SbRotation orient = SbRotation::identity();
-        SbVec3f pos(0.0f, 0.0f, radius);
-        auto [newOrient, newPos] = applyOrbit(orient, pos, center, 0.0f, 80.0f, sens);
+        SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+        cam->ref();
+        cam->position.setValue(0.0f, 0.0f, radius);
+        cam->orientation.setValue(SbRotation::identity());
+        cam->orbitCamera(center, 0.0f, 80.0f, sens);
 
         SbVec3f viewDir;
-        newOrient.multVec(SbVec3f(0.0f, 0.0f, -1.0f), viewDir);
-        SbVec3f toCenter = center - newPos;
+        cam->orientation.getValue().multVec(SbVec3f(0.0f, 0.0f, -1.0f), viewDir);
+        SbVec3f toCenter = center - cam->position.getValue();
         toCenter.normalize();
         float dot = toCenter.dot(viewDir);
         if (std::fabs(dot - 1.0f) > tol) {
             fprintf(stderr, "  FAIL orbitCamera test4: camera not looking at center after pitch (dot=%.6f)\n", dot);
             ++failures;
         }
+        cam->unref();
     }
 
     /* --- Test 5: mouse-right (dx>0) moves camera in -X direction
      *             (scene appears to rotate right → camera orbits left) --- */
     {
-        SbRotation orient = SbRotation::identity();
-        SbVec3f pos(0.0f, 0.0f, radius);
-        auto [newOrient, newPos] = applyOrbit(orient, pos, center, 80.0f, 0.0f, sens);
-        /* Camera started at (0,0,5); yaw right should give negative X position */
-        if (newPos[0] >= 0.0f) {
+        SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+        cam->ref();
+        cam->position.setValue(0.0f, 0.0f, radius);
+        cam->orientation.setValue(SbRotation::identity());
+        cam->orbitCamera(center, 80.0f, 0.0f, sens);
+
+        if (cam->position.getValue()[0] >= 0.0f) {
             fprintf(stderr, "  FAIL orbitCamera test5: expected negative X after yaw right, got %.4f\n",
-                    newPos[0]);
+                    cam->position.getValue()[0]);
             ++failures;
         }
+        cam->unref();
     }
 
     /* --- Test 6: mouse-down (dy>0) moves camera upward (+Y)
      *             (camera pitches down → position rises in Y) --- */
     {
-        SbRotation orient = SbRotation::identity();
-        SbVec3f pos(0.0f, 0.0f, radius);
-        auto [newOrient, newPos] = applyOrbit(orient, pos, center, 0.0f, 80.0f, sens);
-        if (newPos[1] <= 0.0f) {
+        SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+        cam->ref();
+        cam->position.setValue(0.0f, 0.0f, radius);
+        cam->orientation.setValue(SbRotation::identity());
+        cam->orbitCamera(center, 0.0f, 80.0f, sens);
+
+        if (cam->position.getValue()[1] <= 0.0f) {
             fprintf(stderr, "  FAIL orbitCamera test6: expected positive Y after pitch down, got %.4f\n",
-                    newPos[1]);
+                    cam->position.getValue()[1]);
             ++failures;
         }
+        cam->unref();
     }
 
     /* --- Test 7: 4 × 1-pixel steps ≈ 1 × 4-pixel step (smoothness check).
@@ -639,19 +638,25 @@ static int runOrbitCameraTests()
      *             so accumulated small steps should closely match one equivalent
      *             large step. --- */
     {
-        SbRotation orient = SbRotation::identity();
-        SbVec3f pos(0.0f, 0.0f, radius);
-
         /* Single 4-pixel step */
-        auto [oA, pA] = applyOrbit(orient, pos, center, 4.0f, 3.0f, sens);
+        SoPerspectiveCamera *camA = new SoPerspectiveCamera;
+        camA->ref();
+        camA->position.setValue(0.0f, 0.0f, radius);
+        camA->orientation.setValue(SbRotation::identity());
+        camA->orbitCamera(center, 4.0f, 3.0f, sens);
+        SbVec3f pA = camA->position.getValue();
+        camA->unref();
 
         /* Four 1-pixel steps */
-        SbRotation oB = orient;
-        SbVec3f    pB = pos;
+        SoPerspectiveCamera *camB = new SoPerspectiveCamera;
+        camB->ref();
+        camB->position.setValue(0.0f, 0.0f, radius);
+        camB->orientation.setValue(SbRotation::identity());
         for (int i = 0; i < 4; ++i) {
-            auto [oTmp, pTmp] = applyOrbit(oB, pB, center, 1.0f, 0.75f, sens);
-            oB = oTmp; pB = pTmp;
+            camB->orbitCamera(center, 1.0f, 0.75f, sens);
         }
+        SbVec3f pB = camB->position.getValue();
+        camB->unref();
 
         float ddx = std::fabs(pA[0] - pB[0]);
         float ddy = std::fabs(pA[1] - pB[1]);

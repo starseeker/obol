@@ -667,9 +667,9 @@ public:
                 if (state->drag_btn == 1) {
                     /* orbit – incremental rotation in camera-local space (BRL-CAD style):
                      * no world-up reference → smooth at all orientations, no gimbal lock */
-                    orbitCamera(state->cam, state->scene_center,
-                                (float)dx, (float)dy,
-                                0.01f * (180.0f / static_cast<float>(M_PI)));
+                    state->cam->orbitCamera(state->scene_center,
+                                            (float)dx, (float)dy,
+                                            0.01f * (180.0f / static_cast<float>(M_PI)));
                 } else if (state->drag_btn == 3) {
                     /* dolly toward/away from scene centre */
                     float dist = state->cam->focalDistance.getValue();
@@ -905,7 +905,7 @@ public:
             if (drag_btn_ == 1) {
                 /* orbit – incremental rotation in camera-local space (BRL-CAD style):
                  * no world-up reference → smooth at all orientations, no gimbal lock */
-                orbitCamera(cam, scene_center_,
+                cam->orbitCamera(scene_center_,
                             (float)dx, (float)dy,
                             0.01f * (180.0f / static_cast<float>(M_PI)));
             } else if (drag_btn_ == 3) {
@@ -1122,7 +1122,7 @@ public:
             if (drag_btn_ == 1) {
                 /* orbit – incremental rotation in camera-local space (BRL-CAD style):
                  * no world-up reference → smooth at all orientations, no gimbal lock */
-                orbitCamera(cam, scene_center_,
+                cam->orbitCamera(scene_center_,
                             (float)dx, (float)dy,
                             0.01f * (180.0f / static_cast<float>(M_PI)));
             } else if (drag_btn_ == 3) {
