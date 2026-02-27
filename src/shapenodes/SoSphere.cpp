@@ -156,13 +156,9 @@ SoSphere::GLRender(SoGLRenderAction * action)
     }
   }
 
-  SbBool sendNormals = !mb.isColorOnly() || 
-    (SoMultiTextureCoordinateElement::getType(state) == SoMultiTextureCoordinateElement::FUNCTION);
-  
   float complexity = SbClamp(this->getComplexityValue(action), 0.0f, 1.0f);
 
-  unsigned int flags = 0;
-  if (sendNormals) flags |= SOGL_NEED_NORMALS;
+  unsigned int flags = SOGL_NEED_NORMALS;
   if (doTextures) flags |= SOGL_NEED_TEXCOORDS;
   else if (do3DTextures) flags |= SOGL_NEED_3DTEXCOORDS;
 

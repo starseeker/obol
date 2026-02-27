@@ -265,7 +265,7 @@ sogl_render_cone(const float radius,
     }
 
     glBegin(GL_TRIANGLE_FAN);
-    glNormal3f(0.0f, -1.0f, 0.0f);
+    if (flags & SOGL_NEED_NORMALS) glNormal3f(0.0f, -1.0f, 0.0f);
     for (i = slices-1; i >= 0; i--) {
       if (flags & SOGL_NEED_TEXCOORDS) {
         glTexCoord2f(texcoords[i][0]+0.5f, texcoords[i][1]+0.5f);
@@ -411,7 +411,7 @@ sogl_render_cylinder(const float radius,
       material->send(matnr, TRUE);
     }
     glBegin(GL_TRIANGLE_FAN);
-    glNormal3f(0.0f, 1.0f, 0.0f);
+    if (flags & SOGL_NEED_NORMALS) glNormal3f(0.0f, 1.0f, 0.0f);
 
     for (i = 0; i < slices; i++) {
       if (flags & SOGL_NEED_TEXCOORDS) {
@@ -439,7 +439,7 @@ sogl_render_cylinder(const float radius,
       material->send(matnr, TRUE);
     }
     glBegin(GL_TRIANGLE_FAN);
-    glNormal3f(0.0f, -1.0f, 0.0f);
+    if (flags & SOGL_NEED_NORMALS) glNormal3f(0.0f, -1.0f, 0.0f);
 
     for (i = slices-1; i >= 0; i--) {
       if (flags & SOGL_NEED_TEXCOORDS) {
@@ -540,7 +540,7 @@ sogl_render_sphere(const float radius,
   glBegin(GL_TRIANGLES);
 
   for (j = 1; j <= slices; j++) {
-    glNormal3f(0.0f, 1.0f, 0.0f);
+    if (flags & SOGL_NEED_NORMALS) glNormal3f(0.0f, 1.0f, 0.0f);
     if (flags & SOGL_NEED_TEXCOORDS) {
       glTexCoord2f(currs + 0.5f * incs, 1.0f);
     }
@@ -557,7 +557,7 @@ sogl_render_sphere(const float radius,
     }
     glVertex3f(0.0f, radius, 0.0f);
 
-    glNormal3fv((const GLfloat*) &normals[j-1]);
+    if (flags & SOGL_NEED_NORMALS) glNormal3fv((const GLfloat*) &normals[j-1]);
     if (flags & SOGL_NEED_TEXCOORDS) {
       glTexCoord2f(currs, T);
     }
@@ -582,7 +582,7 @@ sogl_render_sphere(const float radius,
                  float(cos(theta))*ts);
 
     normals[j] = tmp;
-    glNormal3fv((const GLfloat*)&normals[j]);
+    if (flags & SOGL_NEED_NORMALS) glNormal3fv((const GLfloat*)&normals[j]);
     if (flags & SOGL_NEED_TEXCOORDS) {
       S[j] = currs;
       glTexCoord2f(currs, T);
@@ -627,7 +627,7 @@ sogl_render_sphere(const float radius,
           }
         }
       }
-      glNormal3fv((const GLfloat*)&normals[j]);
+      if (flags & SOGL_NEED_NORMALS) glNormal3fv((const GLfloat*)&normals[j]);
       glVertex3fv((const GLfloat*)&coords[j]);
 
       tmp.setValue(float(sin(theta))*ts,
@@ -649,7 +649,7 @@ sogl_render_sphere(const float radius,
         }
       }
       normals[j] = tmp;
-      glNormal3f(tmp[0], tmp[1], tmp[2]);
+      if (flags & SOGL_NEED_NORMALS) glNormal3f(tmp[0], tmp[1], tmp[2]);
       tmp *= radius;
       glVertex3f(tmp[0], tmp[1], tmp[2]);
       coords[j] = tmp;
@@ -676,7 +676,7 @@ sogl_render_sphere(const float radius,
         }
       }
     }
-    glNormal3fv((const GLfloat*)&normals[j]);
+    if (flags & SOGL_NEED_NORMALS) glNormal3fv((const GLfloat*)&normals[j]);
     glVertex3fv((const GLfloat*)&coords[j]);
 
     if (flags & SOGL_NEED_TEXCOORDS) {
@@ -693,7 +693,7 @@ sogl_render_sphere(const float radius,
         }
       }
     }
-    glNormal3f(0.0f, -1.0f, 0.0f);
+    if (flags & SOGL_NEED_NORMALS) glNormal3f(0.0f, -1.0f, 0.0f);
     glVertex3f(0.0f, -radius, 0.0f);
 
     if (flags & SOGL_NEED_TEXCOORDS) {
@@ -710,7 +710,7 @@ sogl_render_sphere(const float radius,
         }
       }
     }
-    glNormal3fv((const GLfloat*)&normals[j+1]);
+    if (flags & SOGL_NEED_NORMALS) glNormal3fv((const GLfloat*)&normals[j+1]);
     glVertex3fv((const GLfloat*)&coords[j+1]);
   }
   glEnd(); // GL_TRIANGLES
