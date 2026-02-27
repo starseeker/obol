@@ -1,12 +1,12 @@
 # Build Options and Performance Features
 
-This document describes CMake build options and performance features available in the Coin3D library.
+This document describes CMake build options available in Obol.
 
 ## Precompiled Headers Support
 
 ### Overview
 
-Coin3D supports precompiled headers (PCH) to significantly speed up compilation. This feature uses CMake's `target_precompile_headers()` functionality (available in CMake 3.16+) to precompile commonly used standard library headers.
+Obol supports precompiled headers (PCH) to speed up compilation. This feature uses CMake's `target_precompile_headers()` (available in CMake 3.16+) to precompile commonly used standard library headers.
 
 ### Usage
 
