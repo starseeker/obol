@@ -509,15 +509,21 @@ public:
         }
         if (!cam) return FALSE;  // no camera: fall through to GL
 
-        const SbViewVolume vv = cam->getViewVolume(
-            static_cast<float>(width) / static_cast<float>(height));
+        // Get the view volume and apply the same aspect-ratio correction that
+        // Coin's SoCamera::GLRender() applies: scale(1/aspect) for portrait
+        // viewports (aspect < 1).  Without this, NanoRT renders the scene at a
+        // different zoom level than the GL and OSMesa panels.
+        const float aspect_ratio =
+            static_cast<float>(width) / static_cast<float>(height);
+        SbViewVolume vv = cam->getViewVolume(aspect_ratio);
+        if (aspect_ratio < 1.0f) vv.scale(1.0f / aspect_ratio);
 
         // --- 5. Raytrace ----------------------------------------------------
         nanort::TriangleIntersector<float> intersector(
             nrtScene.vertices.data(), nrtScene.faces.data(),
             sizeof(float) * 3);
 
-        const float kAmbientFill = 0.12f;
+        const float kAmbientFill = 0.20f;
 
         for (unsigned int y = 0; y < height; ++y) {
             for (unsigned int x = 0; x < width; ++x) {
