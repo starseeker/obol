@@ -65,6 +65,8 @@
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
 #include <Inventor/actions/SoSearchAction.h>
 #include <Inventor/actions/SoCallbackAction.h>
+#include <Inventor/actions/SoRaytraceRenderAction.h>
+#include <Inventor/SoPrimitiveVertex.h>
 
 // Fields
 #include <Inventor/fields/SoSFFloat.h>
@@ -82,6 +84,8 @@
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
+#include <Inventor/nodes/SoLight.h>
+#include <Inventor/nodes/SoShape.h>
 
 // Engines
 #include <Inventor/engines/SoCalculator.h>
@@ -177,6 +181,139 @@ static int runActionsTests()
         SoSearchAction sa;
         sa.apply(scene);
         scene->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoRaytraceRenderAction
+// =========================================================================
+static int runRaytraceActionTests()
+{
+    int failures = 0;
+
+    // --- Type registration ---
+    {
+        SoRaytraceRenderAction rta(SbViewportRegion(100, 100));
+        if (rta.getTypeId() == SoType::badType()) {
+            fprintf(stderr, "  FAIL: SoRaytraceRenderAction has bad type\n");
+            ++failures;
+        }
+        if (!rta.isOfType(SoCallbackAction::getClassTypeId())) {
+            fprintf(stderr, "  FAIL: SoRaytraceRenderAction not derived from SoCallbackAction\n");
+            ++failures;
+        }
+        if (!rta.isOfType(SoAction::getClassTypeId())) {
+            fprintf(stderr, "  FAIL: SoRaytraceRenderAction not derived from SoAction\n");
+            ++failures;
+        }
+    }
+
+    // --- Viewport region round-trip ---
+    {
+        SbViewportRegion vp(320, 240);
+        SoRaytraceRenderAction rta(vp);
+        SbVec2s size = rta.getViewportRegion().getWindowSize();
+        if (size[0] != 320 || size[1] != 240) {
+            fprintf(stderr, "  FAIL: SoRaytraceRenderAction viewport size mismatch (%d,%d)\n",
+                    (int)size[0], (int)size[1]);
+            ++failures;
+        }
+    }
+
+    // --- Triangle collection via generatePrimitives ---
+    {
+        // Apply to a cube; count the triangles generated
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+        root->addChild(new SoCube);
+
+        int triangleCount = 0;
+        SoRaytraceRenderAction rta(SbViewportRegion(100, 100));
+        rta.addTriangleCallback(
+            SoShape::getClassTypeId(),
+            [](void* ud, SoCallbackAction*, const SoPrimitiveVertex*,
+               const SoPrimitiveVertex*, const SoPrimitiveVertex*) {
+                (*static_cast<int*>(ud))++;
+            },
+            &triangleCount);
+        rta.apply(root);
+        root->unref();
+
+        // A cube has 6 faces × 2 triangles each = 12 triangles
+        if (triangleCount != 12) {
+            fprintf(stderr, "  FAIL: expected 12 triangles for cube, got %d\n", triangleCount);
+            ++failures;
+        }
+    }
+
+    // --- Lights collected after traversal ---
+    {
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+        root->addChild(new SoDirectionalLight);
+        root->addChild(new SoCube);
+
+        SoRaytraceRenderAction rta(SbViewportRegion(100, 100));
+        rta.addTriangleCallback(SoShape::getClassTypeId(),
+            [](void*, SoCallbackAction*, const SoPrimitiveVertex*,
+               const SoPrimitiveVertex*, const SoPrimitiveVertex*) {},
+            nullptr);
+        rta.apply(root);
+        root->unref();
+
+        const SoNodeList& lights = rta.getLights();
+        if (lights.getLength() == 0) {
+            fprintf(stderr, "  FAIL: SoRaytraceRenderAction getLights() returned empty list\n");
+            ++failures;
+        } else if (!lights[0]->isOfType(SoDirectionalLight::getClassTypeId())) {
+            fprintf(stderr, "  FAIL: light is not SoDirectionalLight\n");
+            ++failures;
+        }
+    }
+
+    // --- Model matrix applied to vertices ---
+    {
+        // Translate a cube by (5,0,0); collected vertices should be near x=5
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+
+        SoTranslation* t = new SoTranslation;
+        t->translation.setValue(5.0f, 0.0f, 0.0f);
+        root->addChild(t);
+        root->addChild(new SoCube);
+
+        struct Collector {
+            SbVec3f first;
+            bool set = false;
+        } col;
+
+        SoRaytraceRenderAction rta(SbViewportRegion(100, 100));
+        rta.addTriangleCallback(
+            SoShape::getClassTypeId(),
+            [](void* ud, SoCallbackAction* action,
+               const SoPrimitiveVertex* v1,
+               const SoPrimitiveVertex*, const SoPrimitiveVertex*) {
+                Collector* c = static_cast<Collector*>(ud);
+                if (!c->set) {
+                    SbVec3f p;
+                    action->getModelMatrix().multVecMatrix(v1->getPoint(), p);
+                    c->first = p;
+                    c->set = true;
+                }
+            },
+            &col);
+        rta.apply(root);
+        root->unref();
+
+        if (!col.set) {
+            fprintf(stderr, "  FAIL: no triangle callback was invoked\n");
+            ++failures;
+        } else if (std::fabs(col.first[0] - 5.0f) > 1.5f) {
+            fprintf(stderr, "  FAIL: expected vertex near x=5, got x=%f\n", col.first[0]);
+            ++failures;
+        }
     }
 
     return failures;
@@ -788,6 +925,12 @@ REGISTER_TEST(unit_actions, ObolTest::TestCategory::Actions,
     "Action type checking, bounding box, search action",
     e.has_visual = false;
     e.run_unit = runActionsTests;
+);
+
+REGISTER_TEST(unit_raytrace_action, ObolTest::TestCategory::Actions,
+    "SoRaytraceRenderAction type, viewport, triangle collection, lights",
+    e.has_visual = false;
+    e.run_unit = runRaytraceActionTests;
 );
 
 REGISTER_TEST(unit_base, ObolTest::TestCategory::Base,
