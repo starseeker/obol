@@ -521,7 +521,7 @@ SoText3::GLRender(SoGLRenderAction * action)
   // that subsequent nodes always resend their material to GL rather than relying
   // on a possibly stale match with the tracked state.
   if (prts & (SoText3::SIDES | SoText3::BACK)) {
-    SoGLLazyElement::reset(state, SoLazyElement::ALL_MASK);
+    SoGLLazyElement::getInstance(state)->reset(state, SoLazyElement::ALL_MASK);
   }
 
   if (SoComplexityTypeElement::get(state) == SoComplexityTypeElement::OBJECT_SPACE) {
