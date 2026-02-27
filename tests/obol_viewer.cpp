@@ -268,7 +268,8 @@ public:
     std::function<void()>           on_rendered;
 
     explicit CoinPanel(int X, int Y, int W, int H, const char* lbl = "")
-        : Fl_Box(X, Y, W, H, ""), label_text(lbl ? lbl : "")
+        : Fl_Box(X, Y, W, H, ""), label_text(lbl ? lbl : ""),
+          gl_context_failed_(false)
     {
         box(FL_FLAT_BOX);
         color(FL_BLACK);
@@ -300,6 +301,11 @@ public:
 
     void refreshRender() {
         if (!state || !state->root) { redraw(); return; }
+        /* If GL context creation has already failed permanently, skip the
+         * render attempt and just redisplay the error message.  This avoids
+         * repeated failed GLX operations on every user interaction (resize,
+         * camera drag, scene reload) after the initial context failure. */
+        if (gl_context_failed_) { redraw(); return; }
         int pw = std::max(w(), 1);
         int ph = std::max(h(), 1);
         SoOffscreenRenderer* r = getRenderer(pw, ph);
@@ -308,7 +314,11 @@ public:
         r->setComponents(SoOffscreenRenderer::RGB_TRANSPARENCY);
         r->setBackgroundColor(SbColor(0.15f, 0.15f, 0.2f));
         if (!r->render(state->root)) {
-            status_text = "Render failed"; redraw(); return;
+            /* Mark GL as permanently failed so we do not keep retrying.
+             * This also prevents the CoinOffscreenGLCanvas::tilesizeroof
+             * static from being reduced further on every interaction. */
+            gl_context_failed_ = true;
+            status_text = "System GL context unavailable"; redraw(); return;
         }
         const unsigned char* src = r->getBuffer();
         if (!src) { status_text = "No buffer"; redraw(); return; }
@@ -494,6 +504,11 @@ public:
     }
 
 private:
+    /* Set to true after the first GL context creation failure.  Prevents
+     * repeated failed GLX operations (and their side effects on the static
+     * CoinOffscreenGLCanvas::tilesizeroof) on every subsequent user
+     * interaction such as resize, camera drag, or scene reload. */
+    bool gl_context_failed_;
     void notifyCameraChanged() { if (on_camera_changed) on_camera_changed(this); }
 };
 
@@ -1352,7 +1367,12 @@ int main(int argc, char** argv)
     initCoinHeadless();
 
     Fl::scheme("gtk+");
-    Fl::visual(FL_RGB | FL_DOUBLE);
+    /* Request a double-buffered RGB visual.  Fall back to single-buffer if
+     * the display does not support a double-buffered OpenGL visual so that
+     * the viewer still opens and functions (rendering uses SoOffscreenRenderer,
+     * not a FLTK GL window). */
+    if (!Fl::visual(FL_RGB | FL_DOUBLE))
+        Fl::visual(FL_RGB);
 
     ObolViewerWindow* win = new ObolViewerWindow(1100, 700);
     win->show(argc, argv);
