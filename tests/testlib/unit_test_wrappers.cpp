@@ -1264,7 +1264,7 @@ REGISTER_TEST(text, ObolTest::TestCategory::Rendering,
     "SoText2 and SoText3 labels",
     e.has_visual = true;
     e.has_interactive = true;
-    e.nanort_ok = false;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createText;
 );
 

@@ -51,8 +51,6 @@
  *     configurable ambient fill intensity
  *
  * Rendering features NOT supported (fall back to rendering nothing extra):
- *   - SoText2 (screen-aligned 2D text; requires rasterisation;
- *     use SoText2::getTextQuad() to obtain a bounding quad for the text)
  *   - Textures (texture images not applied)
  *   - SoGLRenderAction-specific effects (shadow maps, FBOs, GLSL shaders)
  *   - SoPath rendering (only SoNode* root is handled; SoPath falls through
@@ -64,6 +62,10 @@
  *   - SoPointSet – rendered as small spheres via SoPointSet::createSphereProxy()
  *   - SoText3 – uses generatePrimitives() which produces extruded triangle
  *     geometry directly; no extra work needed
+ *   - SoText2 – screen-aligned text rendered as a coloured billboard quad at
+ *     the text anchor depth via SoText2::getTextQuad(); text characters are
+ *     not individually rasterised but the text region is visible as a solid
+ *     coloured rectangle matching the text colour and screen extent
  *
  * Dependencies:
  *   - nanort.h (external/nanort/nanort.h)
@@ -95,6 +97,7 @@
 #include <Inventor/nodes/SoIndexedLineSet.h>
 #include <Inventor/nodes/SoPointSet.h>
 #include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoText2.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoMatrixTransform.h>
 #include <Inventor/nodes/SoRaytracingParams.h>
@@ -334,6 +337,86 @@ nrtPointSetPreCB(void * ud, SoCallbackAction * action, const SoNode * node)
     proxy->unref();
 
     return SoCallbackAction::PRUNE;
+}
+
+// ==========================================================================
+// SoText2 pre-callback: billboard quad at the text anchor position
+// ==========================================================================
+// SoText2 renders screen-aligned text via GL rasterisation, so its
+// generatePrimitives() emits nothing for ray-tracing backends.  This
+// pre-callback intercepts each SoText2 node, retrieves the world-space
+// bounding quad via getTextQuad(), and emits two flat triangles so the
+// text region is visible as a coloured billboard.  The quad is placed at the
+// depth of the text anchor point and has the same screen extent as the
+// rendered text; it is shaded with the current diffuse material colour.
+static SoCallbackAction::Response
+nrtText2PreCB(void * ud, SoCallbackAction * action, const SoNode * node)
+{
+    NrtProxyData * data = static_cast<NrtProxyData *>(ud);
+    const SoText2 * text = static_cast<const SoText2 *>(node);
+    SoState * state = action->getState();
+
+    // Get the four corners of the text quad in object space.
+    // getTextQuad() projects the text anchor to screen space, computes the
+    // pixel-accurate bounding rectangle, then unprojects the corners back to
+    // object space using the inverse of the current model matrix.
+    SbVec3f v0, v1, v2, v3;
+    if (!text->getTextQuad(state, v0, v1, v2, v3))
+        return SoCallbackAction::PRUNE;  // empty string or invisible
+
+    // Transform object-space vertices back to world space (undoes the
+    // object-space inverse applied inside getTextQuad).
+    const SbMatrix & mm = action->getModelMatrix();
+    mm.multVecMatrix(v0, v0);
+    mm.multVecMatrix(v1, v1);
+    mm.multVecMatrix(v2, v2);
+    mm.multVecMatrix(v3, v3);
+
+    // Face normal: cross product of two quad edges.
+    // Vertex order from getTextQuad: v0=top-left, v1=top-right,
+    //                                v2=bottom-right, v3=bottom-left.
+    SbVec3f edge0 = v1 - v0;
+    SbVec3f edge1 = v3 - v0;
+    SbVec3f norm  = edge0.cross(edge1);
+    float normLen = norm.length();
+    if (normLen < 1e-6f)
+        return SoCallbackAction::PRUNE;  // degenerate (zero-size) quad
+    norm /= normLen;
+
+    // Read the current material from the traversal state.
+    SbColor ambient, diffuse, specular, emission;
+    float   shininess, transparency;
+    action->getMaterial(ambient, diffuse, specular, emission,
+                        shininess, transparency, 0);
+
+    NrtMaterial mat;
+    mat.diffuse[0]  = diffuse[0];  mat.diffuse[1]  = diffuse[1];  mat.diffuse[2]  = diffuse[2];
+    mat.specular[0] = specular[0]; mat.specular[1] = specular[1]; mat.specular[2] = specular[2];
+    mat.ambient[0]  = ambient[0];  mat.ambient[1]  = ambient[1];  mat.ambient[2]  = ambient[2];
+    mat.emission[0] = emission[0]; mat.emission[1] = emission[1]; mat.emission[2] = emission[2];
+    mat.shininess   = shininess;
+
+    // Helper: add one triangle with the shared face normal.
+    const float n[3] = { norm[0], norm[1], norm[2] };
+    auto addTri = [&](const SbVec3f & a, const SbVec3f & b, const SbVec3f & c) {
+        NrtTriangle tri;
+        tri.pos[0][0] = a[0]; tri.pos[0][1] = a[1]; tri.pos[0][2] = a[2];
+        tri.pos[1][0] = b[0]; tri.pos[1][1] = b[1]; tri.pos[1][2] = b[2];
+        tri.pos[2][0] = c[0]; tri.pos[2][1] = c[1]; tri.pos[2][2] = c[2];
+        for (int i = 0; i < 3; ++i) {
+            tri.norm[i][0] = n[0];
+            tri.norm[i][1] = n[1];
+            tri.norm[i][2] = n[2];
+        }
+        tri.mat = mat;
+        data->collector->tris.push_back(tri);
+    };
+
+    // Two triangles forming the quad: (v0, v1, v2) and (v0, v2, v3).
+    addTri(v0, v1, v2);
+    addTri(v0, v2, v3);
+
+    return SoCallbackAction::PRUNE;  // generatePrimitives() produces nothing
 }
 
 // ==========================================================================
@@ -804,6 +887,8 @@ public:
                                nrtIndexedLineSetPreCB, &proxyData);
             cba.addPreCallback(SoPointSet::getClassTypeId(),
                                nrtPointSetPreCB, &proxyData);
+            cba.addPreCallback(SoText2::getClassTypeId(),
+                               nrtText2PreCB, &proxyData);
             // All supported light types (with world-space transforms)
             cba.addPreCallback(SoDirectionalLight::getClassTypeId(),
                                nrtDirectionalLightCB, &lights);
