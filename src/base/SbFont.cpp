@@ -578,7 +578,10 @@ SbFont::getGlyphBitmap(int character, SbVec2s & size, SbVec2s & bearing) const
                                            character, &width, &height, &xoff, &yoff);
     if (glyph->bitmap) {
       glyph->bitmapsize.setValue(width, height);
-      glyph->bearing.setValue(xoff, yoff);
+      // stt_GetCodepointBitmap returns yoff as a negative screen-Y offset
+      // (positive = down in screen space, so above-baseline chars have yoff < 0).
+      // SoText2 expects bearing.y in FreeType convention: positive = above baseline.
+      glyph->bearing.setValue(xoff, -yoff);
     } else {
       glyph->bitmapsize.setValue(0, 0);
       glyph->bearing.setValue(0, 0);

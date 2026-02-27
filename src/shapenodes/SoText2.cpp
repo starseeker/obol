@@ -538,12 +538,16 @@ SoText2::GLRender(SoGLRenderAction * action)
             if (memx >= 0 && memx + bitmapsize[0] <= bbsize[0] &&
                 memy >= 0 && memy + bitmapsize[1] <= bbsize[1]) {
 
-              unsigned char * dst = PRIVATE(this)->pixel_buffer + (memy * bbsize[0] + memx) * 4;
               const unsigned char * src = buffer;
-              int nextlineoffset = (bbsize[0] - bitmapsize[0]) * 4;
+              int rowstride = bbsize[0] * 4;
 
-              // Ouch. This must lead to pretty slow rendering
+              // stb_truetype bitmaps are stored top-to-bottom (row 0 = top of glyph).
+              // glDrawPixels reads the pixel buffer bottom-to-top (row 0 = bottom of image).
+              // Fill in reverse row order so the glyph appears right-side up.
               for (int y = 0; y < iy; y++) {
+                // src row y (from top) → pixel buffer row (memy + iy - 1 - y)
+                unsigned char * dst = PRIVATE(this)->pixel_buffer +
+                  ((memy + iy - 1 - y) * bbsize[0] + memx) * 4;
                 for (int x = 0; x < ix; x++) {
                   *dst++ = red; *dst++ = green; *dst++ = blue;
                   // alpha from the gray level pixel value, blended with current value (because glyph bitmaps can overlap)
@@ -552,7 +556,6 @@ SoText2::GLRender(SoGLRenderAction * action)
                   *dst = ((oldval * (256 - srcval) + alpha * srcval) >> 8);
                   src++; dst++;
                 }
-                dst += nextlineoffset;
               }
             } else {
               static SbBool once = TRUE;
