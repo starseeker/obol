@@ -1312,7 +1312,7 @@ REGISTER_TEST(hud, ObolTest::TestCategory::Misc,
     "Head-up display overlay using orthographic camera",
     e.has_visual = true;
     e.has_interactive = false;
-    e.nanort_ok = true;
+    e.nanort_ok = false;  // dual-camera (perspective + orthographic) not supported by NanoRT
     e.create_scene = ObolTest::Scenes::createHUD;
 );
 

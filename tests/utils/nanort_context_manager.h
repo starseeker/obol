@@ -870,73 +870,97 @@ public:
         const SbViewportRegion vp(static_cast<short>(width),
                                   static_cast<short>(height));
 
-        // --- 1. Extract triangles and all light types in one traversal ------
-        NrtSceneCollector collector;
-        std::vector<NrtLightInfo> lights;
-        {
-            NrtProxyData proxyData;
-            proxyData.collector = &collector;
-            proxyData.vp        = vp;
+        // --- 1–3. Rebuild geometry/BVH/hints only when the scene changes ----
+        // Camera orbits and zooms only modify camera node fields; the triangle
+        // geometry, lights, and raytracing hints are invariant across frames.
+        // Skipping the SoCallbackAction traversal and BVH build on repeated
+        // calls with the same scene pointer is the primary interactive speedup.
+        if (scene != cachedScenePtr_) {
+            NrtSceneCollector collector;
+            std::vector<NrtLightInfo> lights;
+            {
+                NrtProxyData proxyData;
+                proxyData.collector = &collector;
+                proxyData.vp        = vp;
 
-            SoCallbackAction cba(vp);
-            // Geometry
-            cba.addTriangleCallback(SoShape::getClassTypeId(),
-                                    nrtTriangleCB, &collector);
-            // Proxy geometry for lines/points
-            cba.addPreCallback(SoLineSet::getClassTypeId(),
-                               nrtLineSetPreCB, &proxyData);
-            cba.addPreCallback(SoIndexedLineSet::getClassTypeId(),
-                               nrtIndexedLineSetPreCB, &proxyData);
-            cba.addPreCallback(SoPointSet::getClassTypeId(),
-                               nrtPointSetPreCB, &proxyData);
-            cba.addPreCallback(SoText2::getClassTypeId(),
-                               nrtText2PreCB, &proxyData);
-            // All supported light types (with world-space transforms)
-            cba.addPreCallback(SoDirectionalLight::getClassTypeId(),
-                               nrtDirectionalLightCB, &lights);
-            cba.addPreCallback(SoPointLight::getClassTypeId(),
-                               nrtPointLightCB, &lights);
-            cba.addPreCallback(SoSpotLight::getClassTypeId(),
-                               nrtSpotLightCB, &lights);
-            cba.apply(scene);
-        }
-        if (collector.tris.empty()) {
-            // No triangles: return TRUE so the caller uses the
-            // background-filled buffer rather than falling through to GL.
-            return TRUE;
-        }
-
-        // --- 2. Build nanort BVH --------------------------------------------
-        NrtScene nrtScene;
-        nrtScene.tris = collector.tris;
-        if (!nrtScene.build()) return FALSE;
-
-        // --- 3. Read SoRaytracingParams hints from scene --------------------
-        bool  shadowsEnabled     = false;
-        int   maxBouncesAllowed  = 0;
-        int   samplesPerPixel    = 1;
-        float ambientFill        = 0.20f;
-        {
-            SoSearchAction sa;
-            sa.setType(SoRaytracingParams::getClassTypeId());
-            sa.setInterest(SoSearchAction::FIRST);
-            sa.apply(scene);
-            if (sa.getPath()) {
-                const SoRaytracingParams * rp =
-                    static_cast<const SoRaytracingParams *>(
-                        sa.getPath()->getTail());
-                shadowsEnabled    = rp->shadowsEnabled.getValue() != FALSE;
-                maxBouncesAllowed = rp->maxReflectionBounces.getValue();
-                samplesPerPixel   = rp->samplesPerPixel.getValue();
-                ambientFill       = rp->ambientIntensity.getValue();
-                // Clamp to sane values
-                if (samplesPerPixel  < 1)  samplesPerPixel  = 1;
-                if (maxBouncesAllowed < 0) maxBouncesAllowed = 0;
-                ambientFill = nrt_clamp01(ambientFill);
+                SoCallbackAction cba(vp);
+                // Geometry
+                cba.addTriangleCallback(SoShape::getClassTypeId(),
+                                        nrtTriangleCB, &collector);
+                // Proxy geometry for lines/points
+                cba.addPreCallback(SoLineSet::getClassTypeId(),
+                                   nrtLineSetPreCB, &proxyData);
+                cba.addPreCallback(SoIndexedLineSet::getClassTypeId(),
+                                   nrtIndexedLineSetPreCB, &proxyData);
+                cba.addPreCallback(SoPointSet::getClassTypeId(),
+                                   nrtPointSetPreCB, &proxyData);
+                cba.addPreCallback(SoText2::getClassTypeId(),
+                                   nrtText2PreCB, &proxyData);
+                // All supported light types (with world-space transforms)
+                cba.addPreCallback(SoDirectionalLight::getClassTypeId(),
+                                   nrtDirectionalLightCB, &lights);
+                cba.addPreCallback(SoPointLight::getClassTypeId(),
+                                   nrtPointLightCB, &lights);
+                cba.addPreCallback(SoSpotLight::getClassTypeId(),
+                                   nrtSpotLightCB, &lights);
+                cba.apply(scene);
             }
+
+            if (collector.tris.empty()) {
+                // Cache the empty result so we don't re-traverse next frame.
+                cachedScenePtr_ = scene;
+                cachedNrtScene_ = NrtScene();
+                cachedLights_.clear();
+                // No triangles: return TRUE so caller uses background buffer.
+                return TRUE;
+            }
+
+            NrtScene nrtScene;
+            nrtScene.tris = collector.tris;
+            if (!nrtScene.build()) return FALSE;
+
+            // Read SoRaytracingParams hints (invariant while scene is loaded).
+            cachedShadows_ = false;
+            cachedBounces_ = 0;
+            cachedSamples_ = 1;
+            cachedAmbient_ = 0.20f;
+            {
+                SoSearchAction sa;
+                sa.setType(SoRaytracingParams::getClassTypeId());
+                sa.setInterest(SoSearchAction::FIRST);
+                sa.apply(scene);
+                if (sa.getPath()) {
+                    const SoRaytracingParams * rp =
+                        static_cast<const SoRaytracingParams *>(
+                            sa.getPath()->getTail());
+                    cachedShadows_ = rp->shadowsEnabled.getValue() != FALSE;
+                    cachedBounces_ = rp->maxReflectionBounces.getValue();
+                    cachedSamples_ = rp->samplesPerPixel.getValue();
+                    cachedAmbient_ = rp->ambientIntensity.getValue();
+                    if (cachedSamples_ < 1)  cachedSamples_ = 1;
+                    if (cachedBounces_ < 0)  cachedBounces_ = 0;
+                    cachedAmbient_ = nrt_clamp01(cachedAmbient_);
+                }
+            }
+
+            cachedScenePtr_ = scene;
+            cachedNrtScene_ = std::move(nrtScene);
+            cachedLights_   = std::move(lights);
         }
 
-        // --- 4. Extract view volume from camera in scene --------------------
+        // Return early if the cached scene has no geometry.
+        if (cachedNrtScene_.tris.empty()) return TRUE;
+
+        // Alias cached data for readability.
+        const NrtScene &                  nrtScene        = cachedNrtScene_;
+        const std::vector<NrtLightInfo> & lights          = cachedLights_;
+        const bool  shadowsEnabled    = cachedShadows_;
+        const int   maxBouncesAllowed = cachedBounces_;
+        const int   samplesPerPixel   = cachedSamples_;
+        const float ambientFill       = cachedAmbient_;
+
+        // --- 4. Extract view volume from camera (re-evaluated every frame) --
+        // Camera fields change on every orbit/zoom; everything else is cached.
         SoCamera * cam = nullptr;
         {
             SoSearchAction sa;
@@ -1087,6 +1111,20 @@ public:
 
         return TRUE;
     }
+
+private:
+    // -----------------------------------------------------------------------
+    // BVH cache – rebuilt only when the scene pointer changes.
+    // Camera orbit/zoom modifies only the camera node fields, so all geometry,
+    // lights, and hints can be reused across frames for the same scene root.
+    // -----------------------------------------------------------------------
+    SoNode *                  cachedScenePtr_ = nullptr;
+    NrtScene                  cachedNrtScene_;
+    std::vector<NrtLightInfo> cachedLights_;
+    bool                      cachedShadows_  = false;
+    int                       cachedBounces_  = 0;
+    int                       cachedSamples_  = 1;
+    float                     cachedAmbient_  = 0.20f;
 };
 
 #endif // OBOL_NANORT_CONTEXT_MANAGER_H
