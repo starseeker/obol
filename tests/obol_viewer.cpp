@@ -665,22 +665,11 @@ public:
                 int dx = ex - state->last_x, dy = ey - state->last_y;
                 state->last_x = ex; state->last_y = ey;
                 if (state->drag_btn == 1) {
-                    /* orbit – apply azimuth around world Y first, then derive
-                     * the right axis from the post-azimuth view direction so
-                     * that combined H+V drags stay centred on scene_center */
-                    SbVec3f center = state->scene_center;
-                    SbVec3f offset = state->cam->position.getValue() - center;
-                    SbRotation azR(SbVec3f(0,1,0), -(float)dx * 0.01f);
-                    azR.multVec(offset, offset);
-                    SbVec3f viewDir = -offset; viewDir.normalize();
-                    SbVec3f right = SbVec3f(0,1,0).cross(viewDir);
-                    float rLen = right.length();
-                    if (rLen < 1e-4f) right = SbVec3f(1,0,0);
-                    else right *= (1.0f / rLen);
-                    SbRotation elR(right, (float)dy * 0.01f);
-                    elR.multVec(offset, offset);
-                    state->cam->position.setValue(center + offset);
-                    state->cam->pointAt(center, SbVec3f(0,1,0));
+                    /* orbit – incremental rotation in camera-local space (BRL-CAD style):
+                     * no world-up reference → smooth at all orientations, no gimbal lock */
+                    orbitCamera(state->cam, state->scene_center,
+                                (float)dx, (float)dy,
+                                0.01f * (180.0f / static_cast<float>(M_PI)));
                 } else if (state->drag_btn == 3) {
                     /* dolly toward/away from scene centre */
                     float dist = state->cam->focalDistance.getValue();
@@ -914,22 +903,11 @@ public:
             int dx = ex - last_x_, dy = ey - last_y_;
             last_x_ = ex; last_y_ = ey;
             if (drag_btn_ == 1) {
-                /* orbit – apply azimuth around world Y first, then derive
-                 * the right axis from the post-azimuth view direction so
-                 * that combined H+V drags stay centred on scene_center_ */
-                SbVec3f center = scene_center_;
-                SbVec3f offset = cam->position.getValue() - center;
-                SbRotation azR(SbVec3f(0,1,0), -(float)dx * 0.01f);
-                azR.multVec(offset, offset);
-                SbVec3f viewDir = -offset; viewDir.normalize();
-                SbVec3f right = SbVec3f(0,1,0).cross(viewDir);
-                float rLen = right.length();
-                if (rLen < 1e-4f) right = SbVec3f(1,0,0);
-                else right *= (1.0f / rLen);
-                SbRotation elR(right, (float)dy * 0.01f);
-                elR.multVec(offset, offset);
-                cam->position.setValue(center + offset);
-                cam->pointAt(center, SbVec3f(0,1,0));
+                /* orbit – incremental rotation in camera-local space (BRL-CAD style):
+                 * no world-up reference → smooth at all orientations, no gimbal lock */
+                orbitCamera(cam, scene_center_,
+                            (float)dx, (float)dy,
+                            0.01f * (180.0f / static_cast<float>(M_PI)));
             } else if (drag_btn_ == 3) {
                 float dist = cam->focalDistance.getValue() * (1.0f + dy*0.01f);
                 if (dist < 0.1f) dist = 0.1f;
@@ -1142,22 +1120,11 @@ public:
             int dx = ex - last_x_, dy = ey - last_y_;
             last_x_ = ex; last_y_ = ey;
             if (drag_btn_ == 1) {
-                /* orbit – apply azimuth around world Y first, then derive
-                 * the right axis from the post-azimuth view direction so
-                 * that combined H+V drags stay centred on scene_center_ */
-                SbVec3f center = scene_center_;
-                SbVec3f offset = cam->position.getValue() - center;
-                SbRotation azR(SbVec3f(0,1,0), -(float)dx * 0.01f);
-                azR.multVec(offset, offset);
-                SbVec3f viewDir = -offset; viewDir.normalize();
-                SbVec3f right = SbVec3f(0,1,0).cross(viewDir);
-                float rLen = right.length();
-                if (rLen < 1e-4f) right = SbVec3f(1,0,0);
-                else right *= (1.0f / rLen);
-                SbRotation elR(right, (float)dy * 0.01f);
-                elR.multVec(offset, offset);
-                cam->position.setValue(center + offset);
-                cam->pointAt(center, SbVec3f(0,1,0));
+                /* orbit – incremental rotation in camera-local space (BRL-CAD style):
+                 * no world-up reference → smooth at all orientations, no gimbal lock */
+                orbitCamera(cam, scene_center_,
+                            (float)dx, (float)dy,
+                            0.01f * (180.0f / static_cast<float>(M_PI)));
             } else if (drag_btn_ == 3) {
                 float dist = cam->focalDistance.getValue() * (1.0f + dy*0.01f);
                 if (dist < 0.1f) dist = 0.1f;
