@@ -25,8 +25,10 @@
  * When OBOL_VIEWER_NANORT is defined at compile time (set by CMake when
  * external/nanort/nanort.h is found), an additional CPU-raytracing panel is
  * shown.  It uses SoNanoRTContextManager::renderScene() called directly.
- * Scenes that require GL-only features (e.g. SoShadowGroup) are flagged
- * nanort_ok=false in the scene catalogue and show "Not supported (NanoRT)".
+ * Scenes that require GL-only features are flagged nanort_ok=false in the
+ * scene catalogue and show "Not supported (NanoRT)".  SoText2 nodes are
+ * rendered as coloured billboard quads (see SoNanoRTContextManager comments);
+ * SoCallback gradient backgrounds are silently omitted but geometry renders.
  *
  * Layout (dual + nanort)                    Layout (dual only)
  * ──────────────────────────────────────    ─────────────────────────────────
