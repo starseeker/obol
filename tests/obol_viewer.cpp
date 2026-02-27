@@ -530,7 +530,10 @@ public:
         color(FL_BLACK);
     }
 
-    ~NanoRTPanel() { delete fltk_img; }
+    ~NanoRTPanel() {
+        Fl::remove_timeout(doRefine, this);
+        delete fltk_img;
+    }
 
     void setScene(SoSeparator* r, SoPerspectiveCamera* c, bool nanort_supported = true) {
         root = r; cam = c; nanort_ok_ = nanort_supported; status_text.clear();
@@ -666,9 +669,13 @@ public:
             last_x_   = Fl::event_x() - x();
             last_y_   = Fl::event_y() - y();
             return 1;
-        case FL_RELEASE:
-            dragging_ = false;
-            notifyCameraChanged(); refreshRender(); return 1;
+            case FL_RELEASE:
+                dragging_ = false;
+                /* View is now stable: cancel any pending coarse timer and render
+                 * at full resolution immediately. */
+                Fl::remove_timeout(doRefine, this);
+                coarse_ = false;
+                notifyCameraChanged(); refreshRender(); return 1;
         case FL_DRAG: {
             if (!dragging_) return 1;
             int ex = Fl::event_x()-x(), ey = Fl::event_y()-y();
@@ -689,8 +696,12 @@ public:
                 cam->focalDistance.setValue(dist);
                 updateClipping_();
             }
-            /* Do NOT sync during drag (same reason as CoinPanel). */
-            refreshRender(); return 1;
+            /* Render coarse during drag for speed; reset timer so refine
+             * fires kRefineDelaySec after the last drag event. */
+            coarse_ = true;
+            Fl::remove_timeout(doRefine, this);
+            Fl::add_timeout(kRefineDelaySec, doRefine, this);
+            notifyCameraChanged(); refreshRender(); return 1;
         }
         case FL_MOUSEWHEEL: {
             float dist = cam->focalDistance.getValue() * (1.0f + (float)Fl::event_dy()*0.1f);
@@ -717,9 +728,21 @@ private:
     SbVec3f scene_center_ = SbVec3f(0,0,0);
     bool nanort_ok_ = true;
     bool dragging_  = false;
+    bool coarse_    = false;  /* true → render at reduced resolution for speed */
     int  drag_btn_  = 0;
     int  last_x_    = 0;
     int  last_y_    = 0;
+
+    /* Delay (seconds) after the last camera change before doing a full-res
+     * refinement render.  250 ms feels snappy without firing during fast drags. */
+    static constexpr double kRefineDelaySec = 0.25;
+
+    /* FLTK timer callback: view is stable — re-render at full resolution. */
+    static void doRefine(void* data) {
+        NanoRTPanel* p = static_cast<NanoRTPanel*>(data);
+        p->coarse_ = false;
+        p->refreshRender();
+    }
 
     void updateClipping_() {
         if (!cam) return;
@@ -909,8 +932,7 @@ public:
                 cam->focalDistance.setValue(dist);
                 updateClipping_();
             }
-            /* Do NOT sync during drag (same reason as CoinPanel). */
-            refreshRender(); return 1;
+            notifyCameraChanged(); refreshRender(); return 1;
         }
         case FL_MOUSEWHEEL: {
             float dist = cam->focalDistance.getValue() * (1.0f + (float)Fl::event_dy()*0.1f);
