@@ -433,23 +433,6 @@ public:
                 int ex = Fl::event_x()-x(), ey = Fl::event_y()-y();
                 int dx = ex - state->last_x, dy = ey - state->last_y;
                 state->last_x = ex; state->last_y = ey;
-                if (state->drag_btn == 1) {
-                    /* orbit – camera-local yaw and pitch (BRL-CAD style):
-                     * symmetric axes, no world-up reference, no gimbal lock */
-                    state->cam->orbitCamera(state->scene_center,
-                                            (float)dx, (float)dy,
-                                            0.01f * (180.0f / static_cast<float>(M_PI)));
-                } else if (state->drag_btn == 3) {
-                    /* dolly toward/away from scene centre */
-                    float dist = state->cam->focalDistance.getValue();
-                    dist *= (1.0f + dy * 0.01f);
-                    if (dist < 0.1f) dist = 0.1f;
-                    SbVec3f dir = state->cam->position.getValue() - state->scene_center;
-                    dir.normalize();
-                    state->cam->position.setValue(state->scene_center + dir * dist);
-                    state->cam->focalDistance.setValue(dist);
-                    state->updateClipping();
-                }
                 SoLocation2Event ev;
                 ev.setPosition(SbVec2s((short)ex,(short)(h_-ey)));
                 ev.setTime(SbTime::getTimeOfDay());
@@ -457,8 +440,8 @@ public:
                 SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(state->root);
                 if (!state->dragger_active) {
                     if (state->drag_btn == 1) {
-                /* orbit – camera-local yaw and pitch (BRL-CAD style):
-                 * symmetric axes, no world-up reference, no gimbal lock */
+                        /* orbit – camera-local yaw and pitch (BRL-CAD style):
+                         * symmetric axes, no world-up reference, no gimbal lock */
                         state->cam->orbitCamera(state->scene_center,
                                                 (float)dx, (float)dy,
                                                 0.01f * (180.0f / static_cast<float>(M_PI)));
@@ -700,40 +683,71 @@ public:
 
     int handle(int event) override {
         if (!root || !cam || !nanort_ok_) return Fl_Box::handle(event);
+        int h_ = h();
         switch (event) {
-        case FL_PUSH:
+        case FL_PUSH: {
             take_focus();
             dragging_ = true;
             drag_btn_ = Fl::event_button();
             last_x_   = Fl::event_x() - x();
             last_y_   = Fl::event_y() - y();
+            SoMouseButtonEvent ev;
+            ev.setButton(drag_btn_==1 ? SoMouseButtonEvent::BUTTON1 :
+                         drag_btn_==2 ? SoMouseButtonEvent::BUTTON2 :
+                                        SoMouseButtonEvent::BUTTON3);
+            ev.setState(SoButtonEvent::DOWN);
+            ev.setPosition(SbVec2s((short)last_x_, (short)(h_-last_y_)));
+            ev.setTime(SbTime::getTimeOfDay());
+            SbViewportRegion vp(std::max(w(),1), std::max(h(),1));
+            SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(root);
+            dragger_active_ = ha.isHandled();
             return 1;
-            case FL_RELEASE:
-                dragging_ = false;
-                /* View is now stable: cancel any pending coarse timer and render
-                 * at full resolution immediately. */
-                Fl::remove_timeout(doRefine, this);
-                coarse_ = false;
-                notifyCameraChanged(); refreshRender(); return 1;
+        }
+        case FL_RELEASE: {
+            dragging_ = false;
+            dragger_active_ = false;
+            int rx = Fl::event_x()-x(), ry = Fl::event_y()-y();
+            SoMouseButtonEvent ev;
+            ev.setButton(Fl::event_button()==1 ? SoMouseButtonEvent::BUTTON1 :
+                         Fl::event_button()==2 ? SoMouseButtonEvent::BUTTON2 :
+                                                 SoMouseButtonEvent::BUTTON3);
+            ev.setState(SoButtonEvent::UP);
+            ev.setPosition(SbVec2s((short)rx, (short)(h_-ry)));
+            ev.setTime(SbTime::getTimeOfDay());
+            SbViewportRegion vp(std::max(w(),1), std::max(h(),1));
+            SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(root);
+            /* View is now stable: cancel any pending coarse timer and render
+             * at full resolution immediately. */
+            Fl::remove_timeout(doRefine, this);
+            coarse_ = false;
+            notifyCameraChanged(); refreshRender(); return 1;
+        }
         case FL_DRAG: {
             if (!dragging_) return 1;
             int ex = Fl::event_x()-x(), ey = Fl::event_y()-y();
             int dx = ex - last_x_, dy = ey - last_y_;
             last_x_ = ex; last_y_ = ey;
-            if (drag_btn_ == 1) {
-                /* orbit – camera-local yaw and pitch (BRL-CAD style):
-                 * symmetric axes, no world-up reference, no gimbal lock */
-                cam->orbitCamera(scene_center_,
-                            (float)dx, (float)dy,
-                            0.01f * (180.0f / static_cast<float>(M_PI)));
-            } else if (drag_btn_ == 3) {
-                float dist = cam->focalDistance.getValue() * (1.0f + dy*0.01f);
-                if (dist < 0.1f) dist = 0.1f;
-                SbVec3f dir = cam->position.getValue() - scene_center_;
-                dir.normalize();
-                cam->position.setValue(scene_center_ + dir * dist);
-                cam->focalDistance.setValue(dist);
-                updateClipping_();
+            SoLocation2Event ev;
+            ev.setPosition(SbVec2s((short)ex, (short)(h_-ey)));
+            ev.setTime(SbTime::getTimeOfDay());
+            SbViewportRegion vp(std::max(w(),1), std::max(h(),1));
+            SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(root);
+            if (!dragger_active_) {
+                if (drag_btn_ == 1) {
+                    /* orbit – camera-local yaw and pitch (BRL-CAD style):
+                     * symmetric axes, no world-up reference, no gimbal lock */
+                    cam->orbitCamera(scene_center_,
+                                (float)dx, (float)dy,
+                                0.01f * (180.0f / static_cast<float>(M_PI)));
+                } else if (drag_btn_ == 3) {
+                    float dist = cam->focalDistance.getValue() * (1.0f + dy*0.01f);
+                    if (dist < 0.1f) dist = 0.1f;
+                    SbVec3f dir = cam->position.getValue() - scene_center_;
+                    dir.normalize();
+                    cam->position.setValue(scene_center_ + dir * dist);
+                    cam->focalDistance.setValue(dist);
+                    updateClipping_();
+                }
             }
             /* Render coarse during drag for speed; reset timer so refine
              * fires kRefineDelaySec after the last drag event. */
@@ -765,9 +779,10 @@ public:
 
 private:
     SbVec3f scene_center_ = SbVec3f(0,0,0);
-    bool nanort_ok_ = true;
-    bool dragging_  = false;
-    bool coarse_    = false;  /* true → render at reduced resolution for speed */
+    bool nanort_ok_      = true;
+    bool dragging_       = false;
+    bool dragger_active_ = false;  /* true when a scene dragger consumed FL_PUSH */
+    bool coarse_         = false;  /* true → render at reduced resolution for speed */
     int  drag_btn_  = 0;
     int  last_x_    = 0;
     int  last_y_    = 0;
