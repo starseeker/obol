@@ -175,7 +175,7 @@ int main(int argc, char **argv)
         SoSeparator *sph = new SoSeparator;
 
         SoTranslation *t = new SoTranslation;
-        t->translation.setValue(0.0f, 0.3f, 0.0f);  // center at y=0.3; bottom at y=-0.5 (0.5 units above ground at y=-1.0)
+        t->translation.setValue(0.0f, 0.3f, 0.0f);  // sphere bottom at y=-0.5, which is 0.5 units above ground plane (y=-1.0)
         sph->addChild(t);
 
         SoMaterial *mat = new SoMaterial;
