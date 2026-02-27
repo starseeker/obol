@@ -145,6 +145,7 @@
 #include <Inventor/elements/SoGLShapeHintsElement.h>
 #include <Inventor/elements/SoMaterialBindingElement.h>
 #include <Inventor/elements/SoLazyElement.h>
+#include <Inventor/elements/SoGLLazyElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
 #include <Inventor/elements/SoComplexityTypeElement.h>
 #include <Inventor/elements/SoComplexityElement.h>
@@ -513,6 +514,14 @@ SoText3::GLRender(SoGLRenderAction * action)
     if (matperpart && (numdiffuse > 2))
       mb.send(2, FALSE);
     PRIVATE(this)->render(state, fontspec, SoText3::BACK);
+  }
+
+  // Raw GL calls (glNormal3fv, glVertex3f) during SIDES/BACK rendering change GL
+  // state that Coin does not track.  Invalidate the cached GL material state so
+  // that subsequent nodes always resend their material to GL rather than relying
+  // on a possibly stale match with the tracked state.
+  if (prts & (SoText3::SIDES | SoText3::BACK)) {
+    SoGLLazyElement::reset(state, SoLazyElement::ALL_MASK);
   }
 
   if (SoComplexityTypeElement::get(state) == SoComplexityTypeElement::OBJECT_SPACE) {
