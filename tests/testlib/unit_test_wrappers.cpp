@@ -1180,6 +1180,7 @@ REGISTER_TEST(primitives, ObolTest::TestCategory::Rendering,
     "2x2 grid: sphere, cube, cone, cylinder",
     e.has_visual = true;
     e.has_interactive = true;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createPrimitives;
 );
 
@@ -1187,6 +1188,7 @@ REGISTER_TEST(materials, ObolTest::TestCategory::Rendering,
     "Four spheres demonstrating material properties",
     e.has_visual = true;
     e.has_interactive = true;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createMaterials;
 );
 
@@ -1194,6 +1196,7 @@ REGISTER_TEST(lighting, ObolTest::TestCategory::Rendering,
     "Scene lit by directional and point lights",
     e.has_visual = true;
     e.has_interactive = true;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createLighting;
 );
 
@@ -1201,6 +1204,7 @@ REGISTER_TEST(transforms, ObolTest::TestCategory::Rendering,
     "Hierarchical rotation and translation transforms",
     e.has_visual = true;
     e.has_interactive = true;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createTransforms;
 );
 
@@ -1208,6 +1212,7 @@ REGISTER_TEST(cameras, ObolTest::TestCategory::Rendering,
     "Row of coloured spheres with explicit perspective camera",
     e.has_visual = true;
     e.has_interactive = true;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createCameras;
 );
 
@@ -1215,6 +1220,7 @@ REGISTER_TEST(texture, ObolTest::TestCategory::Rendering,
     "Checkerboard-textured cube",
     e.has_visual = true;
     e.has_interactive = true;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createTexture;
 );
 
@@ -1222,6 +1228,7 @@ REGISTER_TEST(text, ObolTest::TestCategory::Rendering,
     "SoText2 and SoText3 labels",
     e.has_visual = true;
     e.has_interactive = true;
+    e.nanort_ok = false;
     e.create_scene = ObolTest::Scenes::createText;
 );
 
@@ -1229,6 +1236,7 @@ REGISTER_TEST(gradient, ObolTest::TestCategory::Rendering,
     "Background gradient via callback node",
     e.has_visual = true;
     e.has_interactive = true;
+    e.nanort_ok = false;
     e.create_scene = ObolTest::Scenes::createGradient;
 );
 
@@ -1236,6 +1244,7 @@ REGISTER_TEST(colored_cube, ObolTest::TestCategory::Rendering,
     "Simple red cube with lighting (smoke test)",
     e.has_visual = true;
     e.has_interactive = true;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createColoredCube;
 );
 
@@ -1243,6 +1252,7 @@ REGISTER_TEST(coordinates, ObolTest::TestCategory::Rendering,
     "Colour-coded XYZ axis lines",
     e.has_visual = true;
     e.has_interactive = true;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createCoordinates;
 );
 
@@ -1250,6 +1260,7 @@ REGISTER_TEST(shadow, ObolTest::TestCategory::Rendering,
     "Shadow-casting scene (SoShadowGroup proxy)",
     e.has_visual = true;
     e.has_interactive = true;
+    e.nanort_ok = false;
     e.create_scene = ObolTest::Scenes::createShadow;
 );
 
@@ -1257,6 +1268,7 @@ REGISTER_TEST(draggers, ObolTest::TestCategory::Draggers,
     "Interactive draggers (SoTranslate1, SoRotateSpherical)",
     e.has_visual = true;
     e.has_interactive = true;
+    e.nanort_ok = false;
     e.create_scene = ObolTest::Scenes::createDraggers;
 );
 
@@ -1264,6 +1276,7 @@ REGISTER_TEST(hud, ObolTest::TestCategory::Misc,
     "Head-up display overlay using orthographic camera",
     e.has_visual = true;
     e.has_interactive = false;
+    e.nanort_ok = false;
     e.create_scene = ObolTest::Scenes::createHUD;
 );
 
@@ -1271,6 +1284,7 @@ REGISTER_TEST(lod, ObolTest::TestCategory::Nodes,
     "Level of detail (SoLOD) switching between representations",
     e.has_visual = true;
     e.has_interactive = true;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createLOD;
 );
 
@@ -1278,7 +1292,32 @@ REGISTER_TEST(transparency, ObolTest::TestCategory::Rendering,
     "Alpha-blended overlapping spheres",
     e.has_visual = true;
     e.has_interactive = true;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createTransparency;
+);
+
+REGISTER_TEST(drawstyle, ObolTest::TestCategory::Rendering,
+    "Filled, wireframe, and points draw style comparison",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createDrawStyle;
+);
+
+REGISTER_TEST(indexed_face_set, ObolTest::TestCategory::Rendering,
+    "SoIndexedFaceSet tetrahedron",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createIndexedFaceSet;
+);
+
+REGISTER_TEST(manips, ObolTest::TestCategory::Manips,
+    "Interactive manipulators (SoTrackballManip, SoTabBoxManip)",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = false;
+    e.create_scene = ObolTest::Scenes::createManips;
 );
 
 // --- Unit test registrations ---
