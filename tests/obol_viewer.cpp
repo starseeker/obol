@@ -440,7 +440,10 @@ public:
                 ev.setTime(SbTime::getTimeOfDay());
                 SbViewportRegion vp(state->width, state->height);
                 SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(state->root);
-                notifyCameraChanged();
+                /* Do NOT sync to other panels during drag: each notifyCameraChanged()
+                 * triggers a full re-render in the synced panel (e.g. NanoRT ~30-60 ms
+                 * per frame), which blocks the event loop and makes interaction feel
+                 * sluggish.  Sync happens once on FL_RELEASE instead. */
                 refreshRender();
             }
             return 1;
@@ -673,7 +676,8 @@ public:
                 cam->focalDistance.setValue(dist);
                 updateClipping_();
             }
-            notifyCameraChanged(); refreshRender(); return 1;
+            /* Do NOT sync during drag (same reason as CoinPanel). */
+            refreshRender(); return 1;
         }
         case FL_MOUSEWHEEL: {
             float dist = cam->focalDistance.getValue() * (1.0f + (float)Fl::event_dy()*0.1f);
@@ -892,7 +896,8 @@ public:
                 cam->focalDistance.setValue(dist);
                 updateClipping_();
             }
-            notifyCameraChanged(); refreshRender(); return 1;
+            /* Do NOT sync during drag (same reason as CoinPanel). */
+            refreshRender(); return 1;
         }
         case FL_MOUSEWHEEL: {
             float dist = cam->focalDistance.getValue() * (1.0f + (float)Fl::event_dy()*0.1f);
