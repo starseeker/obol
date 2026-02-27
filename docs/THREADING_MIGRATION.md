@@ -1,8 +1,10 @@
-# Coin3D Threading Migration to C++17
+# Obol Threading Migration to C++17
 
 ## Overview
 
-This document describes the successful migration of Coin3D's threading primitives from custom C wrappers to C++17 standard library implementations, completed as part of modernizing the codebase while maintaining full API compatibility.
+This document describes the migration of Obol's threading primitives from custom
+C wrappers to C++17 standard library implementations, completed as part of
+modernizing the codebase while maintaining full API compatibility.
 
 ## Migration Summary
 
@@ -129,4 +131,4 @@ For future modernization, the following C++20 features would provide additional 
 
 ## Conclusion
 
-The migration successfully modernizes Coin3D's threading infrastructure while maintaining complete compatibility and reliability. The implementation provides a solid foundation for future C++20+ enhancements while immediately benefiting from standard library optimizations and reduced maintenance overhead.
+The migration successfully modernizes Obol's threading infrastructure while maintaining complete compatibility and reliability. The implementation provides a solid foundation for future C++20+ enhancements while immediately benefiting from standard library optimizations and reduced maintenance overhead.
