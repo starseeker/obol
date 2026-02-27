@@ -665,21 +665,22 @@ public:
                 int dx = ex - state->last_x, dy = ey - state->last_y;
                 state->last_x = ex; state->last_y = ey;
                 if (state->drag_btn == 1) {
-                    /* orbit – quaternion trackball avoids gimbal lock,
-                     * rotating around the scene's bounding-box centre */
+                    /* orbit – apply azimuth around world Y first, then derive
+                     * the right axis from the post-azimuth view direction so
+                     * that combined H+V drags stay centred on scene_center */
                     SbVec3f center = state->scene_center;
                     SbVec3f offset = state->cam->position.getValue() - center;
-                    SbRotation curOri = state->cam->orientation.getValue();
-                    /* elevation around camera's current right axis */
-                    SbVec3f camRight;
-                    curOri.multVec(SbVec3f(1,0,0), camRight);
                     SbRotation azR(SbVec3f(0,1,0), -(float)dx * 0.01f);
-                    SbRotation elR(camRight,         (float)dy * 0.01f);
-                    SbRotation delta = elR * azR;
-                    SbVec3f newOffset;
-                    delta.multVec(offset, newOffset);
-                    state->cam->position.setValue(center + newOffset);
-                    state->cam->orientation.setValue(delta * curOri);
+                    azR.multVec(offset, offset);
+                    SbVec3f viewDir = -offset; viewDir.normalize();
+                    SbVec3f right = SbVec3f(0,1,0).cross(viewDir);
+                    float rLen = right.length();
+                    if (rLen < 1e-4f) right = SbVec3f(1,0,0);
+                    else right *= (1.0f / rLen);
+                    SbRotation elR(right, (float)dy * 0.01f);
+                    elR.multVec(offset, offset);
+                    state->cam->position.setValue(center + offset);
+                    state->cam->pointAt(center, SbVec3f(0,1,0));
                 } else if (state->drag_btn == 3) {
                     /* dolly toward/away from scene centre */
                     float dist = state->cam->focalDistance.getValue();
@@ -913,20 +914,22 @@ public:
             int dx = ex - last_x_, dy = ey - last_y_;
             last_x_ = ex; last_y_ = ey;
             if (drag_btn_ == 1) {
-                /* orbit – quaternion trackball avoids gimbal lock,
-                 * rotating around the scene's bounding-box centre */
+                /* orbit – apply azimuth around world Y first, then derive
+                 * the right axis from the post-azimuth view direction so
+                 * that combined H+V drags stay centred on scene_center_ */
                 SbVec3f center = scene_center_;
                 SbVec3f offset = cam->position.getValue() - center;
-                SbRotation curOri = cam->orientation.getValue();
-                SbVec3f camRight;
-                curOri.multVec(SbVec3f(1,0,0), camRight);
                 SbRotation azR(SbVec3f(0,1,0), -(float)dx * 0.01f);
-                SbRotation elR(camRight,         (float)dy * 0.01f);
-                SbRotation delta = elR * azR;
-                SbVec3f newOffset;
-                delta.multVec(offset, newOffset);
-                cam->position.setValue(center + newOffset);
-                cam->orientation.setValue(delta * curOri);
+                azR.multVec(offset, offset);
+                SbVec3f viewDir = -offset; viewDir.normalize();
+                SbVec3f right = SbVec3f(0,1,0).cross(viewDir);
+                float rLen = right.length();
+                if (rLen < 1e-4f) right = SbVec3f(1,0,0);
+                else right *= (1.0f / rLen);
+                SbRotation elR(right, (float)dy * 0.01f);
+                elR.multVec(offset, offset);
+                cam->position.setValue(center + offset);
+                cam->pointAt(center, SbVec3f(0,1,0));
             } else if (drag_btn_ == 3) {
                 float dist = cam->focalDistance.getValue() * (1.0f + dy*0.01f);
                 if (dist < 0.1f) dist = 0.1f;
@@ -1139,20 +1142,22 @@ public:
             int dx = ex - last_x_, dy = ey - last_y_;
             last_x_ = ex; last_y_ = ey;
             if (drag_btn_ == 1) {
-                /* orbit – quaternion trackball avoids gimbal lock,
-                 * rotating around the scene's bounding-box centre */
+                /* orbit – apply azimuth around world Y first, then derive
+                 * the right axis from the post-azimuth view direction so
+                 * that combined H+V drags stay centred on scene_center_ */
                 SbVec3f center = scene_center_;
                 SbVec3f offset = cam->position.getValue() - center;
-                SbRotation curOri = cam->orientation.getValue();
-                SbVec3f camRight;
-                curOri.multVec(SbVec3f(1,0,0), camRight);
                 SbRotation azR(SbVec3f(0,1,0), -(float)dx * 0.01f);
-                SbRotation elR(camRight,         (float)dy * 0.01f);
-                SbRotation delta = elR * azR;
-                SbVec3f newOffset;
-                delta.multVec(offset, newOffset);
-                cam->position.setValue(center + newOffset);
-                cam->orientation.setValue(delta * curOri);
+                azR.multVec(offset, offset);
+                SbVec3f viewDir = -offset; viewDir.normalize();
+                SbVec3f right = SbVec3f(0,1,0).cross(viewDir);
+                float rLen = right.length();
+                if (rLen < 1e-4f) right = SbVec3f(1,0,0);
+                else right *= (1.0f / rLen);
+                SbRotation elR(right, (float)dy * 0.01f);
+                elR.multVec(offset, offset);
+                cam->position.setValue(center + offset);
+                cam->pointAt(center, SbVec3f(0,1,0));
             } else if (drag_btn_ == 3) {
                 float dist = cam->focalDistance.getValue() * (1.0f + dy*0.01f);
                 if (dist < 0.1f) dist = 0.1f;

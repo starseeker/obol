@@ -383,7 +383,7 @@ namespace { namespace SoGL { namespace FaceSet {
         if ((AttributeBinding)MaterialBinding == PER_VERTEX) {
           mb->send(matnr++, TRUE);
         } else if ((AttributeBinding)MaterialBinding != OVERALL) {
-          // only needed for nvidia color-per-face bug workaround
+          // re-send per-face material for each vertex to ensure correct colour on all drivers
           mb->send(matnr-1, TRUE);
         }
 

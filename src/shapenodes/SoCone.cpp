@@ -223,13 +223,10 @@ SoCone::GLRender(SoGLRenderAction * action)
   SoCone::Part p = (SoCone::Part) this->parts.getValue();
 
   SoMaterialBundle mb(action);
-  SbBool sendNormals = !mb.isColorOnly() || 
-    (SoMultiTextureCoordinateElement::getType(state, 0) == SoMultiTextureCoordinateElement::FUNCTION);
 
-  unsigned int flags = 0;
+  unsigned int flags = SOGL_NEED_NORMALS;
   if (doTextures) flags |= SOGL_NEED_TEXCOORDS;
   else if (do3DTextures) flags |= SOGL_NEED_3DTEXCOORDS;
-  if (sendNormals) flags |= SOGL_NEED_NORMALS;
   if (p & SoCone::SIDES) flags |= SOGL_RENDER_SIDE;
   if (p & SoCone::BOTTOM) flags |= SOGL_RENDER_BOTTOM;
 

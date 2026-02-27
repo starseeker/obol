@@ -1610,9 +1610,8 @@ SoShadowGroupP::setFragmentShader(SoState * state)
   int numshadowlights = this->shadowlights.getLength();
   SbBool dirspot = FALSE;
 
-  // ATi doesn't seem to support gl_FrontFace in hardware. We've only
-  // verified that nVidia supports it so far.
-  SbBool twosidetest = glue->vendor_is_nvidia && ((perpixelspot && numshadowlights) || perpixelother);
+  // gl_FrontFacing is a standard GLSL built-in (available since GLSL 1.20 / OpenGL 2.1).
+  SbBool twosidetest = (perpixelspot && numshadowlights) || perpixelother;
 
 
   if (numshadowlights) {

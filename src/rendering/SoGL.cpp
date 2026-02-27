@@ -1413,7 +1413,7 @@ namespace { namespace SoGL { namespace FaceSet {
         materials->send(*matindices++, TRUE);
       }
 
-      // nvidia color-per-face-bug workaround
+      // re-send per-face material for each vertex to ensure correct colour on all drivers
       if ((AttributeBinding)MaterialBinding == PER_FACE) {
         materials->send(matnr-1, TRUE);
       } else if ((AttributeBinding)MaterialBinding == PER_FACE_INDEXED) {
@@ -1449,7 +1449,7 @@ namespace { namespace SoGL { namespace FaceSet {
         materials->send(*matindices++, TRUE);
       }
 
-      // nvidia color-per-face-bug workaround
+      // re-send per-face material for each vertex to ensure correct colour on all drivers
       if ((AttributeBinding)MaterialBinding == PER_FACE) {
         materials->send(matnr-1, TRUE);
       } else if ((AttributeBinding)MaterialBinding == PER_FACE_INDEXED) {
@@ -1486,7 +1486,7 @@ namespace { namespace SoGL { namespace FaceSet {
           materials->send(*matindices++, TRUE);
         }
 
-        // nvidia color-per-face-bug workaround
+        // re-send per-face material for each vertex to ensure correct colour on all drivers
         if ((AttributeBinding)MaterialBinding == PER_FACE) {
           materials->send(matnr-1, TRUE);
         } else if ((AttributeBinding)MaterialBinding == PER_FACE_INDEXED) {
@@ -1523,7 +1523,7 @@ namespace { namespace SoGL { namespace FaceSet {
             materials->send(*matindices++, TRUE);
           }
 
-          // nvidia color-per-face-bug workaround
+          // re-send per-face material for each vertex to ensure correct colour on all drivers
           if ((AttributeBinding)MaterialBinding == PER_FACE) {
             materials->send(matnr-1, TRUE);
           } else if ((AttributeBinding)MaterialBinding == PER_FACE_INDEXED) {
@@ -1575,7 +1575,7 @@ namespace { namespace SoGL { namespace FaceSet {
               materials->send(*matindices++, TRUE);
             }
 
-            // nvidia color-per-face-bug workaround
+            // re-send per-face material for each vertex to ensure correct colour on all drivers
             if ((AttributeBinding)MaterialBinding == PER_FACE) {
               materials->send(matnr-1, TRUE);
             } else if ((AttributeBinding)MaterialBinding == PER_FACE_INDEXED) {
@@ -1889,7 +1889,7 @@ namespace { namespace SoGL { namespace TriStripSet {
         materials->send(*matindices++, TRUE);
       }
 
-      // needed for nvidia color-per-face-bug workaround
+      // re-send per-strip/triangle material for each vertex to ensure correct colour on all drivers
       if ((AttributeBinding)MaterialBinding == PER_TRIANGLE ||
           (AttributeBinding)MaterialBinding == PER_STRIP) {
         materials->send(matnr-1, TRUE);
@@ -1897,7 +1897,6 @@ namespace { namespace SoGL { namespace TriStripSet {
                  (AttributeBinding)MaterialBinding == PER_STRIP_INDEXED) {
         materials->send(matindices[-1], TRUE);
       }
-      // end of nvidia workaround
 
       if ((AttributeBinding)NormalBinding == PER_VERTEX) {
         currnormal = normals++;
@@ -1920,7 +1919,7 @@ namespace { namespace SoGL { namespace TriStripSet {
         materials->send(*matindices++, TRUE);
       }
 
-      // needed for nvidia color-per-face-bug workaround
+      // re-send per-strip/triangle material for each vertex to ensure correct colour on all drivers
       if ((AttributeBinding)MaterialBinding == PER_STRIP ||
           (AttributeBinding)MaterialBinding == PER_TRIANGLE) {
         materials->send(matnr-1, TRUE);
@@ -1928,7 +1927,6 @@ namespace { namespace SoGL { namespace TriStripSet {
                  (AttributeBinding)MaterialBinding == PER_STRIP_INDEXED) {
         materials->send(matindices[-1], TRUE);
       }
-      // end of nvidia workaround
 
       if ((AttributeBinding)NormalBinding == PER_VERTEX) {
         currnormal = normals++;
@@ -1954,14 +1952,13 @@ namespace { namespace SoGL { namespace TriStripSet {
           materials->send(*matindices++, TRUE);
         }
 
-        // needed for nvidia color-per-face-bug workaround
+        // re-send per-strip/triangle material for each vertex to ensure correct colour on all drivers
         if ((AttributeBinding)MaterialBinding == PER_STRIP) {
           materials->send(matnr-1, TRUE);
         } else if ((AttributeBinding)MaterialBinding == PER_STRIP_INDEXED) {
           materials->send(matindices[-1], TRUE);
         }
-        // end of nvidia workaround
-
+  
         if ((AttributeBinding)NormalBinding == PER_VERTEX ||
             (AttributeBinding)NormalBinding == PER_TRIANGLE) {
           currnormal = normals++;

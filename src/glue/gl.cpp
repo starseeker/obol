@@ -732,11 +732,6 @@ glglue_cleanup(void)
   /* Platform-specific cleanup is no longer needed with callback-based contexts */
 }
 
-static SbBool
-glglue_has_nvidia_framebuffer_object_bug(int major, int minor, int release)
-{
-  return (major == 2) && (minor == 0) && (release == 0);
-}
 
 /*
   Set the OpenGL version variables in the given SoGLContext struct
@@ -1348,18 +1343,6 @@ glglue_resolve_symbols(SoGLContext * w)
     w->glGetBufferParameteriv = (OBOL_PFNGLGETBUFFERPARAMETERIVPROC) PROC(w, glGetBufferParameterivARB);
     w->glGetBufferPointerv = (OBOL_PFNGLGETBUFFERPOINTERVPROC) PROC(w, glGetBufferPointervARB);
   }
-
-#if defined(HAVE_GLX)
-  /* ARB_vertex_buffer_object does not work properly on Linux when
-     using the Nvidia 44.96 driver (version 1.4.0). The VBO extension
-     is therefore disabled for this driver. The issue was solved for
-     the 53.28 driver (version 1.4.1). */
-  if (!strcmp(w->vendorstr, "NVIDIA Corporation")) {
-    if (!SoGLContext_glversion_matches_at_least(w, 1, 4, 1)) {
-      w->glBindBuffer = NULL;
-    }
-  }
-#endif
 
   /* VBO support has been found to often trigger bugs in OpenGL
      drivers, so we make it possible to selectively disable that
@@ -2019,11 +2002,6 @@ glglue_resolve_symbols(SoGLContext * w)
      FIXME: move the driver workarounds to some other module. pederb, 2007-07-04
   */
 
-  if (coin_runtime_os() == OBOL_MSWINDOWS) {
-    if (w->vendor_is_nvidia && w->has_fbo) {
-      w->has_fbo = !glglue_has_nvidia_framebuffer_object_bug(w->version.major, w->version.minor, w->version.release);
-    }
-  }
 
   /*
      Option to disable FBO feature even if it is available.
@@ -2440,25 +2418,11 @@ SoGLContext_instance(int contextid)
     }
 #endif
     gi->vendor_is_SGI = strcmp((const char *)gi->vendorstr, "SGI") == 0;
-    gi->vendor_is_nvidia = strcmp((const char*)gi->vendorstr, "NVIDIA Corporation") == 0;
     gi->vendor_is_intel =
       strstr((const char *)gi->vendorstr, "Tungsten") ||
       strstr((const char *)gi->vendorstr, "Intel");
     gi->vendor_is_ati = (strcmp((const char *) gi->vendorstr, "ATI Technologies Inc.") == 0);
     gi->vendor_is_3dlabs = strcmp((const char *) gi->vendorstr, "3Dlabs") == 0;
-    
-#ifdef OBOL_OSMESA_BUILD
-    if (SoGLContext_debug()) {
-      cc_debugerror_postinfo("SoGLContext_instance", "Vendor flags set, about to process nvidia bug workaround");
-    }
-#endif
-    
-    /* FIXME: update when nVidia fixes their driver. pederb, 2004-09-01 */
-    gi->nvidia_color_per_face_bug = gi->vendor_is_nvidia;
-    if (gi->nvidia_color_per_face_bug) {
-      auto env = CoinInternal::getEnvironmentVariable("OBOL_NO_NVIDIA_COLOR_PER_FACE_BUG_WORKAROUND");
-      if (env.has_value()) gi->nvidia_color_per_face_bug = 0;
-    }
 
 #ifdef OBOL_OSMESA_BUILD
     if (SoGLContext_debug()) {
@@ -4740,40 +4704,6 @@ SoGLContext_context_max_dimensions(unsigned int * width, unsigned int * height)
     SoGLContext_context_reinstate_previous(ctx);
     SoGLContext_context_destruct(ctx);
     return;
-  }
-  if (strcmp(vendor, "NVIDIA Corporation") == 0) {
-
-    /* NVIDIA seems to have a bug where max render size is limited
-       by desktop resolution (at least for their Linux X11
-       drivers), not the texture maxsize returned by OpenGL. So we
-       use a workaround by limiting max size to the lowend
-       resolution for desktop monitors.
-
-       According to pederb, there are versions of the NVidia
-       drivers where the offscreen buffer also has to have
-       dimensions that are 2^x, so we limit further down to these
-       dimension settings to be sure.
-    */
-
-    /* FIXME: should make a standalone test-case (not dependent
-       on Coin, only GL, GLX & X11) that demonstrates this problem
-       for a) submitting to <linux-bugs@nvidia.com>, and b) to
-       test which versions of the NVidia drivers are affected --
-       as it is now, we shrink the max to <512,512> on all
-       versions (even if we're under MSWin). 20030812 mortene.
-    */
-
-    /* UPDATE 20050712 mortene: this clamping should no longer be
-       necessary, as we now re-request a new, lower size for offscreen
-       buffers from SoOffscreenRenderer (i.e. the values returned from
-       this function is considered just a hint).
-
-       I'm keeping the code comments and the commented out code below,
-       in case there have been issues with NVidia drivers hidden by
-       this clamping, which will surface now...
-
-       Eventually, this special case check should be removed, though.
-    */
   }
 
   *width = (unsigned int) size[0];

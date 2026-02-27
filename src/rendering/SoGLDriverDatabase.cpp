@@ -125,13 +125,6 @@ static const FeatureOverride EMBEDDED_OVERRIDES[] = {
   {"OBOL_GLSL_clip_vertex_hw", {"ATI Technologies Inc.", "Radeon*", "1.*"}, FeatureOverride::BROKEN, "Hardware clip vertex broken on old ATI drivers"},
   {"OBOL_non_power_of_two_textures", {"ATI Technologies Inc.", "Radeon 9*", "*"}, FeatureOverride::SLOW, "NPOT textures slow on Radeon 9xxx"},
   
-  // NVIDIA driver issues
-  {"OBOL_vertex_buffer_object", {"NVIDIA Corporation", "*", "1.4.0*"}, FeatureOverride::BROKEN, "VBO broken on NVIDIA 44.96 Linux driver"},
-  {"OBOL_vertex_buffer_object", {"NVIDIA Corporation", "GeForce4 Go*", "*"}, FeatureOverride::SLOW, "VBO performance poor on GeForce4 Go mobile"},
-  {"OBOL_vertex_buffer_object", {"NVIDIA Corporation", "GeForce 7950 GX2*", "2.0.2*"}, FeatureOverride::BROKEN, "VBO crashes in offscreen contexts on GeForce 7950 GX2"},
-  {"OBOL_framebuffer_object", {"NVIDIA Corporation", "GeForce2*", "*"}, FeatureOverride::BROKEN, "FBO not properly supported on GeForce2"},
-  {"OBOL_framebuffer_object", {"NVIDIA Corporation", "GeForce 256*", "*"}, FeatureOverride::BROKEN, "FBO not supported on GeForce 256"},
-  
   // 3Dlabs issues
   {"OBOL_vertex_buffer_object", {"3Dlabs", "*", "*"}, FeatureOverride::BROKEN, "VBO implementation fundamentally broken on 3Dlabs hardware"},
   
