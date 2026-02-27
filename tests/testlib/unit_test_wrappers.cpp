@@ -1272,7 +1272,7 @@ REGISTER_TEST(gradient, ObolTest::TestCategory::Rendering,
     "Background gradient via callback node",
     e.has_visual = true;
     e.has_interactive = true;
-    e.nanort_ok = false;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createGradient;
 );
 
@@ -1296,7 +1296,7 @@ REGISTER_TEST(shadow, ObolTest::TestCategory::Rendering,
     "Shadow-casting scene (SoShadowGroup proxy)",
     e.has_visual = true;
     e.has_interactive = true;
-    e.nanort_ok = false;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createShadow;
 );
 
@@ -1304,7 +1304,7 @@ REGISTER_TEST(draggers, ObolTest::TestCategory::Draggers,
     "Interactive draggers (SoTranslate1, SoRotateSpherical)",
     e.has_visual = true;
     e.has_interactive = true;
-    e.nanort_ok = false;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createDraggers;
 );
 
@@ -1312,7 +1312,7 @@ REGISTER_TEST(hud, ObolTest::TestCategory::Misc,
     "Head-up display overlay using orthographic camera",
     e.has_visual = true;
     e.has_interactive = false;
-    e.nanort_ok = false;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createHUD;
 );
 
@@ -1352,7 +1352,7 @@ REGISTER_TEST(manips, ObolTest::TestCategory::Manips,
     "Interactive manipulators (SoTrackballManip, SoTabBoxManip)",
     e.has_visual = true;
     e.has_interactive = true;
-    e.nanort_ok = false;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createManips;
 );
 
