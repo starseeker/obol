@@ -517,14 +517,21 @@ SoCamera::pointAt(const SbVec3f & targetpoint, const SbVec3f & upvector)
 
   The rotation accumulates entirely in camera-local space -- horizontal motion
   yaws about the camera's local Y axis and vertical motion pitches about the
-  camera's local X axis -- so world-up is never referenced.  This eliminates
+  camera's local X axis -- so both axes are symmetric and the orbit feels
+  natural at all orientations without world-up references.  This eliminates
   gimbal lock and the discontinuity that world-Y-based orbit schemes exhibit
   when the view direction crosses vertical.
 
   The math matches BRL-CAD's _bv_rot() with its default sensitivity of
-  0.25 degrees per pixel.  After updating the orientation the camera is
-  repositioned along the new view direction so that the orbit radius from
-  \a center is preserved and the camera continues to look directly at \a center.
+  0.25 degrees per pixel.  Both axes use canonical world vectors composed
+  to the LEFT of the current orientation quaternion; this is equivalent to
+  camera-local rotation via the identity
+  (SbRotation(worldAxis, θ) * q) == (q * SbRotation(q*worldAxis, θ))
+  and avoids extracting intermediate world-space axis vectors which would
+  introduce sensitivity to the current orientation angle.  After updating
+  the orientation the camera is repositioned along the new view direction
+  so that the orbit radius from \a center is preserved and the camera
+  continues to look directly at \a center.
 
   \param center      World-space point to orbit around.
   \param dx          Horizontal mouse delta in screen pixels (right is positive).
@@ -541,18 +548,16 @@ SoCamera::orbitCamera(const SbVec3f & center, float dx, float dy,
   const float yawRad   = dx * sensitivity * deg2rad;
   const float pitchRad = dy * sensitivity * deg2rad;
 
-  /* Yaw around the world up axis so the horizon stays level regardless of
-   * how far the camera has been rotated.  Using camera-local up instead
-   * would cause camUp to develop a view-direction component after any
-   * accumulated pitch, introducing a visible twist near 180° of yaw.
-   * Pitch still uses the camera-local right axis so it always tilts the
-   * scene in the direction the user drags vertically on screen. */
+  /* Compose canonical-axis rotations to the LEFT of q.  Pre-multiplying
+   * SbRotation(worldAxis, θ) * q is equivalent to post-multiplying
+   * q * SbRotation(q*worldAxis, θ) (camera-local rotation), so using
+   * the canonical Y axis for yaw and canonical X axis for pitch gives
+   * fully symmetric camera-local orbit without any axis-vector extraction.
+   * Both axes preserve the camera's world-up direction across arbitrarily
+   * many orbit steps. */
   const SbRotation & q = this->orientation.getValue();
-  SbVec3f camRight;
-  q.multVec(SbVec3f(1.0f, 0.0f, 0.0f), camRight);
-
   const SbRotation rotYaw  (SbVec3f(0.0f, 1.0f, 0.0f), -yawRad);
-  const SbRotation rotPitch(camRight, -pitchRad);
+  const SbRotation rotPitch(SbVec3f(1.0f, 0.0f, 0.0f), -pitchRad);
   const SbRotation newOrient = (rotYaw * rotPitch) * q;
   this->orientation.setValue(newOrient);
 
