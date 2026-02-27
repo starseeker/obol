@@ -62,10 +62,10 @@
  *   - SoPointSet – rendered as small spheres via SoPointSet::createSphereProxy()
  *   - SoText3 – uses generatePrimitives() which produces extruded triangle
  *     geometry directly; no extra work needed
- *   - SoText2 – screen-aligned text rendered as a coloured billboard quad at
- *     the text anchor depth via SoText2::getTextQuad(); text characters are
- *     not individually rasterised but the text region is visible as a solid
- *     coloured rectangle matching the text colour and screen extent
+ *   - SoText2 – screen-aligned text rendered as one screen-aligned quad per
+ *     visible glyph via SoText2::buildGlyphQuads(); each quad matches the
+ *     pixel footprint of the glyph bitmap at the text anchor depth, with the
+ *     per-line justification offsets applied; whitespace chars are skipped
  *
  * Dependencies:
  *   - nanort.h (external/nanort/nanort.h)
@@ -340,15 +340,14 @@ nrtPointSetPreCB(void * ud, SoCallbackAction * action, const SoNode * node)
 }
 
 // ==========================================================================
-// SoText2 pre-callback: billboard quad at the text anchor position
+// SoText2 pre-callback: per-glyph billboard quads
 // ==========================================================================
 // SoText2 renders screen-aligned text via GL rasterisation, so its
 // generatePrimitives() emits nothing for ray-tracing backends.  This
-// pre-callback intercepts each SoText2 node, retrieves the world-space
-// bounding quad via getTextQuad(), and emits two flat triangles so the
-// text region is visible as a coloured billboard.  The quad is placed at the
-// depth of the text anchor point and has the same screen extent as the
-// rendered text; it is shaded with the current diffuse material colour.
+// pre-callback intercepts each SoText2 node and calls buildGlyphQuads() to
+// obtain one screen-aligned quad per visible glyph, sized to the pixel extent
+// of that glyph's bitmap.  Each quad is emitted as two triangles with the
+// current diffuse material colour.  Whitespace characters produce no geometry.
 static SoCallbackAction::Response
 nrtText2PreCB(void * ud, SoCallbackAction * action, const SoNode * node)
 {
@@ -356,34 +355,13 @@ nrtText2PreCB(void * ud, SoCallbackAction * action, const SoNode * node)
     const SoText2 * text = static_cast<const SoText2 *>(node);
     SoState * state = action->getState();
 
-    // Get the four corners of the text quad in object space.
-    // getTextQuad() projects the text anchor to screen space, computes the
-    // pixel-accurate bounding rectangle, then unprojects the corners back to
-    // object space using the inverse of the current model matrix.
-    SbVec3f v0, v1, v2, v3;
-    if (!text->getTextQuad(state, v0, v1, v2, v3))
-        return SoCallbackAction::PRUNE;  // empty string or invisible
+    // Collect per-glyph object-space quads (4 × SbVec3f per glyph).
+    std::vector<SbVec3f> glyphQuads;
+    const int nquads = text->buildGlyphQuads(state, glyphQuads);
+    if (nquads == 0)
+        return SoCallbackAction::PRUNE;
 
-    // Transform object-space vertices back to world space (undoes the
-    // object-space inverse applied inside getTextQuad).
-    const SbMatrix & mm = action->getModelMatrix();
-    mm.multVecMatrix(v0, v0);
-    mm.multVecMatrix(v1, v1);
-    mm.multVecMatrix(v2, v2);
-    mm.multVecMatrix(v3, v3);
-
-    // Face normal: cross product of two quad edges.
-    // Vertex order from getTextQuad: v0=top-left, v1=top-right,
-    //                                v2=bottom-right, v3=bottom-left.
-    SbVec3f edge0 = v1 - v0;
-    SbVec3f edge1 = v3 - v0;
-    SbVec3f norm  = edge0.cross(edge1);
-    float normLen = norm.length();
-    if (normLen < 1e-6f)
-        return SoCallbackAction::PRUNE;  // degenerate (zero-size) quad
-    norm /= normLen;
-
-    // Read the current material from the traversal state.
+    // Read the current material once for all glyphs.
     SbColor ambient, diffuse, specular, emission;
     float   shininess, transparency;
     action->getMaterial(ambient, diffuse, specular, emission,
@@ -396,25 +374,49 @@ nrtText2PreCB(void * ud, SoCallbackAction * action, const SoNode * node)
     mat.emission[0] = emission[0]; mat.emission[1] = emission[1]; mat.emission[2] = emission[2];
     mat.shininess   = shininess;
 
-    // Helper: add one triangle with the shared face normal.
-    const float n[3] = { norm[0], norm[1], norm[2] };
-    auto addTri = [&](const SbVec3f & a, const SbVec3f & b, const SbVec3f & c) {
-        NrtTriangle tri;
-        tri.pos[0][0] = a[0]; tri.pos[0][1] = a[1]; tri.pos[0][2] = a[2];
-        tri.pos[1][0] = b[0]; tri.pos[1][1] = b[1]; tri.pos[1][2] = b[2];
-        tri.pos[2][0] = c[0]; tri.pos[2][1] = c[1]; tri.pos[2][2] = c[2];
-        for (int i = 0; i < 3; ++i) {
-            tri.norm[i][0] = n[0];
-            tri.norm[i][1] = n[1];
-            tri.norm[i][2] = n[2];
-        }
-        tri.mat = mat;
-        data->collector->tris.push_back(tri);
-    };
+    // Model matrix: object space → world space (undoes the inverse in buildGlyphQuads).
+    const SbMatrix & mm = action->getModelMatrix();
 
-    // Two triangles forming the quad: (v0, v1, v2) and (v0, v2, v3).
-    addTri(v0, v1, v2);
-    addTri(v0, v2, v3);
+    for (int q = 0; q < nquads; ++q) {
+        // Retrieve the four object-space corners for this glyph quad.
+        const size_t base = static_cast<size_t>(q) * 4;
+        SbVec3f v0 = glyphQuads[base + 0]; // top-left
+        SbVec3f v1 = glyphQuads[base + 1]; // top-right
+        SbVec3f v2 = glyphQuads[base + 2]; // bottom-right
+        SbVec3f v3 = glyphQuads[base + 3]; // bottom-left
+
+        // Transform to world space.
+        mm.multVecMatrix(v0, v0);
+        mm.multVecMatrix(v1, v1);
+        mm.multVecMatrix(v2, v2);
+        mm.multVecMatrix(v3, v3);
+
+        // Face normal from the two leading edges of the quad.
+        SbVec3f norm = (v1 - v0).cross(v3 - v0);
+        const float nlen = norm.length();
+        if (nlen < 1e-6f) continue;
+        norm /= nlen;
+
+        const float n[3] = { norm[0], norm[1], norm[2] };
+
+        // Emit two triangles that form the quad.
+        auto addTri = [&](const SbVec3f & a, const SbVec3f & b, const SbVec3f & c) {
+            NrtTriangle tri;
+            tri.pos[0][0] = a[0]; tri.pos[0][1] = a[1]; tri.pos[0][2] = a[2];
+            tri.pos[1][0] = b[0]; tri.pos[1][1] = b[1]; tri.pos[1][2] = b[2];
+            tri.pos[2][0] = c[0]; tri.pos[2][1] = c[1]; tri.pos[2][2] = c[2];
+            for (int i = 0; i < 3; ++i) {
+                tri.norm[i][0] = n[0];
+                tri.norm[i][1] = n[1];
+                tri.norm[i][2] = n[2];
+            }
+            tri.mat = mat;
+            data->collector->tris.push_back(tri);
+        };
+
+        addTri(v0, v1, v2);
+        addTri(v0, v2, v3);
+    }
 
     return SoCallbackAction::PRUNE;  // generatePrimitives() produces nothing
 }
