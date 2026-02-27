@@ -203,7 +203,8 @@ struct SceneState {
     int width  = 800;
     int height = 600;
     /* drag state */
-    bool dragging  = false;
+    bool dragging       = false;
+    bool dragger_active = false;   /* true when a scene dragger consumed FL_PUSH */
     int  drag_btn  = 0;
     int  last_x    = 0;
     int  last_y    = 0;
@@ -404,11 +405,13 @@ public:
                 ev.setTime(SbTime::getTimeOfDay());
                 SbViewportRegion vp(state->width, state->height);
                 SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(state->root);
+                state->dragger_active = ha.isHandled();
             }
             return 1;
         case FL_RELEASE:
             if (state) {
                 state->dragging = false;
+                state->dragger_active = false;
                 SoMouseButtonEvent ev;
                 ev.setButton(Fl::event_button()==1 ? SoMouseButtonEvent::BUTTON1 :
                              Fl::event_button()==2 ? SoMouseButtonEvent::BUTTON2 :
@@ -450,6 +453,25 @@ public:
                 ev.setTime(SbTime::getTimeOfDay());
                 SbViewportRegion vp(state->width, state->height);
                 SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(state->root);
+                if (!state->dragger_active) {
+                    if (state->drag_btn == 1) {
+                        /* orbit – incremental rotation in camera-local space (BRL-CAD style):
+                         * no world-up reference → smooth at all orientations, no gimbal lock */
+                        state->cam->orbitCamera(state->scene_center,
+                                                (float)dx, (float)dy,
+                                                0.01f * (180.0f / static_cast<float>(M_PI)));
+                    } else if (state->drag_btn == 3) {
+                        /* dolly toward/away from scene centre */
+                        float dist = state->cam->focalDistance.getValue();
+                        dist *= (1.0f + dy * 0.01f);
+                        if (dist < 0.1f) dist = 0.1f;
+                        SbVec3f dir = state->cam->position.getValue() - state->scene_center;
+                        dir.normalize();
+                        state->cam->position.setValue(state->scene_center + dir * dist);
+                        state->cam->focalDistance.setValue(dist);
+                        state->updateClipping();
+                    }
+                }
                 notifyCameraChanged();
                 refreshRender();
             }
