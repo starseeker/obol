@@ -34,7 +34,9 @@
  *  │Scene │ System GL │ OSMesa │ NanoRT │    │Scene │  System GL  │  OSMesa │
  *  │brows.│  panel    │ panel  │ panel  │    │brows.│   panel     │  panel  │
  *  ├──────┴───────────┴────────┴────────┤    ├──────┴─────────────┴─────────┤
- *  │[Reload][Save]      [×] Sync All   │    │[Reload][Save]  [×]Sync All   │
+ *  │[Reload][Save]       [×] Sync All  │    │[Reload][Save]  [×]Sync All   │
+ *  ├────────────────────────────────────┤    ├──────────────────────────────┤
+ *  │ GL vs OSMesa: max_diff=1 RMSE=... │    │ GL vs OSMesa: max_diff=1 ... │
  *  └────────────────────────────────────┘    └──────────────────────────────┘
  *
  * Panels resize uniformly (EqualTile distributes width equally on resize).
@@ -263,6 +265,7 @@ public:
     Fl_RGB_Image*        fltk_img = nullptr;
 
     std::function<void(CoinPanel*)> on_camera_changed;
+    std::function<void()>           on_rendered;
 
     explicit CoinPanel(int X, int Y, int W, int H, const char* lbl = "")
         : Fl_Box(X, Y, W, H, ""), label_text(lbl ? lbl : "")
@@ -321,6 +324,7 @@ public:
         delete fltk_img;
         fltk_img = new Fl_RGB_Image(display_buf.data(), pw, ph, 3);
         redraw();
+        if (on_rendered) on_rendered();
     }
 
     void getCamera(float pos[3], float orient[4], float& dist) const {
@@ -517,6 +521,7 @@ public:
     Fl_RGB_Image*        fltk_img  = nullptr;
 
     std::function<void(NanoRTPanel*)> on_camera_changed;
+    std::function<void()>             on_rendered;
 
     explicit NanoRTPanel(int X, int Y, int W, int H, const char* lbl = "")
         : Fl_Box(X, Y, W, H, ""), label_text(lbl ? lbl : "")
@@ -586,6 +591,7 @@ public:
         delete fltk_img;
         fltk_img = new Fl_RGB_Image(display_buf.data(), pw, ph, 3);
         redraw();
+        if (on_rendered) on_rendered();
     }
 
     void getCamera(float pos[3], float orient[4], float& dist) const {
@@ -735,6 +741,7 @@ public:
     Fl_RGB_Image*        fltk_img  = nullptr;
 
     std::function<void(OSMesaPanel*)> on_camera_changed;
+    std::function<void()>             on_rendered;
 
     explicit OSMesaPanel(int X, int Y, int W, int H, const char* lbl = "")
         : Fl_Box(X, Y, W, H, ""), label_text(lbl ? lbl : "")
@@ -803,6 +810,7 @@ public:
         fltk_img = new Fl_RGB_Image(display_buf.data(), pw, ph, 3);
         status_text.clear();
         redraw();
+        if (on_rendered) on_rendered();
     }
 
     void getCamera(float pos[3], float orient[4], float& dist) const {
@@ -964,10 +972,8 @@ class ObolViewerWindow : public Fl_Double_Window {
     CoinPanel*        coin_panel_;
     Fl_Button*        reload_btn_;
     Fl_Button*        save_btn_;
-#if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT)
-    Fl_Button*        compare_btn_ = nullptr;
-#endif
-    Fl_Box*           status_bar_;
+    Fl_Box*           status_bar_;        /* toolbar: shows current scene name */
+    Fl_Box*           diff_bar_ = nullptr; /* bottom bar: shows live diff metrics */
     EqualTile*        tile_ = nullptr;
 #ifdef OBOL_VIEWER_OSMESA_PANEL
     OSMesaPanel*      osmesa_panel_ = nullptr;
@@ -1071,8 +1077,22 @@ public:
 #  endif /* OBOL_VIEWER_NANORT */
 #endif /* OBOL_VIEWER_OSMESA_PANEL || OBOL_VIEWER_NANORT */
 
+#if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT)
+        /* Wire post-render callbacks so the diff bar updates automatically. */
+        coin_panel_->on_rendered = [this]() { updateDiffBar(); };
+#  ifdef OBOL_VIEWER_OSMESA_PANEL
+        if (osmesa_panel_)
+            osmesa_panel_->on_rendered = [this]() { updateDiffBar(); };
+#  endif
+#  ifdef OBOL_VIEWER_NANORT
+        if (nrt_panel_)
+            nrt_panel_->on_rendered = [this]() { updateDiffBar(); };
+#  endif
+#endif
+
         std::string s = "Scene: "; s += name;
         status_bar_->copy_label(s.c_str());
+        updateDiffBar();
     }
 
 private:
@@ -1152,10 +1172,6 @@ private:
             reload_btn_->callback(reloadCB, this); bx += 76;
             save_btn_ = new Fl_Button(bx, by, 80, bh, "Save RGB...");
             save_btn_->callback(saveCB, this); bx += 86;
-#if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT)
-            compare_btn_ = new Fl_Button(bx, by, 80, bh, "Compare");
-            compare_btn_->callback(compareCB, this); bx += 86;
-#endif
 #if defined(OBOL_VIEWER_OSMESA_PANEL) && defined(OBOL_VIEWER_NANORT)
             sync_btn_ = new Fl_Check_Button(bx, by, 80, bh, "Sync All");
             sync_btn_->value(1); bx += 86;
@@ -1172,10 +1188,10 @@ private:
         }
         tb->end();
 
-        Fl_Box* sbar = new Fl_Box(0, content_h+TOOLBAR_H, W, STATUS_H, "");
-        sbar->box(FL_ENGRAVED_BOX);
-        sbar->align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE);
-        sbar->labelsize(11);
+        diff_bar_ = new Fl_Box(0, content_h+TOOLBAR_H, W, STATUS_H, "");
+        diff_bar_->box(FL_ENGRAVED_BOX);
+        diff_bar_->align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE);
+        diff_bar_->labelsize(11);
     }
 
     static void browserCB(Fl_Widget*, void* data) {
@@ -1190,44 +1206,43 @@ private:
     static void reloadCB(Fl_Widget*, void* data) { browserCB(nullptr, data); }
 
 #if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT)
-    /* Compare rendered images across all panels and report pixel statistics. */
-    static void compareCB(Fl_Widget*, void* data) {
-        auto* self = static_cast<ObolViewerWindow*>(data);
-        if (!self->coin_panel_->state || !self->coin_panel_->state->root) {
-            fl_message("No scene loaded."); return;
-        }
+    /* Compute pixel-difference metrics across all rendered panels and display
+     * them on the diff_bar_ status line at the bottom of the window. */
+    void updateDiffBar() {
+        if (!diff_bar_) return;
 
-        /* Collect (label, buf, w, h) for every panel that has a rendered image */
         struct PanelImg {
-            const char*        label;
-            const uint8_t*     buf;   /* RGB top-down */
-            int                pw, ph;
+            const char*    label;
+            const uint8_t* buf;   /* RGB top-down */
+            int            pw, ph;
         };
         std::vector<PanelImg> panels;
 
-        if (!self->coin_panel_->display_buf.empty())
-            panels.push_back({self->coin_panel_->label_text.c_str(),
-                              self->coin_panel_->display_buf.data(),
-                              self->coin_panel_->w(), self->coin_panel_->h()});
+        if (!coin_panel_->display_buf.empty())
+            panels.push_back({coin_panel_->label_text.c_str(),
+                              coin_panel_->display_buf.data(),
+                              coin_panel_->w(), coin_panel_->h()});
 #  ifdef OBOL_VIEWER_OSMESA_PANEL
-        if (self->osmesa_panel_ && !self->osmesa_panel_->display_buf.empty())
-            panels.push_back({self->osmesa_panel_->label_text.c_str(),
-                              self->osmesa_panel_->display_buf.data(),
-                              self->osmesa_panel_->w(), self->osmesa_panel_->h()});
+        if (osmesa_panel_ && !osmesa_panel_->display_buf.empty())
+            panels.push_back({osmesa_panel_->label_text.c_str(),
+                              osmesa_panel_->display_buf.data(),
+                              osmesa_panel_->w(), osmesa_panel_->h()});
 #  endif
 #  ifdef OBOL_VIEWER_NANORT
-        if (self->nrt_panel_ && !self->nrt_panel_->display_buf.empty())
-            panels.push_back({self->nrt_panel_->label_text.c_str(),
-                              self->nrt_panel_->display_buf.data(),
-                              self->nrt_panel_->w(), self->nrt_panel_->h()});
+        if (nrt_panel_ && !nrt_panel_->display_buf.empty())
+            panels.push_back({nrt_panel_->label_text.c_str(),
+                              nrt_panel_->display_buf.data(),
+                              nrt_panel_->w(), nrt_panel_->h()});
 #  endif
 
         if (panels.size() < 2) {
-            fl_message("Need at least 2 rendered panels to compare."); return;
+            diff_bar_->copy_label("");
+            diff_bar_->redraw();
+            return;
         }
 
-        /* Compare each pair and accumulate results */
-        std::string report;
+        /* Compare each pair and build a compact single-line report. */
+        std::string msg;
         for (size_t a = 0; a < panels.size(); ++a) {
             for (size_t b = a+1; b < panels.size(); ++b) {
                 const PanelImg& pa = panels[a];
@@ -1261,19 +1276,23 @@ private:
                 double pct_diff = 100.0 * diff_rows / (double)ch;
 
                 char line[256];
+                if (!msg.empty()) msg += "  |  ";
                 std::snprintf(line, sizeof(line),
-                    "%s vs %s:\n"
-                    "  size %dx%d  max_diff=%d  RMSE=%.2f  "
-                    "rows_with_diff=%.1f%%\n",
-                    pa.label, pb.label,
-                    cw, ch, max_diff, rmse, pct_diff);
-                report += line;
+                    "%s vs %s: max_diff=%d  RMSE=%.2f  rows_with_diff=%.1f%%",
+                    pa.label, pb.label, max_diff, rmse, pct_diff);
+                msg += line;
             }
         }
 
-        fl_message("%s", report.c_str());
+        diff_bar_->copy_label(msg.c_str());
+        diff_bar_->redraw();
     }
 #endif /* OBOL_VIEWER_OSMESA_PANEL || OBOL_VIEWER_NANORT */
+
+#if !defined(OBOL_VIEWER_OSMESA_PANEL) && !defined(OBOL_VIEWER_NANORT)
+    /* No-op when comparison panels are not compiled in (single-panel builds). */
+    void updateDiffBar() {}
+#endif
 
     static void saveCB(Fl_Widget*, void* data) {
         auto* self = static_cast<ObolViewerWindow*>(data);
