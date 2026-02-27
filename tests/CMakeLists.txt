@@ -75,7 +75,8 @@ add_subdirectory(testlib)
 # when FLTK is found; requires OBOL_BUILD_TESTS=ON).
 # -----------------------------------------------------------------------
 if(OBOL_BUILD_VIEWER)
-    find_package(FLTK REQUIRED)
+    # FLTK was detected (system or bundled external/fltk) in the top-level
+    # CMakeLists.txt.  FLTK_INCLUDE_DIRS and FLTK_LIBRARIES are already set.
 
     add_executable(obol_viewer obol_viewer.cpp)
 
