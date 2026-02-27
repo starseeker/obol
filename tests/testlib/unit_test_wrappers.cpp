@@ -79,6 +79,7 @@
 // Nodes
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoCube.h>
+#include <Inventor/nodes/SoGroup.h>
 #include <Inventor/nodes/SoSphere.h>
 #include <Inventor/nodes/SoTranslation.h>
 #include <Inventor/nodes/SoMaterial.h>
@@ -98,9 +99,13 @@
 #include <Inventor/sensors/SoFieldSensor.h>
 #include <Inventor/sensors/SoNodeSensor.h>
 
+#include <Inventor/SbTime.h>
+#include <Inventor/actions/SoGetPrimitiveCountAction.h>
+
 #include <cmath>
 #include <cstdio>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -809,6 +814,363 @@ static int runOrbitCameraTests()
 }
 
 // =========================================================================
+// Scalability benchmark: scene graph construction and traversal
+//
+// Characterises the cost of building and traversing large Obol scene graphs
+// that are representative of a BRL-CAD CSG tree (tens of thousands of nodes).
+//
+// Three structures are tested at several node counts:
+//
+//  flat          – root SoSeparator with N * (SoTranslation + SoCube) groups.
+//                  Simulates a wide, single-level assembly list.
+//
+//  binary_tree   – balanced binary tree of SoSeparators with SoCubes at the
+//                  leaves.  Simulates a balanced CSG combination tree.
+//
+//  linear_chain  – depth-N linear chain of SoSeparators with a single SoCube
+//                  at the tip.  Simulates a maximally deep unary CSG tree.
+//                  Capped at CHAIN_MAX nodes to avoid system-stack exhaustion.
+//
+//  chain_bottomup  – same deep chain but built leaf-first (bottom-up),
+//                    avoiding the O(n^2) top-down notification cost.
+//
+//  chain_deferred  – same deep chain built top-down but with
+//                    enableNotify(FALSE) on each node during construction,
+//                    also achieving O(n) build time.
+//
+// For each (structure, size) pair the following operations are timed:
+//   build    – allocate all nodes and wire up the hierarchy
+//   bbox     – SoGetBoundingBoxAction traversal (CPU; no GL)
+//   search   – SoSearchAction for ALL SoCube nodes
+//   destroy  – root->unref() (reclaims all memory)
+//
+// KEY FINDINGS (see tests/nodes/README_scalability.md for full analysis):
+//
+//  1. Flat and balanced binary trees: O(n) build and traversal.  Suitable
+//     for tens-of-thousands of nodes.
+//
+//  2. Deep linear chain – CONSTRUCTION: O(n^2) when built top-down.
+//     Root cause: SoChildList::append() calls parent->startNotify(), which
+//     propagates upward through the existing ancestor chain.  For a chain of
+//     depth d at step i, the notification cost is O(i), yielding O(n^2) total.
+//     MITIGATION: build bottom-up (chain_bottomup) or disable notifications
+//     during construction (chain_deferred) – both reduce to O(n).
+//
+//  3. Deep linear chain – TRAVERSAL: O(n^2) regardless of construction order.
+//     Root cause: SoCacheElement::addElement() iterates through all currently
+//     open SoCacheElement entries in the state stack.  For a chain at depth d,
+//     d caches are simultaneously open, so every element access during
+//     traversal costs O(d).  Total traversal cost = sum(d for d=0..n) = O(n^2).
+//     MITIGATION: avoid very deep single-branch CSG chains; prefer balanced
+//     trees or flat assembly lists.  Setting boundingBoxCaching=OFF removes
+//     the O(n^2) addElement overhead but eliminates caching benefits.
+//
+// The function always returns 0 (characterisation only; no pass/fail on
+// timing), but prints a CSV table to stdout for post-run analysis.
+// =========================================================================
+static int runScalabilityTests()
+{
+    // ----- configuration --------------------------------------------------
+    // Sizes express the number of *leaf geometry nodes* (SoCube instances).
+    // Total node count depends on the structure (see comments below).
+    static const int kFlatSizes[]  = { 100, 500, 1000, 5000, 10000, 20000 };
+    static const int kTreeSizes[]  = { 100, 500, 1000, 5000, 10000, 20000 };
+    // Deep recursive traversal can exhaust the system stack; cap accordingly.
+    static const int kChainSizes[] = { 100, 500, 1000, 2000, 5000 };
+    static const int CHAIN_MAX     = 5000;
+    (void)CHAIN_MAX;
+
+    printf("# Obol Scene Graph Scalability Benchmark\n");
+    printf("# structure, leaves, total_nodes,"
+           " build_ms, bbox_ms, search_ms, destroy_ms\n");
+
+    // ------------------------------------------------------------------
+    // 1. Flat scene
+    //    Layout: root SoSeparator
+    //               +-- SoSeparator (group_0)
+    //               |      +-- SoTranslation
+    //               |      +-- SoCube
+    //               +-- SoSeparator (group_1)
+    //               ...
+    //    Total nodes: 1 + 3*N
+    // ------------------------------------------------------------------
+    for (int n : kFlatSizes) {
+        SbTime t0 = SbTime::getTimeOfDay();
+
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+        int cols = (int)std::sqrt((double)n);
+        if (cols < 1) cols = 1;
+        for (int i = 0; i < n; ++i) {
+            SoSeparator* grp = new SoSeparator;
+            SoTranslation* tr = new SoTranslation;
+            tr->translation.setValue(float(i % cols) * 2.0f,
+                                     float(i / cols) * 2.0f, 0.0f);
+            grp->addChild(tr);
+            grp->addChild(new SoCube);
+            root->addChild(grp);
+        }
+
+        SbTime t1 = SbTime::getTimeOfDay();
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(800, 600));
+        bba.apply(root);
+
+        SbTime t2 = SbTime::getTimeOfDay();
+
+        SoSearchAction sa;
+        sa.setType(SoCube::getClassTypeId());
+        sa.setInterest(SoSearchAction::ALL);
+        sa.apply(root);
+
+        SbTime t3 = SbTime::getTimeOfDay();
+
+        root->unref();
+
+        SbTime t4 = SbTime::getTimeOfDay();
+
+        printf("flat, %d, %d, %.3f, %.3f, %.3f, %.3f\n",
+               n,
+               1 + 3 * n,
+               (t1 - t0).getValue() * 1000.0,
+               (t2 - t1).getValue() * 1000.0,
+               (t3 - t2).getValue() * 1000.0,
+               (t4 - t3).getValue() * 1000.0);
+    }
+
+    // ------------------------------------------------------------------
+    // 2. Balanced binary tree (CSG-like)
+    //    N leaf groups: each is SoSeparator + SoTranslation + SoCube.
+    //    Internal nodes: SoSeparators that pair up children bottom-up.
+    //    Depth ≈ ceil(log2(N)).
+    //    Total nodes: 3*N leaves + (N-1) internal SoSeparators ≈ 4*N
+    // ------------------------------------------------------------------
+    for (int n : kTreeSizes) {
+        SbTime t0 = SbTime::getTimeOfDay();
+
+        // Build leaf groups
+        std::vector<SoNode*> level;
+        level.reserve((size_t)n);
+        for (int i = 0; i < n; ++i) {
+            SoSeparator* leaf = new SoSeparator;
+            SoTranslation* tr = new SoTranslation;
+            tr->translation.setValue(float(i) * 2.0f, 0.0f, 0.0f);
+            leaf->addChild(tr);
+            leaf->addChild(new SoCube);
+            level.push_back(leaf);
+        }
+
+        // Pair up levels until a single root remains
+        while (level.size() > 1) {
+            std::vector<SoNode*> next;
+            next.reserve((level.size() + 1) / 2);
+            for (size_t i = 0; i < level.size(); i += 2) {
+                SoSeparator* parent = new SoSeparator;
+                parent->addChild(level[i]);
+                if (i + 1 < level.size())
+                    parent->addChild(level[i + 1]);
+                next.push_back(parent);
+            }
+            level = std::move(next);
+        }
+
+        SoNode* treeRoot = level[0];
+        treeRoot->ref();
+
+        SbTime t1 = SbTime::getTimeOfDay();
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(800, 600));
+        bba.apply(treeRoot);
+
+        SbTime t2 = SbTime::getTimeOfDay();
+
+        SoSearchAction sa;
+        sa.setType(SoCube::getClassTypeId());
+        sa.setInterest(SoSearchAction::ALL);
+        sa.apply(treeRoot);
+
+        SbTime t3 = SbTime::getTimeOfDay();
+
+        treeRoot->unref();
+
+        SbTime t4 = SbTime::getTimeOfDay();
+
+        // internal separators ≈ n-1; leaves: n * (sep + trans + cube) = 3n
+        int total = 3 * n + (n - 1);
+        printf("binary_tree, %d, %d, %.3f, %.3f, %.3f, %.3f\n",
+               n, total,
+               (t1 - t0).getValue() * 1000.0,
+               (t2 - t1).getValue() * 1000.0,
+               (t3 - t2).getValue() * 1000.0,
+               (t4 - t3).getValue() * 1000.0);
+    }
+
+    // ------------------------------------------------------------------
+    // 3. Deep linear chain
+    //    root → sep_1 → sep_2 → … → sep_(N-1) → SoCube
+    //    Total nodes: N separators + 1 cube = N+1
+    //    NOTE: Deep trees may exhaust the system call stack during
+    //          recursive action traversal; CHAIN_MAX is set conservatively.
+    // ------------------------------------------------------------------
+    for (int n : kChainSizes) {
+        SbTime t0 = SbTime::getTimeOfDay();
+
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+        SoSeparator* cur = root;
+        for (int i = 1; i < n; ++i) {
+            SoSeparator* child = new SoSeparator;
+            cur->addChild(child);
+            cur = child;
+        }
+        cur->addChild(new SoCube);
+
+        SbTime t1 = SbTime::getTimeOfDay();
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(800, 600));
+        bba.apply(root);
+
+        SbTime t2 = SbTime::getTimeOfDay();
+
+        SoSearchAction sa;
+        sa.setType(SoCube::getClassTypeId());
+        sa.setInterest(SoSearchAction::ALL);
+        sa.apply(root);
+
+        SbTime t3 = SbTime::getTimeOfDay();
+
+        root->unref();
+
+        SbTime t4 = SbTime::getTimeOfDay();
+
+        printf("linear_chain, %d, %d, %.3f, %.3f, %.3f, %.3f\n",
+               n,
+               n + 1,
+               (t1 - t0).getValue() * 1000.0,
+               (t2 - t1).getValue() * 1000.0,
+               (t3 - t2).getValue() * 1000.0,
+               (t4 - t3).getValue() * 1000.0);
+    }
+
+    printf("# Benchmark complete\n");
+    printf("# NOTE: linear_chain build times show O(n^2) growth due to\n");
+    printf("#       upward-notification on each addChild() call.\n");
+    printf("#       Mitigations: bottom-up construction or\n");
+    printf("#       enableNotify(FALSE)/enableNotify(TRUE) bracketing.\n");
+
+    // ------------------------------------------------------------------
+    // 4. Deep linear chain – bottom-up construction
+    //    Build leaf first, then wrap in parent separators moving up.
+    //    Each addChild() has no ancestor chain yet → O(1) notification.
+    //    Total nodes: N separators + 1 cube = N+1 (same as linear_chain)
+    // ------------------------------------------------------------------
+    printf("# Bottom-up chain: builds deepest node first (O(n) vs O(n^2) naive)\n");
+    for (int n : kChainSizes) {
+        SbTime t0 = SbTime::getTimeOfDay();
+
+        // Start with the leaf cube
+        SoNode* cur = new SoCube;
+        // Wrap in separators from deepest outward
+        for (int i = 0; i < n; ++i) {
+            SoSeparator* parent = new SoSeparator;
+            parent->addChild(cur);   // cur has no ancestor yet → O(1) notify
+            cur = parent;
+        }
+        cur->ref();  // cur is now the outermost separator (root)
+
+        SbTime t1 = SbTime::getTimeOfDay();
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(800, 600));
+        bba.apply(cur);
+
+        SbTime t2 = SbTime::getTimeOfDay();
+
+        SoSearchAction sa;
+        sa.setType(SoCube::getClassTypeId());
+        sa.setInterest(SoSearchAction::ALL);
+        sa.apply(cur);
+
+        SbTime t3 = SbTime::getTimeOfDay();
+
+        cur->unref();
+
+        SbTime t4 = SbTime::getTimeOfDay();
+
+        printf("chain_bottomup, %d, %d, %.3f, %.3f, %.3f, %.3f\n",
+               n,
+               n + 1,
+               (t1 - t0).getValue() * 1000.0,
+               (t2 - t1).getValue() * 1000.0,
+               (t3 - t2).getValue() * 1000.0,
+               (t4 - t3).getValue() * 1000.0);
+    }
+
+    // ------------------------------------------------------------------
+    // 5. Deep linear chain – deferred notification
+    //    Top-down build but with enableNotify(FALSE) on each node before
+    //    adding its child, re-enabled afterwards.
+    //    Prevents the O(depth) upward notification on each addChild().
+    // ------------------------------------------------------------------
+    printf("# Deferred-notify chain: top-down but notifications suppressed\n");
+    for (int n : kChainSizes) {
+        SbTime t0 = SbTime::getTimeOfDay();
+
+        SoSeparator* root = new SoSeparator;
+        root->ref();
+        root->enableNotify(FALSE);
+        SoSeparator* cur = root;
+        for (int i = 1; i < n; ++i) {
+            SoSeparator* child = new SoSeparator;
+            child->enableNotify(FALSE);
+            cur->addChild(child);
+            cur = child;
+        }
+        cur->addChild(new SoCube);
+        // Re-enable notifications from tip to root
+        cur = root;
+        cur->enableNotify(TRUE);
+        for (int i = 1; i < n; ++i) {
+            SoSeparator* child =
+                static_cast<SoSeparator*>(
+                    static_cast<SoGroup*>(cur)->getChild(0));
+            if (!child || !child->isOfType(SoSeparator::getClassTypeId()))
+                break;
+            child->enableNotify(TRUE);
+            cur = child;
+        }
+
+        SbTime t1 = SbTime::getTimeOfDay();
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(800, 600));
+        bba.apply(root);
+
+        SbTime t2 = SbTime::getTimeOfDay();
+
+        SoSearchAction sa;
+        sa.setType(SoCube::getClassTypeId());
+        sa.setInterest(SoSearchAction::ALL);
+        sa.apply(root);
+
+        SbTime t3 = SbTime::getTimeOfDay();
+
+        root->unref();
+
+        SbTime t4 = SbTime::getTimeOfDay();
+
+        printf("chain_deferred, %d, %d, %.3f, %.3f, %.3f, %.3f\n",
+               n,
+               n + 1,
+               (t1 - t0).getValue() * 1000.0,
+               (t2 - t1).getValue() * 1000.0,
+               (t3 - t2).getValue() * 1000.0,
+               (t4 - t3).getValue() * 1000.0);
+    }
+
+    printf("# Scalability benchmark complete\n");
+    return 0; // characterisation only – no pass/fail on timing
+}
+
+// =========================================================================
 // Static registrations – run at program start
 // =========================================================================
 
@@ -967,6 +1329,12 @@ REGISTER_TEST(unit_orbit_camera, ObolTest::TestCategory::Base,
     "orbitCamera() BRL-CAD-style smooth orbit rotation math",
     e.has_visual = false;
     e.run_unit = runOrbitCameraTests;
+);
+
+REGISTER_TEST(unit_scalability, ObolTest::TestCategory::Nodes,
+    "Scene graph scalability: flat / binary-tree / linear-chain at 100..20000 nodes",
+    e.has_visual = false;
+    e.run_unit = runScalabilityTests;
 );
 
 } // anonymous namespace
