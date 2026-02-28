@@ -30,6 +30,10 @@ include_directories(BEFORE
   "${PROJECT_BINARY_DIR}/src/shadows"
   "${PROJECT_SOURCE_DIR}"
   "${PROJECT_SOURCE_DIR}/external/utf8/include"
+  # Subdirectory-specific include paths (needed in single-lib mode where
+  # subdirectory include_directories() calls don't propagate to the parent)
+  "${PROJECT_SOURCE_DIR}/src/base/utf8/include"
+  "${PROJECT_BINARY_DIR}/src/draggers"
 )
 
 # add include dirs for non targets
@@ -74,6 +78,18 @@ if(OBOL_USE_PRECOMPILED_HEADERS AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
             target_precompile_headers(${_subdir} PRIVATE
                 "${CMAKE_CURRENT_SOURCE_DIR}/misc/CoinPCH.h"
             )
+        endif()
+    endforeach()
+endif()
+
+# ============================================================================
+# Apply unity build to all object libraries (non-single-lib mode)
+# ============================================================================
+
+if(OBOL_USE_UNITY_BUILD AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
+    foreach(_subdir ${OBOL_SUBDIRS})
+        if(TARGET ${_subdir})
+            set_target_properties(${_subdir} PROPERTIES UNITY_BUILD ON)
         endif()
     endforeach()
 endif()
@@ -177,6 +193,18 @@ elseif(OBOL_USE_PRECOMPILED_HEADERS)
 endif()
 
 # ============================================================================
+# Unity Build Support
+# ============================================================================
+
+# Enable unity build if requested and supported (CMake 3.16+)
+if(OBOL_USE_UNITY_BUILD AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
+    message(STATUS "Enabling unity build for faster compilation")
+    set_target_properties(${PROJECT_NAME} PROPERTIES UNITY_BUILD ON)
+elseif(OBOL_USE_UNITY_BUILD)
+    message(WARNING "Unity build requested but requires CMake 3.16+. Current version: ${CMAKE_VERSION}")
+endif()
+
+# ============================================================================
 # Target-specific compile definitions and properties
 # ============================================================================
 
@@ -196,6 +224,9 @@ target_include_directories(${PROJECT_NAME}
         "${CMAKE_CURRENT_SOURCE_DIR}/misc"
         "${PROJECT_SOURCE_DIR}/include/Inventor/annex"
         "${PROJECT_BINARY_DIR}/src/shadows"
+        # Subdirectory-specific paths (needed in single-lib mode)
+        "${PROJECT_SOURCE_DIR}/src/base/utf8/include"
+        "${PROJECT_BINARY_DIR}/src/draggers"
         ${OBOL_TARGET_INCLUDE_DIRECTORIES}
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>

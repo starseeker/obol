@@ -245,21 +245,7 @@
 #include "glue/dlp.h"
 /* Platform-specific glue headers are no longer needed with callback-based contexts */
 #include "misc/SoEnvironment.h"
-
-// Include for SoDB context manager - minimal include to avoid circular dependencies
-class SoDB { 
-public: 
-  class ContextManager {
-  public:
-    virtual ~ContextManager() {}
-    virtual void * createOffscreenContext(unsigned int width, unsigned int height) = 0;
-    virtual SbBool makeContextCurrent(void * context) = 0;
-    virtual void restorePreviousContext(void * context) = 0;
-    virtual void destroyContext(void * context) = 0;
-    virtual SbBool isOSMesaContext(void * /*context*/) { return FALSE; }
-  }; 
-  static ContextManager* getContextManager(); 
-};
+#include <Inventor/SoDB.h>
 
 namespace { 
   SoDB::ContextManager * getSoDBContextManager() {
