@@ -49,8 +49,6 @@
 SoGLSLShaderProgram::SoGLSLShaderProgram(void)
   : programHandles(5)
 {
-  this->isExecutable = FALSE;
-  this->neededlinking = TRUE;
   SoContextHandler::addContextDestructionCallback(context_destruction_cb, this);
 }
 
@@ -70,6 +68,8 @@ SoGLSLShaderProgram::deleteProgram(const SoGLContext * g)
     SoGLCacheContextElement::scheduleDeleteCallback(g->contextid,
                                                     really_delete_object, (void*) tmp);
     this->programHandles.erase(g->contextid);
+    this->executableHandles.erase(g->contextid);
+    this->neededlinkingHandles.erase(g->contextid);
   }
 }
 
@@ -86,6 +86,8 @@ SoGLSLShaderProgram::deletePrograms(void)
                                                     really_delete_object, (void*) tmp);
     this->programHandles.erase(keylist[i]);
   }
+  this->executableHandles.clear();
+  this->neededlinkingHandles.clear();
 }
 
 
@@ -103,15 +105,17 @@ void
 SoGLSLShaderProgram::removeShaderObjects(void)
 {
   this->shaderObjects.truncate(0);
+  this->executableHandles.clear();
+  this->neededlinkingHandles.clear();
 }
 
 void
 SoGLSLShaderProgram::enable(const SoGLContext * g)
 {
-  this->neededlinking = FALSE;
+  this->neededlinkingHandles.put(g->contextid, FALSE);
   this->ensureLinking(g);
 
-  if (this->isExecutable) {
+  if (this->isContextExecutable(g)) {
     OBOL_GLhandle programhandle = this->getProgramHandle(g, TRUE);
     if (programhandle && g->glUseProgramObjectARB) {
       g->glUseProgramObjectARB(programhandle);
@@ -126,7 +130,7 @@ SoGLSLShaderProgram::enable(const SoGLContext * g)
 void
 SoGLSLShaderProgram::disable(const SoGLContext * g)
 {
-  if (this->isExecutable && g->glUseProgramObjectARB) {
+  if (this->isContextExecutable(g) && g->glUseProgramObjectARB) {
     g->glUseProgramObjectARB(0);
   }
 }
@@ -161,7 +165,7 @@ SoGLSLShaderProgram::ensureLinking(const SoGLContext * g)
   // delete old programs
   this->deleteProgram(g);
 
-  this->isExecutable = FALSE;
+  this->executableHandles.put(g->contextid, FALSE);
 
   OBOL_GLhandle programHandle = this->getProgramHandle(g, TRUE);
   if (!programHandle) return;
@@ -197,8 +201,8 @@ SoGLSLShaderProgram::ensureLinking(const SoGLContext * g)
                                    GL_OBJECT_LINK_STATUS_ARB,&didLink);
     }
 
-    this->isExecutable = didLink;
-    this->neededlinking = TRUE;
+    this->executableHandles.put(g->contextid, (SbBool)didLink);
+    this->neededlinkingHandles.put(g->contextid, TRUE);
   }
 }
 
@@ -237,9 +241,19 @@ SoGLSLShaderProgram::getProgramHandle(const SoGLContext * g, const SbBool create
 }
 
 SbBool
-SoGLSLShaderProgram::neededLinking(void) const
+SoGLSLShaderProgram::isContextExecutable(const SoGLContext * g) const
 {
-  return this->neededlinking;
+  SbBool result = FALSE;
+  if (g) this->executableHandles.get(g->contextid, result);
+  return result;
+}
+
+SbBool
+SoGLSLShaderProgram::neededLinking(const SoGLContext * g) const
+{
+  SbBool result = FALSE;
+  if (g) this->neededlinkingHandles.get(g->contextid, result);
+  return result;
 }
 
 void
@@ -253,6 +267,8 @@ SoGLSLShaderProgram::context_destruction_cb(uint32_t cachecontext, void * userda
     const SoGLContext * glue = SoGLContext_instance(cachecontext);
     glue->glDeleteObjectARB(glhandle);
     thisp->programHandles.erase(cachecontext);
+    thisp->executableHandles.erase(cachecontext);
+    thisp->neededlinkingHandles.erase(cachecontext);
   }
 }
 
