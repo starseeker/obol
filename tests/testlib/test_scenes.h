@@ -286,6 +286,74 @@ SoSeparator* createLODPicking(int width = 800, int height = 600);
 /** Five SoText2 rows in an orthographic viewport matching the stt_reference layout. */
 SoSeparator* createSTTGL(int width = 400, int height = 200);
 
+// ---- Interaction / Dragger / Special factories ----
+
+/** Three-object scene (sphere, cube, cone) for camera manipulation testing. */
+SoSeparator* createCameraInteraction(int width = 800, int height = 600);
+
+/** Dynamic scene (sphere, cube, cylinder) for scene-graph mutation testing. */
+SoSeparator* createSceneInteraction(int width = 800, int height = 600);
+
+/** Sphere driven by SoComposeVec3f engine — engine-driven animation scene. */
+SoSeparator* createEngineInteraction(int width = 800, int height = 600);
+
+/** Sphere whose material color is driven via automatic field-type conversion. */
+SoSeparator* createEngineConverter(int width = 800, int height = 600);
+
+/** Green sphere behind an SoSwitch with an SoEventCallback node in the graph. */
+SoSeparator* createEventCallbackInteraction(int width = 800, int height = 600);
+
+/** Blue sphere for SoRayPickAction pick/highlight testing. */
+SoSeparator* createPickInteraction(int width = 800, int height = 600);
+
+/** SoSelection node containing sphere (left) and cube (right) for pick-filter tests. */
+SoSeparator* createPickFilter(int width = 800, int height = 600);
+
+/** SoSelection (SHIFT policy) with sphere, cube, and cone for selection API tests. */
+SoSeparator* createSelectionInteraction(int width = 800, int height = 600);
+
+/** Gray sphere scene used for sensor-driven interaction tests. */
+SoSeparator* createSensorInteraction(int width = 800, int height = 600);
+
+/** SoShapeKit containing a sphere — node-kit interaction scene. */
+SoSeparator* createNodeKitInteraction(int width = 800, int height = 600);
+
+/** Sphere with SoCenterballManip attached — complex manipulator sequence scene. */
+SoSeparator* createManipSequences(int width = 800, int height = 600);
+
+/** Three spheres + floor lit by a SoDirectionalLightManip. */
+SoSeparator* createLightManips(int width = 800, int height = 600);
+
+/** Cube + SoTranslate1Dragger — simple dragger types scene. */
+SoSeparator* createSimpleDraggers(int width = 800, int height = 600);
+
+/** ARB8-style box (solid + wireframe) for dragger topology tests. */
+SoSeparator* createArb8Draggers(int width = 800, int height = 600);
+
+/** ARB8 box with corner-handle spheres — edit-cycle visualization. */
+SoSeparator* createArb8EditCycle(int width = 800, int height = 600);
+
+/** SoExtSelection (LASSO, FULL_BBOX) with three pickable shapes. */
+SoSeparator* createExtSelection(int width = 800, int height = 600);
+
+/** SoExtSelection (RECTANGLE, PART_BBOX) with three shapes for event tests. */
+SoSeparator* createExtSelectionEvents(int width = 800, int height = 600);
+
+/** Four-quadrant scene: SoLineSet, SoIndexedLineSet, SoPointSet, SoCylinder. */
+SoSeparator* createRaypickShapes(int width = 800, int height = 600);
+
+/** Advanced shadow scene: SoShadowGroup + SoShadowSpotLight + sphere + ground. */
+SoSeparator* createShadowAdvanced(int width = 800, int height = 600);
+
+/** RT proxy shapes: SoLineSet, SoIndexedLineSet, SoPointSet, SoCylinder quad. */
+SoSeparator* createRTProxyShapes(int width = 800, int height = 600);
+
+/** Four primitives + SoRaytracingParams — NanoRT raytracing scene. */
+SoSeparator* createNanoRT(int width = 800, int height = 600);
+
+/** Ground plane + red sphere + SoRaytracingParams(shadows) — NanoRT shadow scene. */
+SoSeparator* createNanoRTShadow(int width = 800, int height = 600);
+
 } // namespace Scenes
 } // namespace ObolTest
 

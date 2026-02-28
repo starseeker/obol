@@ -115,6 +115,13 @@
 #include <Inventor/nodes/SoLevelOfDetail.h>
 #include <Inventor/engines/SoComposeVec3f.h>
 
+#include <Inventor/nodes/SoSelection.h>
+#include <Inventor/nodes/SoExtSelection.h>
+#include <Inventor/nodekits/SoShapeKit.h>
+#include <Inventor/manips/SoCenterballManip.h>
+#include <Inventor/manips/SoDirectionalLightManip.h>
+#include <Inventor/annex/FXViz/nodes/SoShadowSpotLight.h>
+
 #include <vector>
 
 #ifdef OBOL_OSMESA_BUILD
@@ -4210,6 +4217,943 @@ SoSeparator* createSTTGL(int width, int height)
         text->justification.setValue(SoText2::LEFT);
         sep->addChild(text);
 
+        root->addChild(sep);
+    }
+
+    return root;
+}
+
+// =========================================================================
+// 79. createCameraInteraction — sphere, cube, cone with perspective camera
+// =========================================================================
+SoSeparator* createCameraInteraction(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    root->addChild(cam);
+    SoDirectionalLight *lt = new SoDirectionalLight;
+    lt->direction.setValue(-1.0f, -1.5f, -1.0f);
+    root->addChild(lt);
+
+    // Sphere (left)
+    SoSeparator *s = new SoSeparator;
+    SoTransform *xfs = new SoTransform;
+    xfs->translation.setValue(-1.5f, 0.0f, 0.0f);
+    s->addChild(xfs);
+    SoMaterial *ms = new SoMaterial;
+    ms->diffuseColor.setValue(0.8f, 0.3f, 0.3f);
+    s->addChild(ms);
+    s->addChild(new SoSphere);
+    root->addChild(s);
+
+    // Cube (center)
+    SoSeparator *c = new SoSeparator;
+    SoMaterial *mc = new SoMaterial;
+    mc->diffuseColor.setValue(0.3f, 0.7f, 0.3f);
+    c->addChild(mc);
+    c->addChild(new SoCube);
+    root->addChild(c);
+
+    // Cone (right)
+    SoSeparator *co = new SoSeparator;
+    SoTransform *xfco = new SoTransform;
+    xfco->translation.setValue(1.5f, 0.0f, 0.0f);
+    co->addChild(xfco);
+    SoMaterial *mco = new SoMaterial;
+    mco->diffuseColor.setValue(0.3f, 0.3f, 0.8f);
+    co->addChild(mco);
+    co->addChild(new SoCone);
+    root->addChild(co);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    return root;
+}
+
+// =========================================================================
+// 80. createSceneInteraction — 3-object dynamic scene (sphere, cube, cylinder)
+// =========================================================================
+SoSeparator* createSceneInteraction(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoOrthographicCamera *cam = new SoOrthographicCamera;
+    cam->position.setValue(0.0f, 0.0f, 5.0f);
+    cam->height.setValue(10.0f);
+    root->addChild(cam);
+    root->addChild(new SoDirectionalLight);
+
+    float xs[3]  = { -3.0f, 0.0f, 3.0f };
+    float rs[3]  = { 0.3f, 0.6f, 0.3f };
+    float gs[3]  = { 0.6f, 0.5f, 0.7f };
+    float bs[3]  = { 0.8f, 0.7f, 0.5f };
+    for (int i = 0; i < 3; ++i) {
+        SoSeparator *sep = new SoSeparator;
+        SoTransform *xf  = new SoTransform;
+        xf->translation.setValue(xs[i], 0.0f, 0.0f);
+        sep->addChild(xf);
+        SoMaterial *mat = new SoMaterial;
+        mat->diffuseColor.setValue(rs[i], gs[i], bs[i]);
+        sep->addChild(mat);
+        if      (i == 0) sep->addChild(new SoSphere);
+        else if (i == 1) sep->addChild(new SoCube);
+        else             sep->addChild(new SoCylinder);
+        root->addChild(sep);
+    }
+    return root;
+}
+
+// =========================================================================
+// 81. createEngineInteraction — sphere positioned by SoComposeVec3f engine
+// =========================================================================
+SoSeparator* createEngineInteraction(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoOrthographicCamera *cam = new SoOrthographicCamera;
+    cam->position.setValue(0.0f, 0.0f, 5.0f);
+    cam->height.setValue(8.0f);
+    root->addChild(cam);
+    root->addChild(new SoDirectionalLight);
+
+    SoMaterial *mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.5f, 0.7f, 0.3f);
+    root->addChild(mat);
+
+    SoTransform *xf = new SoTransform;
+    root->addChild(xf);
+    root->addChild(new SoSphere);
+
+    // Engine drives translation: position = (1.5, 0.5, 0)
+    SoComposeVec3f *compose = new SoComposeVec3f;
+    compose->ref();
+    compose->x.setValue(1.5f);
+    compose->y.setValue(0.5f);
+    compose->z.setValue(0.0f);
+    xf->translation.connectFrom(&compose->vector);
+    compose->unref();
+
+    return root;
+}
+
+// =========================================================================
+// 82. createEngineConverter — sphere with material driven via field conversion
+// =========================================================================
+SoSeparator* createEngineConverter(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    cam->position.setValue(0.0f, 0.0f, 5.0f);
+    root->addChild(cam);
+    root->addChild(new SoDirectionalLight);
+
+    SoMaterial *mat = new SoMaterial;
+    root->addChild(mat);
+
+    // SoComposeVec3f output (SFVec3f) connected to SoMFColor — exercises
+    // SoConvertAll automatic type-conversion engine.
+    SoComposeVec3f *compose = new SoComposeVec3f;
+    compose->ref();
+    compose->x.setValue(0.9f);
+    compose->y.setValue(0.3f);
+    compose->z.setValue(0.1f);
+    mat->diffuseColor.connectFrom(&compose->vector);
+    compose->unref();
+
+    root->addChild(new SoSphere);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    return root;
+}
+
+// =========================================================================
+// 83. createEventCallbackInteraction — switch + sphere behind event callback
+// =========================================================================
+SoSeparator* createEventCallbackInteraction(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoOrthographicCamera *cam = new SoOrthographicCamera;
+    cam->position.setValue(0.0f, 0.0f, 5.0f);
+    cam->height.setValue(4.0f);
+    root->addChild(cam);
+    root->addChild(new SoDirectionalLight);
+
+    root->addChild(new SoEventCallback);  // event callback node (no-op here)
+
+    SoSwitch *sw = new SoSwitch;
+    sw->whichChild.setValue(SO_SWITCH_ALL);
+    SoMaterial *mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.2f, 0.8f, 0.3f);
+    sw->addChild(mat);
+    SoSphere *sph = new SoSphere;
+    sph->radius = 0.8f;
+    sw->addChild(sph);
+    root->addChild(sw);
+
+    return root;
+}
+
+// =========================================================================
+// 84. createPickInteraction — blue sphere for SoRayPickAction testing
+// =========================================================================
+SoSeparator* createPickInteraction(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoOrthographicCamera *cam = new SoOrthographicCamera;
+    cam->position.setValue(0.0f, 0.0f, 5.0f);
+    cam->height.setValue(4.0f);
+    root->addChild(cam);
+
+    SoDirectionalLight *lt = new SoDirectionalLight;
+    lt->direction.setValue(0.0f, 0.0f, -1.0f);
+    root->addChild(lt);
+
+    SoMaterial *mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.4f, 0.6f, 1.0f);
+    root->addChild(mat);
+
+    SoSphere *sph = new SoSphere;
+    sph->radius = 0.8f;
+    root->addChild(sph);
+
+    return root;
+}
+
+// =========================================================================
+// 85. createPickFilter — SoSelection + sphere + cube for pick-filter tests
+// =========================================================================
+SoSeparator* createPickFilter(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoOrthographicCamera *cam = new SoOrthographicCamera;
+    cam->position.setValue(0.0f, 0.0f, 5.0f);
+    cam->height.setValue(8.0f);
+    root->addChild(cam);
+    root->addChild(new SoDirectionalLight);
+
+    SoSelection *sel = new SoSelection;
+    sel->policy.setValue(SoSelection::SHIFT);
+    root->addChild(sel);
+
+    // Sphere (left)
+    SoSeparator *sphSep = new SoSeparator;
+    SoTransform *xf1 = new SoTransform;
+    xf1->translation.setValue(-2.0f, 0.0f, 0.0f);
+    sphSep->addChild(xf1);
+    SoMaterial *m1 = new SoMaterial;
+    m1->diffuseColor.setValue(0.8f, 0.3f, 0.3f);
+    sphSep->addChild(m1);
+    sphSep->addChild(new SoSphere);
+    sel->addChild(sphSep);
+
+    // Cube (right)
+    SoSeparator *cubeSep = new SoSeparator;
+    SoTransform *xf2 = new SoTransform;
+    xf2->translation.setValue(2.0f, 0.0f, 0.0f);
+    cubeSep->addChild(xf2);
+    SoMaterial *m2 = new SoMaterial;
+    m2->diffuseColor.setValue(0.3f, 0.3f, 0.8f);
+    cubeSep->addChild(m2);
+    cubeSep->addChild(new SoCube);
+    sel->addChild(cubeSep);
+
+    return root;
+}
+
+// =========================================================================
+// 86. createSelectionInteraction — SoSelection (SHIFT) with sphere+cube+cone
+// =========================================================================
+SoSeparator* createSelectionInteraction(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoOrthographicCamera *cam = new SoOrthographicCamera;
+    cam->position.setValue(0.0f, 0.0f, 8.0f);
+    cam->height.setValue(8.0f);
+    root->addChild(cam);
+    root->addChild(new SoDirectionalLight);
+
+    SoSelection *sel = new SoSelection;
+    sel->policy.setValue(SoSelection::SHIFT);
+    root->addChild(sel);
+
+    float xs[3]   = { -2.5f, 0.0f, 2.5f };
+    float rs[3]   = { 0.7f, 0.3f, 0.3f };
+    float gs[3]   = { 0.3f, 0.7f, 0.3f };
+    float bs[3]   = { 0.3f, 0.3f, 0.7f };
+    for (int i = 0; i < 3; ++i) {
+        SoSeparator *sep = new SoSeparator;
+        SoTransform *xf = new SoTransform;
+        xf->translation.setValue(xs[i], 0.0f, 0.0f);
+        sep->addChild(xf);
+        SoMaterial *mat = new SoMaterial;
+        mat->diffuseColor.setValue(rs[i], gs[i], bs[i]);
+        sep->addChild(mat);
+        if      (i == 0) sep->addChild(new SoSphere);
+        else if (i == 1) sep->addChild(new SoCube);
+        else             sep->addChild(new SoCone);
+        sel->addChild(sep);
+    }
+    return root;
+}
+
+// =========================================================================
+// 87. createSensorInteraction — gray sphere for sensor-driven testing
+// =========================================================================
+SoSeparator* createSensorInteraction(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoOrthographicCamera *cam = new SoOrthographicCamera;
+    cam->position.setValue(0.0f, 0.0f, 5.0f);
+    cam->height.setValue(4.0f);
+    root->addChild(cam);
+    root->addChild(new SoDirectionalLight);
+
+    SoMaterial *mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.5f, 0.5f, 0.5f);
+    root->addChild(mat);
+    root->addChild(new SoSphere);
+
+    return root;
+}
+
+// =========================================================================
+// 88. createNodeKitInteraction — SoShapeKit with sphere
+// =========================================================================
+SoSeparator* createNodeKitInteraction(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoOrthographicCamera *cam = new SoOrthographicCamera;
+    cam->position.setValue(0.0f, 0.0f, 5.0f);
+    cam->height.setValue(6.0f);
+    root->addChild(cam);
+    root->addChild(new SoDirectionalLight);
+
+    SoShapeKit *kit = new SoShapeKit;
+    kit->setPart("shape", new SoSphere);
+    SoMaterial *mat = static_cast<SoMaterial *>(kit->getPart("material", TRUE));
+    if (mat) mat->diffuseColor.setValue(0.8f, 0.4f, 0.2f);
+    root->addChild(kit);
+
+    return root;
+}
+
+// =========================================================================
+// 89. createManipSequences — sphere with SoCenterballManip attached
+// =========================================================================
+SoSeparator* createManipSequences(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    cam->position.setValue(0.0f, 0.0f, 8.0f);
+    root->addChild(cam);
+
+    SoDirectionalLight *lt = new SoDirectionalLight;
+    lt->direction.setValue(-0.5f, -1.0f, -0.5f);
+    root->addChild(lt);
+
+    SoSeparator *shapeSep = new SoSeparator;
+    shapeSep->addChild(new SoCenterballManip);
+    SoMaterial *mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.6f, 0.4f, 0.8f);
+    shapeSep->addChild(mat);
+    shapeSep->addChild(new SoSphere);
+    root->addChild(shapeSep);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    return root;
+}
+
+// =========================================================================
+// 90. createLightManips — 3 spheres + floor lit by SoDirectionalLightManip
+// =========================================================================
+SoSeparator* createLightManips(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    cam->position.setValue(0.0f, 3.0f, 8.0f);
+    cam->pointAt(SbVec3f(0.0f, 0.0f, 0.0f), SbVec3f(0.0f, 1.0f, 0.0f));
+    root->addChild(cam);
+
+    SoDirectionalLightManip *manip = new SoDirectionalLightManip;
+    manip->direction.setValue(-0.5f, -1.0f, -0.5f);
+    manip->color.setValue(1.0f, 1.0f, 0.9f);
+    root->addChild(manip);
+
+    // Three spheres
+    float px[3] = { -2.0f, 0.0f, 2.0f };
+    float rc[3] = { 0.8f, 0.3f, 0.3f };
+    float gc[3] = { 0.3f, 0.8f, 0.3f };
+    float bc[3] = { 0.3f, 0.3f, 0.8f };
+    for (int i = 0; i < 3; ++i) {
+        SoSeparator *sep = new SoSeparator;
+        SoTransform *xf = new SoTransform;
+        xf->translation.setValue(px[i], 0.0f, 0.0f);
+        sep->addChild(xf);
+        SoMaterial *mat = new SoMaterial;
+        mat->diffuseColor.setValue(rc[i], gc[i], bc[i]);
+        mat->specularColor.setValue(0.8f, 0.8f, 0.8f);
+        mat->shininess.setValue(0.5f);
+        sep->addChild(mat);
+        SoSphere *sph = new SoSphere;
+        sph->radius = 0.7f;
+        sep->addChild(sph);
+        root->addChild(sep);
+    }
+
+    // Floor
+    SoSeparator *floor = new SoSeparator;
+    SoTransform *fxf = new SoTransform;
+    fxf->translation.setValue(0.0f, -1.2f, 0.0f);
+    floor->addChild(fxf);
+    SoMaterial *fm = new SoMaterial;
+    fm->diffuseColor.setValue(0.5f, 0.5f, 0.5f);
+    floor->addChild(fm);
+    SoCube *floorBox = new SoCube;
+    floorBox->width  = 8.0f;
+    floorBox->height = 0.1f;
+    floorBox->depth  = 4.0f;
+    floor->addChild(floorBox);
+    root->addChild(floor);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    return root;
+}
+
+// =========================================================================
+// 91. createSimpleDraggers — cube + SoTranslate1Dragger
+// =========================================================================
+SoSeparator* createSimpleDraggers(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    root->addChild(cam);
+
+    SoDirectionalLight *lt = new SoDirectionalLight;
+    lt->direction.setValue(-1.0f, -1.5f, -1.0f);
+    root->addChild(lt);
+
+    // Reference geometry
+    SoSeparator *geom = new SoSeparator;
+    SoMaterial *mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.5f, 0.7f, 0.5f);
+    geom->addChild(mat);
+    geom->addChild(new SoCube);
+    root->addChild(geom);
+
+    root->addChild(new SoTranslate1Dragger);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    return root;
+}
+
+// =========================================================================
+// 92. createArb8Draggers — ARB8-style box: solid (semi-transparent) + wireframe
+// =========================================================================
+SoSeparator* createArb8Draggers(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    cam->position.setValue(3.0f, 2.5f, 3.0f);
+    cam->pointAt(SbVec3f(0.0f, 0.0f, 0.0f), SbVec3f(0.0f, 1.0f, 0.0f));
+    root->addChild(cam);
+
+    SoDirectionalLight *lt = new SoDirectionalLight;
+    lt->direction.setValue(-0.5f, -1.0f, -0.5f);
+    root->addChild(lt);
+
+    // Solid face (semi-transparent gray-green)
+    SoSeparator *solid = new SoSeparator;
+    SoMaterial *matSolid = new SoMaterial;
+    matSolid->diffuseColor.setValue(0.6f, 0.7f, 0.6f);
+    matSolid->transparency.setValue(0.4f);
+    solid->addChild(matSolid);
+    solid->addChild(new SoCube);
+    root->addChild(solid);
+
+    // Wireframe overlay
+    SoSeparator *wire = new SoSeparator;
+    SoDrawStyle *ds = new SoDrawStyle;
+    ds->style.setValue(SoDrawStyle::LINES);
+    wire->addChild(ds);
+    SoMaterial *matWire = new SoMaterial;
+    matWire->diffuseColor.setValue(0.1f, 0.1f, 0.1f);
+    wire->addChild(matWire);
+    wire->addChild(new SoCube);
+    root->addChild(wire);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    return root;
+}
+
+// =========================================================================
+// 93. createArb8EditCycle — ARB8 box with golden corner-handle spheres
+// =========================================================================
+SoSeparator* createArb8EditCycle(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    cam->position.setValue(2.5f, 2.0f, 2.5f);
+    cam->pointAt(SbVec3f(0.0f, 0.0f, 0.0f), SbVec3f(0.0f, 1.0f, 0.0f));
+    root->addChild(cam);
+
+    SoDirectionalLight *lt = new SoDirectionalLight;
+    lt->direction.setValue(-0.5f, -1.0f, -0.5f);
+    root->addChild(lt);
+
+    // Main solid
+    SoMaterial *matSolid = new SoMaterial;
+    matSolid->diffuseColor.setValue(0.6f, 0.7f, 0.6f);
+    root->addChild(matSolid);
+    root->addChild(new SoCube);
+
+    // Golden handle spheres at the eight corners of the unit cube
+    static const float corners[8][3] = {
+        {-1.0f,-1.0f,-1.0f}, { 1.0f,-1.0f,-1.0f},
+        { 1.0f,-1.0f, 1.0f}, {-1.0f,-1.0f, 1.0f},
+        {-1.0f, 1.0f,-1.0f}, { 1.0f, 1.0f,-1.0f},
+        { 1.0f, 1.0f, 1.0f}, {-1.0f, 1.0f, 1.0f}
+    };
+    SoMaterial *matHandle = new SoMaterial;
+    matHandle->diffuseColor.setValue(1.0f, 0.8f, 0.0f);
+    root->addChild(matHandle);
+    for (int i = 0; i < 8; ++i) {
+        SoSeparator *sep = new SoSeparator;
+        SoTranslation *t = new SoTranslation;
+        t->translation.setValue(corners[i][0], corners[i][1], corners[i][2]);
+        sep->addChild(t);
+        SoSphere *sph = new SoSphere;
+        sph->radius = 0.1f;
+        sep->addChild(sph);
+        root->addChild(sep);
+    }
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    return root;
+}
+
+// =========================================================================
+// 94. createExtSelection — SoExtSelection + 3 shapes (LASSO, FULL_BBOX)
+// =========================================================================
+SoSeparator* createExtSelection(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoOrthographicCamera *cam = new SoOrthographicCamera;
+    cam->position.setValue(0.0f, 0.0f, 10.0f);
+    cam->height.setValue(10.0f);
+    root->addChild(cam);
+    root->addChild(new SoDirectionalLight);
+
+    SoExtSelection *extSel = new SoExtSelection;
+    extSel->lassoType.setValue(SoExtSelection::LASSO);
+    extSel->lassoMode.setValue(SoExtSelection::FULL_BBOX);
+    root->addChild(extSel);
+
+    float xs[3]  = { -3.0f, 0.0f, 3.0f };
+    float rs[3]  = { 0.5f, 0.3f, 0.3f };
+    float gs[3]  = { 0.3f, 0.5f, 0.7f };
+    float bs[3]  = { 0.3f, 0.7f, 0.5f };
+    SoNode *shapes[3] = { new SoSphere, new SoCube, new SoCone };
+    for (int i = 0; i < 3; ++i) {
+        SoSeparator *sep = new SoSeparator;
+        SoTranslation *tr = new SoTranslation;
+        tr->translation.setValue(xs[i], 0.0f, 0.0f);
+        sep->addChild(tr);
+        SoMaterial *mat = new SoMaterial;
+        mat->diffuseColor.setValue(rs[i], gs[i], bs[i]);
+        sep->addChild(mat);
+        sep->addChild(shapes[i]);
+        extSel->addChild(sep);
+    }
+    return root;
+}
+
+// =========================================================================
+// 95. createExtSelectionEvents — SoExtSelection (RECTANGLE, PART_BBOX)
+// =========================================================================
+SoSeparator* createExtSelectionEvents(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoOrthographicCamera *cam = new SoOrthographicCamera;
+    cam->position.setValue(0.0f, 0.0f, 10.0f);
+    cam->height.setValue(10.0f);
+    root->addChild(cam);
+    root->addChild(new SoDirectionalLight);
+
+    SoExtSelection *extSel = new SoExtSelection;
+    extSel->lassoType.setValue(SoExtSelection::RECTANGLE);
+    extSel->lassoMode.setValue(SoExtSelection::PART_BBOX);
+    root->addChild(extSel);
+
+    // Sphere (upper-left)
+    SoSeparator *sep1 = new SoSeparator;
+    SoTranslation *t1 = new SoTranslation;
+    t1->translation.setValue(-2.0f, 1.5f, 0.0f);
+    sep1->addChild(t1);
+    SoMaterial *m1 = new SoMaterial;
+    m1->diffuseColor.setValue(0.8f, 0.3f, 0.3f);
+    sep1->addChild(m1);
+    sep1->addChild(new SoSphere);
+    extSel->addChild(sep1);
+
+    // Cube (right)
+    SoSeparator *sep2 = new SoSeparator;
+    SoTranslation *t2 = new SoTranslation;
+    t2->translation.setValue(2.0f, 0.0f, 0.0f);
+    sep2->addChild(t2);
+    SoMaterial *m2 = new SoMaterial;
+    m2->diffuseColor.setValue(0.3f, 0.8f, 0.3f);
+    sep2->addChild(m2);
+    sep2->addChild(new SoCube);
+    extSel->addChild(sep2);
+
+    // Cone (lower center)
+    SoSeparator *sep3 = new SoSeparator;
+    SoTranslation *t3 = new SoTranslation;
+    t3->translation.setValue(0.0f, -2.0f, 0.0f);
+    sep3->addChild(t3);
+    SoMaterial *m3 = new SoMaterial;
+    m3->diffuseColor.setValue(0.3f, 0.3f, 0.8f);
+    sep3->addChild(m3);
+    sep3->addChild(new SoCone);
+    extSel->addChild(sep3);
+
+    return root;
+}
+
+// =========================================================================
+// 96. createRaypickShapes — SoLineSet, SoIndexedLineSet, SoPointSet, SoCylinder
+// =========================================================================
+SoSeparator* createRaypickShapes(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    root->addChild(cam);
+
+    SoDirectionalLight *lt = new SoDirectionalLight;
+    lt->direction.setValue(-0.5f, -0.8f, -0.6f);
+    root->addChild(lt);
+
+    const float s = 2.5f;
+
+    // Top-left: red SoLineSet
+    {
+        SoSeparator *sep = new SoSeparator;
+        SoTranslation *t = new SoTranslation;
+        t->translation.setValue(-s * 0.5f, s * 0.5f, 0.0f);
+        sep->addChild(t);
+        SoMaterial *mat = new SoMaterial;
+        mat->diffuseColor.setValue(0.85f, 0.15f, 0.15f);
+        sep->addChild(mat);
+        SoCoordinate3 *coords = new SoCoordinate3;
+        coords->point.set1Value(0, SbVec3f(-0.7f, 0.0f, 0.0f));
+        coords->point.set1Value(1, SbVec3f( 0.7f, 0.0f, 0.0f));
+        sep->addChild(coords);
+        SoLineSet *ls = new SoLineSet;
+        ls->numVertices.set1Value(0, 2);
+        sep->addChild(ls);
+        root->addChild(sep);
+    }
+    // Top-right: green SoIndexedLineSet (diagonal)
+    {
+        SoSeparator *sep = new SoSeparator;
+        SoTranslation *t = new SoTranslation;
+        t->translation.setValue(s * 0.5f, s * 0.5f, 0.0f);
+        sep->addChild(t);
+        SoMaterial *mat = new SoMaterial;
+        mat->diffuseColor.setValue(0.15f, 0.75f, 0.15f);
+        sep->addChild(mat);
+        SoCoordinate3 *coords = new SoCoordinate3;
+        coords->point.set1Value(0, SbVec3f(-0.6f, -0.6f, 0.0f));
+        coords->point.set1Value(1, SbVec3f( 0.6f,  0.6f, 0.0f));
+        sep->addChild(coords);
+        SoIndexedLineSet *ils = new SoIndexedLineSet;
+        ils->coordIndex.set1Value(0, 0);
+        ils->coordIndex.set1Value(1, 1);
+        ils->coordIndex.set1Value(2, -1);
+        sep->addChild(ils);
+        root->addChild(sep);
+    }
+    // Bottom-left: blue SoPointSet (4-point cross)
+    {
+        SoSeparator *sep = new SoSeparator;
+        SoTranslation *t = new SoTranslation;
+        t->translation.setValue(-s * 0.5f, -s * 0.5f, 0.0f);
+        sep->addChild(t);
+        SoMaterial *mat = new SoMaterial;
+        mat->diffuseColor.setValue(0.15f, 0.35f, 0.90f);
+        sep->addChild(mat);
+        SoCoordinate3 *coords = new SoCoordinate3;
+        coords->point.set1Value(0, SbVec3f( 0.0f,  0.5f, 0.0f));
+        coords->point.set1Value(1, SbVec3f( 0.0f, -0.5f, 0.0f));
+        coords->point.set1Value(2, SbVec3f(-0.5f,  0.0f, 0.0f));
+        coords->point.set1Value(3, SbVec3f( 0.5f,  0.0f, 0.0f));
+        sep->addChild(coords);
+        sep->addChild(new SoPointSet);
+        root->addChild(sep);
+    }
+    // Bottom-right: gold SoCylinder (reference solid)
+    {
+        SoSeparator *sep = new SoSeparator;
+        SoTranslation *t = new SoTranslation;
+        t->translation.setValue(s * 0.5f, -s * 0.5f, 0.0f);
+        sep->addChild(t);
+        SoMaterial *mat = new SoMaterial;
+        mat->diffuseColor.setValue(0.90f, 0.75f, 0.15f);
+        mat->specularColor.setValue(0.6f, 0.6f, 0.6f);
+        mat->shininess.setValue(0.5f);
+        sep->addChild(mat);
+        sep->addChild(new SoCylinder);
+        root->addChild(sep);
+    }
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    return root;
+}
+
+// =========================================================================
+// 97. createShadowAdvanced — SoShadowGroup + SoShadowSpotLight + sphere + ground
+// =========================================================================
+SoSeparator* createShadowAdvanced(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    cam->position.setValue(0.0f, 4.0f, 7.0f);
+    cam->orientation.setValue(SbVec3f(1.0f, 0.0f, 0.0f), -0.5f);
+    cam->nearDistance = 0.1f;
+    cam->farDistance  = 50.0f;
+    root->addChild(cam);
+
+    SoShadowGroup *sg = new SoShadowGroup;
+    sg->isActive.setValue(TRUE);
+    sg->intensity.setValue(0.8f);
+    sg->precision.setValue(0.5f);
+    sg->quality.setValue(1.0f);
+    sg->smoothBorder.setValue(0.2f);
+    sg->visibilityRadius.setValue(15.0f);
+    sg->visibilityNearRadius.setValue(0.1f);
+    sg->epsilon.setValue(0.001f);
+    sg->threshold.setValue(0.1f);
+    sg->shadowCachingEnabled.setValue(FALSE);
+    root->addChild(sg);
+
+    SoShadowSpotLight *spot = new SoShadowSpotLight;
+    spot->location.setValue(0.0f, 5.0f, 3.0f);
+    spot->direction.setValue(0.0f, -1.0f, -0.5f);
+    spot->cutOffAngle.setValue(0.6f);
+    spot->dropOffRate.setValue(0.3f);
+    spot->intensity.setValue(1.0f);
+    spot->nearDistance.setValue(0.5f);
+    spot->farDistance.setValue(20.0f);
+    sg->addChild(spot);
+
+    // Ground plane (SHADOWED)
+    {
+        SoSeparator *planeSep = new SoSeparator;
+        SoShadowStyle *ss = new SoShadowStyle;
+        ss->style.setValue(SoShadowStyle::SHADOWED);
+        planeSep->addChild(ss);
+        SoMaterial *mat = new SoMaterial;
+        mat->diffuseColor.setValue(0.8f, 0.8f, 0.7f);
+        planeSep->addChild(mat);
+        static const float pts[4][3] = {
+            {-4.0f,-1.5f,-4.0f}, {4.0f,-1.5f,-4.0f},
+            {4.0f,-1.5f, 4.0f}, {-4.0f,-1.5f, 4.0f}
+        };
+        static const int nverts[] = { 4 };
+        SoNormal *n = new SoNormal;
+        n->vector.set1Value(0, SbVec3f(0.0f, 1.0f, 0.0f));
+        planeSep->addChild(n);
+        SoNormalBinding *nb = new SoNormalBinding;
+        nb->value.setValue(SoNormalBinding::OVERALL);
+        planeSep->addChild(nb);
+        SoCoordinate3 *c3 = new SoCoordinate3;
+        c3->point.setValues(0, 4, pts);
+        planeSep->addChild(c3);
+        SoFaceSet *fs = new SoFaceSet;
+        fs->numVertices.setValues(0, 1, nverts);
+        planeSep->addChild(fs);
+        sg->addChild(planeSep);
+    }
+
+    // Sphere (CASTS_SHADOW_AND_SHADOWED)
+    {
+        SoSeparator *sphereSep = new SoSeparator;
+        SoShadowStyle *ss = new SoShadowStyle;
+        ss->style.setValue(SoShadowStyle::CASTS_SHADOW_AND_SHADOWED);
+        sphereSep->addChild(ss);
+        SoTranslation *tr = new SoTranslation;
+        tr->translation.setValue(0.0f, 0.5f, 0.0f);
+        sphereSep->addChild(tr);
+        SoMaterial *mat = new SoMaterial;
+        mat->diffuseColor.setValue(0.7f, 0.2f, 0.2f);
+        sphereSep->addChild(mat);
+        sphereSep->addChild(new SoSphere);
+        sg->addChild(sphereSep);
+    }
+
+    return root;
+}
+
+// =========================================================================
+// 98. createRTProxyShapes — SoLineSet, SoIndexedLineSet, SoPointSet, SoCylinder
+// =========================================================================
+SoSeparator* createRTProxyShapes(int width, int height)
+{
+    // Same quad layout as createRaypickShapes; both scenes share this geometry.
+    return createRaypickShapes(width, height);
+}
+
+// =========================================================================
+// 99. createNanoRT — four primitives + SoRaytracingParams for NanoRT tests
+// =========================================================================
+SoSeparator* createNanoRT(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoRaytracingParams *rtParams = new SoRaytracingParams;
+    rtParams->shadowsEnabled.setValue(FALSE);
+    root->addChild(rtParams);
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    root->addChild(cam);
+
+    SoDirectionalLight *dirLight = new SoDirectionalLight;
+    dirLight->direction.setValue(-0.5f, -1.0f, -0.3f);
+    root->addChild(dirLight);
+
+    // Four primitives in a 2×2 grid (matching the nanort.cpp scene layout)
+    const float s = 1.5f;
+    struct PrimSpec { float r, g, b, x, y; SoNode *shape; };
+    PrimSpec prims[4] = {
+        { 0.85f, 0.15f, 0.15f, -s * 0.5f,  s * 0.5f, new SoSphere   },
+        { 0.15f, 0.75f, 0.15f,  s * 0.5f,  s * 0.5f, new SoCube     },
+        { 0.15f, 0.35f, 0.90f, -s * 0.5f, -s * 0.5f, new SoCone     },
+        { 0.90f, 0.75f, 0.15f,  s * 0.5f, -s * 0.5f, new SoCylinder }
+    };
+    for (int i = 0; i < 4; ++i) {
+        SoSeparator *sep = new SoSeparator;
+        SoTranslation *t = new SoTranslation;
+        t->translation.setValue(prims[i].x, prims[i].y, 0.0f);
+        sep->addChild(t);
+        SoMaterial *mat = new SoMaterial;
+        mat->diffuseColor.setValue(prims[i].r, prims[i].g, prims[i].b);
+        sep->addChild(mat);
+        sep->addChild(prims[i].shape);
+        root->addChild(sep);
+    }
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    return root;
+}
+
+// =========================================================================
+// 100. createNanoRTShadow — ground + red sphere + SoRaytracingParams(shadows)
+// =========================================================================
+SoSeparator* createNanoRTShadow(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoRaytracingParams *rtParams = new SoRaytracingParams;
+    rtParams->shadowsEnabled.setValue(TRUE);
+    rtParams->ambientIntensity.setValue(0.2f);
+    root->addChild(rtParams);
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    cam->position.setValue(0.0f, 5.0f, 8.0f);
+    cam->orientation.setValue(SbVec3f(1.0f, 0.0f, 0.0f), -0.5f);
+    cam->nearDistance = 0.5f;
+    cam->farDistance  = 50.0f;
+    root->addChild(cam);
+
+    SoDirectionalLight *light = new SoDirectionalLight;
+    light->direction.setValue(-0.3f, -1.0f, 0.0f);
+    light->intensity.setValue(1.0f);
+    root->addChild(light);
+
+    // Ground plane at y = -1.0
+    {
+        SoSeparator *plane = new SoSeparator;
+        SoMaterial *mat = new SoMaterial;
+        mat->diffuseColor.setValue(0.7f, 0.7f, 0.7f);
+        mat->specularColor.setValue(0.1f, 0.1f, 0.1f);
+        mat->shininess.setValue(0.05f);
+        plane->addChild(mat);
+        SoNormal *n = new SoNormal;
+        n->vector.set1Value(0, SbVec3f(0.0f, 1.0f, 0.0f));
+        plane->addChild(n);
+        SoNormalBinding *nb = new SoNormalBinding;
+        nb->value.setValue(SoNormalBinding::OVERALL);
+        plane->addChild(nb);
+        static const float pts[4][3] = {
+            {-4.0f,-1.0f,-4.0f}, {4.0f,-1.0f,-4.0f},
+            {4.0f,-1.0f, 4.0f}, {-4.0f,-1.0f, 4.0f}
+        };
+        static const int idx[] = { 0, 1, 2, 3, -1 };
+        SoCoordinate3 *c3 = new SoCoordinate3;
+        c3->point.setValues(0, 4, pts);
+        plane->addChild(c3);
+        SoIndexedFaceSet *ifs = new SoIndexedFaceSet;
+        ifs->coordIndex.setValues(0, 5, idx);
+        plane->addChild(ifs);
+        root->addChild(plane);
+    }
+
+    // Red sphere suspended above ground
+    {
+        SoSeparator *sep = new SoSeparator;
+        SoTranslation *tr = new SoTranslation;
+        tr->translation.setValue(0.0f, 0.5f, 0.0f);
+        sep->addChild(tr);
+        SoMaterial *mat = new SoMaterial;
+        mat->diffuseColor.setValue(0.85f, 0.15f, 0.15f);
+        sep->addChild(mat);
+        sep->addChild(new SoSphere);
         root->addChild(sep);
     }
 

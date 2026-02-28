@@ -1894,4 +1894,182 @@ REGISTER_TEST(unit_scalability, ObolTest::TestCategory::Nodes,
     e.run_unit = runScalabilityTests;
 );
 
+// ---- Group 4: Interaction / Draggers / Special ----
+
+REGISTER_TEST(camera_interaction, ObolTest::TestCategory::Rendering,
+    "Three-object scene (sphere, cube, cone) for camera manipulation testing",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createCameraInteraction;
+);
+
+REGISTER_TEST(scene_interaction, ObolTest::TestCategory::Rendering,
+    "Dynamic sphere/cube/cylinder scene for scene-graph mutation testing",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createSceneInteraction;
+);
+
+REGISTER_TEST(engine_interaction, ObolTest::TestCategory::Engines,
+    "Sphere driven by SoComposeVec3f engine — engine-driven animation",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createEngineInteraction;
+);
+
+REGISTER_TEST(engine_converter, ObolTest::TestCategory::Engines,
+    "Sphere with material driven via SoConvertAll automatic field-type conversion",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createEngineConverter;
+);
+
+REGISTER_TEST(event_callback_interaction, ObolTest::TestCategory::Events,
+    "Green sphere behind SoSwitch with SoEventCallback node in the graph",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createEventCallbackInteraction;
+);
+
+REGISTER_TEST(pick_interaction, ObolTest::TestCategory::Actions,
+    "Blue sphere for SoRayPickAction pick and highlight testing",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createPickInteraction;
+);
+
+REGISTER_TEST(pick_filter, ObolTest::TestCategory::Actions,
+    "SoSelection + sphere + cube for SoSelection pick-filter callback tests",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createPickFilter;
+);
+
+REGISTER_TEST(selection_interaction, ObolTest::TestCategory::Nodes,
+    "SoSelection (SHIFT policy) with sphere, cube, and cone",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createSelectionInteraction;
+);
+
+REGISTER_TEST(sensor_interaction, ObolTest::TestCategory::Sensors,
+    "Gray sphere scene for sensor-driven field and node sensor testing",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createSensorInteraction;
+);
+
+REGISTER_TEST(nodekit_interaction, ObolTest::TestCategory::Nodes,
+    "SoShapeKit containing a sphere — node-kit interaction scene",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createNodeKitInteraction;
+);
+
+REGISTER_TEST(manip_sequences, ObolTest::TestCategory::Manips,
+    "Sphere with SoCenterballManip — complex manipulator sequence scene",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createManipSequences;
+);
+
+REGISTER_TEST(light_manips, ObolTest::TestCategory::Manips,
+    "Three spheres + floor lit by a SoDirectionalLightManip",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createLightManips;
+);
+
+REGISTER_TEST(simple_draggers, ObolTest::TestCategory::Draggers,
+    "Cube + SoTranslate1Dragger — simple dragger types scene",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createSimpleDraggers;
+);
+
+REGISTER_TEST(arb8_draggers, ObolTest::TestCategory::Draggers,
+    "ARB8-style box (solid + wireframe) for procedural dragger topology tests",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createArb8Draggers;
+);
+
+REGISTER_TEST(arb8_edit_cycle, ObolTest::TestCategory::Draggers,
+    "ARB8 box with golden corner-handle spheres — edit-cycle visualization",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createArb8EditCycle;
+);
+
+REGISTER_TEST(ext_selection, ObolTest::TestCategory::Nodes,
+    "SoExtSelection (LASSO, FULL_BBOX) with three pickable shapes",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createExtSelection;
+);
+
+REGISTER_TEST(ext_selection_events, ObolTest::TestCategory::Nodes,
+    "SoExtSelection (RECTANGLE, PART_BBOX) with three shapes for event tests",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createExtSelectionEvents;
+);
+
+REGISTER_TEST(raypick_shapes, ObolTest::TestCategory::Actions,
+    "Four-quadrant scene: SoLineSet, SoIndexedLineSet, SoPointSet, SoCylinder",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createRaypickShapes;
+);
+
+REGISTER_TEST(shadow_advanced, ObolTest::TestCategory::Rendering,
+    "Advanced shadows: SoShadowGroup + SoShadowSpotLight + sphere + ground plane",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = false;
+    e.create_scene = ObolTest::Scenes::createShadowAdvanced;
+);
+
+REGISTER_TEST(rt_proxy_shapes, ObolTest::TestCategory::Rendering,
+    "RT proxy shapes: SoLineSet, SoIndexedLineSet, SoPointSet, SoCylinder quad",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createRTProxyShapes;
+);
+
+REGISTER_TEST(nanort, ObolTest::TestCategory::Rendering,
+    "Four primitives + SoRaytracingParams — NanoRT raytracing scene",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createNanoRT;
+);
+
+REGISTER_TEST(nanort_shadow, ObolTest::TestCategory::Rendering,
+    "Ground plane + red sphere + SoRaytracingParams(shadows) — NanoRT shadow scene",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createNanoRTShadow;
+);
+
 } // anonymous namespace
