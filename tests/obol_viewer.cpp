@@ -122,6 +122,7 @@ static SoNanoRTContextManager s_nanort_mgr;
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
+#include <chrono>
 #include <functional>
 #include <string>
 #include <vector>
@@ -559,6 +560,8 @@ public:
 
     void setScene(SoSeparator* r, SoPerspectiveCamera* c, bool nanort_supported = true) {
         root = r; cam = c; nanort_ok_ = nanort_supported; status_text.clear();
+        /* Scene change invalidates coarse-render calibration. */
+        coarseRW_ = 0; coarseRH_ = 0;
         if (!nanort_ok_) {
             status_text = "Not supported (NanoRT)";
             delete fltk_img; fltk_img = nullptr;
@@ -580,51 +583,18 @@ public:
         if (!root || !nanort_ok_) { redraw(); return; }
         int pw = std::max(w(), 1);
         int ph = std::max(h(), 1);
-        /* During active camera motion render at 1/4 resolution (coarse_=true) for
-         * interactive speed, then a refinement timer fires to re-render at full
-         * resolution once the view is stable. */
-        const int scale = coarse_ ? 4 : 1;
-        const int rw = std::max(pw / scale, 1);
-        const int rh = std::max(ph / scale, 1);
-        /* Pre-fill pixel buffer with background color (renderScene() leaves
-         * miss pixels untouched, so the buffer must already contain the bg). */
-        const float bg[3] = { 0.15f, 0.15f, 0.2f };
-        const uint8_t bg_r = static_cast<uint8_t>(bg[0] * 255.0f + 0.5f);
-        const uint8_t bg_g = static_cast<uint8_t>(bg[1] * 255.0f + 0.5f);
-        const uint8_t bg_b = static_cast<uint8_t>(bg[2] * 255.0f + 0.5f);
-        pixel_buf.resize((size_t)rw * rh * 4);
-        for (size_t i = 0; i < (size_t)rw * rh; ++i) {
-            pixel_buf[i*4+0] = bg_r;
-            pixel_buf[i*4+1] = bg_g;
-            pixel_buf[i*4+2] = bg_b;
-            pixel_buf[i*4+3] = 255;
+        if (!coarse_) {
+            /* Full-resolution render; next coarse render must re-calibrate. */
+            coarseRW_ = 0; coarseRH_ = 0;
+            if (!doRender_(pw, ph, pw, ph)) { redraw(); return; }
+        } else if (coarseRW_ == 0 || calPanelW_ != pw || calPanelH_ != ph) {
+            /* First coarse render at this panel size: find optimal resolution
+             * via timed step-in (starts at 4×4, doubles until near budget). */
+            timedStepIn_(pw, ph);
+        } else {
+            /* Subsequent coarse renders: reuse calibrated size. */
+            if (!doRender_(pw, ph, coarseRW_, coarseRH_)) { redraw(); return; }
         }
-        /* Direct call: s_nanort_mgr is an application-owned object.
-         * We never registered it with SoDB::init(), so the GL context
-         * manager singleton is completely untouched. */
-        SbBool ok = s_nanort_mgr.renderScene(root,
-                                             (unsigned int)rw,
-                                             (unsigned int)rh,
-                                             pixel_buf.data(),
-                                             4u, bg);
-        if (!ok) {
-            status_text = "NanoRT render failed"; redraw(); return;
-        }
-        /* Convert bottom-up RGBA (possibly coarse) → top-down full-res RGB for FLTK.
-         * Nearest-neighbour upscale handles the coarse case; when scale==1 it is a
-         * straight flip-and-pack. */
-        display_buf.resize((size_t)pw * ph * 3);
-        for (int row = 0; row < ph; ++row) {
-            int src_row = (rh - 1) - (row * rh / ph);   /* flip + nearest-neighbour */
-            const uint8_t* s_base = pixel_buf.data() + (size_t)src_row * rw * 4;
-            uint8_t* d = display_buf.data() + (size_t)row * pw * 3;
-            for (int col = 0; col < pw; ++col) {
-                const uint8_t* s = s_base + (col * rw / pw) * 4;
-                d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; d+=3;
-            }
-        }
-        delete fltk_img;
-        fltk_img = new Fl_RGB_Image(display_buf.data(), pw, ph, 3);
         redraw();
         if (on_rendered) on_rendered();
     }
@@ -787,6 +757,20 @@ private:
     int  last_x_    = 0;
     int  last_y_    = 0;
 
+    /* Calibrated coarse render size (0 = uncalibrated / needs step-in). */
+    int coarseRW_  = 0;
+    int coarseRH_  = 0;
+    /* Panel dimensions at which coarseRW_/RH_ were measured. */
+    int calPanelW_ = 0;
+    int calPanelH_ = 0;
+
+    /* Maximum render time (ms) per coarse frame; targets ~10 fps for
+     * interactive feel.  Step-in stops when a level reaches 75% of this. */
+    static constexpr double kCoarseBudgetMs = 100.0;
+    /* Fraction of kCoarseBudgetMs at which step-in stops doubling resolution.
+     * 0.75 gives headroom so the chosen level reliably stays within budget. */
+    static constexpr double kBudgetThreshold = 0.75;
+
     /* Delay (seconds) after the last camera change before doing a full-res
      * refinement render.  250 ms feels snappy without firing during fast drags. */
     static constexpr double kRefineDelaySec = 0.25;
@@ -796,6 +780,77 @@ private:
         NanoRTPanel* p = static_cast<NanoRTPanel*>(data);
         p->coarse_ = false;
         p->refreshRender();
+    }
+
+    /* Render the scene at (rw×rh), upscale nearest-neighbour to (pw×ph),
+     * and update fltk_img.  Returns false on render failure. */
+    bool doRender_(int pw, int ph, int rw, int rh) {
+        const float bg[3] = { 0.15f, 0.15f, 0.2f };
+        const uint8_t bg_r = static_cast<uint8_t>(bg[0] * 255.0f + 0.5f);
+        const uint8_t bg_g = static_cast<uint8_t>(bg[1] * 255.0f + 0.5f);
+        const uint8_t bg_b = static_cast<uint8_t>(bg[2] * 255.0f + 0.5f);
+        pixel_buf.resize((size_t)rw * rh * 4);
+        for (size_t i = 0; i < (size_t)rw * rh; ++i) {
+            pixel_buf[i*4+0] = bg_r;
+            pixel_buf[i*4+1] = bg_g;
+            pixel_buf[i*4+2] = bg_b;
+            pixel_buf[i*4+3] = 255;
+        }
+        SbBool ok = s_nanort_mgr.renderScene(root,
+                                             (unsigned int)rw,
+                                             (unsigned int)rh,
+                                             pixel_buf.data(),
+                                             4u, bg);
+        if (!ok) { status_text = "NanoRT render failed"; return false; }
+
+        /* Convert bottom-up RGBA → top-down full-res RGB for FLTK.
+         * Nearest-neighbour upscale handles the coarse case; when rw==pw
+         * and rh==ph it is a straight flip-and-pack. */
+        display_buf.resize((size_t)pw * ph * 3);
+        for (int row = 0; row < ph; ++row) {
+            int src_row = (rh - 1) - (row * rh / ph);
+            const uint8_t* s_base = pixel_buf.data() + (size_t)src_row * rw * 4;
+            uint8_t* d = display_buf.data() + (size_t)row * pw * 3;
+            for (int col = 0; col < pw; ++col) {
+                const uint8_t* s = s_base + (col * rw / pw) * 4;
+                d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; d+=3;
+            }
+        }
+        delete fltk_img;
+        fltk_img = new Fl_RGB_Image(display_buf.data(), pw, ph, 3);
+        return true;
+    }
+
+    /* Timed step-in calibration: shoot 4 pixels total (2×2) first, then
+     * double resolution each step while measuring render time, stopping
+     * once a level approaches kCoarseBudgetMs.  The final rendered level
+     * is left in fltk_img so the caller only needs to call redraw().
+     * Sets coarseRW_, coarseRH_, calPanelW_, calPanelH_. */
+    void timedStepIn_(int pw, int ph) {
+        using clock = std::chrono::steady_clock;
+        int bestRW = 2, bestRH = 2;
+        int crw = 2, crh = 2;
+        bool done = false;
+        while (!done) {
+            const int rw = crw < pw ? crw : pw;
+            const int rh = crh < ph ? crh : ph;
+            auto t0 = clock::now();
+            bool ok = doRender_(pw, ph, rw, rh);
+            double ms = std::chrono::duration<double, std::milli>(
+                            clock::now() - t0).count();
+            if (!ok) break;
+            bestRW = rw;
+            bestRH = rh;
+            /* Stop when approaching budget or reached full panel size. */
+            done = (ms >= kCoarseBudgetMs * kBudgetThreshold ||
+                    rw >= pw || rh >= ph);
+            crw *= 2;
+            crh *= 2;
+        }
+        coarseRW_  = bestRW;
+        coarseRH_  = bestRH;
+        calPanelW_ = pw;
+        calPanelH_ = ph;
     }
 
     void updateClipping_() {
