@@ -242,6 +242,10 @@ public:
     virtual void destroyContext(void* context) override {
         delete static_cast<CoinOSMesaContext*>(context);
     }
+
+    virtual void * getProcAddress(const char * funcName) override {
+        return reinterpret_cast<void*>(OSMesaGetProcAddress(funcName));
+    }
 };
 
 /**
@@ -488,6 +492,11 @@ public:
             if (ctx->vi)        XFree(ctx->vi);
         }
         delete ctx;
+    }
+
+    virtual void * getProcAddress(const char * funcName) override {
+        return reinterpret_cast<void*>(
+            glXGetProcAddress(reinterpret_cast<const GLubyte*>(funcName)));
     }
 
 private:
