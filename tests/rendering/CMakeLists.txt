@@ -464,19 +464,22 @@ add_rendering_image_test(render_texture    RMSE_THRESHOLD 15.0)
 add_rendering_test(render_stt_gl)
 
 # ---- Build GL render test objects into one library ---------------------------
-# Each source's main() is renamed via a per-file compile definition so they
-# can coexist in the same library without linker conflicts.
+# Each source's main() is renamed by compiling a small per-test wrapper that
+# #define-s main before #include-ing the real source.  The wrapper files live
+# in the binary directory so they never affect NanoRT (or other) targets that
+# compile the same sources without the define.
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/gl_wrappers")
+set(_gl_wrapper_sources "")
 foreach(_t ${OBOL_GL_RENDER_TESTS})
-    list(APPEND _gl_sources "${CMAKE_CURRENT_SOURCE_DIR}/${_t}.cpp")
+    set(_wrapper "${CMAKE_CURRENT_BINARY_DIR}/gl_wrappers/${_t}_gl.cpp")
+    file(WRITE "${_wrapper}"
+        "#define main run_render_test_${_t}\n"
+        "#include \"${CMAKE_CURRENT_SOURCE_DIR}/${_t}.cpp\"\n"
+    )
+    list(APPEND _gl_wrapper_sources "${_wrapper}")
 endforeach()
 
-add_library(obol_render_tests_gl STATIC ${_gl_sources})
-
-# Rename main() -> run_render_test_<name> in each source
-foreach(_t ${OBOL_GL_RENDER_TESTS})
-    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/${_t}.cpp" PROPERTIES
-        COMPILE_DEFINITIONS "main=run_render_test_${_t}")
-endforeach()
+add_library(obol_render_tests_gl STATIC ${_gl_wrapper_sources})
 
 target_include_directories(obol_render_tests_gl PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

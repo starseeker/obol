@@ -68,16 +68,16 @@ static void printHelp(const char* argv0)
 {
     printf(
         "Usage:\n"
-        "  %s                             Run all unit tests\n"
-        "  %s list                        List all registered tests\n"
-        "  %s list --categories           List tests grouped by category\n"
-        "  %s run <name|category>         Run test(s) by name or category\n"
-        "  %s render <name> <outpath>     Render visual test to file\n"
-        "  %s render_test <name> <base>   Run render test (writes <base>.rgb etc.)\n"
-        "  %s help                        Show this help\n"
+        "  %1$s                             Run all unit tests\n"
+        "  %1$s list                        List all registered tests\n"
+        "  %1$s list --categories           List tests grouped by category\n"
+        "  %1$s run <name|category>         Run test(s) by name or category\n"
+        "  %1$s render <name> <outpath>     Render visual test to file\n"
+        "  %1$s render_test <name> <base>   Run render test (writes <base>.rgb etc.)\n"
+        "  %1$s help                        Show this help\n"
         "\n"
         "Exit codes: 0 = all passed, non-zero = failures or error.\n",
-        argv0, argv0, argv0, argv0, argv0, argv0, argv0);
+        argv0);
 }
 
 static void cmdList(bool byCategory)
@@ -223,8 +223,12 @@ int main(int argc, char** argv)
             return 1;
         }
         int rc = dispatchRenderTest(argv[2], argv[3]);
-        if (rc < 0) {
+        if (rc == -1) {
             fprintf(stderr, "Unknown render test: '%s'\n", argv[2]);
+            return 1;
+        }
+        if (rc == -2) {
+            fprintf(stderr, "render_test: basepath too long (max 4095 chars)\n");
             return 1;
         }
         return rc;
