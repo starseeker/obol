@@ -45,6 +45,10 @@
 
 #include <Inventor/nodes/SoSeparator.h>
 
+// Forward declaration so callers don't need to include all dragger headers
+// just to use buildDraggerTestScene().
+class SoDragger;
+
 namespace ObolTest {
 namespace Scenes {
 
@@ -353,6 +357,28 @@ SoSeparator* createNanoRT(int width = 800, int height = 600);
 
 /** Ground plane + red sphere + SoRaytracingParams(shadows) — NanoRT shadow scene. */
 SoSeparator* createNanoRTShadow(int width = 800, int height = 600);
+
+// -------------------------------------------------------------------------
+// Utility helpers for interaction tests
+//
+// These functions build reusable scene bases that are shared between the
+// viewer factory scenes and the interactive test executables.  They return
+// an UNREF'd SoSeparator (ref count = 0); callers must call root->ref().
+// -------------------------------------------------------------------------
+
+/** camera + directional light + green reference cube + given dragger.
+ *  Used by render_draggers.cpp, render_simple_draggers.cpp, and the
+ *  createSimpleDraggers() factory so both viewer and tests start from the
+ *  same scene setup. */
+SoSeparator* buildDraggerTestScene(SoDragger* dragger,
+                                    int width = 800, int height = 600);
+
+/** camera at (0,0,8) + directional light + purple sphere with a plain
+ *  SoTransform (no manipulator pre-attached).  Tests use this base to
+ *  exercise the replaceNode/replaceManip lifecycle.
+ *  Matches the geometry in createManipSequences() so the viewer and the
+ *  manip lifecycle tests share the same scene layout. */
+SoSeparator* buildManipTestBase(int width = 800, int height = 600);
 
 } // namespace Scenes
 } // namespace ObolTest

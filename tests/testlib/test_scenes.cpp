@@ -79,6 +79,7 @@
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/draggers/SoTranslate1Dragger.h>
 #include <Inventor/draggers/SoRotateSphericalDragger.h>
+#include <Inventor/draggers/SoDragger.h>
 #include <Inventor/nodes/SoIndexedFaceSet.h>
 #include <Inventor/nodes/SoShapeHints.h>
 #include <Inventor/nodes/SoIndexedLineSet.h>
@@ -4649,28 +4650,10 @@ SoSeparator* createLightManips(int width, int height)
 // =========================================================================
 SoSeparator* createSimpleDraggers(int width, int height)
 {
-    SoSeparator *root = new SoSeparator;
+    // Uses buildDraggerTestScene so the viewer and the render_simple_draggers
+    // interaction test both start from the same scene setup.
+    SoSeparator *root = buildDraggerTestScene(new SoTranslate1Dragger, width, height);
     root->ref();
-
-    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
-    root->addChild(cam);
-
-    SoDirectionalLight *lt = new SoDirectionalLight;
-    lt->direction.setValue(-1.0f, -1.5f, -1.0f);
-    root->addChild(lt);
-
-    // Reference geometry
-    SoSeparator *geom = new SoSeparator;
-    SoMaterial *mat = new SoMaterial;
-    mat->diffuseColor.setValue(0.5f, 0.7f, 0.5f);
-    geom->addChild(mat);
-    geom->addChild(new SoCube);
-    root->addChild(geom);
-
-    root->addChild(new SoTranslate1Dragger);
-
-    SbViewportRegion vp(width, height);
-    cam->viewAll(root, vp);
     return root;
 }
 
@@ -5157,6 +5140,65 @@ SoSeparator* createNanoRTShadow(int width, int height)
         root->addChild(sep);
     }
 
+    return root;
+}
+
+// =========================================================================
+// buildDraggerTestScene — camera + light + reference cube + given dragger
+// =========================================================================
+SoSeparator* buildDraggerTestScene(SoDragger* dragger, int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = addCameraAndLight(root);
+
+    // Reference geometry: green cube so SoSurroundScale has something to measure
+    SoSeparator *geom = new SoSeparator;
+    SoMaterial *mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.5f, 0.7f, 0.5f);
+    geom->addChild(mat);
+    geom->addChild(new SoCube);
+    root->addChild(geom);
+
+    root->addChild(dragger);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+
+    root->unrefNoDelete(); // transfer ownership to caller
+    return root;
+}
+
+// =========================================================================
+// buildManipTestBase — camera + light + purple sphere + plain SoTransform
+// =========================================================================
+SoSeparator* buildManipTestBase(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    cam->position.setValue(0.0f, 0.0f, 8.0f);
+    root->addChild(cam);
+
+    SoDirectionalLight *lt = new SoDirectionalLight;
+    lt->direction.setValue(-0.5f, -1.0f, -0.5f);
+    root->addChild(lt);
+
+    SoSeparator *shapeSep = new SoSeparator;
+    SoTransform *xf = new SoTransform;
+    shapeSep->addChild(xf);
+    SoMaterial *mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.6f, 0.4f, 0.8f);
+    shapeSep->addChild(mat);
+    shapeSep->addChild(new SoSphere);
+    root->addChild(shapeSep);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+
+    root->unrefNoDelete(); // transfer ownership to caller
     return root;
 }
 
