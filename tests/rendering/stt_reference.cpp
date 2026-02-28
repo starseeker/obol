@@ -2,16 +2,17 @@
  * stt_reference.cpp -- stb_truetype direct-render reference tool
  *
  * Renders text directly from the embedded ProFont TTF via SbFont/stb_truetype
- * WITHOUT going through any OpenGL layer.  The output PNG represents what the
- * text should look like at the highest possible quality from stb_truetype, and
- * can be compared against the OpenGL render_text2 output to evaluate fidelity.
+ * WITHOUT going through any OpenGL layer.  The output PNG has a black
+ * background and uses the same alpha-over-black compositing formula as the
+ * SoText2 texture-quad renderer, so the result can be compared pixel-by-pixel
+ * against the render_stt_gl output.
  *
- * Scene matches render_text2.cpp:
+ * Scene matches render_stt_gl.cpp:
  *   - "Hello World"  at 14px, white
  *   - "Coin3D Text"  at 18px, cyan
  *   - "ABC 123"      at 12px, yellow
  *   - "Line Two"     at 12px, yellow
- *   - "3D Test"      at 20px, green  (from render_text_demo)
+ *   - "3D Test"      at 20px, green
  *
  * Usage: stt_reference <output.png>
  *
@@ -29,10 +30,11 @@
 
 static const int IMG_W    = 400;
 static const int IMG_H    = 200;
-static const int CHANNELS = 4;   // RGBA
+static const int CHANNELS = 4;   // RGBA (A always 255 = opaque black background)
 
-// Composite a glyph bitmap over an RGBA canvas using the same formula as
-// SoText2::GLRender's pixel-buffer path.
+// Composite a glyph bitmap over an opaque-black canvas using the same
+// GL_SRC_ALPHA / GL_ONE_MINUS_SRC_ALPHA formula as SoText2::GLRender.
+// Background pixels are (0,0,0,255); output pixels are always opaque.
 static void blit_glyph(unsigned char *canvas, int cw, int ch,
                         const unsigned char *bitmap, int bw, int bh,
                         int dst_x, int dst_y,
@@ -45,15 +47,14 @@ static void blit_glyph(unsigned char *canvas, int cw, int ch,
             int dx = dst_x + gx;
             if (dx < 0 || dx >= cw) continue;
             const int srcval = bitmap[gy * bw + gx];
+            if (srcval == 0) continue;
             unsigned char *dst = canvas + (dy * cw + dx) * CHANNELS;
-            // Same blending formula as SoText2::GLRender (alpha_material = 256):
-            //   blended = ((256 - srcval) * old_alpha + srcval * 255) >> 8
-            const int blended = ((256 - srcval) * (int)dst[3] +
-                                  srcval * 255) >> 8;
-            const unsigned char newval = (unsigned char)(blended < 255 ? blended : 255);
-            if (newval > dst[3]) {
-                dst[0] = cr; dst[1] = cg; dst[2] = cb; dst[3] = newval;
-            }
+            // Alpha-over-black: result = src_alpha*src + (1-src_alpha)*dst
+            // Matches GL_SRC_ALPHA / GL_ONE_MINUS_SRC_ALPHA on black background.
+            dst[0] = (unsigned char)((srcval * (int)cr + (255 - srcval) * (int)dst[0]) / 255);
+            dst[1] = (unsigned char)((srcval * (int)cg + (255 - srcval) * (int)dst[1]) / 255);
+            dst[2] = (unsigned char)((srcval * (int)cb + (255 - srcval) * (int)dst[2]) / 255);
+            /* dst[3] stays 255 - the output is always fully opaque */
         }
     }
 }
@@ -81,10 +82,17 @@ int main(int argc, char **argv)
     const char *outpath = (argc > 1) ? argv[1] : "/tmp/stt_reference.png";
 
     unsigned char *canvas =
-        (unsigned char *)calloc((size_t)IMG_W * IMG_H * CHANNELS, 1);
+        (unsigned char *)malloc((size_t)IMG_W * IMG_H * CHANNELS);
     if (!canvas) {
         fprintf(stderr, "stt_reference: out of memory\n");
         return 1;
+    }
+    /* Opaque black background – matches GL render clear colour. */
+    for (int i = 0; i < IMG_W * IMG_H; i++) {
+        canvas[i * CHANNELS + 0] = 0;
+        canvas[i * CHANNELS + 1] = 0;
+        canvas[i * CHANNELS + 2] = 0;
+        canvas[i * CHANNELS + 3] = 255;
     }
 
     for (int ri = 0; k_rows[ri].text != NULL; ri++) {
