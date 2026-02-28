@@ -821,19 +821,25 @@ private:
         return true;
     }
 
-    /* Timed step-in calibration: shoot 4 pixels total (2×2) first, then
-     * double resolution each step while measuring render time, stopping
-     * once a level approaches kCoarseBudgetMs.  The final rendered level
-     * is left in fltk_img so the caller only needs to call redraw().
-     * Sets coarseRW_, coarseRH_, calPanelW_, calPanelH_. */
+    /* Timed step-in calibration: start at 2 pixels wide, then double the
+     * width each step while measuring render time, stopping once a level
+     * approaches kCoarseBudgetMs.  The height is always derived from the
+     * width using the panel aspect ratio so the raytracing view frustum
+     * matches the display and the coarse image is never distorted.  The
+     * final rendered level is left in fltk_img so the caller only needs
+     * to call redraw().  Sets coarseRW_, coarseRH_, calPanelW_, calPanelH_. */
     void timedStepIn_(int pw, int ph) {
         using clock = std::chrono::steady_clock;
-        int bestRW = 2, bestRH = 2;
-        int crw = 2, crh = 2;
+        /* Initial fallback: narrowest render that preserves aspect ratio. */
+        int bestRW = 2, bestRH = std::max(1, (2 * ph + pw / 2) / pw);
+        int crw = 2;
         bool done = false;
         while (!done) {
             const int rw = crw < pw ? crw : pw;
-            const int rh = crh < ph ? crh : ph;
+            /* Derive rh from rw to preserve the panel aspect ratio, so the
+             * raytracing view frustum matches the display dimensions and the
+             * upscaled coarse image is not distorted. */
+            const int rh = rw < pw ? std::max(1, (rw * ph + pw / 2) / pw) : ph;
             auto t0 = clock::now();
             bool ok = doRender_(pw, ph, rw, rh);
             double ms = std::chrono::duration<double, std::milli>(
@@ -845,7 +851,6 @@ private:
             done = (ms >= kCoarseBudgetMs * kBudgetThreshold ||
                     rw >= pw || rh >= ph);
             crw *= 2;
-            crh *= 2;
         }
         coarseRW_  = bestRW;
         coarseRH_  = bestRH;
