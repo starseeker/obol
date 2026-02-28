@@ -74,7 +74,7 @@ public:
 
   void getShaderObjectIds(SbList <uint32_t> & ids) const;
   uint32_t getGLSLShaderProgramHandle(SoState * state) const;
-  SbBool glslShaderProgramLinked(void) const;
+  SbBool glslShaderProgramLinked(SoState * state) const;
 private:
 
   class SoGLARBShaderProgram * arbShaderProgram;

@@ -177,10 +177,12 @@ SoGLShaderProgram::getGLSLShaderProgramHandle(SoState * state) const
 }
 
 SbBool
-SoGLShaderProgram::glslShaderProgramLinked(void) const
+SoGLShaderProgram::glslShaderProgramLinked(SoState * state) const
 {
   if (this->glslShaderProgram) {
-    return this->glslShaderProgram->neededLinking();
+    const uint32_t cachecontext = SoGLCacheContextElement::get(state);
+    const SoGLContext * glctx = SoGLContext_instance(cachecontext);
+    return this->glslShaderProgram->neededLinking(glctx);
   }
   return FALSE;
 }
