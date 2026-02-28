@@ -1,7 +1,7 @@
 /*
  * render_text2.cpp - Visual regression test: SoText2 / SoText3 text rendering
  *
- * Scene built by ObolTest::Scenes::createText.
+ * Scene built by ObolTest::Scenes::createText (includes both SoText2 and SoText3).
  * Viewport: 800 x 600
  * Output: argv[1]+".rgb" (SGI RGB format)
  */
