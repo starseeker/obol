@@ -325,11 +325,6 @@ endforeach()
 
 
 # Platform-specific compiler settings
-# Single-lib mode is the default on all platforms: all object files are
-# compiled directly into one library target rather than being collected
-# through intermediate OBJECT libraries.
-option(OBOL_BUILD_SINGLE_LIB "Build only one library when ON, multiple when OFF" ON)
-
 if(MSVC)
   # MSVC-specific options
   option(OBOL_BUILD_MSVC_STATIC_RUNTIME "Build against the static Microsoft Visual C runtime library" OFF)
