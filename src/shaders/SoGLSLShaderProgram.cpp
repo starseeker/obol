@@ -113,10 +113,12 @@ SoGLSLShaderProgram::enable(const SoGLContext * g)
 
   if (this->isExecutable) {
     OBOL_GLhandle programhandle = this->getProgramHandle(g, TRUE);
-    g->glUseProgramObjectARB(programhandle);
+    if (programhandle && g->glUseProgramObjectARB) {
+      g->glUseProgramObjectARB(programhandle);
 
-    if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::enable")) {
-      SoGLSLShaderObject::printInfoLog(g, programhandle, 0);
+      if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::enable")) {
+        SoGLSLShaderObject::printInfoLog(g, programhandle, 0);
+      }
     }
   }
 }
@@ -124,7 +126,7 @@ SoGLSLShaderProgram::enable(const SoGLContext * g)
 void
 SoGLSLShaderProgram::disable(const SoGLContext * g)
 {
-  if (this->isExecutable) {
+  if (this->isExecutable && g->glUseProgramObjectARB) {
     g->glUseProgramObjectARB(0);
   }
 }
@@ -162,6 +164,7 @@ SoGLSLShaderProgram::ensureLinking(const SoGLContext * g)
   this->isExecutable = FALSE;
 
   OBOL_GLhandle programHandle = this->getProgramHandle(g, TRUE);
+  if (!programHandle) return;
 
   int cnt = this->shaderObjects.getLength();
 
@@ -173,20 +176,26 @@ SoGLSLShaderProgram::ensureLinking(const SoGLContext * g)
       this->shaderObjects[i]->attach(programHandle);
     }
 
-    for (i = 0; i < this->programParameters.getLength(); i += 2) {
-      g->glProgramParameteriEXT(programHandle,
-                                (GLenum) this->programParameters[i],
-                                this->programParameters[i+1]);
+    if (g->glProgramParameteriEXT) {
+      for (i = 0; i < this->programParameters.getLength(); i += 2) {
+        g->glProgramParameteriEXT(programHandle,
+                                  (GLenum) this->programParameters[i],
+                                  this->programParameters[i+1]);
 
+      }
     }
 
-    g->glLinkProgramARB(programHandle);
+    if (g->glLinkProgramARB) {
+      g->glLinkProgramARB(programHandle);
 
-    if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::ensureLinking")) {
-      SoGLSLShaderObject::printInfoLog(g, programHandle, 0);
+      if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::ensureLinking")) {
+        SoGLSLShaderObject::printInfoLog(g, programHandle, 0);
+      }
     }
-    g->glGetObjectParameterivARB(programHandle,
-                                 GL_OBJECT_LINK_STATUS_ARB,&didLink);
+    if (g->glGetObjectParameterivARB) {
+      g->glGetObjectParameterivARB(programHandle,
+                                   GL_OBJECT_LINK_STATUS_ARB,&didLink);
+    }
 
     this->isExecutable = didLink;
     this->neededlinking = TRUE;
@@ -216,6 +225,11 @@ SoGLSLShaderProgram::getProgramHandle(const SoGLContext * g, const SbBool create
 {
   OBOL_GLhandle handle = 0;
   if (!this->programHandles.get(g->contextid, handle) && create) {
+    if (!g->glCreateProgramObjectARB) {
+      SoDebugError::postWarning("SoGLSLShaderProgram::getProgramHandle",
+                                "GLSL not supported in this context");
+      return 0;
+    }
     handle = g->glCreateProgramObjectARB();
     this->programHandles.put(g->contextid, handle);
   }
