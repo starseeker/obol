@@ -137,7 +137,6 @@ option(USE_EXCEPTIONS "Compile with exceptions (g++ only)" ON)
 option(OBOL_COVERAGE "Enable code coverage instrumentation (GCC/Clang)" OFF)
 
 # Build optimization options
-option(OBOL_USE_PRECOMPILED_HEADERS "Use precompiled headers to speed up compilation" ON)
 option(OBOL_USE_UNITY_BUILD "Batch source files into unity build units for faster compilation (CMake 3.16+)" ON)
 
 # Thread debugging (requires C++11 thread support)

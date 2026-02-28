@@ -101,20 +101,6 @@ if(DEFINED OBOL_OUTPUT_NAME)
 endif()
 
 # ============================================================================
-# Precompiled Headers Support
-# ============================================================================
-
-# Enable precompiled headers if requested and supported (CMake 3.16+)
-if(OBOL_USE_PRECOMPILED_HEADERS AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
-    message(STATUS "Enabling precompiled headers for faster compilation")
-    target_precompile_headers(${PROJECT_NAME} PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/misc/CoinPCH.h"
-    )
-elseif(OBOL_USE_PRECOMPILED_HEADERS)
-    message(WARNING "Precompiled headers requested but require CMake 3.16+. Current version: ${CMAKE_VERSION}")
-endif()
-
-# ============================================================================
 # Unity Build Support
 # ============================================================================
 
