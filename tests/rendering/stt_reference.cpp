@@ -54,7 +54,7 @@ static void blit_glyph(unsigned char *canvas, int cw, int ch,
             dst[0] = (unsigned char)((srcval * (int)cr + (255 - srcval) * (int)dst[0]) / 255);
             dst[1] = (unsigned char)((srcval * (int)cg + (255 - srcval) * (int)dst[1]) / 255);
             dst[2] = (unsigned char)((srcval * (int)cb + (255 - srcval) * (int)dst[2]) / 255);
-            /* dst[3] stays 255 – the output is always fully opaque */
+            /* dst[3] stays 255 - the output is always fully opaque */
         }
     }
 }
