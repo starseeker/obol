@@ -552,17 +552,15 @@ SoText2::GLRender(SoGLRenderAction * action)
                   ((memy + iy - 1 - y) * bbsize[0] + memx) * 4;
                 for (int x = 0; x < ix; x++) {
                   *dst++ = red; *dst++ = green; *dst++ = blue;
-                  // Hard binary threshold: only pixels where stb_truetype coverage >= 50%
-                  // contribute.  This gives crisp, speckle-free text that looks identical
-                  // in all GL profiles (core and compat) because it avoids semi-transparent
-                  // anti-aliasing halos that appear as green specks on dark backgrounds.
-                  // It also eliminates any need for the deprecated GL_ALPHA_TEST extension.
-                  // The max() guards the rare case of overlapping glyph bitmaps.
+                  // Use the full stb_truetype grayscale coverage value as alpha.
+                  // This preserves anti-aliased edges for smooth, high-quality text.
+                  // GL_ALPHA_TEST (removed above) is NOT needed here: GL_BLEND alone
+                  // gives correct results and works in both compat and core profiles.
+                  // For overlapping glyphs, keep the highest alpha seen so far.
                   const int srcval = *src;
-                  if (srcval >= 128) {
-                    const unsigned char pa = (unsigned char)(alpha < 256u ? alpha : 255u);
-                    if (pa > *dst) *dst = pa; // keep brightest alpha if glyphs overlap
-                  }
+                  const int blended = ((256 - srcval) * (int)(*dst) + srcval * (int)(alpha < 256u ? alpha : 255u)) >> 8;
+                  const unsigned char newval = (unsigned char)(blended < 255 ? blended : 255);
+                  if (newval > *dst) *dst = newval;
                   src++; dst++;
                 }
               }
@@ -961,11 +959,11 @@ SoText2::buildPixelBuffer(SoState * state,
             ((memy + iy - 1 - gy) * bbsize[0] + memx) * 4;
           for (int gx = 0; gx < ix; gx++) {
             *dst++ = red; *dst++ = green; *dst++ = blue;
+            // Full stb_truetype grayscale alpha (same as GLRender path).
             const int srcval = *src++;
-            if (srcval >= 128) {
-              const unsigned char pa = (unsigned char)(alpha < 256u ? alpha : 255u);
-              if (pa > *dst) *dst = pa;
-            }
+            const int blended = ((256 - srcval) * (int)(*dst) + srcval * (int)(alpha < 256u ? alpha : 255u)) >> 8;
+            const unsigned char newval = (unsigned char)(blended < 255 ? blended : 255);
+            if (newval > *dst) *dst = newval;
             dst++;
           }
         }

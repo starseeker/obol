@@ -337,6 +337,37 @@ set_tests_properties(render_nanort PROPERTIES
     TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
 )
 
+# ---- stb_truetype direct-render reference tool -------------------------------
+# stt_reference renders the same text strings as render_text2 and
+# render_text_demo directly via SbFont/stb_truetype without OpenGL.
+# The output PNG serves as a ground-truth reference for evaluating the
+# fidelity of the GL and NanoRT text rendering paths.
+# It does not require a display server.
+add_executable(stt_reference stt_reference.cpp)
+target_include_directories(stt_reference PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/tests/utils
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+    ${PROJECT_BINARY_DIR}/include
+    ${OBOL_TARGET_INCLUDE_DIRECTORIES}
+    ${PROJECT_SOURCE_DIR}/external/nanort
+)
+target_link_libraries(stt_reference ${PROJECT_NAME} ${OBOL_TARGET_LINK_LIBRARIES})
+set_target_properties(stt_reference PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
+)
+add_test(
+    NAME stt_reference
+    COMMAND "${CMAKE_COMMAND}"
+        -DEXECUTABLE=$<TARGET_FILE:stt_reference>
+        -DTEST_TIMEOUT=${IMAGE_COMPARISON_TEST_TIMEOUT}
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/run_rendering_test.cmake"
+)
+set_tests_properties(stt_reference PROPERTIES
+    TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
+)
+
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
 # The run_image_test.cmake driver handles Xvfb wrapping for GLX builds.

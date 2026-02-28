@@ -1083,13 +1083,14 @@ public:
 
                     if (a_src == 0) continue; // fully transparent – skip
 
-                    // With binary-threshold alpha, a_src is always 255 here
-                    // (any zero was filtered above), so this is a direct
-                    // overwrite — no floating-point blend needed.
+                    // Alpha-composite (src over dst) using the full stb_truetype
+                    // grayscale alpha value for smooth anti-aliased text edges.
+                    const float fa = a_src * (1.0f / 255.0f);
+                    const float fb = 1.0f - fa;
                     const size_t idx = (dst_base + col) * nrcomponents;
-                    pixels[idx + 0] = r_src;
-                    pixels[idx + 1] = g_src;
-                    pixels[idx + 2] = b_src;
+                    pixels[idx + 0] = static_cast<unsigned char>(r_src * fa + pixels[idx + 0] * fb);
+                    pixels[idx + 1] = static_cast<unsigned char>(g_src * fa + pixels[idx + 1] * fb);
+                    pixels[idx + 2] = static_cast<unsigned char>(b_src * fa + pixels[idx + 2] * fb);
                     if (nrcomponents == 4) pixels[idx + 3] = 255;
                 }
             }
