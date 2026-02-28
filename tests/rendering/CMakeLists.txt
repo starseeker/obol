@@ -42,39 +42,7 @@ endif()
 # Compile one rendering-test executable; links against Obol and the chosen
 # OpenGL backend.  The headless_utils.h lives in tests/utils/.
 macro(add_rendering_test name)
-    add_executable(${name} ${name}.cpp)
-    target_include_directories(${name} PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/tests/utils
-        ${PROJECT_SOURCE_DIR}/include
-        ${PROJECT_SOURCE_DIR}/include/Inventor/annex
-        ${PROJECT_BINARY_DIR}/include
-        ${OBOL_TARGET_INCLUDE_DIRECTORIES}
-    )
-    target_link_libraries(${name} ${PROJECT_NAME} ${OBOL_TARGET_LINK_LIBRARIES})
-    if(RENDERING_USE_OSMESA)
-        target_compile_definitions(${name} PRIVATE OBOL_OSMESA_BUILD)
-        if(OSMESA_INCLUDE_DIR)
-            target_include_directories(${name} PRIVATE ${OSMESA_INCLUDE_DIR})
-        endif()
-        if(OSMESA_LINK_TARGET)
-            target_link_libraries(${name} ${OSMESA_LINK_TARGET})
-        endif()
-    elseif(X11_FOUND)
-        # When building as a subdirectory of the main Obol project, Obol already
-        # brings in OpenGL transitively via OBOL_TARGET_LINK_LIBRARIES.
-        # We only need X11 explicitly for the GLX headless_utils.h context manager.
-        target_link_libraries(${name} ${X11_X11_LIB})
-        if(OpenGL_FOUND AND TARGET OpenGL::GL)
-            target_link_libraries(${name} OpenGL::GL)
-        elseif(OPENGL_gl_LIBRARY)
-            target_link_libraries(${name} ${OPENGL_gl_LIBRARY})
-        endif()
-        target_include_directories(${name} PRIVATE ${X11_INCLUDE_DIR})
-    endif()
-    set_target_properties(${name} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
-    )
+    list(APPEND OBOL_GL_RENDER_TESTS ${name})
 endmacro()
 
 # Variant of add_rendering_test for tests that use the shared testlib scene
@@ -82,12 +50,7 @@ endmacro()
 # interactive obol_viewer render identical scenes from the same source.
 macro(add_testlib_rendering_test name)
     add_rendering_test(${name})
-    if(TARGET obol_testlib)
-        target_link_libraries(${name} obol_testlib)
-        target_include_directories(${name} PRIVATE
-            ${CMAKE_SOURCE_DIR}/tests
-        )
-    endif()
+    list(APPEND OBOL_GL_TESTLIB_RENDER_TESTS ${name})
 endmacro()
 
 # ---- Test executables --------------------------------------------------------
@@ -404,7 +367,8 @@ macro(add_rendering_image_test test_name)
         add_test(
             NAME ${test_name}_image_test
             COMMAND ${CMAKE_COMMAND}
-                -DEXECUTABLE=$<TARGET_FILE:${test_name}>
+                -DEXECUTABLE=$<TARGET_FILE:obol_test>
+                -DTEST_NAME=${test_name}
                 -DTEST_BASE=${TEST_BASE}
                 -DCONTROL_IMAGE=${CONTROL_IMAGE}
                 -DCOMPARATOR=$<TARGET_FILE:image_comparator>
@@ -498,6 +462,59 @@ add_rendering_image_test(render_cameras    RMSE_THRESHOLD 10.0)
 add_rendering_image_test(render_drawstyle  RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_texture    RMSE_THRESHOLD 15.0)
 add_rendering_test(render_stt_gl)
+
+# ---- Build GL render test objects into one library ---------------------------
+# Each source's main() is renamed via a per-file compile definition so they
+# can coexist in the same library without linker conflicts.
+foreach(_t ${OBOL_GL_RENDER_TESTS})
+    list(APPEND _gl_sources "${CMAKE_CURRENT_SOURCE_DIR}/${_t}.cpp")
+endforeach()
+
+add_library(obol_render_tests_gl STATIC ${_gl_sources})
+
+# Rename main() -> run_render_test_<name> in each source
+foreach(_t ${OBOL_GL_RENDER_TESTS})
+    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/${_t}.cpp" PROPERTIES
+        COMPILE_DEFINITIONS "main=run_render_test_${_t}")
+endforeach()
+
+target_include_directories(obol_render_tests_gl PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/tests
+    ${CMAKE_SOURCE_DIR}/tests/utils
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+    ${PROJECT_BINARY_DIR}/include
+    ${OBOL_TARGET_INCLUDE_DIRECTORIES}
+)
+target_link_libraries(obol_render_tests_gl
+    PUBLIC ${PROJECT_NAME} ${OBOL_TARGET_LINK_LIBRARIES}
+)
+if(RENDERING_USE_OSMESA)
+    target_compile_definitions(obol_render_tests_gl PRIVATE OBOL_OSMESA_BUILD)
+    if(OSMESA_INCLUDE_DIR)
+        target_include_directories(obol_render_tests_gl PRIVATE ${OSMESA_INCLUDE_DIR})
+    endif()
+    if(OSMESA_LINK_TARGET)
+        target_link_libraries(obol_render_tests_gl PUBLIC ${OSMESA_LINK_TARGET})
+    endif()
+elseif(X11_FOUND)
+    target_link_libraries(obol_render_tests_gl PUBLIC ${X11_X11_LIB})
+    if(OpenGL_FOUND AND TARGET OpenGL::GL)
+        target_link_libraries(obol_render_tests_gl PUBLIC OpenGL::GL)
+    elseif(OPENGL_gl_LIBRARY)
+        target_link_libraries(obol_render_tests_gl PUBLIC ${OPENGL_gl_LIBRARY})
+    endif()
+    target_include_directories(obol_render_tests_gl PRIVATE ${X11_INCLUDE_DIR})
+endif()
+if(TARGET obol_testlib)
+    target_link_libraries(obol_render_tests_gl PUBLIC obol_testlib)
+    target_include_directories(obol_render_tests_gl PRIVATE ${CMAKE_SOURCE_DIR}/tests)
+endif()
+
+# Export the list to parent scope so tests/CMakeLists.txt can link obol_test
+set(OBOL_GL_RENDER_TESTS "${OBOL_GL_RENDER_TESTS}" PARENT_SCOPE)
+
 add_rendering_image_test(render_stt_gl     RMSE_THRESHOLD 15.0)
 # Text rendering: control images generated with Obol's ProFont baseline.
 # Higher RMSE threshold to accommodate subpixel differences between platforms.
@@ -610,12 +627,12 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_quad_mesh_deep
                render_field_connections
                render_sogl_bindings
-               render_nanort
                render_rt_proxy_shapes)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"
-            -DEXECUTABLE=$<TARGET_FILE:${_vtest}>
+            -DEXECUTABLE=$<TARGET_FILE:obol_test>
+            -DTEST_NAME=${_vtest}
             -DTEST_TIMEOUT=${IMAGE_COMPARISON_TEST_TIMEOUT}
             -P "${CMAKE_CURRENT_SOURCE_DIR}/run_rendering_test.cmake"
     )
@@ -624,13 +641,26 @@ foreach(_vtest render_sphere_position render_checker_texture
     )
 endforeach()
 
+# render_nanort is still a standalone executable
+add_test(
+    NAME render_nanort
+    COMMAND "${CMAKE_COMMAND}"
+        -DEXECUTABLE=$<TARGET_FILE:render_nanort>
+        -DTEST_TIMEOUT=${IMAGE_COMPARISON_TEST_TIMEOUT}
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/run_rendering_test.cmake"
+)
+set_tests_properties(render_nanort PROPERTIES
+    TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
+)
+
 # Shadow rendering validation test: only safe to run with OSMesa (SoShadowGroup
 # GLSL shader compilation crashes on headless GLX pixmap contexts).
 if(RENDERING_USE_OSMESA)
     add_test(
         NAME render_shadow
         COMMAND "${CMAKE_COMMAND}"
-            -DEXECUTABLE=$<TARGET_FILE:render_shadow>
+            -DEXECUTABLE=$<TARGET_FILE:obol_test>
+            -DTEST_NAME=render_shadow
             -DTEST_TIMEOUT=${IMAGE_COMPARISON_TEST_TIMEOUT}
             -P "${CMAKE_CURRENT_SOURCE_DIR}/run_rendering_test.cmake"
     )
@@ -651,20 +681,7 @@ if(PNG_FOUND)
             ${CMAKE_CURRENT_SOURCE_DIR}/generate_controls.sh
         DEPENDS
             image_comparator rgb_to_png
-            render_primitives render_materials render_lighting
-            render_transforms render_cameras render_drawstyle
-            render_texture render_text2 render_text3
-            render_gradient render_colored_cube render_coordinates render_scene
-            render_shape_hints render_environment render_texture3
-            render_bump_map render_texture_transform
-            render_depth_buffer render_alpha_test
-            render_indexed_face_set render_quad_mesh render_indexed_line_set
-            render_point_set render_lod render_scene_texture
-            render_array_multiple_copy
-            render_shadow
-            render_hud_overlay render_hud_no3d
-            render_procedural_shape
-            render_arb8_edit_cycle
+            obol_test
         COMMENT "Generating PNG control images for rendering regression tests"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
