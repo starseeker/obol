@@ -1818,6 +1818,13 @@ SoSeparator* createAsciiText(int width, int height)
 
     SbViewportRegion vp(width, height);
     cam->viewAll(root, vp);
+    // Pull back to leave comfortable margins around the text; adjust near/far
+    // proportionally so the text stays within the view frustum.
+    SbVec3f pos = cam->position.getValue();
+    const float scale = 1.5f;
+    cam->position.setValue(pos[0], pos[1], pos[2] * scale);
+    cam->nearDistance.setValue(cam->nearDistance.getValue() * scale);
+    cam->farDistance.setValue(cam->farDistance.getValue() * scale);
     return root;
 }
 
