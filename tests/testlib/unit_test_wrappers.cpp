@@ -1229,7 +1229,7 @@ REGISTER_TEST(materials, ObolTest::TestCategory::Rendering,
 );
 
 REGISTER_TEST(lighting, ObolTest::TestCategory::Rendering,
-    "Scene lit by directional and point lights",
+    "Scene lit by directional, point and spot lights (NanoRT: shadows via SoRaytracingParams)",
     e.has_visual = true;
     e.has_interactive = true;
     e.nanort_ok = true;
@@ -1293,7 +1293,7 @@ REGISTER_TEST(coordinates, ObolTest::TestCategory::Rendering,
 );
 
 REGISTER_TEST(shadow, ObolTest::TestCategory::Rendering,
-    "Shadow-casting scene (SoShadowGroup proxy)",
+    "Shadow-casting scene: SoShadowGroup (GL) + SoRaytracingParams (NanoRT)",
     e.has_visual = true;
     e.has_interactive = true;
     e.nanort_ok = true;

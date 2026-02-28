@@ -241,7 +241,8 @@ endmacro()
 # createSphereProxy), so dragger/manipulator tests whose parts include
 # SoIndexedLineSet feedback geometry are fully supported.
 # Tests that rely on text or OpenGL-specific effects (GLSL shaders, FBOs,
-# shadow maps) are omitted.
+# OpenGL shadow maps via SoShadowGroup) are omitted; nanort shadow support
+# uses SoRaytracingParams + shadow rays (see render_nanort_shadow below).
 add_nanort_rendering_test(render_primitives)
 add_nanort_rendering_test(render_materials)
 add_nanort_rendering_test(render_transforms)
@@ -249,6 +250,12 @@ add_nanort_rendering_test(render_colored_cube)
 add_nanort_rendering_test(render_scene)
 add_nanort_rendering_test(render_rt_proxy_shapes)
 add_nanort_rendering_test(render_background_gradient)
+# NanoRT shadow test: validates shadow-ray casting via SoRaytracingParams.
+# Uses SoDirectionalLight + SoRaytracingParams(shadowsEnabled=TRUE); does NOT
+# use SoShadowGroup (which requires OpenGL GLSL shaders).  The pixel-level
+# shadow validation (lit vs shadow regions on the ground plane) is only run
+# under the NanoRT build; the GL backend does a basic non-blank geometry check.
+add_nanort_rendering_test(render_nanort_shadow)
 
 # ---- NanoRT dragger and manipulator tests ------------------------------------
 # Dragger/manipulator parts use SoCube, SoCone, SoCylinder, SoSphere,
