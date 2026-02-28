@@ -523,6 +523,7 @@ add_rendering_image_test(render_stt_gl     RMSE_THRESHOLD 15.0)
 # Higher RMSE threshold to accommodate subpixel differences between platforms.
 add_rendering_image_test(render_text2      RMSE_THRESHOLD 20.0)
 add_rendering_image_test(render_text3      RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_ascii_text RMSE_THRESHOLD 20.0)
 add_rendering_image_test(render_gradient    RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_colored_cube RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_coordinates RMSE_THRESHOLD 10.0)
