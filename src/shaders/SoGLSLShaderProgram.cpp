@@ -105,7 +105,16 @@ void
 SoGLSLShaderProgram::removeShaderObjects(void)
 {
   this->shaderObjects.truncate(0);
-  this->executableHandles.clear();
+  // Do NOT clear executableHandles here.  It tracks whether the GL program
+  // was successfully linked and does not become stale simply because the
+  // CPU-side shader-object list is cleared each frame.  Clearing it here
+  // causes isContextExecutable() to return FALSE on the very next call to
+  // enable() when ensureLinking() finds all shaders already attached (second
+  // and subsequent renders of an unchanged scene) and returns early without
+  // restoring the flag, resulting in glUseProgramObjectARB never being called
+  // and the scene rendering blank.  executableHandles is properly invalidated
+  // by deleteProgram() when the GL program object is actually destroyed, and
+  // by deletePrograms() when all programs are destroyed.
   this->neededlinkingHandles.clear();
 }
 
