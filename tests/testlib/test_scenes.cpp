@@ -3088,7 +3088,7 @@ static void ts_coneGeom(const float *p, int n,
     }
 }
 
-static const char *kTSConeSchema = R"({
+static const char *kTSConeSchema = R"JSON({
   "type"  : "TruncatedCone_ts",
   "label" : "Truncated Cone (testlib)",
   "params": [
@@ -3097,7 +3097,7 @@ static const char *kTSConeSchema = R"({
     { "name": "height",       "type": "float", "default": 2.0, "min": 0.001, "max": 100.0, "label": "Height" },
     { "name": "sides",        "type": "int",   "default": 16,  "min": 3,     "max": 128,   "label": "Sides" }
   ]
-})";
+})JSON";
 
 SoSeparator* createProceduralShape(int width, int height)
 {

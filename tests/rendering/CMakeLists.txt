@@ -85,7 +85,7 @@ macro(add_testlib_rendering_test name)
     if(TARGET obol_testlib)
         target_link_libraries(${name} obol_testlib)
         target_include_directories(${name} PRIVATE
-            ${CMAKE_SOURCE_DIR}/tests/testlib
+            ${CMAKE_SOURCE_DIR}/tests
         )
     endif()
 endmacro()
@@ -234,6 +234,17 @@ macro(add_nanort_rendering_test name)
     )
 endmacro()
 
+# Variant for NanoRT tests whose source includes testlib/test_scenes.h
+macro(add_nanort_testlib_rendering_test name)
+    add_nanort_rendering_test(${name})
+    if(TARGET obol_testlib)
+        target_link_libraries(nrt_${name} obol_testlib)
+        target_include_directories(nrt_${name} PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+        )
+    endif()
+endmacro()
+
 # ---- NanoRT versions of standard rendering tests ----------------------------
 # These tests use SoOffscreenRenderer + the generalized ContextManager hook to
 # produce pixel output via nanort.  They operate on triangle-based geometry;
@@ -242,11 +253,11 @@ endmacro()
 # SoIndexedLineSet feedback geometry are fully supported.
 # SoText2 screen-space text is rendered via buildPixelBuffer() + framebuffer
 # compositing so letter shapes appear correctly (not bounding-box blocks).
-add_nanort_rendering_test(render_primitives)
-add_nanort_rendering_test(render_materials)
-add_nanort_rendering_test(render_transforms)
-add_nanort_rendering_test(render_colored_cube)
-add_nanort_rendering_test(render_scene)
+add_nanort_testlib_rendering_test(render_primitives)
+add_nanort_testlib_rendering_test(render_materials)
+add_nanort_testlib_rendering_test(render_transforms)
+add_nanort_testlib_rendering_test(render_colored_cube)
+add_nanort_testlib_rendering_test(render_scene)
 add_nanort_rendering_test(render_rt_proxy_shapes)
 add_nanort_rendering_test(render_background_gradient)
 # NanoRT shadow test: validates shadow-ray casting via SoRaytracingParams.
@@ -263,7 +274,7 @@ if(TARGET obol_testlib)
     target_include_directories(nrt_render_text_demo PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/tests/utils
-        ${CMAKE_SOURCE_DIR}/tests/testlib
+        ${CMAKE_SOURCE_DIR}/tests
         ${PROJECT_SOURCE_DIR}/include
         ${PROJECT_SOURCE_DIR}/include/Inventor/annex
         ${PROJECT_BINARY_DIR}/include
@@ -300,7 +311,7 @@ endif()
 # Note: SoClipPlane (used by SoClipPlaneManip) has no nanort equivalent;
 # geometry renders without clipping, which is a cosmetic difference only.
 add_nanort_rendering_test(render_simple_draggers)
-add_nanort_rendering_test(render_draggers)
+add_nanort_testlib_rendering_test(render_draggers)
 add_nanort_rendering_test(render_light_manips)
 add_nanort_rendering_test(render_manip_sequences)
 
