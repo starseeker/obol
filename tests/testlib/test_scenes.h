@@ -102,6 +102,134 @@ SoSeparator* createIndexedFaceSet(int width = 800, int height = 600);
 /** Manipulators demo: SoTrackballManip and SoTabBoxManip on geometry. */
 SoSeparator* createManips(int width = 800, int height = 600);
 
+/** 2×2 grid of primitives with a perspective camera (render_scene). */
+SoSeparator* createScene(int width = 800, int height = 600);
+
+/** SoFaceSet green quad in the lower-left quadrant. */
+SoSeparator* createFaceSet(int width = 800, int height = 600);
+
+/** SoLineSet red horizontal line across the viewport. */
+SoSeparator* createLineSet(int width = 800, int height = 600);
+
+/** SoIndexedLineSet: green horizontal, red diagonal, blue V-shape. */
+SoSeparator* createIndexedLineSet(int width = 800, int height = 600);
+
+/** SoPointSet: four distinctly coloured points in the four quadrants. */
+SoSeparator* createPointSet(int width = 800, int height = 600);
+
+/** SoTriangleStripSet: emissive blue strip quad in lower half. */
+SoSeparator* createTriangleStripSet(int width = 800, int height = 600);
+
+/** SoQuadMesh: 5×5 colour-gradient grid (red → blue across columns). */
+SoSeparator* createQuadMesh(int width = 800, int height = 600);
+
+/** Vertex-coloured quad using SoPackedColor + SoIndexedFaceSet. */
+SoSeparator* createVertexColors(int width = 800, int height = 600);
+
+/** Two coloured spheres each wrapped in a SoSwitch (both switches on). */
+SoSeparator* createSwitchVisibility(int width = 800, int height = 600);
+
+/** Emissive sphere positioned off-centre (SoOrthographicCamera). */
+SoSeparator* createSpherePosition(int width = 800, int height = 600);
+
+/** Checkerboard-textured cube (SoTexture2 with procedural data). */
+SoSeparator* createCheckerTexture(int width = 800, int height = 600);
+
+/** Large sphere clipped in half by SoClipPlane at Y=0. */
+SoSeparator* createClipPlane(int width = 800, int height = 600);
+
+/** 3×3 SoArray grid of spheres + three SoMultipleCopy cubes. */
+SoSeparator* createArrayMultipleCopy(int width = 800, int height = 600);
+
+/** SoAnnotation sphere composited on top of a background sphere. */
+SoSeparator* createAnnotation(int width = 800, int height = 600);
+
+/** SoAsciiText "HELLO" centred with perspective camera. */
+SoSeparator* createAsciiText(int width = 800, int height = 600);
+
+/** SoResetTransform: blue sphere at offset + red sphere reset to origin. */
+SoSeparator* createResetTransform(int width = 800, int height = 600);
+
+/** SoShapeHints SOLID+CCW sphere (backface culling enabled). */
+SoSeparator* createShapeHints(int width = 800, int height = 600);
+
+/** SoImage: red/green checkerboard image node centred in viewport. */
+SoSeparator* createImageNode(int width = 800, int height = 600);
+
+/** SoMarkerSet: five markers arranged in a cross pattern. */
+SoSeparator* createMarkerSet(int width = 800, int height = 600);
+
+/** SoMaterialBinding PER_FACE: red left quad, blue right quad. */
+SoSeparator* createMaterialBinding(int width = 800, int height = 600);
+
+// ---- Texture / Visual / HUD factories ----
+
+/** Textured quad with SoAlphaTest in GREATER mode (checkerboard RGBA). */
+SoSeparator* createAlphaTest(int width = 800, int height = 600);
+
+/** 2×2 primitive grid (background gradient applied by renderer, not scene). */
+SoSeparator* createBackgroundGradient(int width = 800, int height = 600);
+
+/** Sphere with SoBumpMap normal-map texture applied. */
+SoSeparator* createBumpMap(int width = 800, int height = 600);
+
+/** Sphere with two SoTextureUnit texture units (multi-texture). */
+SoSeparator* createMultiTexture(int width = 800, int height = 600);
+
+/** Cube with a procedural 3-D SoTexture3 applied. */
+SoSeparator* createTexture3(int width = 800, int height = 600);
+
+/** Two textured quads: one plain, one with SoTexture2Transform applied. */
+SoSeparator* createTextureTransform(int width = 800, int height = 600);
+
+/** Sphere with SoEnvironment (no fog, high ambient intensity). */
+SoSeparator* createEnvironment(int width = 800, int height = 600);
+
+/** Sphere with SoTextureCubeMap cube-map texture. */
+SoSeparator* createCubemap(int width = 800, int height = 600);
+
+/** Flat quad with SoSceneTexture2 render-to-texture (orange cone sub-scene). */
+SoSeparator* createSceneTexture(int width = 800, int height = 600);
+
+/** Blue sphere scene with HUD overlay (status bar + side-menu buttons). */
+SoSeparator* createHUDOverlay(int width = 800, int height = 600);
+
+/** Pure 2-D HUD scene without 3-D geometry. */
+SoSeparator* createHUDNo3D(int width = 800, int height = 600);
+
+/** Blue sphere with interactive HUD buttons (static layout, no callbacks). */
+SoSeparator* createHUDInteraction(int width = 800, int height = 600);
+
+/** SoText3 with FRONT, ALL, and BACK parts visible in one scene. */
+SoSeparator* createText3Parts(int width = 800, int height = 600);
+
+/** Near red cube + far blue sphere with SoDepthBuffer (LEQUAL depth test). */
+SoSeparator* createDepthBuffer(int width = 800, int height = 600);
+
+/** Solid and wireframe truncated-cone SoProceduralShape side by side. */
+SoSeparator* createProceduralShape(int width = 800, int height = 600);
+
+/** Textured quad with SoTextureScalePolicy::FRACTURE (SoGLBigImage path). */
+SoSeparator* createGLBigImage(int width = 800, int height = 600);
+
+/** SoImage node with an RGBA checkerboard image centred in the viewport. */
+SoSeparator* createImageDeep(int width = 800, int height = 600);
+
+/** Sphere with a basic GLSL vertex + fragment SoShaderProgram. */
+SoSeparator* createShaderProgram(int width = 800, int height = 600);
+
+/** Camera + light + SoCube — the scene rendered via SoRenderManager. */
+SoSeparator* createSoRenderManager(int width = 800, int height = 600);
+
+/** Textured sphere exercising SoGLImage / SoGLDriverDatabase code paths. */
+SoSeparator* createGLFeatures(int width = 800, int height = 600);
+
+/** 4×4 SoQuadMesh with PER_FACE material binding (nine coloured quad faces). */
+SoSeparator* createQuadMeshDeep(int width = 800, int height = 600);
+
+/** Red sphere scene for SoOffscreenRenderer API coverage. */
+SoSeparator* createOffscreen(int width = 800, int height = 600);
+
 } // namespace Scenes
 } // namespace ObolTest
 
