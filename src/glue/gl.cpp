@@ -245,21 +245,7 @@
 #include "glue/dlp.h"
 /* Platform-specific glue headers are no longer needed with callback-based contexts */
 #include "misc/SoEnvironment.h"
-
-// Include for SoDB context manager - minimal include to avoid circular dependencies
-class SoDB { 
-public: 
-  class ContextManager {
-  public:
-    virtual ~ContextManager() {}
-    virtual void * createOffscreenContext(unsigned int width, unsigned int height) = 0;
-    virtual SbBool makeContextCurrent(void * context) = 0;
-    virtual void restorePreviousContext(void * context) = 0;
-    virtual void destroyContext(void * context) = 0;
-    virtual SbBool isOSMesaContext(void * /*context*/) { return FALSE; }
-  }; 
-  static ContextManager* getContextManager(); 
-};
+#include <Inventor/SoDB.h>
 
 namespace { 
   SoDB::ContextManager * getSoDBContextManager() {
@@ -666,16 +652,22 @@ SoGLContext_getprocaddress(const SoGLContext * glue, const char * symname)
 {
   void * ptr = NULL;
 
-  /* With callback-based contexts, the application is responsible for
-     providing complete OpenGL function loading. We only attempt to
-     find the function through the shared library. */
-  ptr = cc_dl_sym(SoGLContext_dl_handle(glue), symname);
-
 #if defined(OBOL_OSMESA_BUILD) || defined(SOGL_PREFIX_SET)
-  /* OSMesa uses MGL name mangling, so if the standard name lookup fails,
-     try the MGL-mangled version by prefixing with "mgl" instead of "gl" */
+  /* OSMesa path: resolve via OSMesaGetProcAddress first to guarantee we
+     get an OSMesa function pointer and never accidentally pick up a system
+     GL symbol from the process handle (the two implementations have
+     different dispatch tables and mixing them causes subtle corruption). */
+  ptr = (void*)OSMesaGetProcAddress(symname);
+  if (SoGLContext_debug()) {
+    cc_debugerror_postinfo("SoGLContext_getprocaddress",
+                           "OSMesaGetProcAddress('%s') == %p", symname, ptr);
+  }
+
+  /* OSMesa uses MGL name mangling; if the standard name lookup failed,
+     try the MGL-mangled version ("gl" -> "mgl") via dlsym as a secondary
+     fallback (covers static builds where the mgl* symbol is directly in
+     the binary). */
   if (ptr == NULL && strncmp(symname, "gl", 2) == 0) {
-    /* Create MGL-mangled name: "gl" -> "mgl" */
     size_t namelen = strlen(symname);
     char * mgl_name = (char*)malloc(namelen + 2); /* +1 for 'm', +1 for '\0' */
     if (mgl_name) {
@@ -683,22 +675,36 @@ SoGLContext_getprocaddress(const SoGLContext * glue, const char * symname)
       strcat(mgl_name, symname + 2); /* Skip "gl" prefix */
       ptr = cc_dl_sym(SoGLContext_dl_handle(glue), mgl_name);
       if (SoGLContext_debug()) {
-        cc_debugerror_postinfo("SoGLContext_getprocaddress", "MGL fallback: %s -> %s == %p", symname, mgl_name, ptr);
+        cc_debugerror_postinfo("SoGLContext_getprocaddress",
+                               "MGL fallback: %s -> %s == %p",
+                               symname, mgl_name, ptr);
       }
       free(mgl_name);
     }
   }
-  
-  /* If shared library lookup failed, try OSMesaGetProcAddress for extensions.
-     This is the proper way to load OpenGL extensions in OSMesa according to
-     the OSMesa glew examples. */
+#else
+  /* System GL path: try dlsym first (works for core functions that are
+     directly exported by the GL library). */
+  ptr = cc_dl_sym(SoGLContext_dl_handle(glue), symname);
+#endif
+
+  /* Final fallback: ask the context manager.  For OSMesa contexts the
+     manager overrides getProcAddress() to call OSMesaGetProcAddress().
+     For system GL contexts (GLX, WGL, EGL) the application provides a
+     context manager that calls the platform's proc-address resolver
+     (e.g. glXGetProcAddress).  This keeps all platform-specific code
+     outside of Obol proper. */
   if (ptr == NULL) {
-    ptr = (void*)OSMesaGetProcAddress(symname);
-    if (SoGLContext_debug()) {
-      cc_debugerror_postinfo("SoGLContext_getprocaddress", "OSMesaGetProcAddress('%s') == %p", symname, ptr);
+    SoDB::ContextManager * mgr = getSoDBContextManager();
+    if (mgr) {
+      ptr = mgr->getProcAddress(symname);
+      if (SoGLContext_debug()) {
+        cc_debugerror_postinfo("SoGLContext_getprocaddress",
+                               "context manager getProcAddress('%s') == %p",
+                               symname, ptr);
+      }
     }
   }
-#endif
 
   if (SoGLContext_debug()) {
     cc_debugerror_postinfo("SoGLContext_getprocaddress", "%s==%p", symname, ptr);
