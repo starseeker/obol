@@ -552,10 +552,17 @@ SoText2::GLRender(SoGLRenderAction * action)
                   ((memy + iy - 1 - y) * bbsize[0] + memx) * 4;
                 for (int x = 0; x < ix; x++) {
                   *dst++ = red; *dst++ = green; *dst++ = blue;
-                  // alpha from the gray level pixel value, blended with current value (because glyph bitmaps can overlap)
-                  int srcval = *src;
-                  int oldval = *dst;
-                  *dst = ((oldval * (256 - srcval) + alpha * srcval) >> 8);
+                  // Hard binary threshold: only pixels where stb_truetype coverage >= 50%
+                  // contribute.  This gives crisp, speckle-free text that looks identical
+                  // in all GL profiles (core and compat) because it avoids semi-transparent
+                  // anti-aliasing halos that appear as green specks on dark backgrounds.
+                  // It also eliminates any need for the deprecated GL_ALPHA_TEST extension.
+                  // The max() guards the rare case of overlapping glyph bitmaps.
+                  const int srcval = *src;
+                  if (srcval >= 128) {
+                    const unsigned char pa = (unsigned char)(alpha < 256u ? alpha : 255u);
+                    if (pa > *dst) *dst = pa; // keep brightest alpha if glyphs overlap
+                  }
                   src++; dst++;
                 }
               }
@@ -581,8 +588,9 @@ SoText2::GLRender(SoGLRenderAction * action)
     }
 
     if (drawPixelBuffer) {
-      glEnable(GL_ALPHA_TEST);
-      glAlphaFunc(GL_GREATER, 0.3f);
+      // GL_ALPHA_TEST is deprecated (removed in GL 3.1 core profile) and is not
+      // needed here: with the binary-threshold pixel buffer above, every non-zero
+      // alpha pixel is already fully opaque, so blending alone is sufficient.
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
       glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
@@ -838,6 +846,153 @@ SoText2::buildGlyphQuads(SoState * state,
   int n = PRIVATE(this)->buildGlyphQuads(state, quads);
   PRIVATE(this)->unlock();
   return n;
+}
+
+/*!
+  Build a ready-to-composite RGBA pixel buffer for non-GL rendering backends.
+
+  The pixel buffer uses the same binary-threshold alpha as GLRender: each
+  pixel is either fully opaque (stb_truetype coverage >= 50%) or transparent.
+  Rows are stored bottom-to-top (GL/OpenGL convention).
+
+  \param state   Current traversal state.
+  \param pixbuf  Resized and filled with out_w * out_h * 4 RGBA bytes.
+  \param out_x   Left edge in viewport pixel coordinates.
+  \param out_y   Bottom edge in viewport pixel coordinates.
+  \param out_w   Width of the pixel buffer in pixels.
+  \param out_h   Height of the pixel buffer in pixels.
+  \return        TRUE if any text pixels were written.
+*/
+SbBool
+SoText2::buildPixelBuffer(SoState * state,
+                          std::vector<unsigned char> & pixbuf,
+                          int & out_x, int & out_y,
+                          int & out_w, int & out_h) const
+{
+  PRIVATE(this)->lock();
+
+  PRIVATE(this)->buildGlyphCache(state);
+  PRIVATE(this)->updateFont(state);
+
+  SbVec3f nilpoint(0.0f, 0.0f, 0.0f);
+  const SbMatrix & mat = SoModelMatrixElement::get(state);
+  const SbMatrix & projmatrix = (mat * SoViewingMatrixElement::get(state) *
+                                 SoProjectionMatrixElement::get(state));
+  const SbViewportRegion & vp = SoViewportRegionElement::get(state);
+  const SbVec2s vpsize = vp.getViewportSizePixels();
+
+  projmatrix.multVecMatrix(nilpoint, nilpoint);
+  nilpoint[0] = (nilpoint[0] + 1.0f) * 0.5f * vpsize[0];
+  nilpoint[1] = (nilpoint[1] + 1.0f) * 0.5f * vpsize[1];
+
+  const SbVec2s bbsize = PRIVATE(this)->bbox.getSize();
+  const SbVec2s & bbmin = PRIVATE(this)->bbox.getMin();
+  const SbVec2s & bbmax = PRIVATE(this)->bbox.getMax();
+
+  if (bbsize[0] <= 0 || bbsize[1] <= 0) {
+    PRIVATE(this)->unlock();
+    return FALSE;
+  }
+
+  const int nrlines = this->string.getNum();
+  const float fontsize = SoFontSizeElement::get(state);
+
+  const SbColor & diffuse = SoLazyElement::getDiffuse(state, 0);
+  const unsigned char red   = (unsigned char)(diffuse[0] * 255.0f);
+  const unsigned char green = (unsigned char)(diffuse[1] * 255.0f);
+  const unsigned char blue  = (unsigned char)(diffuse[2] * 255.0f);
+  const unsigned int  alpha = (unsigned int)((1.0f - SoLazyElement::getTransparency(state, 0)) * 256);
+
+  // Allocate pixel buffer (RGBA, bottom-to-top row order).
+  const int numpixels = bbsize[0] * bbsize[1];
+  pixbuf.assign(numpixels * 4, 0);
+
+  int xpos = 0, ypos = 0;
+  uint32_t prevglyphchar = 0;
+
+  for (int i = 0; i < nrlines; i++) {
+    const SbString str = this->string[i];
+    switch (this->justification.getValue()) {
+    case SoText2::LEFT:   xpos = 0; break;
+    case SoText2::RIGHT:  xpos = PRIVATE(this)->maxwidth - PRIVATE(this)->stringwidth[i]; break;
+    case SoText2::CENTER: xpos = (PRIVATE(this)->maxwidth - PRIVATE(this)->stringwidth[i]) / 2; break;
+    }
+
+    int kerningx = 0, advancex = 0;
+    const char * p = str.getString();
+    const size_t length = coin_utf8_validate_length(p);
+
+    for (unsigned int ci = 0; ci < length; ci++) {
+      const uint32_t glyphidx = coin_utf8_get_char(p);
+      p = coin_utf8_next_char(p);
+
+      SbGlyph2D * glyph = PRIVATE(this)->cache->getGlyph2D(glyphidx, PRIVATE(this)->font);
+      if (!glyph) continue;
+
+      const unsigned char * buffer = glyph->bitmap;
+      const int ix = glyph->size[0];
+      const int iy = glyph->size[1];
+      if (!buffer || ix <= 0 || iy <= 0) {
+        // Whitespace: advance without drawing.
+        advancex = (int)glyph->advance[0];
+        if (ci > 0 && prevglyphchar != 0) {
+          kerningx = (int)PRIVATE(this)->font->getGlyphKerning(prevglyphchar, glyphidx)[0];
+        }
+        xpos += advancex + kerningx;
+        prevglyphchar = glyphidx;
+        continue;
+      }
+
+      advancex = (int)glyph->advance[0];
+      if (ci > 0 && prevglyphchar != 0) {
+        kerningx = (int)PRIVATE(this)->font->getGlyphKerning(prevglyphchar, glyphidx)[0];
+      }
+
+      const int rasterx = xpos + kerningx + glyph->bearing[0];
+      const int rastery  = ypos + (glyph->bearing[1] - iy);
+      const int memx = rasterx - bbmin[0];
+      const int memy = bbsize[1] - (bbmax[1] - rastery - 1) - 1;
+
+      if (memx >= 0 && memx + ix <= bbsize[0] &&
+          memy >= 0 && memy + iy <= bbsize[1]) {
+        const unsigned char * src = buffer;
+        for (int gy = 0; gy < iy; gy++) {
+          unsigned char * dst = pixbuf.data() +
+            ((memy + iy - 1 - gy) * bbsize[0] + memx) * 4;
+          for (int gx = 0; gx < ix; gx++) {
+            *dst++ = red; *dst++ = green; *dst++ = blue;
+            const int srcval = *src++;
+            if (srcval >= 128) {
+              const unsigned char pa = (unsigned char)(alpha < 256u ? alpha : 255u);
+              if (pa > *dst) *dst = pa;
+            }
+            dst++;
+          }
+        }
+      }
+
+      xpos += advancex + kerningx;
+      prevglyphchar = glyphidx;
+    }
+    ypos -= (int)((int)fontsize * this->spacing.getValue());
+  }
+
+  // Compute the viewport-space bottom-left position of the pixel buffer.
+  float textscreenoffsetx = nilpoint[0] + bbmin[0];
+  switch (this->justification.getValue()) {
+  case SoText2::RIGHT:  textscreenoffsetx = nilpoint[0] + bbmin[0] - PRIVATE(this)->maxwidth; break;
+  case SoText2::CENTER: textscreenoffsetx = nilpoint[0] + bbmin[0] - PRIVATE(this)->maxwidth * 0.5f; break;
+  default: break;
+  }
+  const int rastery_base = (int)floor(nilpoint[1] + 0.5f) - bbsize[1] + bbmax[1];
+
+  out_x = (int)floor(textscreenoffsetx + 0.5f);
+  out_y = rastery_base;
+  out_w = bbsize[0];
+  out_h = bbsize[1];
+
+  PRIVATE(this)->unlock();
+  return TRUE;
 }
 
 // SoText2P methods below
