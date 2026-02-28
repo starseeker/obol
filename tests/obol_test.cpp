@@ -73,7 +73,7 @@ static void printHelp(const char* argv0)
         "  %1$s list --categories           List tests grouped by category\n"
         "  %1$s run <name|category>         Run test(s) by name or category\n"
         "  %1$s render <name> <outpath>     Render visual test to file\n"
-        "  %1$s render_test <name> <base>   Run render test (writes <base>.rgb etc.)\n"
+        "  %1$s render_test <name> [base]    Run render test (writes <base>.rgb etc.)\n"
         "  %1$s help                        Show this help\n"
         "\n"
         "Exit codes: 0 = all passed, non-zero = failures or error.\n",
@@ -218,11 +218,12 @@ int main(int argc, char** argv)
 
     // ---- render_test -----------------------------------------------------------
     if (cmd == "render_test") {
-        if (argc < 4) {
-            fprintf(stderr, "Usage: %s render_test <name> <basepath>\n", argv[0]);
+        if (argc < 3) {
+            fprintf(stderr, "Usage: %s render_test <name> [basepath]\n", argv[0]);
             return 1;
         }
-        int rc = dispatchRenderTest(argv[2], argv[3]);
+        const std::string basepath = (argc >= 4) ? argv[3] : "";
+        int rc = dispatchRenderTest(argv[2], basepath);
         if (rc == -1) {
             fprintf(stderr, "Unknown render test: '%s'\n", argv[2]);
             return 1;
