@@ -585,12 +585,15 @@ public:
         int ph = std::max(h(), 1);
         if (!coarse_) {
             /* Full-resolution render; next coarse render must re-calibrate. */
-            coarseRW_ = 0; coarseRH_ = 0;
+            coarseRW_ = 0; coarseRH_ = 0; stepInComplete_ = true;
             if (!doRender_(pw, ph, pw, ph)) { redraw(); return; }
-        } else if (coarseRW_ == 0 || calPanelW_ != pw || calPanelH_ != ph) {
-            /* First coarse render at this panel size: find optimal resolution
-             * via timed step-in (starts at 4×4, doubles until near budget). */
-            timedStepIn_(pw, ph);
+        } else if (coarseRW_ == 0 || calPanelW_ != pw || calPanelH_ != ph ||
+                   !stepInComplete_) {
+            /* Step-in calibration needed or still in progress: run one round.
+             * timedStepIn_ returns true when the optimal level has been found,
+             * false when it ran out of per-call search budget and should be
+             * resumed next time. */
+            stepInComplete_ = timedStepIn_(pw, ph);
         } else {
             /* Subsequent coarse renders: reuse calibrated size. */
             if (!doRender_(pw, ph, coarseRW_, coarseRH_)) { redraw(); return; }
@@ -758,11 +761,14 @@ private:
     int  last_y_    = 0;
 
     /* Calibrated coarse render size (0 = uncalibrated / needs step-in). */
-    int coarseRW_  = 0;
-    int coarseRH_  = 0;
+    int  coarseRW_       = 0;
+    int  coarseRH_       = 0;
     /* Panel dimensions at which coarseRW_/RH_ were measured. */
-    int calPanelW_ = 0;
-    int calPanelH_ = 0;
+    int  calPanelW_      = 0;
+    int  calPanelH_      = 0;
+    /* True once timedStepIn_ has converged to the optimal coarse level.
+     * False while incremental refinement is still in progress. */
+    bool stepInComplete_ = true;
 
     /* Maximum render time (ms) per coarse frame; targets ~10 fps for
      * interactive feel.  Step-in stops when a level reaches 75% of this. */
@@ -821,20 +827,33 @@ private:
         return true;
     }
 
-    /* Timed step-in calibration: start at 2 pixels wide, then double the
-     * width each step while measuring render time, stopping once a level
-     * approaches kCoarseBudgetMs.  The height is always derived from the
-     * width using the panel aspect ratio so the raytracing view frustum
-     * matches the display and the coarse image is never distorted.  The
-     * final rendered level is left in fltk_img so the caller only needs
-     * to call redraw().  Sets coarseRW_, coarseRH_, calPanelW_, calPanelH_. */
-    void timedStepIn_(int pw, int ph) {
+    /* Timed step-in calibration: find the coarsest render resolution that
+     * approaches kCoarseBudgetMs.  On the first call (coarseRW_==0 or panel
+     * size changed) search starts at 2 px wide; on subsequent calls it
+     * resumes from the next level beyond the stored best answer so the
+     * initial coarse frame appears immediately and quality improves each
+     * time refreshRender is called.
+     *
+     * The per-call search budget mirrors kCoarseBudgetMs so that a single
+     * call never blocks for longer than one frame.  Returns true when the
+     * optimal level has been found, false if the per-call budget was
+     * exhausted before convergence (caller should invoke again next frame).
+     *
+     * Sets coarseRW_, coarseRH_, calPanelW_, calPanelH_ on every return. */
+    bool timedStepIn_(int pw, int ph) {
         using clock = std::chrono::steady_clock;
-        /* Initial fallback: narrowest render that preserves aspect ratio. */
-        int bestRW = 2, bestRH = std::max(1, (2 * ph + pw / 2) / pw);
-        int crw = 2;
-        bool done = false;
-        while (!done) {
+        auto tStart = clock::now();
+
+        /* Determine starting point:
+         *   fresh  – panel size changed or no prior calibration: begin at 2 px.
+         *   resume – continue from the level above the previous best answer. */
+        bool fresh = (coarseRW_ == 0 || calPanelW_ != pw || calPanelH_ != ph);
+        int crw    = fresh ? 2 : coarseRW_ * 2;
+        int bestRW = fresh ? 2 : coarseRW_;
+        int bestRH = fresh ? std::max(1, (2 * ph + pw / 2) / pw) : coarseRH_;
+
+        bool optimal = false;
+        while (true) {
             const int rw = crw < pw ? crw : pw;
             /* Derive rh from rw to preserve the panel aspect ratio, so the
              * raytracing view frustum matches the display dimensions and the
@@ -847,15 +866,26 @@ private:
             if (!ok) break;
             bestRW = rw;
             bestRH = rh;
-            /* Stop when approaching budget or reached full panel size. */
-            done = (ms >= kCoarseBudgetMs * kBudgetThreshold ||
-                    rw >= pw || rh >= ph);
+            /* Stop when this level is approaching the per-frame budget or the
+             * full panel size has been reached: optimal level found. */
+            if (ms >= kCoarseBudgetMs * kBudgetThreshold ||
+                    rw >= pw || rh >= ph) {
+                optimal = true;
+                break;
+            }
+            /* Stop if cumulative search time this call is approaching the
+             * budget: return false so caller retries next frame from bestRW. */
+            double searchMs = std::chrono::duration<double, std::milli>(
+                                  clock::now() - tStart).count();
+            if (searchMs >= kCoarseBudgetMs * kBudgetThreshold)
+                break;
             crw *= 2;
         }
         coarseRW_  = bestRW;
         coarseRH_  = bestRH;
         calPanelW_ = pw;
         calPanelH_ = ph;
+        return optimal;
     }
 
     void updateClipping_() {
