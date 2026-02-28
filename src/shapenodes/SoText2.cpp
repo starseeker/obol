@@ -439,7 +439,7 @@ SoText2::GLRender(SoGLRenderAction * action)
     // disable textures for all units
     SoGLMultiTextureEnabledElement::disableAll(state);
 
-    glPushAttrib(GL_ENABLE_BIT | GL_PIXEL_MODE_BIT | GL_COLOR_BUFFER_BIT);
+    glPushAttrib(GL_ENABLE_BIT | GL_PIXEL_MODE_BIT | GL_COLOR_BUFFER_BIT | GL_TEXTURE_BIT);
     glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT);
 
     // Optionally draw on top of all geometry, regardless of depth.
@@ -586,63 +586,64 @@ SoText2::GLRender(SoGLRenderAction * action)
     }
 
     if (drawPixelBuffer) {
-      // GL_ALPHA_TEST is deprecated (removed in GL 3.1 core profile) and is not
-      // needed here: with the binary-threshold pixel buffer above, every non-zero
-      // alpha pixel is already fully opaque, so blending alone is sufficient.
+      // Composite the RGBA glyph buffer onto the framebuffer using a
+      // texture-mapped quad.  This approach is modelled after the glfontstash
+      // rendering backend (reworked for Obol / struetype) and replaces the
+      // deprecated glDrawPixels path, which suffers from raster-position
+      // clipping artefacts on several GL implementations (including OSMesa).
+      //
+      // The pixel buffer is stored bottom-to-top (GL/OpenGL convention):
+      //   row 0   = bottom of text bbox  (texcoord t = 0)
+      //   row h-1 = top    of text bbox  (texcoord t = 1)
+      // The ortho projection set above is Y-up (bottom=0, top=vpsize[1]), so
+      // the quad vertex coordinates map directly to screen pixels without any
+      // additional flipping.
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 
-      rastery = (int)floor(nilpoint[1]+0.5) - bbsize[1] + bbmax[1];
+      // Bottom-left of the bounding box in screen-space (Y=0 at viewport bottom).
+      // Round to integer pixel boundaries so the ProFont bitmap glyphs stay
+      // pixel-sharp (matches the integer snap that glDrawPixels required).
+      const int   rastery_base = (int)floor(nilpoint[1] + 0.5f) - bbsize[1] + bbmax[1];
+      const float qx  = (float)(int)floor(textscreenoffsetx + 0.5f);
+      const float qy  = (float)rastery_base;
+      const float qx1 = qx  + (float)bbsize[0];
+      const float qy1 = qy  + (float)bbsize[1];
+      // Preserve the anchor's depth so depth-buffered scenes work correctly.
+      const float qz  = -nilpoint[2];
 
-      // Guard: skip the draw entirely if the bounding box is fully outside
-      // the viewport (avoids out-of-bounds writes in the software rasteriser).
-      int drawH = bbsize[1];
-      int drawRastery = rastery;
-      const unsigned char * drawBuffer = PRIVATE(this)->pixel_buffer;
-      if (drawRastery < 0) {
-        int skip = -drawRastery;
-        if (skip >= drawH) drawH = 0;
-        else {
-          drawH -= skip;
-          drawRastery = 0;
-          drawBuffer += skip * bbsize[0] * 4;
-        }
-      }
-      if (drawRastery + drawH > (int)vpsize[1]) {
-        drawH = (int)vpsize[1] - drawRastery;
-      }
+      GLuint texid = 0;
+      glGenTextures(1, &texid);
+      if (texid) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texid);
+        // Nearest filtering: glyphs are pixel-aligned so interpolation would
+        // only blur edges.
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                     bbsize[0], bbsize[1], 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, PRIVATE(this)->pixel_buffer);
 
-      // Guard: clip in X to avoid out-of-bounds writes when text is
-      // partially outside the viewport (e.g. centred text near an edge).
-      int drawX   = (int)floor(textscreenoffsetx + 0.5);
-      int drawW   = bbsize[0];
-      int skipCols = 0;
-      if (drawX < 0) {
-        skipCols = -drawX;
-        if (skipCols >= drawW) { drawW = 0; }
-        else {
-          drawW -= skipCols;
-          drawX  = 0;
-        }
-      }
-      if (drawX + drawW > (int)vpsize[0]) {
-        drawW = (int)vpsize[0] - drawX;
-      }
+        // GL_REPLACE: use the texture RGBA as-is so the pre-baked material
+        // colour in the RGB channels and the struetype coverage in the alpha
+        // channel pass straight through to the blending stage.
+        glEnable(GL_TEXTURE_2D);
+        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 
-      if (drawH > 0 && drawW > 0) {
-        // If we clipped columns from the left, use GL_UNPACK_SKIP_PIXELS so
-        // we only upload the visible portion of the pixel buffer.
-        if (skipCols > 0) {
-          glPixelStorei(GL_UNPACK_ROW_LENGTH, bbsize[0]);
-          glPixelStorei(GL_UNPACK_SKIP_PIXELS, skipCols);
-        }
-        SoText2P::setRasterPos3f((GLfloat)drawX, (GLfloat)drawRastery, -nilpoint[2]);
-        glDrawPixels(drawW, drawH, GL_RGBA, GL_UNSIGNED_BYTE, (const GLubyte *)drawBuffer);
-        if (skipCols > 0) {
-          glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
-          glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        }
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 0.0f); glVertex3f(qx,  qy,  qz); /* bottom-left  */
+        glTexCoord2f(1.0f, 0.0f); glVertex3f(qx1, qy,  qz); /* bottom-right */
+        glTexCoord2f(1.0f, 1.0f); glVertex3f(qx1, qy1, qz); /* top-right    */
+        glTexCoord2f(0.0f, 1.0f); glVertex3f(qx,  qy1, qz); /* top-left     */
+        glEnd();
+
+        glDisable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glDeleteTextures(1, &texid);
       }
     }
 

@@ -498,6 +498,8 @@ add_rendering_image_test(render_transforms RMSE_THRESHOLD 10.0)
 add_rendering_image_test(render_cameras    RMSE_THRESHOLD 10.0)
 add_rendering_image_test(render_drawstyle  RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_texture    RMSE_THRESHOLD 15.0)
+add_rendering_test(render_stt_gl)
+add_rendering_image_test(render_stt_gl     RMSE_THRESHOLD 15.0)
 # Text rendering: control images generated with Obol's ProFont baseline.
 # Higher RMSE threshold to accommodate subpixel differences between platforms.
 add_rendering_image_test(render_text2      RMSE_THRESHOLD 20.0)
