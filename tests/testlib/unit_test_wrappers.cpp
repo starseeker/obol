@@ -1694,6 +1694,150 @@ REGISTER_TEST(offscreen, ObolTest::TestCategory::Rendering,
     e.create_scene = ObolTest::Scenes::createOffscreen;
 );
 
+REGISTER_TEST(bbox_action, ObolTest::TestCategory::Actions,
+    "Three coloured spheres for SoGetBoundingBoxAction coverage",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createBBoxAction;
+);
+
+REGISTER_TEST(search_action, ObolTest::TestCategory::Actions,
+    "Hierarchical scene with named nodes for SoSearchAction coverage",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createSearchAction;
+);
+
+REGISTER_TEST(callback_action, ObolTest::TestCategory::Actions,
+    "Sphere + cube + cone scene for SoCallbackAction triangle traversal",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createCallbackAction;
+);
+
+REGISTER_TEST(callback_action_deep, ObolTest::TestCategory::Actions,
+    "All primitive shape types for deep SoCallbackAction primitive coverage",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createCallbackActionDeep;
+);
+
+REGISTER_TEST(callback_node, ObolTest::TestCategory::Nodes,
+    "Three SoCallback nodes interleaved with geometry",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createCallbackNode;
+);
+
+REGISTER_TEST(event_propagation, ObolTest::TestCategory::Actions,
+    "SoEventCallback nodes in nested separators with sphere + cube",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createEventPropagation;
+);
+
+REGISTER_TEST(path_operations, ObolTest::TestCategory::Actions,
+    "Sphere left + cube right for SoPath pick-and-copy tests",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createPathOperations;
+);
+
+REGISTER_TEST(write_read_action, ObolTest::TestCategory::Actions,
+    "Red sphere + blue cube input scene for SoWriteAction / SoDB::readAll",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createWriteReadAction;
+);
+
+REGISTER_TEST(field_connections, ObolTest::TestCategory::Fields,
+    "Sphere driven by SoComposeVec3f engine via field connection",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createFieldConnections;
+);
+
+REGISTER_TEST(sensors_rendering, ObolTest::TestCategory::Sensors,
+    "Static sphere representing the final frame of a sensor-driven animation",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createSensorsRendering;
+);
+
+REGISTER_TEST(render_manager_full, ObolTest::TestCategory::Rendering,
+    "Camera + light + SoCube scene for SoRenderManager comprehensive tests",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createRenderManagerFull;
+);
+
+REGISTER_TEST(sogl_bindings, ObolTest::TestCategory::Rendering,
+    "9-point PER_VERTEX-coloured grid for SoGL PointSet binding variants",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = false;
+    e.create_scene = ObolTest::Scenes::createSOGLBindings;
+);
+
+REGISTER_TEST(glrender_action_modes, ObolTest::TestCategory::Rendering,
+    "Two semi-transparent overlapping objects for SoGLRenderAction mode tests",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = false;
+    e.create_scene = ObolTest::Scenes::createGLRenderActionModes;
+);
+
+REGISTER_TEST(glrender_deep, ObolTest::TestCategory::Rendering,
+    "Three semi-transparent spheres for deep SoGLRenderAction coverage",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = false;
+    e.create_scene = ObolTest::Scenes::createGLRenderDeep;
+);
+
+REGISTER_TEST(offscreen_advanced, ObolTest::TestCategory::Rendering,
+    "Camera + light + cube for SoOffscreenRenderer advanced API tests",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createOffscreenAdvanced;
+);
+
+REGISTER_TEST(view_volume_ops, ObolTest::TestCategory::Rendering,
+    "Perspective camera + purple sphere for SbViewVolume operation tests",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createViewVolumeOps;
+);
+
+REGISTER_TEST(lod_picking, ObolTest::TestCategory::Rendering,
+    "Three SoLOD nodes (sphere/cube/cone levels) for LOD + picking tests",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createLODPicking;
+);
+
+REGISTER_TEST(stt_gl, ObolTest::TestCategory::Rendering,
+    "Five SoText2 rows in an orthographic viewport for STT GL reference",
+    e.has_visual = true;
+    e.has_interactive = true;
+    e.nanort_ok = true;
+    e.create_scene = ObolTest::Scenes::createSTTGL;
+);
+
 // --- Unit test registrations ---
 
 REGISTER_TEST(unit_actions, ObolTest::TestCategory::Actions,

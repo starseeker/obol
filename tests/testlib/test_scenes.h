@@ -230,6 +230,62 @@ SoSeparator* createQuadMeshDeep(int width = 800, int height = 600);
 /** Red sphere scene for SoOffscreenRenderer API coverage. */
 SoSeparator* createOffscreen(int width = 800, int height = 600);
 
+// ---- Actions / Events / Sensors factories ----
+
+/** Three coloured spheres spread along X, used as input for SoGetBoundingBoxAction tests. */
+SoSeparator* createBBoxAction(int width = 800, int height = 600);
+
+/** Hierarchical scene (sphere1, sphere2, cube, cone) with named nodes for SoSearchAction tests. */
+SoSeparator* createSearchAction(int width = 800, int height = 600);
+
+/** Three shapes (sphere, cube, cone) illustrating SoCallbackAction triangle traversal. */
+SoSeparator* createCallbackAction(int width = 800, int height = 600);
+
+/** All primitive shape types (sphere, cone, cylinder, cube, quad) in a row for deep callback coverage. */
+SoSeparator* createCallbackActionDeep(int width = 800, int height = 600);
+
+/** Scene containing three SoCallback nodes interleaved with geometry. */
+SoSeparator* createCallbackNode(int width = 800, int height = 600);
+
+/** Event propagation demo: SoEventCallback nodes in nested separators with sphere + cube. */
+SoSeparator* createEventPropagation(int width = 800, int height = 600);
+
+/** Two shapes (sphere left, cube right) for SoPath pick-and-copy tests. */
+SoSeparator* createPathOperations(int width = 800, int height = 600);
+
+/** Red sphere + blue cube with SoTranslation nodes — input scene for SoWriteAction tests. */
+SoSeparator* createWriteReadAction(int width = 800, int height = 600);
+
+/** Sphere whose material colour is driven by a SoComposeVec3f engine. */
+SoSeparator* createFieldConnections(int width = 800, int height = 600);
+
+/** Coloured sphere representing a static "good frame" from a sensor-driven animation. */
+SoSeparator* createSensorsRendering(int width = 800, int height = 600);
+
+/** Camera + light + SoCube — scene for SoRenderManager comprehensive API tests. */
+SoSeparator* createRenderManagerFull(int width = 800, int height = 600);
+
+/** 9-point grid with PER_VERTEX material binding — exercises SoGL PointSet variants. */
+SoSeparator* createSOGLBindings(int width = 800, int height = 600);
+
+/** Two semi-transparent overlapping objects for SoGLRenderAction transparency-mode tests. */
+SoSeparator* createGLRenderActionModes(int width = 800, int height = 600);
+
+/** Three semi-transparent spheres for deep SoGLRenderAction coverage. */
+SoSeparator* createGLRenderDeep(int width = 800, int height = 600);
+
+/** Camera + light + SoCube — input scene for SoOffscreenRenderer advanced API tests. */
+SoSeparator* createOffscreenAdvanced(int width = 800, int height = 600);
+
+/** Perspective camera + sphere — exercises camera→view-volume code paths. */
+SoSeparator* createViewVolumeOps(int width = 800, int height = 600);
+
+/** Three SoLOD nodes side-by-side with sphere/cube/cone levels for LOD + picking tests. */
+SoSeparator* createLODPicking(int width = 800, int height = 600);
+
+/** Five SoText2 rows in an orthographic viewport matching the stt_reference layout. */
+SoSeparator* createSTTGL(int width = 400, int height = 200);
+
 } // namespace Scenes
 } // namespace ObolTest
 
