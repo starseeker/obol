@@ -1198,7 +1198,8 @@ namespace { namespace SoGL { namespace IndexedLineSet {
   SOGL_INDEXEDLINESET_GLRENDER_RESOLVE_ARG1(normalbinding, materialbinding, texturing, args)
 
 void
-sogl_render_lineset(const SoGLCoordinateElement * const coords,
+sogl_render_lineset(const SoGLContext * glue,
+                    const SoGLCoordinateElement * const coords,
                     const int32_t *cindices,
                     int numindices,
                     const SbVec3f *normals,
@@ -1213,7 +1214,7 @@ sogl_render_lineset(const SoGLCoordinateElement * const coords,
                     const int drawAsPoints)
 {
 
-  SOGL_INDEXEDLINESET_GLRENDER(nbind, mbind, texture, (sogl_glue_from_state(state),
+  SOGL_INDEXEDLINESET_GLRENDER(nbind, mbind, texture, (glue,
                                                        coords,
                                                        cindices,
                                                        numindices,
@@ -1703,7 +1704,8 @@ namespace { namespace SoGL { namespace FaceSet {
 
 
 void
-sogl_render_faceset(const SoGLCoordinateElement * const vertexlist,
+sogl_render_faceset(const SoGLContext * glue,
+                    const SoGLCoordinateElement * const vertexlist,
                     const int32_t *vertexindices,
                     int num_vertexindices,
                     const SbVec3f *normals,
@@ -1719,7 +1721,7 @@ sogl_render_faceset(const SoGLCoordinateElement * const vertexlist,
                     const int dotexture,
                     const int doattribs)
 {
-  SOGL_FACESET_GLRENDER(nbind, mbind, attribbind, (sogl_glue_from_state(state),
+  SOGL_FACESET_GLRENDER(nbind, mbind, attribbind, (glue,
                                                    vertexlist,
                                                    vertexindices,
                                                    num_vertexindices,
@@ -2066,7 +2068,8 @@ namespace { namespace SoGL { namespace TriStripSet {
   SOGL_TRISTRIPSET_GLRENDER_RESOLVE_ARG1(normalbinding, materialbinding, texturing, args)
 
 void
-sogl_render_tristrip(const SoGLCoordinateElement * const vertexlist,
+sogl_render_tristrip(const SoGLContext * glue,
+                     const SoGLCoordinateElement * const vertexlist,
                      const int32_t *vertexindices,
                      int num_vertexindices,
                      const SbVec3f *normals,
@@ -2079,7 +2082,7 @@ sogl_render_tristrip(const SoGLCoordinateElement * const vertexlist,
                      const int mbind,
                      const int texture)
 {
-  SOGL_TRISTRIPSET_GLRENDER(nbind, mbind, texture, (sogl_glue_from_state(state),
+  SOGL_TRISTRIPSET_GLRENDER(nbind, mbind, texture, (glue,
                                                     vertexlist,
                                                     vertexindices,
                                                     num_vertexindices,
@@ -2104,7 +2107,8 @@ sogl_render_tristrip(const SoGLCoordinateElement * const vertexlist,
 // here we include the 8 variations directly...
 
 static void
-sogl_render_pointset_m0n0t0(const SoGLCoordinateElement * coords,
+sogl_render_pointset_m0n0t0(const SoGLContext * glue,
+                            const SoGLCoordinateElement * coords,
                             const SbVec3f * OBOL_UNUSED_ARG(normals),
                             SoMaterialBundle * OBOL_UNUSED_ARG(mb),
                             const SoTextureCoordinateBundle * OBOL_UNUSED_ARG(tb),
@@ -2131,7 +2135,8 @@ sogl_render_pointset_m0n0t0(const SoGLCoordinateElement * coords,
 }
 
 static void
-sogl_render_pointset_m0n0t1(const SoGLCoordinateElement * coords,
+sogl_render_pointset_m0n0t1(const SoGLContext * glue,
+                            const SoGLCoordinateElement * coords,
                             const SbVec3f * OBOL_UNUSED_ARG(normals),
                             SoMaterialBundle * OBOL_UNUSED_ARG(mb),
                             const SoTextureCoordinateBundle * tb,
@@ -2150,7 +2155,8 @@ sogl_render_pointset_m0n0t1(const SoGLCoordinateElement * coords,
 }
 
 static void
-sogl_render_pointset_m0n1t0(const SoGLCoordinateElement * coords,
+sogl_render_pointset_m0n1t0(const SoGLContext * glue,
+                            const SoGLCoordinateElement * coords,
                             const SbVec3f * normals,
                             SoMaterialBundle * OBOL_UNUSED_ARG(mb),
                             const SoTextureCoordinateBundle * OBOL_UNUSED_ARG(tb),
@@ -2166,7 +2172,8 @@ sogl_render_pointset_m0n1t0(const SoGLCoordinateElement * coords,
 }
 
 static void
-sogl_render_pointset_m0n1t1(const SoGLCoordinateElement * coords,
+sogl_render_pointset_m0n1t1(const SoGLContext * glue,
+                            const SoGLCoordinateElement * coords,
                             const SbVec3f * normals,
                             SoMaterialBundle * OBOL_UNUSED_ARG(mb),
                             const SoTextureCoordinateBundle * tb,
@@ -2186,7 +2193,8 @@ sogl_render_pointset_m0n1t1(const SoGLCoordinateElement * coords,
 }
 
 static void
-sogl_render_pointset_m1n0t0(const SoGLCoordinateElement * coords,
+sogl_render_pointset_m1n0t0(const SoGLContext * glue,
+                            const SoGLCoordinateElement * coords,
                             const SbVec3f * OBOL_UNUSED_ARG(normals),
                             SoMaterialBundle * mb,
                             const SoTextureCoordinateBundle * OBOL_UNUSED_ARG(tb),
@@ -2219,7 +2227,8 @@ sogl_render_pointset_m1n0t0(const SoGLCoordinateElement * coords,
 }
 
 static void
-sogl_render_pointset_m1n0t1(const SoGLCoordinateElement * coords,
+sogl_render_pointset_m1n0t1(const SoGLContext * glue,
+                            const SoGLCoordinateElement * coords,
                             const SbVec3f * OBOL_UNUSED_ARG(normals),
                             SoMaterialBundle * mb,
                             const SoTextureCoordinateBundle * tb,
@@ -2240,7 +2249,8 @@ sogl_render_pointset_m1n0t1(const SoGLCoordinateElement * coords,
 }
 
 static void
-sogl_render_pointset_m1n1t0(const SoGLCoordinateElement * coords,
+sogl_render_pointset_m1n1t0(const SoGLContext * glue,
+                            const SoGLCoordinateElement * coords,
                             const SbVec3f * normals,
                             SoMaterialBundle * mb,
                             const SoTextureCoordinateBundle * OBOL_UNUSED_ARG(tb),
@@ -2259,7 +2269,8 @@ sogl_render_pointset_m1n1t0(const SoGLCoordinateElement * coords,
 }
 
 static void
-sogl_render_pointset_m1n1t1(const SoGLCoordinateElement * coords,
+sogl_render_pointset_m1n1t1(const SoGLContext * glue,
+                            const SoGLCoordinateElement * coords,
                             const SbVec3f * normals,
                             SoMaterialBundle * mb,
                             const SoTextureCoordinateBundle * tb,
@@ -2281,7 +2292,8 @@ sogl_render_pointset_m1n1t1(const SoGLCoordinateElement * coords,
 
 // ---
 
-typedef void sogl_render_pointset_func(const SoGLCoordinateElement * coords,
+typedef void sogl_render_pointset_func(const SoGLContext * glue,
+                                       const SoGLCoordinateElement * coords,
                                        const SbVec3f * normals,
                                        SoMaterialBundle * mb,
                                        const SoTextureCoordinateBundle * tb,
@@ -2291,7 +2303,8 @@ typedef void sogl_render_pointset_func(const SoGLCoordinateElement * coords,
 static sogl_render_pointset_func * sogl_render_pointset_funcs[8];
 
 void
-sogl_render_pointset(const SoGLCoordinateElement * coords,
+sogl_render_pointset(const SoGLContext * glue,
+                     const SoGLCoordinateElement * coords,
                      const SbVec3f * normals,
                      SoMaterialBundle * mb,
                      const SoTextureCoordinateBundle * tb,
@@ -2316,7 +2329,8 @@ sogl_render_pointset(const SoGLCoordinateElement * coords,
   int tex = tb ? 1 : 0;
 
   sogl_render_pointset_funcs[ (mat << 2) | (norm << 1) | tex ]
-    ( coords,
+    ( glue,
+      coords,
       normals,
       mb,
       tb,

@@ -308,7 +308,8 @@ SoIndexedTriangleStripSet::GLRender(SoGLRenderAction * action)
 
   mb.sendFirst(); // make sure we have the correct material
 
-  sogl_render_tristrip((SoGLCoordinateElement *)coords,
+  sogl_render_tristrip(sogl_glue_from_state(state),
+                       (SoGLCoordinateElement *)coords,
                        cindices,
                        numindices,
                        normals,

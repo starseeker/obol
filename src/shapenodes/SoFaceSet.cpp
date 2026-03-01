@@ -1096,7 +1096,8 @@ SoFaceSet::useConvexCache(SoAction * action)
     }
 
   // use the IndededFaceSet rendering method.
-  sogl_render_faceset(coords,
+  sogl_render_faceset(sogl_glue_from_state(state),
+                      coords,
                       PRIVATE(this)->convexCache->getCoordIndices(),
                       PRIVATE(this)->convexCache->getNumCoordIndices(),
                       normals,

@@ -608,7 +608,8 @@ SoIndexedFaceSet::GLRender(SoGLRenderAction * action)
       attribbind = SoVertexAttributeBindingElement::OVERALL;
     }
 
-    sogl_render_faceset((SoGLCoordinateElement *)coords,
+    sogl_render_faceset(sogl_glue_from_state(state),
+                        (SoGLCoordinateElement *)coords,
                         cindices,
                         numindices,
                         normals,

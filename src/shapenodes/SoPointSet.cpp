@@ -286,7 +286,8 @@ SoPointSet::GLRender(SoGLRenderAction * action)
                             mbind == PER_VERTEX);
   }
   else {
-    sogl_render_pointset(coords,
+    sogl_render_pointset(sogl_glue_from_state(state),
+                         coords,
                          nbind != OVERALL ? normals : NULL,
                          mbind != OVERALL ? &mb : NULL,
                          doTextures ? &tb : NULL,

@@ -498,14 +498,14 @@ SoRenderManager::prerendercb(void * userdata, SoGLRenderAction * action)
 
 #if OBOL_DEBUG && 0 // debug
   GLint view[4];
-  SoGLContext_glGetIntegerv(SoGLContext_instance(PRIVATE(this)->glaction->getCacheContext()), GL_VIEWPORT, view);
+  SoGLContext_glGetIntegerv(sogl_glue_from_state(action->getState()), GL_VIEWPORT, view);
   SoDebugError::postInfo("SoRenderManager::prerendercb",
                          "GL_VIEWPORT=<%d, %d, %d, %d>",
                          view[0], view[1], view[2], view[3]);
 #endif // debug
 
   // clear the viewport
-  SoGLContext_glClear(SoGLContext_instance(PRIVATE(this)->glaction->getCacheContext()), mask);
+  SoGLContext_glClear(sogl_glue_from_state(action->getState()), mask);
 }
 
 /*!

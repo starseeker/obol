@@ -379,7 +379,8 @@ SoIndexedLineSet::GLRender(SoGLRenderAction * action)
                             mbind != OVERALL);
   }
   else {
-    sogl_render_lineset((SoGLCoordinateElement*)coords,
+    sogl_render_lineset(sogl_glue_from_state(state),
+                        (SoGLCoordinateElement*)coords,
                         cindices,
                         numindices,
                         normals,
