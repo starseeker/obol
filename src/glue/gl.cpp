@@ -2419,12 +2419,16 @@ SoGLContext_instance(int contextid)
 #ifdef OBOL_OSMESA_BUILD
       if (SoGLContext_debug()) {
         cc_debugerror_postinfo("SoGLContext_instance", "coin_gl_current_context() returned: %p", current_ctx);
+#ifndef SOGL_PREFIX_SET
         SoDB::ContextManager* manager = coingl_get_context_manager(contextid);
         cc_debugerror_postinfo("SoGLContext_instance", "context_manager = %p", manager);
+#endif
       }
 #endif
-      // For callback-based contexts, coin_gl_current_context() always returns NULL
-      // This is expected behavior, so we skip the assertion in that case
+      // For callback-based contexts, coin_gl_current_context() always returns NULL.
+      // Skip the assertion when a per-context manager is registered (system-GL build)
+      // or when we are in the OSMesa compilation unit (all contexts are managed there).
+#ifndef SOGL_PREFIX_SET
       SoDB::ContextManager* manager = coingl_get_context_manager(contextid);
       if (!manager) {
         assert(current_ctx && "Must have a current GL context when instantiating SoGLContext!! (Note: if you are using an old Mesa GL version, set the environment variable OBOL_GL_NO_CURRENT_CONTEXT_CHECK to get around what may be a Mesa bug.)");
@@ -2436,6 +2440,11 @@ SoGLContext_instance(int contextid)
         }
       }
 #endif
+#else /* SOGL_PREFIX_SET: osmesa build – all contexts are managed, skip assertion */
+      if (SoGLContext_debug()) {
+        cc_debugerror_postinfo("SoGLContext_instance", "Skipping context check (osmesa build)");
+      }
+#endif /* !SOGL_PREFIX_SET */
       (void)current_ctx; /* avoid unused variable warning */
     }
 
@@ -2453,8 +2462,12 @@ SoGLContext_instance(int contextid)
     gi->contextid = (uint32_t) contextid;
 
     /* Record the per-context manager so that SoGLContext_getprocaddress()
-       can use the correct backend resolver without consulting the global. */
+       can use the correct backend resolver without consulting the global.
+       In the OSMesa compilation unit (SOGL_PREFIX_SET), the registry is not
+       available; proc-address lookup goes through OSMesaGetProcAddress instead. */
+#ifndef SOGL_PREFIX_SET
     gi->context_manager = coingl_get_context_manager(contextid);
+#endif
 
     /* create dict that makes a quick lookup for GL extensions */
     gi->glextdict = cc_dict_construct(256, 0.75f);
