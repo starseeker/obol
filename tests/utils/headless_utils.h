@@ -248,12 +248,21 @@ public:
     }
 };
 
+namespace {
+    /* The single OSMesa context manager instance shared between initCoinHeadless()
+       and getCoinHeadlessContextManager().  Using a local-static singleton means
+       neither function needs to touch SoDB::getContextManager(). */
+    inline CoinHeadlessContextManager & headless_context_manager_singleton() {
+        static CoinHeadlessContextManager instance;
+        return instance;
+    }
+} // anonymous namespace
+
 /**
  * Initialize Coin database for headless operation (OSMesa backend)
  */
 inline void initCoinHeadless() {
-    static CoinHeadlessContextManager context_manager;
-    SoDB::init(&context_manager);
+    SoDB::init(&headless_context_manager_singleton());
     SoNodeKit::init();
     SoInteraction::init();
 }
@@ -261,12 +270,13 @@ inline void initCoinHeadless() {
 /**
  * Return the context manager installed by initCoinHeadless().
  * Must be called after initCoinHeadless().
+ *
+ * Returns the same manager object passed to SoDB::init(), so that callers
+ * can create SoOffscreenRenderer instances with an explicit manager instead
+ * of relying on the global singleton.
  */
 inline SoDB::ContextManager * getCoinHeadlessContextManager() {
-    // Returns the global set by SoDB::init() in initCoinHeadless().
-    SoDB::ContextManager * mgr = SoDB::getContextManager();
-    assert(mgr && "getCoinHeadlessContextManager: call initCoinHeadless() first");
-    return mgr;
+    return &headless_context_manager_singleton();
 }
 
 /**
