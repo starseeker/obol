@@ -1020,8 +1020,11 @@ static void nrt_trace(const NrtScene & scene,
 
     // View direction (from hit toward camera)
     const float V[3] = { -dir[0], -dir[1], -dir[2] };
-    // Flip normal if it faces away from the viewer (back-face)
-    if (nrt_dot3(N, V) < 0.0f) { N[0] = -N[0]; N[1] = -N[1]; N[2] = -N[2]; }
+    // Do NOT flip the normal to face the viewer: GL uses one-sided lighting by
+    // default (GL_LIGHT_MODEL_TWO_SIDE = GL_FALSE), so back-facing surfaces
+    // (e.g. SoText3 BACK part viewed from the front) should appear unlit/dark,
+    // not fully lit.  Flipping here would make back faces as bright as front
+    // faces, which diverges from the GL reference render.
 
     // World-space hit position: p0 + t * dir
     const float hitPt[3] = {
@@ -1261,7 +1264,7 @@ public:
 
                     const float dir[3] = { d[0], d[1], d[2] };
                     const float V[3]   = { -dir[0], -dir[1], -dir[2] };
-                    if (nrt_dot3(N, V) < 0.0f) { N[0] = -N[0]; N[1] = -N[1]; N[2] = -N[2]; }
+                    // No normal flip: match GL one-sided lighting (see nrt_trace).
 
                     const float hitPt[3] = {
                         p0[0] + dir[0] * isect.t,
