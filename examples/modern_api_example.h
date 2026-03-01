@@ -1,88 +1,71 @@
-/* Modern C++ example demonstrating context management API changes */
-
-// NOTE: The ContextProvider API has been removed from SoOffscreenRenderer
-// Context management should now be done via SoDB::init(context_manager) before library initialization
+/* Modern C++ example demonstrating per-context manager API usage.
+ *
+ * The preferred pattern for multi-backend scenarios is to pass the context
+ * manager explicitly to SoOffscreenRenderer so that different renderers in
+ * the same process can each use a different backend without affecting each
+ * other through any global state.
+ */
 
 #ifdef OBOL_OSMESA_BUILD
-/* OSMesa-specific code - Context management now handled globally */
-#include <OSMesa/osmesa.h>
-#include <OSMesa/gl.h>
+/* OSMesa-specific context manager example */
+#include <Inventor/SoDB.h>
 #include <Inventor/SoOffscreenRenderer.h>
-#include <memory>
 
-// Example: Modern usage without ContextProvider API
-inline void demonstrateModernOSMesaUsage() {
-    // Context management is now handled globally via SoDB::init(context_manager)
-    // No need for per-renderer context providers
-    
+// Example: create a context manager and pass it explicitly to the renderer.
+// This avoids all global-singleton dependencies.
+inline void demonstrateOSMesaUsage(SoDB::ContextManager * mgr) {
     SbViewportRegion viewport(256, 256);
-    SoOffscreenRenderer renderer(viewport);
-    
-    // OpenGL capabilities are queried on the renderer instance, which uses
-    // the per-instance context manager if set, else the global singleton.
+    SoOffscreenRenderer renderer(mgr, viewport);
+
+    // Query OpenGL capabilities through the renderer instance.
     int major, minor, release;
     renderer.getOpenGLVersion(major, minor, release);
-    
+
     SbBool hasFBO = renderer.hasFramebufferObjectSupport();
     SbBool hasExtension = renderer.isOpenGLExtensionSupported("GL_ARB_vertex_buffer_object");
     SbBool hasGL3 = renderer.isVersionAtLeast(3, 0);
+    (void)hasFBO; (void)hasExtension; (void)hasGL3;
 }
 
 #else
-/* System OpenGL code - Uses standard context creation */
-#include <GL/gl.h>
-#include <GL/glu.h>
+/* System OpenGL context manager example */
+#include <Inventor/SoDB.h>
 #include <Inventor/SoOffscreenRenderer.h>
 
-// NOTE: With modern Coin3D APIs, applications can use the high-level
-// SoOffscreenRenderer directly without needing custom context providers
-// for most standard use cases.
-
-// Example: Standard usage without custom context provider
-inline void demonstrateModernStandardUsage() {
-    // Check OpenGL capabilities using the renderer instance
+// Example: pass the context manager explicitly.
+// Multiple panels with different backends can coexist because each renderer
+// uses its own manager instead of a global singleton.
+inline void demonstrateSystemGLUsage(SoDB::ContextManager * mgr) {
     SbViewportRegion viewport(800, 600);
-    SoOffscreenRenderer renderer(viewport);
+    SoOffscreenRenderer renderer(mgr, viewport);
 
-    // Capabilities are queried via the instance, using per-instance context
-    // manager if set, otherwise the global singleton.
     int major, minor, release;
     renderer.getOpenGLVersion(major, minor, release);
-    
+
     bool hasModernOpenGL = renderer.isVersionAtLeast(3, 0);
     bool hasFBOSupport = renderer.hasFramebufferObjectSupport();
-    
+
     printf("OpenGL Version: %d.%d.%d\n", major, minor, release);
     printf("Modern OpenGL (3.0+): %s\n", hasModernOpenGL ? "Yes" : "No");
     printf("FBO Support: %s\n", hasFBOSupport ? "Yes" : "No");
 }
 
-#endif
-
-// ============================================================================
-// Modern usage example - replacing old cc_glglue style code
-// ============================================================================
+#endif /* OBOL_OSMESA_BUILD */
 
 /*
- * OLD WAY (no longer available):
- * 
- * #include <Inventor/SoOffscreenRenderer.h>
- * class MyProvider : public SoOffscreenRenderer::ContextProvider { ... };
- * SoOffscreenRenderer::setContextProvider(&provider);
- * SoOffscreenRenderer::hasFramebufferObjectSupport();
- * 
- * NEW WAY (current approach):
- * 
- * Context management should be done via SoDB::init(context_manager) at initialization.
- * OpenGL capabilities are queried via a renderer instance, which uses the
- * per-instance context manager if set, otherwise the global singleton:
- * 
- * #include <Inventor/SoOffscreenRenderer.h>
- * SbViewportRegion vp(256, 256);
- * SoOffscreenRenderer ren(vp);
- * ren.hasFramebufferObjectSupport();
- * ren.getOpenGLVersion(major, minor, release);
- * ren.isVersionAtLeast(3, 0);
+ * Preferred API usage summary
+ * ---------------------------
+ *
+ * 1. Implement SoDB::ContextManager for your backend (or use a built-in one
+ *    such as the OSMesa manager returned by SoDB::createOSMesaContextManager()).
+ *
+ * 2. Pass it to SoDB::init() at application start:
+ *      MyContextManager mgr;
+ *      SoDB::init(&mgr);
+ *
+ * 3. Pass it explicitly to each SoOffscreenRenderer:
+ *      SoOffscreenRenderer renderer(&mgr, viewport);
+ *
+ *    This allows multiple renderers in the same process to use different
+ *    backends independently, with no global state dependencies between them.
  */
-
-#endif // OBOL_OSMESA_BUILD

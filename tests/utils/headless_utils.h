@@ -564,12 +564,20 @@ private:
  */
 
 namespace {
-    /* The system-GL context manager pointer set by initCoinHeadless().  Stored
-       here so getSharedRenderer() can pass it explicitly to SoOffscreenRenderer
-       without consulting the global SoDB::getContextManager(). */
-    inline SoDB::ContextManager *& sysgl_context_manager_ptr() {
+    /* Storage for the system-GL context manager set by initCoinHeadless().
+       Accessed via a Meyer's singleton so the same pointer is shared between
+       the setter (called once from initCoinHeadless) and all readers. */
+    inline SoDB::ContextManager *& sysgl_mgr_storage() {
         static SoDB::ContextManager * ptr = nullptr;
         return ptr;
+    }
+    /* Setter: only called from initCoinHeadless(). */
+    inline void set_sysgl_context_manager(SoDB::ContextManager * mgr) {
+        sysgl_mgr_storage() = mgr;
+    }
+    /* Getter: returns the pointer set by initCoinHeadless(). */
+    inline SoDB::ContextManager * get_sysgl_context_manager() {
+        return sysgl_mgr_storage();
     }
 } // anonymous namespace
 
@@ -581,7 +589,7 @@ inline void initCoinHeadless() {
         return 0;
     });
     static GLXContextManager glx_context_manager;
-    sysgl_context_manager_ptr() = &glx_context_manager;
+    set_sysgl_context_manager(&glx_context_manager);
     SoDB::init(&glx_context_manager);
 #else
     // Non-Unix: provide a stub context manager (rendering may not work)
@@ -593,7 +601,7 @@ inline void initCoinHeadless() {
         virtual void destroyContext(void*) override {}
     };
     static StubContextManager stub;
-    sysgl_context_manager_ptr() = &stub;
+    set_sysgl_context_manager(&stub);
     SoDB::init(&stub);
 #endif
     SoNodeKit::init();
@@ -605,7 +613,7 @@ inline void initCoinHeadless() {
  * Must be called after initCoinHeadless().
  */
 inline SoDB::ContextManager * getCoinHeadlessContextManager() {
-    SoDB::ContextManager * mgr = sysgl_context_manager_ptr();
+    SoDB::ContextManager * mgr = get_sysgl_context_manager();
     assert(mgr && "getCoinHeadlessContextManager: call initCoinHeadless() first");
     return mgr;
 }
@@ -622,7 +630,7 @@ inline SoOffscreenRenderer* getSharedRenderer() {
     static SoOffscreenRenderer *s_renderer = nullptr;
     if (!s_renderer) {
         SbViewportRegion vp(DEFAULT_WIDTH, DEFAULT_HEIGHT);
-        s_renderer = new SoOffscreenRenderer(sysgl_context_manager_ptr(), vp);
+        s_renderer = new SoOffscreenRenderer(get_sysgl_context_manager(), vp);
     }
     return s_renderer;
 }

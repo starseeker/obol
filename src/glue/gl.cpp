@@ -373,6 +373,7 @@ coingl_context_backend_is_osmesa(int contextid)
 } /* close extern "C" briefly for STL includes */
 #endif
 #include <unordered_map>
+#include <mutex>
 #ifdef __cplusplus
 extern "C" {
 #endif
