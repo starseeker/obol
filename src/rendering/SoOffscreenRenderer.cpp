@@ -382,6 +382,7 @@ static float s_screen_pixels_per_inch = 72.0f;
 class SoOffscreenRendererP {
 public:
   SoOffscreenRendererP(SoOffscreenRenderer * masterptr,
+                       SoDB::ContextManager * mgr,
                        const SbViewportRegion & vpr,
                        SoGLRenderAction * glrenderaction = NULL)
   {
@@ -396,9 +397,7 @@ public:
     this->buffer = NULL;
     this->bufferbytesize = 0;
     this->lastnodewasacamera = FALSE;
-    // Capture the current global context manager at construction time so the
-    // renderer never needs to call back to the global singleton at render time.
-    this->instanceContextManager = SoDB::getContextManager();
+    this->instanceContextManager = mgr;
 	
     if (glrenderaction) {
       this->renderaction = glrenderaction;
@@ -500,7 +499,7 @@ SoOffscreenRendererP::debugTileOutputPrefix(void)
 */
 SoOffscreenRenderer::SoOffscreenRenderer(const SbViewportRegion & viewportregion)
 {
-  PRIVATE(this) = new SoOffscreenRendererP(this, viewportregion);
+  PRIVATE(this) = new SoOffscreenRendererP(this, SoDB::getContextManager(), viewportregion);
 }
 
 /*!
@@ -510,8 +509,33 @@ SoOffscreenRenderer::SoOffscreenRenderer(const SbViewportRegion & viewportregion
 */
 SoOffscreenRenderer::SoOffscreenRenderer(SoGLRenderAction * action)
 {
-  PRIVATE(this) = new SoOffscreenRendererP(this, action->getViewportRegion(),
-                                           action);
+  PRIVATE(this) = new SoOffscreenRendererP(this, SoDB::getContextManager(),
+                                           action->getViewportRegion(), action);
+}
+
+/*!
+  Constructor. The \a manager argument explicitly provides the context manager
+  to use, removing any dependency on the global singleton.  \a manager must
+  not be NULL; pass the non-manager constructor to fall back to the global.
+*/
+SoOffscreenRenderer::SoOffscreenRenderer(SoDB::ContextManager * manager,
+                                         const SbViewportRegion & viewportregion)
+{
+  assert(manager && "SoOffscreenRenderer: explicit manager constructor requires a non-NULL manager");
+  PRIVATE(this) = new SoOffscreenRendererP(this, manager, viewportregion);
+}
+
+/*!
+  Constructor. The \a manager argument explicitly provides the context manager
+  to use, removing any dependency on the global singleton.  \a manager must
+  not be NULL; pass the non-manager constructor to fall back to the global.
+*/
+SoOffscreenRenderer::SoOffscreenRenderer(SoDB::ContextManager * manager,
+                                         SoGLRenderAction * action)
+{
+  assert(manager && "SoOffscreenRenderer: explicit manager constructor requires a non-NULL manager");
+  PRIVATE(this) = new SoOffscreenRendererP(this, manager,
+                                           action->getViewportRegion(), action);
 }
 
 /*!
@@ -1871,9 +1895,9 @@ SoOffscreenRenderer::setContextManager(SoDB::ContextManager * manager)
 
 /*!
   Returns the context manager in use for this renderer instance.  This is
-  either the manager explicitly set via setContextManager(), or the global
-  singleton (SoDB::getContextManager()) that was captured at construction time
-  or when setContextManager(NULL) was last called.
+  either the manager explicitly set via setContextManager() or the
+  constructor-provided manager (which defaults to SoDB::getContextManager()
+  when using the standard constructors).
 
   \since Coin 4.0
 */

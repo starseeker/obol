@@ -401,8 +401,11 @@ int main(int argc, char **argv)
 
     const char *basepath = (argc > 1) ? argv[1] : "render_shadow_advanced";
 
+    SoShadowGroup * sg = new SoShadowGroup;
+    sg->ref();
     printf("SoShadowGroup::isSupported() = %d\n",
-           (int)SoShadowGroup::isSupported());
+           (int)sg->isSupported());
+    sg->unref();
 
     int failures = 0;
 

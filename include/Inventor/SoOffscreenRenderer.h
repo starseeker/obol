@@ -65,6 +65,12 @@ public:
 
   SoOffscreenRenderer(const SbViewportRegion & viewportregion);
   SoOffscreenRenderer(SoGLRenderAction * action);
+  // Constructors that accept an explicit context manager, removing any
+  // dependency on the global SoDB::getContextManager() singleton.
+  // The \a manager must not be NULL; use the standard constructors to fall
+  // back to the global singleton.
+  SoOffscreenRenderer(SoDB::ContextManager * manager, const SbViewportRegion & viewportregion);
+  SoOffscreenRenderer(SoDB::ContextManager * manager, SoGLRenderAction * action);
   ~SoOffscreenRenderer();
 
   static float getScreenPixelsPerInch(void);
@@ -106,19 +112,15 @@ public:
   SbBool getPbufferEnable(void) const;
 
   // Context management and OpenGL capability detection.
-  // These instance methods use the per-instance context manager when one has
-  // been set via setContextManager(), falling back to the global singleton.
+  // These instance methods use the per-instance context manager.
   void getOpenGLVersion(int & major, int & minor, int & release) const;
   SbBool isOpenGLExtensionSupported(const char * extension) const;
   SbBool hasFramebufferObjectSupport(void) const;
   SbBool isVersionAtLeast(int major, int minor, int release = 0) const;
 
-  // Per-instance context manager.  When set via setContextManager(), this
-  // renderer uses the provided manager for all GL context lifecycle calls.
-  // Initialized from the global singleton at construction time; the global
-  // is resolved at that point so the renderer never calls back to global
-  // state during rendering.  Pass NULL to setContextManager() to revert to
-  // the current global singleton.
+  // Per-instance context manager.  The manager-accepting constructors pass it
+  // directly; the legacy constructors fall back to SoDB::getContextManager().
+  // Pass NULL to setContextManager() to revert to the global singleton.
   void setContextManager(SoDB::ContextManager * manager);
   SoDB::ContextManager * getContextManager(void) const;
 

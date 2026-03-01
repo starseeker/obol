@@ -616,6 +616,7 @@ class SoShadowGroupP {
 public:
   SoShadowGroupP(SoShadowGroup * master) :
     master(master),
+    contextManager(SoDB::getContextManager()),
     bboxaction(SbViewportRegion(SbVec2s(100,100))),
     matrixaction(SbViewportRegion(SbVec2s(100,100))),
     shadowlightsvalid(FALSE),
@@ -729,6 +730,7 @@ public:
   }
 
   SoShadowGroup * master;
+  SoDB::ContextManager * contextManager;
   SoSearchAction searchaction;
   SbList <SoTempPath*> lightpaths;
   SoGetBoundingBoxAction bboxaction;
@@ -832,28 +834,25 @@ SoShadowGroup::init(void)
   The result will depend on the specific qualities of the graphics
   card and OpenGL driver on the system.
 
-  An important note about this function:
-
-  The API design of this function has a serious shortcoming, as
-  features of OpenGL should be tested within an OpenGL context, and
-  this function does not provide any means of specifying the
-  context. It is implemented in this manner to match the function
-  signature in TGS Inventor, for compatibility reasons.
-
-  (A temporary offscreen OpenGL context is set up for the feature
+  A temporary offscreen OpenGL context is set up for the feature
   tests. This should usually be sufficient to decide whether or not
   the graphics driver / card supports the features needed for
-  rendering shadows.)
+  rendering shadows.  The context manager captured at construction
+  time is used to create the probe context.
 
   \since Coin 3.1
 */
 SbBool
-SoShadowGroup::isSupported(void)
+SoShadowGroup::isSupported(void) const
 {
+  // The result is hardware-level and does not depend on which manager is used,
+  // so a static cache is intentional -- it avoids redundant GL probes across
+  // all instances.  Thread-safety is not a concern here because the check is
+  // idempotent: a race between two threads writing the same value is benign.
   static int supp = -1;
   if (supp != -1) { return supp ? true : false; }
 
-  SoDB::ContextManager * mgr = SoDB::getContextManager();
+  SoDB::ContextManager * mgr = PRIVATE(this)->contextManager;
   if (!mgr) {
     SoDebugError::postWarning("SoShadowGroup::isSupported",
                               "No context manager available.");

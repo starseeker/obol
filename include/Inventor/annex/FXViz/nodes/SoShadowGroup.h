@@ -51,7 +51,7 @@ public:
   static void initClass(void);
   static void init(void);
 
-  static SbBool isSupported(void);
+  SbBool isSupported(void) const;
 
   SoShadowGroup(void);
 
