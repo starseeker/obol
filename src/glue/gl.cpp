@@ -5264,6 +5264,7 @@ coin_gl_current_context(void)
 
 /* ********************************************************************** */
 
+#ifndef SOGL_PREFIX_SET
 const SoGLContext *
 sogl_glue_from_state(const SoState * state)
 {
@@ -5282,8 +5283,7 @@ coin_gl_getstring_ptr(void)
      to include raw GL headers itself. */
   return (void *)glGetString;
 }
-
-/* ********************************************************************** */
+#endif /* !SOGL_PREFIX_SET */
 
 /* Thread-local pointer to the SoGLContext for the render pass that is
    currently in progress on this thread.  Set by SoGLRenderAction before
