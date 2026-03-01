@@ -99,6 +99,19 @@ sogl_glue_instance(const SoState * state)
   return SoGLContext_instance(1);
 }
 
+// Convenience wrapper: derive the GL context from the render action
+// attached to the state.  By going through state->getAction() this works
+// correctly at every point in the render pipeline, including during SoState
+// construction when SoGLCacheContextElement has not yet been pushed.
+// Obol always requires the calling code to have set up a GL context before
+// invoking any render action; if getAction() does not carry a valid
+// SoGLRenderAction (and thus no context), that is a caller error.
+const SoGLContext *
+sogl_glue_from_state(const SoState * state)
+{
+  return sogl_glue_instance(state);
+}
+
 
 // generate a 3d circle in the x-z plane
 static void
@@ -137,7 +150,7 @@ sogl_render_cone(const float radius,
 {
   const SbBool * unitenabled = NULL;
   int maxunit = 0;
-  const SoGLContext * glue = NULL;
+  const SoGLContext * glue = state ? sogl_glue_instance(state) : NULL;
 
   int flags = flagsin;
 
@@ -145,7 +158,6 @@ sogl_render_cone(const float radius,
     unitenabled =
       SoMultiTextureEnabledElement::getEnabledUnits(state, maxunit);
     if (unitenabled) {
-      glue = sogl_glue_instance(state);
       flags |= SOGL_NEED_MULTITEXCOORDS;
     }
     else maxunit = -1;
@@ -307,7 +319,7 @@ sogl_render_cylinder(const float radius,
 {
   const SbBool * unitenabled = NULL;
   int maxunit = 0;
-  const SoGLContext * glue = NULL;
+  const SoGLContext * glue = state ? sogl_glue_instance(state) : NULL;
 
   int flags = flagsin;
 
@@ -315,7 +327,6 @@ sogl_render_cylinder(const float radius,
     unitenabled =
       SoMultiTextureEnabledElement::getEnabledUnits(state, maxunit);
     if (unitenabled) {
-      glue = sogl_glue_instance(state);
       flags |= SOGL_NEED_MULTITEXCOORDS;
     }
     else maxunit = -1;
@@ -481,7 +492,7 @@ sogl_render_sphere(const float radius,
 {
   const SbBool * unitenabled = NULL;
   int maxunit = 0;
-  const SoGLContext * glue = NULL;
+  const SoGLContext * glue = state ? sogl_glue_instance(state) : NULL;
 
   unsigned int flags = flagsin;
 
@@ -489,7 +500,6 @@ sogl_render_sphere(const float radius,
     unitenabled =
       SoMultiTextureEnabledElement::getEnabledUnits(state, maxunit);
     if (unitenabled) {
-      glue = sogl_glue_instance(state);
       flags |= SOGL_NEED_MULTITEXCOORDS;
     }
     else maxunit = -1;
@@ -793,7 +803,7 @@ sogl_render_cube(const float width,
 {
   const SbBool * unitenabled = NULL;
   int maxunit = 0;
-  const SoGLContext * glue = NULL;
+  const SoGLContext * glue = state ? sogl_glue_instance(state) : NULL;
 
   int flags = flagsin;
 
@@ -801,7 +811,6 @@ sogl_render_cube(const float width,
     unitenabled =
       SoMultiTextureEnabledElement::getEnabledUnits(state, maxunit);
     if (unitenabled) {
-      glue = sogl_glue_instance(state);
       flags |= SOGL_NEED_MULTITEXCOORDS;
     }
     else maxunit = -1;

@@ -5266,21 +5266,6 @@ coin_gl_current_context(void)
 /* ********************************************************************** */
 
 #ifndef SOGL_PREFIX_SET
-const SoGLContext *
-sogl_glue_from_state(const SoState * state)
-{
-  /* SoGLCacheContextElement may not yet be pushed during SoState construction
-     (e.g. SoGLLazyElement::init() is called before SoGLCacheContextElement::set()).
-     Fall back to the thread-local render glue that SoOffscreenRenderer and
-     SoGLRenderAction set before creating/entering the state. */
-  if (!state->isElementEnabled(SoGLCacheContextElement::getClassStackIndex()))
-    return sogl_current_render_glue();
-  int contextid = SoGLCacheContextElement::get(const_cast<SoState *>(state));
-  return SoGLContext_instance(contextid);
-}
-
-/* ********************************************************************** */
-
 void *
 coin_gl_getstring_ptr(void)
 {

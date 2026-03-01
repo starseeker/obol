@@ -1132,9 +1132,10 @@ void SoGLContext_destruct(uint32_t contextid);
 
 void * coin_gl_current_context(void);
 
-/* Explicit context retrieval from a state pointer.  Replaces the fragile
-   thread-local sogl_current_render_glue() for all code that has access to a
-   SoState.  Defined in gl.cpp, uses SoGLCacheContextElement::get(). */
+/* Explicit context retrieval from a state pointer.  Defined in SoGL.cpp;
+   delegates to sogl_glue_instance() which derives the context from
+   state->getAction()->getCacheContext().  Works at every point in the
+   render pipeline, including during SoState construction. */
 const SoGLContext * sogl_glue_from_state(const SoState * state);
 
 /* Returns the function pointer for glGetString as seen in the linked GL
