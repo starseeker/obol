@@ -108,6 +108,16 @@ inline SoOffscreenRenderer* getSharedRenderer() {
 }
 
 /**
+ * Return the context manager installed by initCoinHeadless() (NanoRT backend).
+ * Must be called after initCoinHeadless().
+ */
+inline SoDB::ContextManager * getCoinHeadlessContextManager() {
+    SoDB::ContextManager * mgr = SoDB::getContextManager();
+    assert(mgr && "getCoinHeadlessContextManager: call initCoinHeadless() first");
+    return mgr;
+}
+
+/**
  * Render a scene to an SGI RGB file (NanoRT backend).
  * Uses SoOffscreenRenderer which dispatches to SoNanoRTContextManager::renderScene().
  */
@@ -574,6 +584,16 @@ inline SoOffscreenRenderer* getSharedRenderer() {
         s_renderer = new SoOffscreenRenderer(vp);
     }
     return s_renderer;
+}
+
+/**
+ * Return the context manager installed by initCoinHeadless() (system OpenGL backend).
+ * Must be called after initCoinHeadless().
+ */
+inline SoDB::ContextManager * getCoinHeadlessContextManager() {
+    SoDB::ContextManager * mgr = SoDB::getContextManager();
+    assert(mgr && "getCoinHeadlessContextManager: call initCoinHeadless() first");
+    return mgr;
 }
 
 /**
