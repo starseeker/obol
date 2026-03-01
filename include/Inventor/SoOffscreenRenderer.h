@@ -114,11 +114,11 @@ public:
   SbBool isVersionAtLeast(int major, int minor, int release = 0) const;
 
   // Per-instance context manager.  When set via setContextManager(), this
-  // renderer uses the provided manager for all GL context lifecycle calls
-  // instead of the global singleton (SoDB::getContextManager()).  This
-  // allows multiple renderers to use different backends simultaneously
-  // (e.g. system GL and OSMesa in the same process) without touching any
-  // global state.  Pass NULL to revert to the global manager.
+  // renderer uses the provided manager for all GL context lifecycle calls.
+  // Initialized from the global singleton at construction time; the global
+  // is resolved at that point so the renderer never calls back to global
+  // state during rendering.  Pass NULL to setContextManager() to revert to
+  // the current global singleton.
   void setContextManager(SoDB::ContextManager * manager);
   SoDB::ContextManager * getContextManager(void) const;
 

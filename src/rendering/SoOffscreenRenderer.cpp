@@ -396,7 +396,9 @@ public:
     this->buffer = NULL;
     this->bufferbytesize = 0;
     this->lastnodewasacamera = FALSE;
-    this->instanceContextManager = NULL;
+    // Capture the current global context manager at construction time so the
+    // renderer never needs to call back to the global singleton at render time.
+    this->instanceContextManager = SoDB::getContextManager();
 	
     if (glrenderaction) {
       this->renderaction = glrenderaction;
@@ -438,12 +440,13 @@ public:
   SoGLRenderAction * renderaction;
   SbBool didallocation;
 
-  // Per-instance context manager override (NULL → use global singleton).
+  // Per-instance context manager.  Initialized from the global singleton at
+  // construction time; may be overridden via SoOffscreenRenderer::setContextManager().
   SoDB::ContextManager * instanceContextManager;
 
-  // Returns the effective context manager for this renderer.
+  // Returns the context manager for this renderer.
   SoDB::ContextManager * effectiveMgr() const {
-    return instanceContextManager ? instanceContextManager : SoDB::getContextManager();
+    return instanceContextManager;
   }
 
   void updateDCBitmap();
@@ -1845,8 +1848,7 @@ SoOffscreenRenderer::getPbufferEnable(void) const
 /*!
   Set a per-instance context manager.  When non-NULL, this renderer uses the
   provided \a manager for all OpenGL context lifecycle operations (create,
-  make-current, restore, destroy) instead of the global singleton returned by
-  SoDB::getContextManager().  This allows multiple SoOffscreenRenderer
+  make-current, restore, destroy).  This allows multiple SoOffscreenRenderer
   instances to use independent backends simultaneously – for example one
   instance backed by system GLX and another backed by OSMesa – without any
   global state mutation.
@@ -1854,20 +1856,24 @@ SoOffscreenRenderer::getPbufferEnable(void) const
   The alternative rendering path (renderScene()) is also dispatched through
   this manager when it is set.
 
-  Pass NULL to revert to the global singleton.
+  Pass NULL to revert to the global singleton (SoDB::getContextManager()).
 
   \since Coin 4.0
 */
 void
 SoOffscreenRenderer::setContextManager(SoDB::ContextManager * manager)
 {
-  PRIVATE(this)->instanceContextManager = manager;
-  PRIVATE(this)->glcanvas.setContextManager(manager);
+  // When NULL is passed (revert to global), resolve the global right now so
+  // the instance never needs to call back to it during rendering.
+  PRIVATE(this)->instanceContextManager = manager ? manager : SoDB::getContextManager();
+  PRIVATE(this)->glcanvas.setContextManager(PRIVATE(this)->instanceContextManager);
 }
 
 /*!
-  Returns the per-instance context manager set via setContextManager(), or
-  NULL if none has been set (meaning the global singleton is used).
+  Returns the context manager in use for this renderer instance.  This is
+  either the manager explicitly set via setContextManager(), or the global
+  singleton (SoDB::getContextManager()) that was captured at construction time
+  or when setContextManager(NULL) was last called.
 
   \since Coin 4.0
 */

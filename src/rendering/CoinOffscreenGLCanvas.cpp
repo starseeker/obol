@@ -84,12 +84,13 @@ CoinOffscreenGLCanvas::setContextManager(SoDB::ContextManager * mgr)
   this->instance_mgr = mgr;
 }
 
-// Returns the effective context manager to use: per-instance if set,
-// otherwise the global singleton.
+// Returns the per-instance context manager.  SoOffscreenRenderer always calls
+// setContextManager() before using the canvas, so this is never NULL in normal
+// operation (the renderer captures the global at construction time).
 SoDB::ContextManager *
 CoinOffscreenGLCanvas::effectiveMgr(void) const
 {
-  return this->instance_mgr ? this->instance_mgr : SoDB::getContextManager();
+  return this->instance_mgr;
 }
 
 // *************************************************************************
