@@ -69,8 +69,9 @@
  *   - SoHUDLabel – HUD overlay text labels (inside SoHUDKit) are rasterized
  *     via SbFont/stb_truetype and alpha-composited onto the final framebuffer,
  *     giving the same HUD text appearance without any OpenGL context
- *   - SoHUDButton – HUD button labels are rasterized via SbFont and composited
- *     onto the framebuffer (border rectangle is not drawn)
+ *   - SoHUDButton – HUD button border rectangle (1-pixel GL_LINE_LOOP equivalent)
+ *     is drawn directly into the image buffer using borderColor, and the button
+ *     label text is rasterized via SbFont and composited onto the framebuffer
  *
  * Dependencies:
  *   - nanort.h (external/nanort/nanort.h)
@@ -518,100 +519,133 @@ nrtHUDLabelPreCB(void * ud, SoCallbackAction * /*action*/, const SoNode * node)
 }
 
 // ==========================================================================
-// SoHUDButton pre-callback: render button label text via SbFont/stb_truetype
+// SoHUDButton pre-callback: border rectangle + centered label via SbFont
 // ==========================================================================
-// SoHUDButton centers its label within the button rectangle.  During
-// SoCallbackAction traversal there is no GL state, so this callback
-// directly reads the button fields and rasterizes the label using SbFont.
-// The border rectangle is not drawn (line geometry only), but the text
-// label is composited as an RGBA overlay — sufficient for HUD readability.
+// SoHUDButton renders a rectangular border (GL_LINE_LOOP) and a centred text
+// label during GLRender.  In the nanort path there is no GL state, so this
+// callback does both steps in software:
+//   1. Allocates an RGBA canvas the full pixel size of the button.
+//   2. Draws a 1-pixel border rectangle using borderColor.
+//   3. Rasterizes the centered label using SbFont / stb_truetype.
+// The combined canvas is stored as an NrtTextOverlay and alpha-composited
+// onto the framebuffer after ray-tracing — giving a complete button appearance.
 static SoCallbackAction::Response
 nrtHUDButtonPreCB(void * ud, SoCallbackAction * /*action*/, const SoNode * node)
 {
-    NrtProxyData * data   = static_cast<NrtProxyData *>(ud);
+    NrtProxyData * data = static_cast<NrtProxyData *>(ud);
     const SoHUDButton * btn = static_cast<const SoHUDButton *>(node);
 
-    const SbString & str = btn->string.getValue();
-    if (str.getLength() == 0) return SoCallbackAction::PRUNE;
+    const SbVec2f pos  = btn->position.getValue();
+    const SbVec2f size = btn->size.getValue();
+    const int btnW = static_cast<int>(size[0]);
+    const int btnH = static_cast<int>(size[1]);
+    if (btnW <= 0 || btnH <= 0) return SoCallbackAction::PRUNE;
 
-    const float fontSize = btn->fontSize.getValue();
-    if (fontSize <= 0.0f) return SoCallbackAction::PRUNE;
+    // Canvas covers the full button extent (GL bottom-up row convention).
+    NrtTextOverlay ov;
+    ov.w = btnW;
+    ov.h = btnH;
+    ov.x = static_cast<int>(pos[0]);
+    ov.y = static_cast<int>(pos[1]);
+    ov.pixbuf.assign(static_cast<size_t>(btnW) * btnH * 4, 0);
 
-    SbFont font;
-    font.setSize(fontSize);
+    // --- 1. Draw 1-pixel border rectangle using borderColor -----------------
+    const SbColor & bcol = btn->borderColor.getValue();
+    const unsigned char br = static_cast<unsigned char>(bcol[0] * 255.0f);
+    const unsigned char bg = static_cast<unsigned char>(bcol[1] * 255.0f);
+    const unsigned char bb = static_cast<unsigned char>(bcol[2] * 255.0f);
 
-    const SbColor & col = btn->color.getValue();
-    const unsigned char cr = static_cast<unsigned char>(col[0] * 255.0f);
-    const unsigned char cg = static_cast<unsigned char>(col[1] * 255.0f);
-    const unsigned char cb = static_cast<unsigned char>(col[2] * 255.0f);
+    // Inline helper: write a fully-opaque border pixel at (col, glRow) in the canvas.
+    auto drawBorderPixel = [&](int col, int glRow) {
+        if (col < 0 || col >= btnW || glRow < 0 || glRow >= btnH) return;
+        const size_t idx = (static_cast<size_t>(glRow) * btnW + col) * 4;
+        ov.pixbuf[idx + 0] = br;
+        ov.pixbuf[idx + 1] = bg;
+        ov.pixbuf[idx + 2] = bb;
+        ov.pixbuf[idx + 3] = 255;
+    };
+    // Bottom edge (GL row 0) and top edge (GL row btnH-1)
+    for (int c = 0; c < btnW; ++c) {
+        drawBorderPixel(c, 0);
+        drawBorderPixel(c, btnH - 1);
+    }
+    // Left edge (col 0) and right edge (col btnW-1)
+    for (int r = 1; r < btnH - 1; ++r) {
+        drawBorderPixel(0,        r);
+        drawBorderPixel(btnW - 1, r);
+    }
 
-    // Compute string width for centering inside the button.
-    int strWidth = 0;
-    {
+    // --- 2. Draw centered text label using color ----------------------------
+    const SbString & str  = btn->string.getValue();
+    const float fontSize  = btn->fontSize.getValue();
+    if (str.getLength() > 0 && fontSize > 0.0f) {
+        SbFont font;
+        font.setSize(fontSize);
+
+        const SbColor & tcol = btn->color.getValue();
+        const unsigned char cr = static_cast<unsigned char>(tcol[0] * 255.0f);
+        const unsigned char cg = static_cast<unsigned char>(tcol[1] * 255.0f);
+        const unsigned char cb = static_cast<unsigned char>(tcol[2] * 255.0f);
+
+        // Measure string width for horizontal centering.
+        int strWidth = 0;
+        {
+            const char * p = str.getString();
+            while (*p) {
+                const unsigned char ch2 = static_cast<unsigned char>(*p++);
+                SbVec2s sz2, bearing2;
+                font.getGlyphBitmap(ch2, sz2, bearing2);
+                strWidth += static_cast<int>(font.getGlyphAdvance(ch2)[0]);
+            }
+        }
+
+        const int lineH = static_cast<int>(fontSize * kNrtHUDLineHeightFactor) + 1;
+
+        // Top-left origin of the text canvas within the button canvas.
+        // textX0: horizontal offset so the string is centred.
+        // textY0: GL bottom-up row in the button canvas where the text bottom sits.
+        const int textX0 = (btnW - strWidth) / 2;
+        const int textY0 = (btnH - lineH)   / 2;  // GL row of text bottom in button
+
         const char * p = str.getString();
+        int xpen = textX0;
         while (*p) {
             const unsigned char ch = static_cast<unsigned char>(*p++);
             SbVec2s sz, bearing;
-            font.getGlyphBitmap(ch, sz, bearing);
+            const unsigned char * bitmap = font.getGlyphBitmap(ch, sz, bearing);
             const SbVec2f adv = font.getGlyphAdvance(ch);
-            strWidth += static_cast<int>(adv[0]);
-        }
-    }
-    if (strWidth <= 0) return SoCallbackAction::PRUNE;
 
-    const int lineH  = static_cast<int>(fontSize * kNrtHUDLineHeightFactor) + 1;
-    const int canvasW = strWidth;
-    const int canvasH = lineH;
+            if (bitmap && sz[0] > 0 && sz[1] > 0) {
+                // Within the text canvas (lineH rows, top-down):
+                //   baseline top-down row = lineH - fontSize
+                //   glyph top top-down row = baseline - bearing[1]
+                const int baseline   = lineH - static_cast<int>(fontSize);
+                const int glyph_top  = baseline - bearing[1];  // top-down
 
-    NrtTextOverlay ov;
-    ov.w = canvasW;
-    ov.h = canvasH;
-    ov.pixbuf.assign(static_cast<size_t>(canvasW) * canvasH * 4, 0);
+                for (int gy = 0; gy < sz[1]; ++gy) {
+                    // Top-down row in text canvas → GL bottom-up row in button canvas
+                    const int text_td_row   = glyph_top + gy;
+                    const int btn_gl_row    = textY0 + (lineH - 1 - text_td_row);
+                    if (btn_gl_row < 0 || btn_gl_row >= btnH) continue;
 
-    // Center inside button: btn->position + btn->size / 2, then shift left by
-    // half the text width.
-    const SbVec2f pos  = btn->position.getValue();
-    const SbVec2f size = btn->size.getValue();
-    const float cx = pos[0] + size[0] * 0.5f - static_cast<float>(strWidth) * 0.5f;
-    const float cy = pos[1] + size[1] * 0.5f - static_cast<float>(lineH)   * 0.5f;
-    ov.x = static_cast<int>(cx);
-    ov.y = static_cast<int>(cy);
-
-    // Rasterize the single line of text, centered (xstart = 0 since canvas
-    // is already sized to the string width).
-    const char * p = str.getString();
-    int xpen = 0;
-    while (*p) {
-        const unsigned char ch = static_cast<unsigned char>(*p++);
-        SbVec2s sz, bearing;
-        const unsigned char * bitmap = font.getGlyphBitmap(ch, sz, bearing);
-        const SbVec2f adv = font.getGlyphAdvance(ch);
-
-        if (bitmap && sz[0] > 0 && sz[1] > 0) {
-            const int baseline = lineH - static_cast<int>(fontSize);
-            const int dst_x = xpen + bearing[0];
-            const int dst_y = baseline - bearing[1];
-
-            for (int gy = 0; gy < sz[1]; ++gy) {
-                const int canvas_row = dst_y + gy;
-                if (canvas_row < 0 || canvas_row >= canvasH) continue;
-                const int gl_row = canvasH - 1 - canvas_row;
-
-                for (int gx = 0; gx < sz[0]; ++gx) {
-                    const int canvas_col = dst_x + gx;
-                    if (canvas_col < 0 || canvas_col >= canvasW) continue;
-                    const unsigned char alpha = bitmap[gy * sz[0] + gx];
-                    if (alpha == 0) continue;
-                    const size_t idx =
-                        (static_cast<size_t>(gl_row) * canvasW + canvas_col) * 4;
-                    ov.pixbuf[idx + 0] = cr;
-                    ov.pixbuf[idx + 1] = cg;
-                    ov.pixbuf[idx + 2] = cb;
-                    ov.pixbuf[idx + 3] = alpha;
+                    for (int gx = 0; gx < sz[0]; ++gx) {
+                        const int btn_col = xpen + bearing[0] + gx;
+                        if (btn_col < 0 || btn_col >= btnW) continue;
+                        const unsigned char alpha = bitmap[gy * sz[0] + gx];
+                        if (alpha == 0) continue;
+                        const size_t idx =
+                            (static_cast<size_t>(btn_gl_row) * btnW + btn_col) * 4;
+                        // Overwrite border pixels that happen to coincide with text
+                        // (unlikely given centred text vs 1-pixel rim, but safe).
+                        ov.pixbuf[idx + 0] = cr;
+                        ov.pixbuf[idx + 1] = cg;
+                        ov.pixbuf[idx + 2] = cb;
+                        ov.pixbuf[idx + 3] = alpha;
+                    }
                 }
             }
+            xpen += static_cast<int>(adv[0]);
         }
-        xpen += static_cast<int>(adv[0]);
     }
 
     data->textOverlays.push_back(std::move(ov));
