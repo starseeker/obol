@@ -2069,7 +2069,6 @@ SoShadowGroupP::setFragmentShader(SoState * state)
     this->cameratransform->value.touch();
     this->fragmentshader->sourceProgram = gen.getShaderProgram();
     this->fragmentshader->sourceType = SoShaderObject::GLSL_PROGRAM;
-
   }
 
   this->fragmentshadercache->set(gen.getShaderProgram());
@@ -2120,25 +2119,30 @@ SoShadowLightCache::createVSMProgram(void)
   else {
     fgen.addMainStatement("float l = (-light_vec.z - nearval) / (farval-nearval);\n");
   }
+  /* Compute l2 = l*l as a separate statement.
+   * OSMesa 7.0.4 SLANG has a code-generation bug where multi-use temporaries
+   * inside a vec4/vec2 constructor (e.g. vec4(l, l*l, ...)) produce wrong
+   * results.  Assigning l*l to an explicit intermediate variable avoids this. */
+  fgen.addMainStatement("float coin_vsm_l2 = l * l;\n");
   fgen.addMainStatement(
 #ifdef DISTRIBUTE_FACTOR
-                        "vec2 m = vec2(l, l*l);\n"
+                        "vec2 m = vec2(l, coin_vsm_l2);\n"
                         "vec2 f = fract(m * DISTRIBUTE_FACTOR);\n"
 
 #ifdef USE_NEGATIVE
                         "gl_FragColor.rg = (m - (f / DISTRIBUTE_FACTOR)) * 2.0 - vec2(1.0, 1.0);\n"
                         "gl_FragColor.ba = f * 2.0 - vec2(1.0, 1.0);\n"
-#else // USE_NEGATIVE
+#else
                         "gl_FragColor.rg = m - (f / DISTRIBUTE_FACTOR);\n"
                         "gl_FragColor.ba = f;\n"
-#endif // ! USE_NEGATIVE
-#else // DISTRIBUTE_FACTOR
+#endif
+#else
 #ifdef USE_NEGATIVE
-                        "gl_FragColor = vec4(l*2.0 - 1.0, l*l*2.0 - 1.0, 0.0, 0.0);"
-#else // USE_NEGATIVE
-                        "gl_FragColor = vec4(l, l*l, 0.0, 0.0);"
-#endif // !USE_NEGATIVE
-#endif // !DISTRIBUTE_FACTOR
+                        "gl_FragColor = vec4(l*2.0 - 1.0, coin_vsm_l2*2.0 - 1.0, 0.0, 0.0);"
+#else
+                        "gl_FragColor = vec4(l, coin_vsm_l2, 0.0, 0.0);"
+#endif
+#endif
                         );
   fshader->sourceProgram = fgen.getShaderProgram();
   fshader->sourceType = SoShaderObject::GLSL_PROGRAM;
