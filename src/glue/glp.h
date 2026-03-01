@@ -864,6 +864,13 @@ struct SoGLContext {
   cc_dict * glextdict;
 
   cc_libhandle dl_handle;
+
+  /* Per-context manager set at instance creation time by SoGLContext_instance().
+     Points to the SoDB::ContextManager that owns this GL context.  Used by
+     SoGLContext_getprocaddress() to call the correct backend proc-address
+     resolver without consulting the global singleton.  Stored as void* so
+     this C-compatible struct does not need to include SoDB.h. */
+  void * context_manager;
 };
 
 /* ********************************************************************** */
@@ -1438,6 +1445,17 @@ void SoGLContext_win32_updateHDCBitmap(void * ctx);
  * --------------------------------------------------------------------- */
 void coingl_register_osmesa_context(int contextid);
 void coingl_unregister_osmesa_context(int contextid);
+
+/* Per-context-ID manager registry.  Call coingl_register_context_manager()
+   after assigning a render-context ID whenever the context was created via a
+   SoDB::ContextManager (e.g. inside CoinOffscreenGLCanvas::tryActivateGLContext()).
+   SoGLContext_instance() reads this registry to set gi->context_manager so that
+   SoGLContext_getprocaddress() can use the backend-specific resolver instead of
+   the global singleton.  Both functions are always safe to call.
+   The mgr parameter is typed void* here for C compatibility; callers must pass
+   a SoDB::ContextManager* (cast to void* if necessary). */
+void coingl_register_context_manager(int contextid, void * mgr);
+void coingl_unregister_context_manager(int contextid);
 
 #ifdef __cplusplus
 }

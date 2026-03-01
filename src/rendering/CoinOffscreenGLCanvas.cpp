@@ -262,6 +262,11 @@ CoinOffscreenGLCanvas::tryActivateGLContext(void)
     // Set up mapping from GL context to SoGLRenderAction context id.
     this->renderid = SoGLCacheContextElement::getUniqueCacheContext();
 
+    /* Register the context manager for this context ID so that
+       SoGLContext_getprocaddress() uses the correct backend resolver
+       without consulting the global singleton. */
+    coingl_register_context_manager(static_cast<int>(this->renderid), mgr);
+
 #ifdef OBOL_BUILD_DUAL_GL
     /* In dual-GL builds, tell the GL dispatch layer which backend this
        context was created with so SoGLContext_instance() can route to
