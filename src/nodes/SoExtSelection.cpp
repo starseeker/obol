@@ -257,7 +257,8 @@
 class SoExtSelectionP {
 public:
   SoExtSelectionP(SoExtSelection * masterptr)
-    : runningselection(masterptr)
+    : runningselection(masterptr),
+      contextManager(NULL)
   {
     PUBLIC(this) = masterptr;
   }
@@ -266,6 +267,8 @@ public:
   float lassowidth;
   SbBool lassopatternanimate;
   unsigned short lassopattern;
+
+  SoDB::ContextManager * contextManager;
 
   SbVec2s requestedsize;
 
@@ -814,6 +817,17 @@ SoExtSelection::~SoExtSelection()
   delete PRIVATE(this)->cbaction;
   delete PRIVATE(this)->visitedshapepaths;
   delete PRIVATE(this);
+}
+
+/*!
+  Explicitly set the context manager used for offscreen rendering during
+  lasso/rectangle selection.  Pass NULL to revert to the global fallback
+  (SoDB::getContextManager()).
+*/
+void
+SoExtSelection::setContextManager(SoDB::ContextManager * manager)
+{
+  PRIVATE(this)->contextManager = manager;
 }
 
 // *************************************************************************
@@ -2645,7 +2659,8 @@ SoExtSelectionP::performSelection(SoHandleEventAction * action)
       upon, if possible.
     */
     unsigned int maxsize[2];
-    SoGLContext_context_max_dimensions(SoDB::getContextManager(), &maxsize[0], &maxsize[1]);
+    SoDB::ContextManager * mgr = this->contextManager ? this->contextManager : SoDB::getContextManager();
+    SoGLContext_context_max_dimensions(mgr, &maxsize[0], &maxsize[1]);
 
     this->requestedsize = action->getViewportRegion().getViewportSizePixels();
 
@@ -2665,11 +2680,17 @@ SoExtSelectionP::performSelection(SoHandleEventAction * action)
     // only (re)allocate the renderers if the viewport has changed
     if (this->renderer == NULL || this->renderer->getViewportRegion() != vp) {
       delete this->renderer;
-      this->renderer = new SoOffscreenRenderer(vp);
+      if (mgr)
+        this->renderer = new SoOffscreenRenderer(mgr, vp);
+      else
+        this->renderer = new SoOffscreenRenderer(vp);
     }
     if (this->lassorenderer == NULL || this->lassorenderer->getViewportRegion() != vp) {
       delete this->lassorenderer;
-      this->lassorenderer = new SoOffscreenRenderer(vp);
+      if (mgr)
+        this->lassorenderer = new SoOffscreenRenderer(mgr, vp);
+      else
+        this->lassorenderer = new SoOffscreenRenderer(vp);
     }
 
     SoCallback * cbnode = new SoCallback;

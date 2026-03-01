@@ -17,6 +17,7 @@ set(OBOL_ELEMENTS_FILES
 	SoClipPlaneElement.cpp
 	SoComplexityElement.cpp
 	SoComplexityTypeElement.cpp
+	SoContextManagerElement.cpp
 	SoCoordinateElement.cpp
 	SoCreaseAngleElement.cpp
 	SoCullElement.cpp

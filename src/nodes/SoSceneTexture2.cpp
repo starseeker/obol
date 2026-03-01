@@ -285,6 +285,7 @@
 #include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
+#include <Inventor/elements/SoContextManagerElement.h>
 #include <Inventor/elements/SoTextureUnitElement.h>
 #include <Inventor/elements/SoGLMultiTextureImageElement.h>
 #include <Inventor/elements/SoGLMultiTextureEnabledElement.h>
@@ -681,7 +682,7 @@ SoSceneTexture2::write(SoWriteAction * action)
 SoSceneTexture2P::SoSceneTexture2P(SoSceneTexture2 * apiptr)
 {
   this->api = apiptr;
-  this->contextManager = SoDB::getContextManager();
+  this->contextManager = NULL;
   this->glcontext = NULL;
   this->buffervalid = FALSE;
   this->glimagevalid = FALSE;
@@ -713,6 +714,11 @@ SoSceneTexture2P::~SoSceneTexture2P()
 void
 SoSceneTexture2P::updateBuffer(SoState * state, const float quality)
 {
+  // Update the context manager from the state element pushed by SoOffscreenRenderer.
+  // This ensures we use the correct backend without calling SoDB::getContextManager().
+  SoDB::ContextManager * stateMgr = SoContextManagerElement::get(state);
+  if (stateMgr) this->contextManager = stateMgr;
+
   // make sure we've finished rendering to this context
   glFlush();
   const SoGLContext * glue = SoGLContext_instance(SoGLCacheContextElement::get(state));

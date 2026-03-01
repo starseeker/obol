@@ -300,6 +300,7 @@
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
+#include <Inventor/elements/SoContextManagerElement.h>
 #include <Inventor/elements/SoLazyElement.h>
 #include <Inventor/elements/SoTextureQualityElement.h>
 #include <Inventor/elements/SoMaterialBindingElement.h>
@@ -616,7 +617,7 @@ class SoShadowGroupP {
 public:
   SoShadowGroupP(SoShadowGroup * master) :
     master(master),
-    contextManager(SoDB::getContextManager()),
+    contextManager(nullptr),
     bboxaction(SbViewportRegion(SbVec2s(100,100))),
     matrixaction(SbViewportRegion(SbVec2s(100,100))),
     shadowlightsvalid(FALSE),
@@ -805,6 +806,19 @@ SoShadowGroup::~SoShadowGroup()
 }
 
 /*!
+  Explicitly set the context manager used by isSupported().  This allows
+  callers to avoid SoDB::getContextManager() entirely: set the manager
+  here before calling isSupported(), or simply call isSupported() after
+  the node has been rendered at least once (the manager is then captured
+  automatically from the render state).
+*/
+void
+SoShadowGroup::setContextManager(SoDB::ContextManager * manager)
+{
+  PRIVATE(this)->contextManager = manager;
+}
+
+/*!
   \copydetails SoNode::initClass(void)
 */
 void
@@ -852,7 +866,11 @@ SoShadowGroup::isSupported(void) const
   static int supp = -1;
   if (supp != -1) { return supp ? true : false; }
 
+  // Prefer the instance manager (set via setContextManager() or populated from
+  // the state element during a prior render).  Fall back to the global only if
+  // the instance hasn't been rendered yet and no explicit manager was set.
   SoDB::ContextManager * mgr = PRIVATE(this)->contextManager;
+  if (!mgr) mgr = SoDB::getContextManager();
   if (!mgr) {
     SoDebugError::postWarning("SoShadowGroup::isSupported",
                               "No context manager available.");
@@ -2142,6 +2160,12 @@ void
 SoShadowGroupP::GLRender(SoGLRenderAction * action, const SbBool inpath)
 {
   SoState * state = action->getState();
+
+  // Update context manager from the state element pushed by SoOffscreenRenderer
+  // so isSupported() can be called after at least one render without going global.
+  SoDB::ContextManager * stateMgr = SoContextManagerElement::get(state);
+  if (stateMgr) this->contextManager = stateMgr;
+
   const SoGLContext * glue = SoGLContext_instance(SoGLCacheContextElement::get(state));
 
   // FIXME: should store results in a "context -> supported" map.  -mortene.

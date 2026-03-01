@@ -1,25 +1,25 @@
-#ifndef OBOL_SOSHADOWGROUP_H
-#define OBOL_SOSHADOWGROUP_H
+#ifndef OBOL_SOCONTEXTMANAGERELEMENT_H
+#define OBOL_SOCONTEXTMANAGERELEMENT_H
 
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  * Redistributions of source code must retain the above copyright notice,
  * this list of conditions and the following disclaimer.
- * 
+ *
  * Redistributions in binary form must reproduce the above copyright
  * notice, this list of conditions and the following disclaimer in the
  * documentation and/or other materials provided with the distribution.
- * 
+ *
  * Neither the name of the copyright holder nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -33,62 +33,43 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#include <Inventor/nodes/SoSubNode.h>
-#include <Inventor/nodes/SoSeparator.h>
-#include <Inventor/fields/SoSFBool.h>
-#include <Inventor/fields/SoSFFloat.h>
-#include <Inventor/fields/SoSFEnum.h>
-#include <Inventor/fields/SoSFInt32.h>
+#include <Inventor/elements/SoSubElement.h>
 #include <Inventor/SoDB.h>
 
-class SoShadowGroupP;
+/*!
+  \class SoContextManagerElement SoContextManagerElement.h Inventor/elements/SoContextManagerElement.h
+  \brief Carries the active SoDB::ContextManager through the GL render state.
 
-class OBOL_DLL_API SoShadowGroup : public SoSeparator {
-  typedef SoSeparator inherited;
+  SoOffscreenRenderer pushes the per-instance context manager onto the
+  state before traversal.  Scene-graph nodes that need to create their
+  own offscreen GL contexts (SoSceneTexture2, SoSceneTextureCubeMap,
+  SoShadowGroup, etc.) read it from the state so that no node ever has
+  to call SoDB::getContextManager() directly.
 
-  SO_NODE_HEADER(SoShadowGroup);
+  \ingroup coin_elements
+*/
+
+class OBOL_DLL_API SoContextManagerElement : public SoElement {
+  typedef SoElement inherited;
+
+  SO_ELEMENT_HEADER(SoContextManagerElement);
 
 public:
   static void initClass(void);
-  static void init(void);
+protected:
+  virtual ~SoContextManagerElement();
 
-  SbBool isSupported(void) const;
-  void setContextManager(SoDB::ContextManager * manager);
+public:
+  virtual void init(SoState * state);
 
-  SoShadowGroup(void);
+  virtual SbBool matches(const SoElement * elt) const;
+  virtual SoElement * copyMatchInfo(void) const;
 
-  enum VisibilityFlag {
-    ABSOLUTE_RADIUS,
-    LONGEST_BBOX_EDGE_FACTOR,
-    PROJECTED_BBOX_DEPTH_FACTOR
-  };
-
-  SoSFBool isActive;
-  SoSFFloat intensity;
-  SoSFFloat precision;
-  SoSFFloat quality;
-  SoSFFloat smoothBorder;
-  SoSFBool shadowCachingEnabled;
-  SoSFFloat visibilityNearRadius;
-  SoSFFloat visibilityRadius;
-  SoSFEnum visibilityFlag;
-  
-  SoSFFloat epsilon;
-  SoSFFloat threshold;
-
-  virtual void GLRenderBelowPath(SoGLRenderAction * action);
-  virtual void GLRenderInPath(SoGLRenderAction * action);
-
-  virtual void notify(SoNotList * nl);
-
-  void enableSubgraphSearchOnNotify(const SbBool onoff);
+  static void set(SoState * state, SoDB::ContextManager * manager);
+  static SoDB::ContextManager * get(SoState * state);
 
 protected:
-  virtual ~SoShadowGroup();
-
-private:
-  SoShadowGroupP * pimpl;
-
+  SoDB::ContextManager * manager;
 };
 
-#endif // OBOL_SOSHADOWGROUP_H
+#endif // !OBOL_SOCONTEXTMANAGERELEMENT_H

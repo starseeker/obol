@@ -325,6 +325,7 @@
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/elements/SoCullElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
+#include <Inventor/elements/SoContextManagerElement.h>
 #include <Inventor/elements/SoModelMatrixElement.h>
 #include <Inventor/elements/SoProjectionMatrixElement.h>
 #include <Inventor/elements/SoViewVolumeElement.h>
@@ -966,6 +967,12 @@ SoOffscreenRendererP::renderFromBase(SoBase * base)
   // the render action is not allocated by us.
   const uint32_t oldcontext = this->renderaction->getCacheContext();
   this->renderaction->setCacheContext(newcontext);
+  // Push the per-instance context manager into the render state so that
+  // any scene-graph node that needs to create its own offscreen GL context
+  // (SoSceneTexture2, SoSceneTextureCubeMap, SoShadowGroup, etc.) can
+  // retrieve it without calling SoDB::getContextManager() directly.
+  SoContextManagerElement::set(this->renderaction->getState(),
+                               this->instanceContextManager);
 
   if (CoinOffscreenGLCanvas::debug()) {
     GLint colbits[4];

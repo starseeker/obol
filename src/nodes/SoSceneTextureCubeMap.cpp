@@ -43,6 +43,7 @@
 #include <Inventor/elements/SoGLLazyElement.h>
 #include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
+#include <Inventor/elements/SoContextManagerElement.h>
 #include <Inventor/elements/SoTextureUnitElement.h>
 #include <Inventor/elements/SoGLMultiTextureImageElement.h>
 #include <Inventor/elements/SoGLMultiTextureEnabledElement.h>
@@ -353,7 +354,7 @@ SoSceneTextureCubeMap::notify(SoNotList * list)
 SoSceneTextureCubeMapP::SoSceneTextureCubeMapP(SoSceneTextureCubeMap * apiptr)
 {
   this->api = apiptr;
-  this->contextManager = SoDB::getContextManager();
+  this->contextManager = NULL;
   this->glimage = NULL;
   this->glimagevalid = FALSE;
   this->glcontext = NULL;
@@ -385,6 +386,10 @@ SoSceneTextureCubeMapP::~SoSceneTextureCubeMapP()
 void
 SoSceneTextureCubeMapP::updatePBuffer(SoState * state, const float quality)
 {
+  // Update the context manager from the state element pushed by SoOffscreenRenderer.
+  SoDB::ContextManager * stateMgr = SoContextManagerElement::get(state);
+  if (stateMgr) this->contextManager = stateMgr;
+
   SbVec2s size = PUBLIC(this)->size.getValue();
 
   assert(PUBLIC(this)->scene.getValue());
