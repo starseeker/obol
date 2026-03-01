@@ -1660,14 +1660,6 @@ SoDB::setContextManager(ContextManager * manager)
   }
 }
 
-// C-style helper function for glue layer to access context manager
-// This avoids circular dependencies between glue and SoDB
-extern "C" {
-  void* coin_get_context_manager(void) {
-    return SoDB::getContextManager();
-  }
-}
-
 /* -----------------------------------------------------------------------
  * SoDB::createOSMesaContextManager() factory
  *

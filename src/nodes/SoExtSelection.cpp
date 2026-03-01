@@ -86,6 +86,7 @@
 
 #include "glue/glp.h"
 #include "CoinTidbits.h"
+#include <Inventor/SoDB.h>
 #include <Inventor/SbBox2s.h>
 #include <Inventor/SbBox3f.h>
 #include <Inventor/SbMatrix.h>
@@ -2644,7 +2645,7 @@ SoExtSelectionP::performSelection(SoHandleEventAction * action)
       upon, if possible.
     */
     unsigned int maxsize[2];
-    SoGLContext_context_max_dimensions(&maxsize[0], &maxsize[1]);
+    SoGLContext_context_max_dimensions(SoDB::getContextManager(), &maxsize[0], &maxsize[1]);
 
     this->requestedsize = action->getViewportRegion().getViewportSizePixels();
 

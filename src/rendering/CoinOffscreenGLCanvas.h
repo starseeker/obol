@@ -74,7 +74,7 @@ public:
 private:
   SbBool clampSize(SbVec2s & s) const;
   static void clampToPixelSizeRoof(SbVec2s & s);
-  static SbVec2s getMaxTileSize(void);
+  static SbVec2s getMaxTileSize(SoDB::ContextManager * mgr);
   static unsigned int tilesizeroof;
   uint32_t tryActivateGLContext(void);
   void destructContext(void);

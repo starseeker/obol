@@ -103,7 +103,7 @@ CoinOffscreenGLCanvas::clampSize(SbVec2s & reqsize) const
   // able to allocate a buffer of this size -- e.g. due to memory
   // constraints on the gfx card.
 
-  SbVec2s maxsize = CoinOffscreenGLCanvas::getMaxTileSize();
+  SbVec2s maxsize = CoinOffscreenGLCanvas::getMaxTileSize(this->effectiveMgr());
   if (maxsize == SbVec2s(0, 0)) {
     // The global GL probe returned nothing usable (e.g. no system-GL context
     // could be created because we are headless or there is no display).
@@ -553,7 +553,7 @@ static void tilesize_cleanup(void)
 // Return largest size of offscreen canvas system can handle. Will
 // cache result, so only the first look-up is expensive.
 SbVec2s
-CoinOffscreenGLCanvas::getMaxTileSize(void)
+CoinOffscreenGLCanvas::getMaxTileSize(SoDB::ContextManager * mgr)
 {
   // cache the values in static variables so that a new context is not
   // created every time render() is called in SoOffscreenRenderer
@@ -564,7 +564,7 @@ CoinOffscreenGLCanvas::getMaxTileSize(void)
   coin_atexit((coin_atexit_f*) tilesize_cleanup, CC_ATEXIT_NORMAL);
 
   unsigned int width, height;
-  SoGLContext_context_max_dimensions(&width, &height);
+  SoGLContext_context_max_dimensions(mgr, &width, &height);
 
   if (CoinOffscreenGLCanvas::debug()) {
     SoDebugError::postInfo("CoinOffscreenGLCanvas::getMaxTileSize",

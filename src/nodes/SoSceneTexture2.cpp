@@ -302,6 +302,7 @@
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/SbImage.h>
 #include "glue/glp.h"
+#include <Inventor/SoDB.h>
 #include <Inventor/misc/SoGLImage.h>
 #include "CoinTidbits.h"
 #include <Inventor/system/gl.h>
@@ -371,6 +372,7 @@ public:
   // pederb, 2007-03-07
 
   SoSceneTexture2 * api;
+  SoDB::ContextManager * contextManager;
   void * glcontext;
   SbVec2s glcontextsize;
   int contextid;
@@ -679,6 +681,7 @@ SoSceneTexture2::write(SoWriteAction * action)
 SoSceneTexture2P::SoSceneTexture2P(SoSceneTexture2 * apiptr)
 {
   this->api = apiptr;
+  this->contextManager = SoDB::getContextManager();
   this->glcontext = NULL;
   this->buffervalid = FALSE;
   this->glimagevalid = FALSE;
@@ -701,7 +704,7 @@ SoSceneTexture2P::~SoSceneTexture2P()
 
   if (this->glimage) this->glimage->unref(NULL);
   if (this->glcontext != NULL) {
-    SoGLContext_context_destruct(this->glcontext);
+    if (this->contextManager) this->contextManager->destroyContext(this->glcontext);
   }
   delete[] this->offscreenbuffer;
   delete this->glaction;
@@ -928,7 +931,7 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
       this->glimagecontext = 0;
     }
     if (this->glcontext) {
-      SoGLContext_context_destruct(this->glcontext);
+      if (this->contextManager) this->contextManager->destroyContext(this->glcontext);
       this->glcontextsize.setValue(-1,-1);
       this->glcontext = NULL;
     }
@@ -972,8 +975,7 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
     }
     // FIXME: make it possible to specify what kind of context you want
     // (RGB or RGBA, I guess). pederb, 2003-11-27
-    this->glcontext = SoGLContext_context_create_offscreen(this->glcontextsize[0],
-                                                         this->glcontextsize[1]);
+    this->glcontext = this->contextManager ? this->contextManager->createOffscreenContext(this->glcontextsize[0], this->glcontextsize[1]) : nullptr;
     this->canrendertotexture = SoGLContext_context_can_render_to_texture(this->glcontext);
 
     if (!this->glaction) {
@@ -996,7 +998,7 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
     this->glaction->setTransparencyType((SoGLRenderAction::TransparencyType)
                                         SoShapeStyleElement::getTransparencyType(state));
 
-    SoGLContext_context_make_current(this->glcontext);
+    if (this->contextManager) this->contextManager->makeContextCurrent(this->glcontext);
     glEnable(GL_DEPTH_TEST);
     this->glaction->apply(scene);
     // Make sure that rendering to pBuffer is completed to avoid
@@ -1017,7 +1019,7 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
       glPixelStorei(GL_PACK_ALIGNMENT, 4);
     }
     
-    SoGLContext_context_reinstate_previous(this->glcontext);
+    if (this->contextManager) this->contextManager->restorePreviousContext(this->glcontext);
   }
   if (!this->glimagevalid || (this->glimage == NULL)) {
     // just delete old glimage

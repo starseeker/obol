@@ -4610,94 +4610,8 @@ SoGLContext_glXGetCurrentDisplay(const SoGLContext * w)
   }
 */
 
-// Forward declaration and helper for SoDB context manager access
-// This allows the glue layer to access SoDB without circular dependencies
-extern "C" {
-  // Defined in SoDB.cpp - returns the current context manager
-  void* coin_get_context_manager(void);
-}
 
-/* offscreen rendering - now uses SoDB::ContextManager directly */
-
-void *
-SoGLContext_context_create_offscreen(unsigned int width, unsigned int height)
-{
-  SoDB::ContextManager* manager = getSoDBContextManager();
-  if (manager) {
-    return manager->createOffscreenContext(width, height);
-  } else {
-    // ERROR: No context manager provided
-    static int error_shown = 0;
-    if (!error_shown) {
-      error_shown = 1;
-      fprintf(stderr, "ERROR: No context manager provided. "
-                      "Applications must provide a context manager "
-                      "via SoDB::setContextManager() before SoDB::init(). "
-                      "See documentation for SoDB::ContextManager.\n");
-    }
-    
-    return NULL;
-  }
-}
-
-SbBool
-SoGLContext_context_make_current(void * ctx)
-{
-  SoDB::ContextManager* manager = getSoDBContextManager();
-  if (manager) {
-    return manager->makeContextCurrent(ctx);
-  } else {
-    // ERROR: No context manager provided
-    static int error_shown = 0;
-    if (!error_shown) {
-      error_shown = 1;
-      fprintf(stderr, "ERROR: No context manager provided. "
-                      "Applications must provide a context manager "
-                      "via SoDB::setContextManager() before SoDB::init().\n");
-    }
-    return FALSE;
-  }
-}
-
-void
-SoGLContext_context_reinstate_previous(void * ctx)
-{
-  /* FIXME: I believe two SoGLContext_context_make_current() invocations
-     before invoking this function would make this function behave
-     erroneously, as previous contexts are not stacked (at least not
-     in the GLX implementation, which I have checked), but only the
-     last context is kept track of.
-
-     FIXME: So, the API for this feature is fucked up. Should probably
-     redesign it by adding a stack concept. 20030717 mortene.
-   */
-
-  SoDB::ContextManager* manager = getSoDBContextManager();
-  if (manager) {
-    manager->restorePreviousContext(ctx);
-  }
-  // No error message here - this is optional functionality
-}
-
-void
-SoGLContext_context_destruct(void * ctx)
-{
-  SoDB::ContextManager* manager = getSoDBContextManager();
-  if (manager) {
-    manager->destroyContext(ctx);
-  } else {
-    // ERROR: No context manager provided for destruction
-    static int error_shown = 0;
-    if (!error_shown) {
-      error_shown = 1;
-      fprintf(stderr, "ERROR: No context manager provided. "
-                      "Context may not be properly cleaned up. "
-                      "Applications must provide a context manager "
-                      "via SoDB::setContextManager().\n");
-    }
-    // Cannot safely destroy context without manager
-  }
-}
+/* offscreen rendering - max dimensions probe */
 
 /*!
   Returns the \e theoretical maximum dimensions for an offscreen
@@ -4709,12 +4623,11 @@ SoGLContext_context_destruct(void * ctx)
   time of an application.
 
   So the values returned from this function should be taken as hints,
-  and client code of SoGLContext_context_create_offscreen() and
-  SoGLContext_context_make_current() should re-request offscreen
-  contexts with lower dimensions if any of those fails.
+  and callers should re-request offscreen contexts with lower dimensions
+  if creation or activation fails.
 */
 void
-SoGLContext_context_max_dimensions(unsigned int * width, unsigned int * height)
+SoGLContext_context_max_dimensions(void * mgr_ptr, unsigned int * width, unsigned int * height)
 {
   void * ctx;
   SbBool ok;
@@ -4737,16 +4650,19 @@ SoGLContext_context_max_dimensions(unsigned int * width, unsigned int * height)
                     that the detection below might fail -- as we
                     should report <0,0> on consecutive runs. */
 
+  SoDB::ContextManager * manager = static_cast<SoDB::ContextManager *>(mgr_ptr);
+  if (!manager) { return; }
+
   /* The below calls *can* fail, due to e.g. lack of resources, or no
      usable visual for the GL context. We try to handle gracefully.
      This is straightforward to do here, simply returning dimensions
      of <0,0>, but note that we also need to handle the exception in
      the callers. */
 
-  ctx = SoGLContext_context_create_offscreen(32, 32);
+  ctx = manager->createOffscreenContext(32, 32);
   if (!ctx) { return; }
-  ok = SoGLContext_context_make_current(ctx);
-  if (!ok) { SoGLContext_context_destruct(ctx); return; }
+  ok = manager->makeContextCurrent(ctx);
+  if (!ok) { manager->destroyContext(ctx); return; }
 
   glGetIntegerv(GL_MAX_VIEWPORT_DIMS, size);
   if (SoGLContext_debug()) {
@@ -4767,8 +4683,8 @@ SoGLContext_context_max_dimensions(unsigned int * width, unsigned int * height)
     *height = 16384;
     dim[0]  = *width;
     dim[1]  = *height;
-    SoGLContext_context_reinstate_previous(ctx);
-    SoGLContext_context_destruct(ctx);
+    manager->restorePreviousContext(ctx);
+    manager->destroyContext(ctx);
     return;
   }
 
@@ -4779,8 +4695,8 @@ SoGLContext_context_max_dimensions(unsigned int * width, unsigned int * height)
      do not apply. The maximum dimensions are determined by OpenGL texture
      size limits and the standard 4096x4096 clamp below. */
 
-  SoGLContext_context_reinstate_previous(ctx);
-  SoGLContext_context_destruct(ctx);
+  manager->restorePreviousContext(ctx);
+  manager->destroyContext(ctx);
 
   /* Force an additional limit to the maximum tilesize to 4096x4096
      pixels.

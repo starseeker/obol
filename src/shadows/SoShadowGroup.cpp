@@ -333,6 +333,7 @@
 #include <Inventor/lists/SbList.h>
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/SbMatrix.h>
+#include <Inventor/SoDB.h>
 #include "glue/glp.h"
 
 #include "nodes/SoSubNodeP.h"
@@ -852,11 +853,19 @@ SoShadowGroup::isSupported(void)
   static int supp = -1;
   if (supp != -1) { return supp ? true : false; }
 
-  void * glctx = SoGLContext_context_create_offscreen(256, 256);
-  SbBool ok = SoGLContext_context_make_current(glctx);
+  SoDB::ContextManager * mgr = SoDB::getContextManager();
+  if (!mgr) {
+    SoDebugError::postWarning("SoShadowGroup::isSupported",
+                              "No context manager available.");
+    return false;
+  }
+
+  void * glctx = mgr->createOffscreenContext(256, 256);
+  SbBool ok = glctx ? mgr->makeContextCurrent(glctx) : FALSE;
   if (!ok) {
-    SoDebugError::postWarning("SoShadowGroupP::isSupported",
+    SoDebugError::postWarning("SoShadowGroup::isSupported",
                               "Could not open an OpenGL context.");
+    if (glctx) mgr->destroyContext(glctx);
     return false;
   }
 
@@ -866,8 +875,8 @@ SoShadowGroup::isSupported(void)
   const bool supported = SoShadowGroupP::supported(glue, unused);
   supp = supported ? 1 : 0;
 
-  SoGLContext_context_reinstate_previous(glctx);
-  SoGLContext_context_destruct(glctx);
+  mgr->restorePreviousContext(glctx);
+  mgr->destroyContext(glctx);
 
   return supported;
 }
