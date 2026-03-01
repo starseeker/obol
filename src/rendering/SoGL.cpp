@@ -83,6 +83,11 @@
 const SoGLContext *
 sogl_glue_instance(const SoState * state)
 {
+  // Guard against callers that pass NULL state.  SoGLImage::setData() has a
+  // default createinstate=NULL parameter and calls us unconditionally; when
+  // state is absent there is no active render context to interrogate.
+  if (!state) return nullptr;
+
   SoGLRenderAction * action = (SoGLRenderAction *)state->getAction();
   if (action->isOfType(SoGLRenderAction::getClassTypeId())) {
     return SoGLContext_instance(action->getCacheContext());
