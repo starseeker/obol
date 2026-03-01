@@ -60,6 +60,12 @@
  *   - SoLineSet, SoIndexedLineSet – rendered as thin cylinders via
  *     SoLineSet::createCylinderProxy() / SoIndexedLineSet::createCylinderProxy()
  *   - SoPointSet – rendered as small spheres via SoPointSet::createSphereProxy()
+ *   - SoCylinder with DrawStyle LINES – rendered as a ring of thin facetized
+ *     cylinders (nrtCreateRingProxy) to match the OpenGL wireframe ring
+ *     appearance used by rotational draggers / manipulators
+ *   - Shapes with DrawStyle INVISIBLE – pruned from the nanort scene so that
+ *     picking-only geometry (e.g. the sphere inside SoRotateSphericalDragger)
+ *     is not rendered as solid geometry
  *   - SoText3 – uses generatePrimitives() which produces extruded triangle
  *     geometry directly; no extra work needed
  *   - SoText2 – screen-aligned text rendered as one screen-aligned quad per
@@ -99,9 +105,11 @@
 #include <Inventor/nodes/SoPointLight.h>
 #include <Inventor/nodes/SoSpotLight.h>
 #include <Inventor/nodes/SoShape.h>
+#include <Inventor/nodes/SoCylinder.h>
 #include <Inventor/nodes/SoLineSet.h>
 #include <Inventor/nodes/SoIndexedLineSet.h>
 #include <Inventor/nodes/SoPointSet.h>
+#include <Inventor/SbRotation.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoText2.h>
 #include <Inventor/nodes/SoMaterial.h>
@@ -349,6 +357,88 @@ nrtPointSetPreCB(void * ud, SoCallbackAction * action, const SoNode * node)
     const float radius = nrtLineWorldRadius(action, ptSz, vpH);
 
     SoSeparator * proxy = ps->createSphereProxy(coords, radius);
+    proxy->ref();
+    nrtCollectProxy(action, data, proxy);
+    proxy->unref();
+
+    return SoCallbackAction::PRUNE;
+}
+
+// ==========================================================================
+// SoShape pre-callback: skip invisible shapes
+// ==========================================================================
+// Shapes marked with DrawStyle { style INVISIBLE } (e.g. the picking sphere
+// in SoRotateSphericalDragger) must not contribute triangles to the nanort
+// scene.  This pre-callback prunes any SoShape whose current draw style is
+// INVISIBLE so that nrtTriangleCB is never invoked for it.
+static SoCallbackAction::Response
+nrtShapePreCB(void * /*ud*/, SoCallbackAction * action, const SoNode *)
+{
+    if (action->getDrawStyle() == SoDrawStyle::INVISIBLE)
+        return SoCallbackAction::PRUNE;
+    return SoCallbackAction::CONTINUE;
+}
+
+// ==========================================================================
+// SoCylinder pre-callback: ring proxy for DrawStyle LINES cylinders
+// ==========================================================================
+// In OpenGL, SoCylinder with DrawStyle { style LINES } renders as a wireframe
+// ring (circular outline).  nanort has no concept of wireframe rendering, so
+// instead we build a series of thin cylindrical tube segments arranged around
+// the circumference to produce the same ring appearance.  This matches the
+// visual style of rotational manipulators (SoRotateSphericalDragger,
+// SoTrackballDragger, SoCenterballDragger) in the OpenGL panel.
+static SoSeparator *
+nrtCreateRingProxy(float cylRadius, float tubeRadius, int numSegments = 32)
+{
+    SoSeparator * proxy = new SoSeparator;
+    proxy->ref();
+
+    const float twoPi = 2.0f * static_cast<float>(M_PI);
+    for (int i = 0; i < numSegments; ++i) {
+        const float a0 = twoPi *  i      / numSegments;
+        const float a1 = twoPi * (i + 1) / numSegments;
+        const SbVec3f p0(cylRadius * cosf(a0), 0.0f, cylRadius * sinf(a0));
+        const SbVec3f p1(cylRadius * cosf(a1), 0.0f, cylRadius * sinf(a1));
+        const SbVec3f diff = p1 - p0;
+        const float segLen = diff.length();
+        if (segLen < 1e-6f) continue;
+
+        SoSeparator * segSep = new SoSeparator;
+        SoMatrixTransform * xf = new SoMatrixTransform;
+        SbMatrix mat;
+        mat.setTransform((p0 + p1) * 0.5f,
+                         SbRotation(SbVec3f(0.0f, 1.0f, 0.0f), diff / segLen),
+                         SbVec3f(1.0f, 1.0f, 1.0f));
+        xf->matrix.setValue(mat);
+        segSep->addChild(xf);
+        SoCylinder * cyl = new SoCylinder;
+        cyl->radius.setValue(tubeRadius);
+        cyl->height.setValue(segLen);
+        segSep->addChild(cyl);
+        proxy->addChild(segSep);
+    }
+
+    proxy->unrefNoDelete();
+    return proxy;
+}
+
+static SoCallbackAction::Response
+nrtCylinderPreCB(void * ud, SoCallbackAction * action, const SoNode * node)
+{
+    if (action->getDrawStyle() != SoDrawStyle::LINES)
+        return SoCallbackAction::CONTINUE;
+
+    NrtProxyData * data = static_cast<NrtProxyData *>(ud);
+    const SoCylinder * cyl = static_cast<const SoCylinder *>(node);
+
+    float lineW = SoLineWidthElement::get(action->getState());
+    if (lineW <= 0.0f) lineW = 1.0f;
+    const float vpH      = static_cast<float>(data->vp.getViewportSizePixels()[1]);
+    const float tubeRad  = nrtLineWorldRadius(action, lineW, vpH);
+    const float cylRad   = cyl->radius.getValue();
+
+    SoSeparator * proxy = nrtCreateRingProxy(cylRad, tubeRad);
     proxy->ref();
     nrtCollectProxy(action, data, proxy);
     proxy->unref();
@@ -1117,6 +1207,10 @@ public:
             // Geometry
             cba.addTriangleCallback(SoShape::getClassTypeId(),
                                     nrtTriangleCB, &collector);
+            // Skip shapes with DrawStyle INVISIBLE (e.g. picking spheres in
+            // rotational draggers) so they don't appear as solid geometry.
+            cba.addPreCallback(SoShape::getClassTypeId(),
+                               nrtShapePreCB, nullptr);
             // Proxy geometry for lines/points
             cba.addPreCallback(SoLineSet::getClassTypeId(),
                                nrtLineSetPreCB, &proxyData);
@@ -1124,6 +1218,10 @@ public:
                                nrtIndexedLineSetPreCB, &proxyData);
             cba.addPreCallback(SoPointSet::getClassTypeId(),
                                nrtPointSetPreCB, &proxyData);
+            // Cylinders with DrawStyle LINES represent rotational dragger rings;
+            // replace them with thin facetized cylinder rings.
+            cba.addPreCallback(SoCylinder::getClassTypeId(),
+                               nrtCylinderPreCB, &proxyData);
             cba.addPreCallback(SoText2::getClassTypeId(),
                                nrtText2PreCB, &proxyData);
             cba.addPreCallback(SoHUDLabel::getClassTypeId(),
