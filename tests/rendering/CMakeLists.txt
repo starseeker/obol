@@ -284,6 +284,10 @@ add_nanort_testlib_rendering_test(render_draggers)
 add_nanort_testlib_rendering_test(render_light_manips)
 add_nanort_testlib_rendering_test(render_manip_sequences)
 
+# NanoRT HUD test: validates that SoHUDLabel text is rasterized via SbFont and
+# alpha-composited onto the NanoRT framebuffer by nrtHUDLabelPreCB.
+add_nanort_testlib_rendering_test(render_hud_nanort)
+
 # ---- Standalone nanort demo (original, uses its own context manager) --------
 # render_nanort.cpp is the original proof-of-concept demo that builds its own
 # BVH and does ray-tracing without the SoNanoRTContextManager; it does NOT

@@ -66,6 +66,12 @@
  *     visible glyph via SoText2::buildGlyphQuads(); each quad matches the
  *     pixel footprint of the glyph bitmap at the text anchor depth, with the
  *     per-line justification offsets applied; whitespace chars are skipped
+ *   - SoHUDLabel – HUD overlay text labels (inside SoHUDKit) are rasterized
+ *     via SbFont/stb_truetype and alpha-composited onto the final framebuffer,
+ *     giving the same HUD text appearance without any OpenGL context
+ *   - SoHUDButton – HUD button border rectangle (1-pixel GL_LINE_LOOP equivalent)
+ *     is drawn directly into the image buffer using borderColor, and the button
+ *     label text is rasterized via SbFont and composited onto the framebuffer
  *
  * Dependencies:
  *   - nanort.h (external/nanort/nanort.h)
@@ -99,6 +105,9 @@
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoText2.h>
 #include <Inventor/nodes/SoMaterial.h>
+#include <Inventor/annex/HUD/nodes/SoHUDLabel.h>
+#include <Inventor/annex/HUD/nodes/SoHUDButton.h>
+#include <Inventor/SbFont.h>
 #include <Inventor/nodes/SoMatrixTransform.h>
 #include <Inventor/nodes/SoRaytracingParams.h>
 #include <Inventor/elements/SoCoordinateElement.h>
@@ -372,10 +381,278 @@ nrtText2PreCB(void * ud, SoCallbackAction * action, const SoNode * node)
 }
 
 // ==========================================================================
-// Light data structures (all light types)
+// SoHUDLabel pre-callback: HUD overlay text via SbFont/stb_truetype
 // ==========================================================================
+// SoHUDLabel renders text at a fixed pixel position using the pixel-space
+// orthographic projection set up by SoHUDKit.  During SoCallbackAction
+// traversal there is no GL state to call GLRender, so this pre-callback
+// reads the label's fields directly and rasterizes the text using SbFont
+// (the same stb_truetype path used by stt_reference).  The resulting RGBA
+// pixel buffer is stored as an NrtTextOverlay for compositing after the
+// ray-trace pass.
 
-// Discriminator for the supported light types.
+// Approximate line height factor: ascender + descender + leading, expressed
+// as a multiplier of fontSize.  Consistent with stb_truetype's default metrics.
+static const float kNrtHUDLineHeightFactor = 1.3f;
+
+static SoCallbackAction::Response
+nrtHUDLabelPreCB(void * ud, SoCallbackAction * /*action*/, const SoNode * node)
+{
+    NrtProxyData * data  = static_cast<NrtProxyData *>(ud);
+    const SoHUDLabel * label = static_cast<const SoHUDLabel *>(node);
+
+    const int nlines = label->string.getNum();
+    if (nlines == 0) return SoCallbackAction::PRUNE;
+
+    const float fontSize = label->fontSize.getValue();
+    if (fontSize <= 0.0f) return SoCallbackAction::PRUNE;
+
+    SbFont font;
+    font.setSize(fontSize);
+
+    const SbColor & col = label->color.getValue();
+    const unsigned char cr = static_cast<unsigned char>(col[0] * 255.0f);
+    const unsigned char cg = static_cast<unsigned char>(col[1] * 255.0f);
+    const unsigned char cb = static_cast<unsigned char>(col[2] * 255.0f);
+
+    // Approximate line height (ascender + descender + a small leading).
+    // stb_truetype scales with fontSize; see kNrtHUDLineHeightFactor.
+    const int lineH = static_cast<int>(fontSize * kNrtHUDLineHeightFactor) + 1;
+
+    // ------------------------------------------------------------------
+    // Pass 1: compute per-line pixel widths and overall canvas dimensions.
+    // ------------------------------------------------------------------
+    std::vector<int> lineWidths(nlines, 0);
+    int maxWidth = 0;
+    for (int li = 0; li < nlines; ++li) {
+        const char * p = label->string[li].getString();
+        int x = 0;
+        while (*p) {
+            const unsigned char ch = static_cast<unsigned char>(*p++);
+            SbVec2s sz, bearing;
+            font.getGlyphBitmap(ch, sz, bearing);
+            const SbVec2f adv = font.getGlyphAdvance(ch);
+            x += static_cast<int>(adv[0]);
+        }
+        lineWidths[li] = x;
+        if (x > maxWidth) maxWidth = x;
+    }
+    if (maxWidth <= 0) return SoCallbackAction::PRUNE;
+
+    const int canvasW = maxWidth;
+    const int canvasH = nlines * lineH;
+
+    // ------------------------------------------------------------------
+    // Allocate RGBA canvas (transparent black), stored bottom-to-top to
+    // match the GL/nanort framebuffer convention.
+    // ------------------------------------------------------------------
+    NrtTextOverlay ov;
+    ov.w = canvasW;
+    ov.h = canvasH;
+    ov.pixbuf.assign(static_cast<size_t>(canvasW) * canvasH * 4, 0);
+
+    // Anchor position: label->position is in pixels from lower-left.
+    const SbVec2f pos = label->position.getValue();
+    ov.x = static_cast<int>(pos[0]);
+    ov.y = static_cast<int>(pos[1]);
+
+    // ------------------------------------------------------------------
+    // Pass 2: rasterize each line into the canvas.
+    // Bottom line is line (nlines-1); top line is line 0.
+    // Within the canvas, row 0 is the bottom row (GL convention).
+    // ------------------------------------------------------------------
+    const int just = label->justification.getValue();
+    for (int li = 0; li < nlines; ++li) {
+        // Row within the canvas for the TOP of this line.
+        // Line 0 is at the top of the canvas, line (nlines-1) at the bottom.
+        const int lineTopInCanvas = canvasH - (li + 1) * lineH;
+
+        // Horizontal start offset for justification.
+        int xstart = 0;
+        if (just == SoHUDLabel::RIGHT)
+            xstart = maxWidth - lineWidths[li];
+        else if (just == SoHUDLabel::CENTER)
+            xstart = (maxWidth - lineWidths[li]) / 2;
+
+        const char * p = label->string[li].getString();
+        int xpen = xstart;
+        while (*p) {
+            const unsigned char ch = static_cast<unsigned char>(*p++);
+            SbVec2s sz, bearing;
+            const unsigned char * bitmap = font.getGlyphBitmap(ch, sz, bearing);
+            const SbVec2f adv = font.getGlyphAdvance(ch);
+
+            if (bitmap && sz[0] > 0 && sz[1] > 0) {
+                // bearing[1] = pixels above baseline (positive = up).
+                // The baseline sits at lineTopInCanvas + lineH - (int)fontSize.
+                const int baseline = lineTopInCanvas + lineH - static_cast<int>(fontSize);
+                const int dst_x = xpen + bearing[0];
+                const int dst_y = baseline - bearing[1];  // top of glyph in canvas
+
+                for (int gy = 0; gy < sz[1]; ++gy) {
+                    // Canvas row for this glyph row (top-down glyph, bottom-up canvas).
+                    const int canvas_row = dst_y + gy;
+                    if (canvas_row < 0 || canvas_row >= canvasH) continue;
+                    // Flip to GL bottom-up convention.
+                    const int gl_row = canvasH - 1 - canvas_row;
+
+                    for (int gx = 0; gx < sz[0]; ++gx) {
+                        const int canvas_col = dst_x + gx;
+                        if (canvas_col < 0 || canvas_col >= canvasW) continue;
+                        const unsigned char alpha = bitmap[gy * sz[0] + gx];
+                        if (alpha == 0) continue;
+                        const size_t idx =
+                            (static_cast<size_t>(gl_row) * canvasW + canvas_col) * 4;
+                        ov.pixbuf[idx + 0] = cr;
+                        ov.pixbuf[idx + 1] = cg;
+                        ov.pixbuf[idx + 2] = cb;
+                        ov.pixbuf[idx + 3] = alpha;
+                    }
+                }
+            }
+            xpen += static_cast<int>(adv[0]);
+        }
+    }
+
+    data->textOverlays.push_back(std::move(ov));
+    return SoCallbackAction::PRUNE;
+}
+
+// ==========================================================================
+// SoHUDButton pre-callback: border rectangle + centered label via SbFont
+// ==========================================================================
+// SoHUDButton renders a rectangular border (GL_LINE_LOOP) and a centred text
+// label during GLRender.  In the nanort path there is no GL state, so this
+// callback does both steps in software:
+//   1. Allocates an RGBA canvas the full pixel size of the button.
+//   2. Draws a 1-pixel border rectangle using borderColor.
+//   3. Rasterizes the centered label using SbFont / stb_truetype.
+// The combined canvas is stored as an NrtTextOverlay and alpha-composited
+// onto the framebuffer after ray-tracing — giving a complete button appearance.
+static SoCallbackAction::Response
+nrtHUDButtonPreCB(void * ud, SoCallbackAction * /*action*/, const SoNode * node)
+{
+    NrtProxyData * data = static_cast<NrtProxyData *>(ud);
+    const SoHUDButton * btn = static_cast<const SoHUDButton *>(node);
+
+    const SbVec2f pos  = btn->position.getValue();
+    const SbVec2f size = btn->size.getValue();
+    const int btnW = static_cast<int>(size[0]);
+    const int btnH = static_cast<int>(size[1]);
+    if (btnW <= 0 || btnH <= 0) return SoCallbackAction::PRUNE;
+
+    // Canvas covers the full button extent (GL bottom-up row convention).
+    NrtTextOverlay ov;
+    ov.w = btnW;
+    ov.h = btnH;
+    ov.x = static_cast<int>(pos[0]);
+    ov.y = static_cast<int>(pos[1]);
+    ov.pixbuf.assign(static_cast<size_t>(btnW) * btnH * 4, 0);
+
+    // --- 1. Draw 1-pixel border rectangle using borderColor -----------------
+    const SbColor & bcol = btn->borderColor.getValue();
+    const unsigned char br = static_cast<unsigned char>(bcol[0] * 255.0f);
+    const unsigned char bg = static_cast<unsigned char>(bcol[1] * 255.0f);
+    const unsigned char bb = static_cast<unsigned char>(bcol[2] * 255.0f);
+
+    // Inline helper: write a fully-opaque border pixel at (col, glRow) in the canvas.
+    auto drawBorderPixel = [&](int col, int glRow) {
+        if (col < 0 || col >= btnW || glRow < 0 || glRow >= btnH) return;
+        const size_t idx = (static_cast<size_t>(glRow) * btnW + col) * 4;
+        ov.pixbuf[idx + 0] = br;
+        ov.pixbuf[idx + 1] = bg;
+        ov.pixbuf[idx + 2] = bb;
+        ov.pixbuf[idx + 3] = 255;
+    };
+    // Bottom edge (GL row 0) and top edge (GL row btnH-1)
+    for (int c = 0; c < btnW; ++c) {
+        drawBorderPixel(c, 0);
+        drawBorderPixel(c, btnH - 1);
+    }
+    // Left edge (col 0) and right edge (col btnW-1)
+    for (int r = 1; r < btnH - 1; ++r) {
+        drawBorderPixel(0,        r);
+        drawBorderPixel(btnW - 1, r);
+    }
+
+    // --- 2. Draw centered text label using color ----------------------------
+    const SbString & str  = btn->string.getValue();
+    const float fontSize  = btn->fontSize.getValue();
+    if (str.getLength() > 0 && fontSize > 0.0f) {
+        SbFont font;
+        font.setSize(fontSize);
+
+        const SbColor & tcol = btn->color.getValue();
+        const unsigned char cr = static_cast<unsigned char>(tcol[0] * 255.0f);
+        const unsigned char cg = static_cast<unsigned char>(tcol[1] * 255.0f);
+        const unsigned char cb = static_cast<unsigned char>(tcol[2] * 255.0f);
+
+        // Measure string width for horizontal centering.
+        int strWidth = 0;
+        {
+            const char * p = str.getString();
+            while (*p) {
+                const unsigned char ch2 = static_cast<unsigned char>(*p++);
+                SbVec2s sz2, bearing2;
+                font.getGlyphBitmap(ch2, sz2, bearing2);
+                strWidth += static_cast<int>(font.getGlyphAdvance(ch2)[0]);
+            }
+        }
+
+        const int lineH = static_cast<int>(fontSize * kNrtHUDLineHeightFactor) + 1;
+
+        // Top-left origin of the text canvas within the button canvas.
+        // textX0: horizontal offset so the string is centred.
+        // textY0: GL bottom-up row in the button canvas where the text bottom sits.
+        const int textX0 = (btnW - strWidth) / 2;
+        const int textY0 = (btnH - lineH)   / 2;  // GL row of text bottom in button
+
+        const char * p = str.getString();
+        int xpen = textX0;
+        while (*p) {
+            const unsigned char ch = static_cast<unsigned char>(*p++);
+            SbVec2s sz, bearing;
+            const unsigned char * bitmap = font.getGlyphBitmap(ch, sz, bearing);
+            const SbVec2f adv = font.getGlyphAdvance(ch);
+
+            if (bitmap && sz[0] > 0 && sz[1] > 0) {
+                // Within the text canvas (lineH rows, top-down):
+                //   baseline top-down row = lineH - fontSize
+                //   glyph top top-down row = baseline - bearing[1]
+                const int baseline   = lineH - static_cast<int>(fontSize);
+                const int glyph_top  = baseline - bearing[1];  // top-down
+
+                for (int gy = 0; gy < sz[1]; ++gy) {
+                    // Top-down row in text canvas → GL bottom-up row in button canvas
+                    const int text_td_row   = glyph_top + gy;
+                    const int btn_gl_row    = textY0 + (lineH - 1 - text_td_row);
+                    if (btn_gl_row < 0 || btn_gl_row >= btnH) continue;
+
+                    for (int gx = 0; gx < sz[0]; ++gx) {
+                        const int btn_col = xpen + bearing[0] + gx;
+                        if (btn_col < 0 || btn_col >= btnW) continue;
+                        const unsigned char alpha = bitmap[gy * sz[0] + gx];
+                        if (alpha == 0) continue;
+                        const size_t idx =
+                            (static_cast<size_t>(btn_gl_row) * btnW + btn_col) * 4;
+                        // Overwrite border pixels that happen to coincide with text
+                        // (unlikely given centred text vs 1-pixel rim, but safe).
+                        ov.pixbuf[idx + 0] = cr;
+                        ov.pixbuf[idx + 1] = cg;
+                        ov.pixbuf[idx + 2] = cb;
+                        ov.pixbuf[idx + 3] = alpha;
+                    }
+                }
+            }
+            xpen += static_cast<int>(adv[0]);
+        }
+    }
+
+    data->textOverlays.push_back(std::move(ov));
+    return SoCallbackAction::PRUNE;
+}
+
+
 enum NrtLightType { NRT_DIRECTIONAL, NRT_POINT, NRT_SPOT };
 
 struct NrtLightInfo {
@@ -844,6 +1121,10 @@ public:
                                nrtPointSetPreCB, &proxyData);
             cba.addPreCallback(SoText2::getClassTypeId(),
                                nrtText2PreCB, &proxyData);
+            cba.addPreCallback(SoHUDLabel::getClassTypeId(),
+                               nrtHUDLabelPreCB, &proxyData);
+            cba.addPreCallback(SoHUDButton::getClassTypeId(),
+                               nrtHUDButtonPreCB, &proxyData);
             // All supported light types (with world-space transforms)
             cba.addPreCallback(SoDirectionalLight::getClassTypeId(),
                                nrtDirectionalLightCB, &lights);
@@ -856,9 +1137,8 @@ public:
         if (collector.tris.empty()) {
             // No ray-traceable triangles: return TRUE so the caller uses the
             // background-filled buffer rather than falling through to GL.
-            // Note: SoText2 overlays need geometry in the scene to get here;
-            // a text-only NanoRT scene would also have no triangle hits, so we
-            // skip the ray-trace but still composite any collected overlays.
+            // Note: SoText2 and SoHUDLabel overlays can be present without
+            // geometry; we skip the ray-trace but still composite any overlays.
             if (proxyData.textOverlays.empty())
                 return TRUE;
         }

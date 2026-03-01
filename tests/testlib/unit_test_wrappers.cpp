@@ -1594,7 +1594,7 @@ REGISTER_TEST(hud_overlay, ObolTest::TestCategory::Rendering,
     "Blue sphere with HUD overlay: status bar and side-menu buttons",
     e.has_visual = true;
     e.has_interactive = true;
-    e.nanort_ok = false;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createHUDOverlay;
 );
 
@@ -1602,7 +1602,7 @@ REGISTER_TEST(hud_no3d, ObolTest::TestCategory::Rendering,
     "Pure 2-D HUD scene: title, menu buttons, info panel, status bar",
     e.has_visual = true;
     e.has_interactive = true;
-    e.nanort_ok = false;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createHUDNo3D;
 );
 
@@ -1610,7 +1610,7 @@ REGISTER_TEST(hud_interaction, ObolTest::TestCategory::Rendering,
     "Blue sphere with interactive HUD buttons (static visual layout)",
     e.has_visual = true;
     e.has_interactive = true;
-    e.nanort_ok = false;
+    e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createHUDInteraction;
 );
 
