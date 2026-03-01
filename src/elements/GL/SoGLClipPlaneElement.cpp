@@ -84,6 +84,17 @@ SoGLClipPlaneElement::init(SoState * state)
 //! FIXME: write doc.
 
 void
+SoGLClipPlaneElement::push(SoState * state)
+{
+  inherited::push(state);
+  SoGLClipPlaneElement * prev =
+    static_cast<SoGLClipPlaneElement *>(this->getNextInStack());
+  this->glue = prev->glue;
+}
+
+//! FIXME: write doc.
+
+void
 SoGLClipPlaneElement::pop(SoState * state,
                           const SoElement * prevTopElement)
 {

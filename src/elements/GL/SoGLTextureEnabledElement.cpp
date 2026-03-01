@@ -146,6 +146,7 @@ SoGLTextureEnabledElement::push(SoState * state)
   SoGLTextureEnabledElement * prev = (SoGLTextureEnabledElement*) this->getNextInStack();
 
   this->data = prev->data;
+  this->glue = prev->glue;
   // capture previous element since we might or might not change the
   // GL state in set/pop
   prev->capture(state);

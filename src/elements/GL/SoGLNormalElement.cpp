@@ -81,6 +81,17 @@ SoGLNormalElement::init(SoState * state)
 //! FIXME: write doc.
 
 void
+SoGLNormalElement::push(SoState * state)
+{
+  inherited::push(state);
+  SoGLNormalElement * prev =
+    static_cast<SoGLNormalElement *>(this->getNextInStack());
+  this->glue = prev->glue;
+}
+
+//! FIXME: write doc.
+
+void
 SoGLNormalElement::send(const int index) const
 {
   assert(index >= 0 && index < this->numNormals);

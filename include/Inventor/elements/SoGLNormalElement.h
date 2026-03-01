@@ -48,6 +48,7 @@ protected:
 
 public:
   virtual void init(SoState * state);
+  virtual void push(SoState * state);
   void send(const int index) const;
 
 private:

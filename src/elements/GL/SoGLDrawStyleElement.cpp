@@ -80,6 +80,7 @@ SoGLDrawStyleElement::push(SoState * state)
     this->getNextInStack();
   // copy data to avoid unessesary GL calls
   this->data = prev->data;
+  this->glue = prev->glue;
   // capture previous element since we might or might not change the
   // GL state in set/pop
   prev->capture(state);

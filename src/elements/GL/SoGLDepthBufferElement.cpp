@@ -84,6 +84,7 @@ SoGLDepthBufferElement::push(SoState * state)
   this->write = prev->write;
   this->function = prev->function;
   this->range = prev->range;
+  this->glue = prev->glue;
   prev->capture(state);
 }
 
