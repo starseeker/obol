@@ -1441,10 +1441,11 @@ void SoGLContext_win32_updateHDCBitmap(void * ctx);
  * backend.  This allows SoGLContext_instance() to dispatch the context
  * initialisation to the osmesa_SoGLContext_instance() implementation.
  *
- * This function is always declared and safe to call; it is a no-op in
+ * Both functions are always declared and safe to call; they are no-ops in
  * non-dual-GL builds.
  * --------------------------------------------------------------------- */
 void coingl_register_osmesa_context(int contextid);
+void coingl_unregister_osmesa_context(int contextid);
 
 #ifdef __cplusplus
 }

@@ -1892,22 +1892,29 @@ SoOffscreenRenderer::getContextManager(void) const
 void
 SoOffscreenRenderer::getOpenGLVersion(int & major, int & minor, int & release)
 {
-  // Use the global context manager for querying version information
-  // Context should have been set up during SoDB::init(context_manager)
+  // Use the global context manager for querying version information.
+  // Context should have been set up during SoDB::init(context_manager).
   SoDB::ContextManager* manager = SoDB::getContextManager();
   void* temp_context = nullptr;
   SbBool context_created = FALSE;
-  
+
   if (manager) {
-    // Create a minimal temporary context for version querying
     temp_context = manager->createOffscreenContext(32, 32);
     if (temp_context) {
       context_created = manager->makeContextCurrent(temp_context);
     }
   }
-  
+
   if (context_created) {
-    const SoGLContext * glue = SoGLContext_instance(1);
+    // Use a unique ID so we never collide with an existing context that
+    // belongs to a different backend (e.g. system-GL vs OSMesa).
+    uint32_t unique_id = (uint32_t)SoGLCacheContextElement::getUniqueCacheContext();
+#ifdef OBOL_BUILD_DUAL_GL
+    if (manager->isOSMesaContext(temp_context)) {
+      coingl_register_osmesa_context(static_cast<int>(unique_id));
+    }
+#endif
+    const SoGLContext * glue = SoGLContext_instance(static_cast<int>(unique_id));
     if (glue) {
       unsigned int maj, min, rel;
       SoGLContext_glversion(glue, &maj, &min, &rel);
@@ -1917,14 +1924,13 @@ SoOffscreenRenderer::getOpenGLVersion(int & major, int & minor, int & release)
     } else {
       major = minor = release = 0;
     }
-    
-    // Clean up temporary context
-    if (manager && temp_context) {
-      manager->restorePreviousContext(temp_context);
-      manager->destroyContext(temp_context);
-    }
+
+    // Clean up: remove the temporary SoGLContext entry and destroy the GL context.
+    SoGLContext_destruct(unique_id);
+    manager->restorePreviousContext(temp_context);
+    manager->destroyContext(temp_context);
   } else {
-    // No context manager available or context creation failed
+    // No context manager available or context creation failed.
     major = minor = release = 0;
   }
 }
@@ -1941,35 +1947,36 @@ SbBool
 SoOffscreenRenderer::isOpenGLExtensionSupported(const char * extension)
 {
   if (!extension) return FALSE;
-  
-  // Use the global context manager for querying extension support
-  // Context should have been set up during SoDB::init(context_manager)
+
   SoDB::ContextManager* manager = SoDB::getContextManager();
   void* temp_context = nullptr;
   SbBool context_created = FALSE;
   SbBool result = FALSE;
-  
+
   if (manager) {
-    // Create a minimal temporary context for extension querying
     temp_context = manager->createOffscreenContext(32, 32);
     if (temp_context) {
       context_created = manager->makeContextCurrent(temp_context);
     }
   }
-  
+
   if (context_created) {
-    const SoGLContext * glue = SoGLContext_instance(1);
+    uint32_t unique_id = (uint32_t)SoGLCacheContextElement::getUniqueCacheContext();
+#ifdef OBOL_BUILD_DUAL_GL
+    if (manager->isOSMesaContext(temp_context)) {
+      coingl_register_osmesa_context(static_cast<int>(unique_id));
+    }
+#endif
+    const SoGLContext * glue = SoGLContext_instance(static_cast<int>(unique_id));
     if (glue) {
       result = SoGLContext_glext_supported(glue, extension);
     }
-    
-    // Clean up temporary context
-    if (manager && temp_context) {
-      manager->restorePreviousContext(temp_context);
-      manager->destroyContext(temp_context);
-    }
+
+    SoGLContext_destruct(unique_id);
+    manager->restorePreviousContext(temp_context);
+    manager->destroyContext(temp_context);
   }
-  
+
   return result;
 }
 
@@ -1983,34 +1990,35 @@ SoOffscreenRenderer::isOpenGLExtensionSupported(const char * extension)
 SbBool
 SoOffscreenRenderer::hasFramebufferObjectSupport(void)
 {
-  // Use the global context manager for querying FBO support
-  // Context should have been set up during SoDB::init(context_manager)
   SoDB::ContextManager* manager = SoDB::getContextManager();
   void* temp_context = nullptr;
   SbBool context_created = FALSE;
   SbBool result = FALSE;
-  
+
   if (manager) {
-    // Create a minimal temporary context for FBO support querying
     temp_context = manager->createOffscreenContext(32, 32);
     if (temp_context) {
       context_created = manager->makeContextCurrent(temp_context);
     }
   }
-  
+
   if (context_created) {
-    const SoGLContext * glue = SoGLContext_instance(1);
+    uint32_t unique_id = (uint32_t)SoGLCacheContextElement::getUniqueCacheContext();
+#ifdef OBOL_BUILD_DUAL_GL
+    if (manager->isOSMesaContext(temp_context)) {
+      coingl_register_osmesa_context(static_cast<int>(unique_id));
+    }
+#endif
+    const SoGLContext * glue = SoGLContext_instance(static_cast<int>(unique_id));
     if (glue) {
       result = SoGLContext_has_framebuffer_objects(glue);
     }
-    
-    // Clean up temporary context
-    if (manager && temp_context) {
-      manager->restorePreviousContext(temp_context);
-      manager->destroyContext(temp_context);
-    }
+
+    SoGLContext_destruct(unique_id);
+    manager->restorePreviousContext(temp_context);
+    manager->destroyContext(temp_context);
   }
-  
+
   return result;
 }
 
@@ -2027,37 +2035,38 @@ SoOffscreenRenderer::hasFramebufferObjectSupport(void)
 SbBool
 SoOffscreenRenderer::isVersionAtLeast(int major, int minor, int release)
 {
-  // Use the global context manager for version comparison
-  // Context should have been set up during SoDB::init(context_manager)
   SoDB::ContextManager* manager = SoDB::getContextManager();
   void* temp_context = nullptr;
   SbBool context_created = FALSE;
   SbBool result = FALSE;
-  
+
   if (manager) {
-    // Create a minimal temporary context for version comparison
     temp_context = manager->createOffscreenContext(32, 32);
     if (temp_context) {
       context_created = manager->makeContextCurrent(temp_context);
     }
   }
-  
+
   if (context_created) {
-    const SoGLContext * glue = SoGLContext_instance(1);
+    uint32_t unique_id = (uint32_t)SoGLCacheContextElement::getUniqueCacheContext();
+#ifdef OBOL_BUILD_DUAL_GL
+    if (manager->isOSMesaContext(temp_context)) {
+      coingl_register_osmesa_context(static_cast<int>(unique_id));
+    }
+#endif
+    const SoGLContext * glue = SoGLContext_instance(static_cast<int>(unique_id));
     if (glue) {
-      result = SoGLContext_glversion_matches_at_least(glue, 
-                                                   static_cast<unsigned int>(major),
-                                                   static_cast<unsigned int>(minor), 
-                                                   static_cast<unsigned int>(release));
+      result = SoGLContext_glversion_matches_at_least(glue,
+                                                     static_cast<unsigned int>(major),
+                                                     static_cast<unsigned int>(minor),
+                                                     static_cast<unsigned int>(release));
     }
-    
-    // Clean up temporary context
-    if (manager && temp_context) {
-      manager->restorePreviousContext(temp_context);
-      manager->destroyContext(temp_context);
-    }
+
+    SoGLContext_destruct(unique_id);
+    manager->restorePreviousContext(temp_context);
+    manager->destroyContext(temp_context);
   }
-  
+
   return result;
 }
 
