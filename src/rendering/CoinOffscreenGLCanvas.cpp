@@ -801,7 +801,7 @@ CoinOffscreenGLCanvas::bindFBO(void)
   SoGLContext_glBindFramebuffer(glue, GL_FRAMEBUFFER_EXT, this->fbo);
   
   // Set viewport to match FBO size
-  SoGLContext_glViewport(sogl_current_render_glue(), 0, 0, this->size[0], this->size[1]);
+  SoGLContext_glViewport(glue, 0, 0, this->size[0], this->size[1]);
   
   return TRUE;
 }
