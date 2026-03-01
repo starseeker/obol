@@ -246,6 +246,7 @@
 /* Platform-specific glue headers are no longer needed with callback-based contexts */
 #include "misc/SoEnvironment.h"
 #include <Inventor/SoDB.h>
+#include <Inventor/elements/SoGLCacheContextElement.h>
 
 
 
@@ -1081,6 +1082,9 @@ glglue_resolve_symbols(SoGLContext * w)
   w->glClearColor      = (OBOL_PFNGLCLEARCOLORPROC)PROC(w, glClearColor);
   w->glClear           = (OBOL_PFNGLCLEARPROC)PROC(w, glClear);
   w->glFlush           = (OBOL_PFNGLFLUSHPROC)PROC(w, glFlush);
+  w->glFinish          = (OBOL_PFNGLFINISHPROC)PROC(w, glFinish);
+  w->glGetError        = (OBOL_PFNGLGETERRORPROC)PROC(w, glGetError);
+  w->glGetString       = (OBOL_PFNGLGETSTRINGPROC)PROC(w, glGetString);
   w->glEnable          = (OBOL_PFNGLENABLEPROC)PROC(w, glEnable);
   w->glDisable         = (OBOL_PFNGLDISABLEPROC)PROC(w, glDisable);
   w->glPixelStorei     = (OBOL_PFNGLPIXELSTOREIPROC)PROC(w, glPixelStorei);
@@ -5260,6 +5264,27 @@ coin_gl_current_context(void)
 
 /* ********************************************************************** */
 
+const SoGLContext *
+sogl_glue_from_state(const SoState * state)
+{
+  int contextid = SoGLCacheContextElement::get(const_cast<SoState *>(state));
+  return SoGLContext_instance(contextid);
+}
+
+/* ********************************************************************** */
+
+void *
+coin_gl_getstring_ptr(void)
+{
+  /* Return the address of glGetString as seen from this translation unit
+     (which includes the real OpenGL headers).  dl.cpp uses this to verify
+     that cc_dl_opengl_handle() opened the same GL library, without needing
+     to include raw GL headers itself. */
+  return (void *)glGetString;
+}
+
+/* ********************************************************************** */
+
 /* Thread-local pointer to the SoGLContext for the render pass that is
    currently in progress on this thread.  Set by SoGLRenderAction before
    each traversal pass so that GL element updategl() methods (which do not
@@ -5555,6 +5580,27 @@ SoGLContext_glFlush(const SoGLContext * glue)
 {
   assert(glue->glFlush);
   glue->glFlush();
+}
+
+void
+SoGLContext_glFinish(const SoGLContext * glue)
+{
+  assert(glue->glFinish);
+  glue->glFinish();
+}
+
+GLenum
+SoGLContext_glGetError(const SoGLContext * glue)
+{
+  assert(glue->glGetError);
+  return glue->glGetError();
+}
+
+const GLubyte *
+SoGLContext_glGetString(const SoGLContext * glue, GLenum name)
+{
+  assert(glue->glGetString);
+  return glue->glGetString(name);
 }
 
 void
