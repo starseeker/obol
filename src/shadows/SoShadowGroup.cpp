@@ -2069,7 +2069,6 @@ SoShadowGroupP::setFragmentShader(SoState * state)
     this->cameratransform->value.touch();
     this->fragmentshader->sourceProgram = gen.getShaderProgram();
     this->fragmentshader->sourceType = SoShaderObject::GLSL_PROGRAM;
-
   }
 
   this->fragmentshadercache->set(gen.getShaderProgram());
@@ -2128,17 +2127,17 @@ SoShadowLightCache::createVSMProgram(void)
 #ifdef USE_NEGATIVE
                         "gl_FragColor.rg = (m - (f / DISTRIBUTE_FACTOR)) * 2.0 - vec2(1.0, 1.0);\n"
                         "gl_FragColor.ba = f * 2.0 - vec2(1.0, 1.0);\n"
-#else // USE_NEGATIVE
+#else
                         "gl_FragColor.rg = m - (f / DISTRIBUTE_FACTOR);\n"
                         "gl_FragColor.ba = f;\n"
-#endif // ! USE_NEGATIVE
-#else // DISTRIBUTE_FACTOR
+#endif
+#else
 #ifdef USE_NEGATIVE
                         "gl_FragColor = vec4(l*2.0 - 1.0, l*l*2.0 - 1.0, 0.0, 0.0);"
-#else // USE_NEGATIVE
+#else
                         "gl_FragColor = vec4(l, l*l, 0.0, 0.0);"
-#endif // !USE_NEGATIVE
-#endif // !DISTRIBUTE_FACTOR
+#endif
+#endif
                         );
   fshader->sourceProgram = fgen.getShaderProgram();
   fshader->sourceType = SoShaderObject::GLSL_PROGRAM;
