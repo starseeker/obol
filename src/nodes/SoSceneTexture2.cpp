@@ -770,6 +770,20 @@ SoSceneTexture2P::updateBuffer(SoState * state, const float quality)
     }
   }
 
+  // In dual-GL builds the FBO management functions (SoGLContext_glBindFramebuffer
+  // etc.) are dispatched through the osmesa_ backend (mgl* symbols from the
+  // bundled OSMesa library), while scene-graph rendering calls (glBegin/glEnd/
+  // glVertex etc.) go through the system-GL dispatch path.  Binding an FBO via
+  // mgl* and then rendering into it via gl* mixes two independent GL backends
+  // within a single render pass – this is an error that leaves the FBO colour
+  // attachment blank.  When the outer context is OSMesa, force the
+  // pbuffer/readback path so all GL operations stay on one consistent backend.
+#ifdef OBOL_BUILD_DUAL_GL
+  if (candofbo && stateMgr && stateMgr->isOSMesaContext(nullptr)) {
+    candofbo = FALSE;
+  }
+#endif
+
   if (!candofbo) {
     this->updatePBuffer(state, quality);
   }
