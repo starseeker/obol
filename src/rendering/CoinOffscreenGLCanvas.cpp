@@ -172,7 +172,7 @@ CoinOffscreenGLCanvas::setWantedSize(SbVec2s reqsize)
   // the requested, don't destruct (and reconstruct).
   //
   // We can have a different sized internal GL canvas as to what
-  // SoOffscreenRenderer wants, because SoGLContext_glViewport(sogl_current_render_glue()) is used from
+  // SoOffscreenRenderer wants, because SoGLContext_glViewport() is called from
   // SoOffscreenRenderer to render to the correct viewport dimensions.
   if (this->context &&
       (this->size[0] >= reqsize[0]) &&
@@ -428,7 +428,7 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
                                   unsigned int dstrowsize,
                                   unsigned int nrcomponents) const
 {
-  // Obtain the glue for this canvas's GL context.  sogl_current_render_glue()
+  // Obtain the glue for this canvas's GL context.
   // may be NULL here (e.g. when getBuffer() is called lazily after
   // renderaction->apply() has already cleared the TLS render glue), so we
   // always resolve via the render context ID rather than relying on the TLS.
@@ -793,7 +793,7 @@ CoinOffscreenGLCanvas::bindFBO(void)
   // (via OSMesaMakeCurrent) – there is no separate framebuffer object needed.
   // Attempting to create one would require GL_EXT_framebuffer_object support
   // from the OSMesa implementation, which the bundled OSMesa may not provide.
-  // SoGLContext_glReadPixels(sogl_current_render_glue()) will read from the OSMesa buffer directly when an OSMesa
+  // SoGLContext_glReadPixels() will read from the OSMesa buffer directly when an OSMesa
   // context is current, so we can skip FBO entirely for these contexts.
   SoDB::ContextManager * mgr = this->effectiveMgr();
   if (mgr && this->context && mgr->isOSMesaContext(this->context)) {

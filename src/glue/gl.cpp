@@ -1087,6 +1087,7 @@ glglue_resolve_symbols(SoGLContext * w)
   w->glGetString       = (OBOL_PFNGLGETSTRINGPROC)PROC(w, glGetString);
   w->glEnable          = (OBOL_PFNGLENABLEPROC)PROC(w, glEnable);
   w->glDisable         = (OBOL_PFNGLDISABLEPROC)PROC(w, glDisable);
+  w->glIsEnabled       = (OBOL_PFNGLISENABLEDPROC)PROC(w, glIsEnabled);
   w->glPixelStorei     = (OBOL_PFNGLPIXELSTOREIPROC)PROC(w, glPixelStorei);
   w->glReadPixels      = (OBOL_PFNGLREADPIXELSPROC)PROC(w, glReadPixels);
   w->glCopyTexSubImage2D = (OBOL_PFNGLCOPYTEXSUBIMAGE2DPROC)PROC(w, glCopyTexSubImage2D);
@@ -5615,6 +5616,13 @@ SoGLContext_glDisable(const SoGLContext * glue, GLenum cap)
 {
   assert(glue->glDisable);
   glue->glDisable(cap);
+}
+
+GLboolean
+SoGLContext_glIsEnabled(const SoGLContext * glue, GLenum cap)
+{
+  assert(glue->glIsEnabled);
+  return glue->glIsEnabled(cap);
 }
 
 void

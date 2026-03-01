@@ -380,6 +380,7 @@
 #define SoGLContext_glGetString                    SOGL_ADD_PREFIX(SoGLContext_glGetString)
 #define SoGLContext_glEnable                       SOGL_ADD_PREFIX(SoGLContext_glEnable)
 #define SoGLContext_glDisable                      SOGL_ADD_PREFIX(SoGLContext_glDisable)
+#define SoGLContext_glIsEnabled                    SOGL_ADD_PREFIX(SoGLContext_glIsEnabled)
 #define SoGLContext_glPixelStorei                  SOGL_ADD_PREFIX(SoGLContext_glPixelStorei)
 #define SoGLContext_glReadPixels                   SOGL_ADD_PREFIX(SoGLContext_glReadPixels)
 #define SoGLContext_glCopyTexSubImage2D            SOGL_ADD_PREFIX(SoGLContext_glCopyTexSubImage2D)

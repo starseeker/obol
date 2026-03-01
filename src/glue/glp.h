@@ -149,6 +149,7 @@ typedef GLenum (APIENTRY * OBOL_PFNGLGETERRORPROC)(void);
 typedef const GLubyte * (APIENTRY * OBOL_PFNGLGETSTRINGPROC)(GLenum name);
 typedef void (APIENTRY * OBOL_PFNGLENABLEPROC)(GLenum cap);
 typedef void (APIENTRY * OBOL_PFNGLDISABLEPROC)(GLenum cap);
+typedef GLboolean (APIENTRY * OBOL_PFNGLISENABLEDPROC)(GLenum cap);
 typedef void (APIENTRY * OBOL_PFNGLPIXELSTOREIPROC)(GLenum pname, GLint param);
 typedef void (APIENTRY * OBOL_PFNGLREADPIXELSPROC)(GLint x, GLint y,
                                                    GLsizei width, GLsizei height,
@@ -747,6 +748,7 @@ struct SoGLContext {
   OBOL_PFNGLGETSTRINGPROC       glGetString;
   OBOL_PFNGLENABLEPROC          glEnable;
   OBOL_PFNGLDISABLEPROC         glDisable;
+  OBOL_PFNGLISENABLEDPROC       glIsEnabled;
   OBOL_PFNGLPIXELSTOREIPROC     glPixelStorei;
   OBOL_PFNGLREADPIXELSPROC      glReadPixels;
   OBOL_PFNGLCOPYTEXSUBIMAGE2DPROC glCopyTexSubImage2D;
@@ -1687,6 +1689,7 @@ GLenum SoGLContext_glGetError(const SoGLContext * glue);
 const GLubyte * SoGLContext_glGetString(const SoGLContext * glue, GLenum name);
 void SoGLContext_glEnable(const SoGLContext * glue, GLenum cap);
 void SoGLContext_glDisable(const SoGLContext * glue, GLenum cap);
+GLboolean SoGLContext_glIsEnabled(const SoGLContext * glue, GLenum cap);
 void SoGLContext_glPixelStorei(const SoGLContext * glue,
                                GLenum pname, GLint param);
 void SoGLContext_glReadPixels(const SoGLContext * glue,
