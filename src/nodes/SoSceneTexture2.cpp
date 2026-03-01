@@ -708,6 +708,9 @@ SoSceneTexture2P::~SoSceneTexture2P()
     if (this->contextManager) this->contextManager->destroyContext(this->glcontext);
   }
   delete[] this->offscreenbuffer;
+  if (this->glaction) {
+    coingl_unregister_context_manager(this->contextid);
+  }
   delete this->glaction;
 }
 
@@ -942,6 +945,9 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
       this->glcontext = NULL;
     }
     // Note: Recreating the glaction (below) will also get us a new contextid.
+    if (this->glaction) {
+      coingl_unregister_context_manager(this->contextid);
+    }
     delete this->glaction;
     this->glaction = NULL;
     this->glimagevalid = FALSE;
@@ -989,6 +995,10 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
       this->glaction = new SoGLRenderAction(SbViewportRegion(this->glcontextsize));
       this->glaction->addPreRenderCallback(SoSceneTexture2P::prerendercb,
                                            (void*) PUBLIC(this));
+      /* Register the inner context ID so SoGLContext_instance() can resolve
+       * GL capabilities without needing a current system-GL context. */
+      if (this->contextManager)
+        coingl_register_context_manager(this->contextid, this->contextManager);
     } else {
       this->glaction->setViewportRegion(SbViewportRegion(this->glcontextsize));
     }
@@ -997,6 +1007,9 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
     this->glaction->setCacheContext(this->contextid);
     this->glimagevalid = FALSE;
   }
+
+  /* If context creation failed there is nothing useful we can render. */
+  if (!this->glcontext) return;
 
   if (!this->buffervalid) {
     assert(this->glaction != NULL);
