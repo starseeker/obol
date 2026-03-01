@@ -54,14 +54,18 @@ public:
 
   SbBool isSupported(void) const;
   void setContextManager(SoDB::ContextManager * manager);
+  virtual SoDB::ContextManager * getInstantiationContext(void) const override;
 
   // Preferred constructor: the context manager is captured at construction
   // time and used for isSupported() without ever calling SoDB::getContextManager().
   // Passing NULL is an error.
   explicit SoShadowGroup(SoDB::ContextManager * manager);
 
-  // Default constructor: captures SoDB::getContextManager() at construction
-  // time.  Asserts that a manager has been set via SoDB::init() first.
+  // Default constructor: required by the SO_NODE_SOURCE type-system machinery
+  // for file I/O and node copying.  When used directly the caller must ensure
+  // SoDB::init() has been called with a valid ContextManager; otherwise the
+  // shadow node will have no context until setContextManager() or a render pass
+  // through the SoContextManagerElement sets one.
   SoShadowGroup(void);
 
   enum VisibilityFlag {

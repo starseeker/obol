@@ -820,13 +820,15 @@ SoExtSelection::~SoExtSelection()
 }
 
 /*!
-  Explicitly set the context manager used for offscreen rendering during
-  lasso/rectangle selection.  Pass NULL to revert to the global fallback
-  (SoDB::getContextManager()).
+  Set the context manager used for offscreen rendering during lasso/rectangle
+  selection.  Must be called before the node is used for selection; the context
+  is also populated automatically from the SoContextManagerElement on the first
+  render pass through this node.  Passing NULL is a programming error.
 */
 void
 SoExtSelection::setContextManager(SoDB::ContextManager * manager)
 {
+  assert(manager && "SoExtSelection::setContextManager: manager must not be NULL");
   PRIVATE(this)->contextManager = manager;
 }
 
@@ -2659,8 +2661,10 @@ SoExtSelectionP::performSelection(SoHandleEventAction * action)
       upon, if possible.
     */
     unsigned int maxsize[2];
-    SoDB::ContextManager * mgr = this->contextManager ? this->contextManager : SoDB::getContextManager();
-    assert(mgr && "SoExtSelection: no context manager available (call SoDB::init() or setContextManager() first)");
+    // The context manager must have been set via setContextManager() or
+    // populated from the SoContextManagerElement during an earlier render pass.
+    SoDB::ContextManager * mgr = this->contextManager;
+    assert(mgr && "SoExtSelection: no context manager available -- call setContextManager() first");
     SoGLContext_context_max_dimensions(mgr, &maxsize[0], &maxsize[1]);
 
     this->requestedsize = action->getViewportRegion().getViewportSizePixels();

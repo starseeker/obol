@@ -67,7 +67,7 @@ int main(int argc, char **argv)
 {
     initCoinHeadless();
 
-    SoShadowGroup * sg = new SoShadowGroup;
+    SoShadowGroup * sg = new SoShadowGroup(getCoinHeadlessContextManager());
     sg->ref();
     bool shadSupported = sg->isSupported();
     sg->unref();

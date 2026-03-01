@@ -766,16 +766,47 @@ public:
 #define PRIVATE(obj) ((obj)->pimpl)
 #define PUBLIC(obj) ((obj)->master)
 
-SO_NODE_SOURCE(SoShadowGroup);
+// Use the abstract variant so we can supply our own context-aware createInstance.
+SO_NODE_ABSTRACT_SOURCE(SoShadowGroup);
 
 /*!
-  Default constructor.
+  Context-aware factory called by the SoType reflection system.  \a ctx must be
+  a non-NULL \c SoDB::ContextManager* ; passing NULL is a hard error because
+  SoShadowGroup cannot function without a context.  This enables correct
+  behaviour when nodes are loaded from file (via SoInput::setContextManager) or
+  copied (via SoNode::addToCopyDict propagating getInstantiationContext()).
+*/
+void *
+SoShadowGroup::createInstance(void * ctx)
+{
+  SoDB::ContextManager * mgr = static_cast<SoDB::ContextManager *>(ctx);
+  assert(mgr && "SoShadowGroup::createInstance: context manager is NULL. "
+                "Set a context on SoInput before reading, or ensure the source "
+                "node has a context manager via getInstantiationContext().");
+  return new SoShadowGroup(mgr);
+}
+
+// doc in parent
+SoDB::ContextManager *
+SoShadowGroup::getInstantiationContext(void) const
+{
+  return PRIVATE(this)->contextManager;
+}
+
+/*!
+  Default constructor.  The SoType reflection machinery (createInstance(ctx))
+  calls this path via new SoShadowGroup(mgr) -- NOT this constructor -- so
+  file I/O and copy operations always arrive with a valid context.
+
+  This no-arg form is preserved for callers that construct SoShadowGroup
+  directly without an explicit manager.  In that case the node starts with a
+  NULL context manager; the caller MUST then call setContextManager() before
+  invoking isSupported() or triggering any GL render pass through the node.
+  Using the node without a context will trigger an assertion failure.
 */
 SoShadowGroup::SoShadowGroup(void)
 {
-  SoDB::ContextManager * mgr = SoDB::getContextManager();
-  assert(mgr && "SoDB must be initialized with a ContextManager before creating SoShadowGroup");
-  PRIVATE(this) = new SoShadowGroupP(this, mgr);
+  PRIVATE(this) = new SoShadowGroupP(this, nullptr);
   initFields();
 }
 

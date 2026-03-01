@@ -497,20 +497,32 @@ SoOffscreenRendererP::debugTileOutputPrefix(void)
 /*!
   Constructor. Argument is the \a viewportregion we should use when
   rendering. An internal SoGLRenderAction will be constructed.
+
+  \deprecated  Use SoOffscreenRenderer(SoDB::ContextManager*, const SbViewportRegion&)
+  instead to avoid depending on the global context manager set by SoDB::init().
 */
 SoOffscreenRenderer::SoOffscreenRenderer(const SbViewportRegion & viewportregion)
 {
-  PRIVATE(this) = new SoOffscreenRendererP(this, SoDB::getContextManager(), viewportregion);
+  SoDB::ContextManager * mgr = SoDB::getContextManager();
+  assert(mgr && "SoOffscreenRenderer: no global context manager. "
+                "Call SoDB::init(manager) first or use the explicit-manager constructor.");
+  PRIVATE(this) = new SoOffscreenRendererP(this, mgr, viewportregion);
 }
 
 /*!
   Constructor. Argument is the \a action we should apply to the
   scene graph when rendering the scene. Information about the
   viewport is extracted from the \a action.
+
+  \deprecated  Use SoOffscreenRenderer(SoDB::ContextManager*, SoGLRenderAction*)
+  instead to avoid depending on the global context manager set by SoDB::init().
 */
 SoOffscreenRenderer::SoOffscreenRenderer(SoGLRenderAction * action)
 {
-  PRIVATE(this) = new SoOffscreenRendererP(this, SoDB::getContextManager(),
+  SoDB::ContextManager * mgr = SoDB::getContextManager();
+  assert(mgr && "SoOffscreenRenderer: no global context manager. "
+                "Call SoDB::init(manager) first or use the explicit-manager constructor.");
+  PRIVATE(this) = new SoOffscreenRendererP(this, mgr,
                                            action->getViewportRegion(), action);
 }
 
@@ -1877,26 +1889,18 @@ SoOffscreenRenderer::getPbufferEnable(void) const
 }
 
 /*!
-  Set a per-instance context manager.  When non-NULL, this renderer uses the
-  provided \a manager for all OpenGL context lifecycle operations (create,
-  make-current, restore, destroy).  This allows multiple SoOffscreenRenderer
-  instances to use independent backends simultaneously – for example one
-  instance backed by system GLX and another backed by OSMesa – without any
-  global state mutation.
-
-  The alternative rendering path (renderScene()) is also dispatched through
-  this manager when it is set.
-
-  Pass NULL to revert to the global singleton (SoDB::getContextManager()).
+  Set a per-instance context manager.  \a manager must not be NULL; passing a
+  non-NULL context manager is the only supported path now that the global
+  singleton is being eliminated.  Use the explicit-manager constructors instead
+  of calling this after construction wherever possible.
 
   \since Coin 4.0
 */
 void
 SoOffscreenRenderer::setContextManager(SoDB::ContextManager * manager)
 {
-  // When NULL is passed (revert to global), resolve the global right now so
-  // the instance never needs to call back to it during rendering.
-  PRIVATE(this)->instanceContextManager = manager ? manager : SoDB::getContextManager();
+  assert(manager && "SoOffscreenRenderer::setContextManager: manager must not be NULL");
+  PRIVATE(this)->instanceContextManager = manager;
   PRIVATE(this)->glcanvas.setContextManager(PRIVATE(this)->instanceContextManager);
 }
 
