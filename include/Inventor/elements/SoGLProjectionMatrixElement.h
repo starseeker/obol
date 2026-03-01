@@ -46,6 +46,8 @@ public:
 protected:
   virtual ~SoGLProjectionMatrixElement();
 
+  virtual void init(SoState * state);
+  virtual void push(SoState * state);
 public:
   virtual void pop(SoState * state,
                    const SoElement * prevTopElement);

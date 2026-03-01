@@ -72,6 +72,24 @@ SoGLProjectionMatrixElement::~SoGLProjectionMatrixElement(void)
 //! FIXME: write doc.
 
 void
+SoGLProjectionMatrixElement::init(SoState * state)
+{
+  inherited::init(state);
+  this->glue = sogl_glue_from_state(state);
+}
+
+//! FIXME: write doc.
+
+void
+SoGLProjectionMatrixElement::push(SoState * state)
+{
+  inherited::push(state);
+  this->glue = sogl_glue_from_state(state);
+}
+
+//! FIXME: write doc.
+
+void
 SoGLProjectionMatrixElement::pop(SoState * OBOL_UNUSED_ARG(state),
                                  const SoElement * prevTopElement)
 {

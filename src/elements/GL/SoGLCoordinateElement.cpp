@@ -67,6 +67,26 @@ SoGLCoordinateElement::~SoGLCoordinateElement(void)
 }
 
 /*!
+  Initialize element.
+*/
+void
+SoGLCoordinateElement::init(SoState * state)
+{
+  inherited::init(state);
+  this->glue = sogl_glue_from_state(state);
+}
+
+/*!
+  Update element glue context on push.
+*/
+void
+SoGLCoordinateElement::push(SoState * state)
+{
+  inherited::push(state);
+  this->glue = sogl_glue_from_state(state);
+}
+
+/*!
   Send coordinates \a index to GL. Handles both 3D and 4D coordinates.
 */
 void

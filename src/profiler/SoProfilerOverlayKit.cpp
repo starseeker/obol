@@ -48,6 +48,7 @@
 #include <Inventor/SbVec2s.h>
 #include <Inventor/misc/SoState.h>
 #include <Inventor/actions/SoAction.h>
+#include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/nodes/SoCallback.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
@@ -59,11 +60,13 @@
 namespace {
   void enableDepthTest(void * OBOL_UNUSED_ARG(userdata), SoAction * action)
   {
+    if (!action->isOfType(SoGLRenderAction::getClassTypeId())) return;
     SoGLContext_glEnable(sogl_glue_from_state(action->getState()), GL_DEPTH_TEST);
   }
 
   void disableDepthTest(void * OBOL_UNUSED_ARG(userdata), SoAction * action)
   {
+    if (!action->isOfType(SoGLRenderAction::getClassTypeId())) return;
     SoGLContext_glDisable(sogl_glue_from_state(action->getState()), GL_DEPTH_TEST);
   }
 

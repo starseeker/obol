@@ -46,6 +46,8 @@ public:
 protected:
   virtual ~SoGLCoordinateElement();
 
+  virtual void init(SoState * state);
+  virtual void push(SoState * state);
 public:
   const SbVec3f *getPtr3() const;
   const SbVec4f *getPtr4() const;
