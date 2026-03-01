@@ -979,6 +979,14 @@ SoOffscreenRendererP::renderFromBase(SoBase * base)
   // the render action is not allocated by us.
   const uint32_t oldcontext = this->renderaction->getCacheContext();
   this->renderaction->setCacheContext(newcontext);
+
+  // Set the thread-local render glue immediately after activating the GL
+  // context so that any lazy SoState construction (triggered below by
+  // getState()) does not encounter a NULL glue pointer.  SoGLLazyElement::init()
+  // calls sogl_current_render_glue() via OpenGL calls during SoState
+  // construction, which crashes when the render glue has not been set yet.
+  sogl_set_current_render_glue(SoGLContext_instance(static_cast<int>(newcontext)));
+
   // Push the per-instance context manager into the render state so that
   // any scene-graph node that needs to create its own offscreen GL context
   // (SoSceneTexture2, SoSceneTextureCubeMap, SoShadowGroup, etc.) can
