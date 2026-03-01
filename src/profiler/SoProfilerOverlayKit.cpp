@@ -59,12 +59,14 @@
 namespace {
   void enableDepthTest(void * OBOL_UNUSED_ARG(userdata), SoAction * OBOL_UNUSED_ARG(action))
   {
-    SoGLContext_glEnable(sogl_current_render_glue(), GL_DEPTH_TEST);
+    const SoGLContext * glue = sogl_current_render_glue();
+    if (glue) SoGLContext_glEnable(glue, GL_DEPTH_TEST);
   }
 
   void disableDepthTest(void * OBOL_UNUSED_ARG(userdata), SoAction * OBOL_UNUSED_ARG(action))
   {
-    SoGLContext_glDisable(sogl_current_render_glue(), GL_DEPTH_TEST);
+    const SoGLContext * glue = sogl_current_render_glue();
+    if (glue) SoGLContext_glDisable(glue, GL_DEPTH_TEST);
   }
 
   void grabViewportInfo(void * userdata, SoAction * action)
