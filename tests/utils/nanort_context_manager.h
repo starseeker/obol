@@ -451,21 +451,24 @@ nrtHUDLabelPreCB(void * ud, SoCallbackAction * /*action*/, const SoNode * node)
     ov.h = canvasH;
     ov.pixbuf.assign(static_cast<size_t>(canvasW) * canvasH * 4, 0);
 
-    // Anchor position: label->position is in pixels from lower-left.
+    // Anchor position: label->position gives the baseline of the first line
+    // in viewport pixels from the lower-left.  The canvas is placed so that
+    // the first line's baseline (at canvas GL row canvasH - 1 - (int)fontSize)
+    // lands exactly at pos[1] in the framebuffer.
     const SbVec2f pos = label->position.getValue();
     ov.x = static_cast<int>(pos[0]);
-    ov.y = static_cast<int>(pos[1]);
+    ov.y = static_cast<int>(pos[1]) - (canvasH - 1 - static_cast<int>(fontSize));
 
     // ------------------------------------------------------------------
     // Pass 2: rasterize each line into the canvas.
-    // Bottom line is line (nlines-1); top line is line 0.
-    // Within the canvas, row 0 is the bottom row (GL convention).
+    // Line 0 (string[0]) is at the top of the canvas, line (nlines-1) at
+    // the bottom.  Within the canvas, row 0 is the GL bottom row.
     // ------------------------------------------------------------------
     const int just = label->justification.getValue();
     for (int li = 0; li < nlines; ++li) {
-        // Row within the canvas for the TOP of this line.
-        // Line 0 is at the top of the canvas, line (nlines-1) at the bottom.
-        const int lineTopInCanvas = canvasH - (li + 1) * lineH;
+        // Top of this line in top-down canvas coordinates.
+        // Line 0 starts at row 0 (top); each subsequent line is lineH lower.
+        const int lineTopInCanvas = li * lineH;
 
         // Horizontal start offset for justification.
         int xstart = 0;
@@ -484,8 +487,10 @@ nrtHUDLabelPreCB(void * ud, SoCallbackAction * /*action*/, const SoNode * node)
 
             if (bitmap && sz[0] > 0 && sz[1] > 0) {
                 // bearing[1] = pixels above baseline (positive = up).
-                // The baseline sits at lineTopInCanvas + lineH - (int)fontSize.
-                const int baseline = lineTopInCanvas + lineH - static_cast<int>(fontSize);
+                // The baseline sits fontSize rows below the top of each line
+                // area, leaving fontSize rows for ascenders and
+                // (lineH - fontSize - 1) rows for descenders/leading.
+                const int baseline = lineTopInCanvas + static_cast<int>(fontSize);
                 const int dst_x = xpen + bearing[0];
                 const int dst_y = baseline - bearing[1];  // top of glyph in canvas
 
