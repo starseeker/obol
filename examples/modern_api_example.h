@@ -18,13 +18,14 @@ inline void demonstrateModernOSMesaUsage() {
     SbViewportRegion viewport(256, 256);
     SoOffscreenRenderer renderer(viewport);
     
-    // OpenGL capabilities can be queried directly
+    // OpenGL capabilities are queried on the renderer instance, which uses
+    // the per-instance context manager if set, else the global singleton.
     int major, minor, release;
-    SoOffscreenRenderer::getOpenGLVersion(major, minor, release);
+    renderer.getOpenGLVersion(major, minor, release);
     
-    SbBool hasFBO = SoOffscreenRenderer::hasFramebufferObjectSupport();
-    SbBool hasExtension = SoOffscreenRenderer::isOpenGLExtensionSupported("GL_ARB_vertex_buffer_object");
-    SbBool hasGL3 = SoOffscreenRenderer::isVersionAtLeast(3, 0);
+    SbBool hasFBO = renderer.hasFramebufferObjectSupport();
+    SbBool hasExtension = renderer.isOpenGLExtensionSupported("GL_ARB_vertex_buffer_object");
+    SbBool hasGL3 = renderer.isVersionAtLeast(3, 0);
 }
 
 #else
@@ -39,23 +40,21 @@ inline void demonstrateModernOSMesaUsage() {
 
 // Example: Standard usage without custom context provider
 inline void demonstrateModernStandardUsage() {
-    // Check OpenGL capabilities using modern API
+    // Check OpenGL capabilities using the renderer instance
+    SbViewportRegion viewport(800, 600);
+    SoOffscreenRenderer renderer(viewport);
+
+    // Capabilities are queried via the instance, using per-instance context
+    // manager if set, otherwise the global singleton.
     int major, minor, release;
-    SoOffscreenRenderer::getOpenGLVersion(major, minor, release);
+    renderer.getOpenGLVersion(major, minor, release);
     
-    bool hasModernOpenGL = SoOffscreenRenderer::isVersionAtLeast(3, 0);
-    bool hasFBOSupport = SoOffscreenRenderer::hasFramebufferObjectSupport();
+    bool hasModernOpenGL = renderer.isVersionAtLeast(3, 0);
+    bool hasFBOSupport = renderer.hasFramebufferObjectSupport();
     
     printf("OpenGL Version: %d.%d.%d\n", major, minor, release);
     printf("Modern OpenGL (3.0+): %s\n", hasModernOpenGL ? "Yes" : "No");
     printf("FBO Support: %s\n", hasFBOSupport ? "Yes" : "No");
-    
-    // For standard rendering, just use SoOffscreenRenderer directly
-    SbViewportRegion viewport(800, 600);
-    SoOffscreenRenderer renderer(viewport);
-    
-    // The renderer will handle context creation automatically
-    // No need for manual context management in most cases
 }
 
 #endif
@@ -75,12 +74,15 @@ inline void demonstrateModernStandardUsage() {
  * NEW WAY (current approach):
  * 
  * Context management should be done via SoDB::init(context_manager) at initialization.
- * OpenGL capabilities can be queried directly:
+ * OpenGL capabilities are queried via a renderer instance, which uses the
+ * per-instance context manager if set, otherwise the global singleton:
  * 
  * #include <Inventor/SoOffscreenRenderer.h>
- * SoOffscreenRenderer::hasFramebufferObjectSupport();
- * SoOffscreenRenderer::getOpenGLVersion(major, minor, release);
- * SoOffscreenRenderer::isVersionAtLeast(3, 0);
+ * SbViewportRegion vp(256, 256);
+ * SoOffscreenRenderer ren(vp);
+ * ren.hasFramebufferObjectSupport();
+ * ren.getOpenGLVersion(major, minor, release);
+ * ren.isVersionAtLeast(3, 0);
  */
 
 #endif // OBOL_OSMESA_BUILD

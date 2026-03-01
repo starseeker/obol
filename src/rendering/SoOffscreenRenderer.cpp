@@ -1881,7 +1881,8 @@ SoOffscreenRenderer::getContextManager(void) const
 // Context management and OpenGL capability detection methods
 
 /*!
-  Get the current OpenGL version.
+  Get the current OpenGL version using the context manager associated with
+  this renderer (per-instance manager if set, otherwise the global singleton).
   
   \param[out] major Major version number
   \param[out] minor Minor version number  
@@ -1890,11 +1891,10 @@ SoOffscreenRenderer::getContextManager(void) const
   \since Coin 4.0
 */
 void
-SoOffscreenRenderer::getOpenGLVersion(int & major, int & minor, int & release)
+SoOffscreenRenderer::getOpenGLVersion(int & major, int & minor, int & release) const
 {
-  // Use the global context manager for querying version information.
-  // Context should have been set up during SoDB::init(context_manager).
-  SoDB::ContextManager* manager = SoDB::getContextManager();
+  // Use the effective context manager for this renderer instance.
+  SoDB::ContextManager* manager = PRIVATE(this)->effectiveMgr();
   void* temp_context = nullptr;
   SbBool context_created = FALSE;
 
@@ -1936,7 +1936,9 @@ SoOffscreenRenderer::getOpenGLVersion(int & major, int & minor, int & release)
 }
 
 /*!
-  Check if a specific OpenGL extension is supported.
+  Check if a specific OpenGL extension is supported using the context manager
+  associated with this renderer (per-instance manager if set, otherwise the
+  global singleton).
   
   \param extension The extension name to check (e.g., "GL_EXT_framebuffer_object")
   \return TRUE if the extension is supported, FALSE otherwise
@@ -1944,11 +1946,11 @@ SoOffscreenRenderer::getOpenGLVersion(int & major, int & minor, int & release)
   \since Coin 4.0
 */
 SbBool
-SoOffscreenRenderer::isOpenGLExtensionSupported(const char * extension)
+SoOffscreenRenderer::isOpenGLExtensionSupported(const char * extension) const
 {
   if (!extension) return FALSE;
 
-  SoDB::ContextManager* manager = SoDB::getContextManager();
+  SoDB::ContextManager* manager = PRIVATE(this)->effectiveMgr();
   void* temp_context = nullptr;
   SbBool context_created = FALSE;
   SbBool result = FALSE;
@@ -1981,16 +1983,18 @@ SoOffscreenRenderer::isOpenGLExtensionSupported(const char * extension)
 }
 
 /*!
-  Check if framebuffer object (FBO) support is available.
+  Check if framebuffer object (FBO) support is available using the context
+  manager associated with this renderer (per-instance manager if set,
+  otherwise the global singleton).
   
   \return TRUE if FBO support is available, FALSE otherwise
   
   \since Coin 4.0
 */
 SbBool
-SoOffscreenRenderer::hasFramebufferObjectSupport(void)
+SoOffscreenRenderer::hasFramebufferObjectSupport(void) const
 {
-  SoDB::ContextManager* manager = SoDB::getContextManager();
+  SoDB::ContextManager* manager = PRIVATE(this)->effectiveMgr();
   void* temp_context = nullptr;
   SbBool context_created = FALSE;
   SbBool result = FALSE;
@@ -2023,7 +2027,9 @@ SoOffscreenRenderer::hasFramebufferObjectSupport(void)
 }
 
 /*!
-  Check if the OpenGL version is at least the specified version.
+  Check if the OpenGL version is at least the specified version using the
+  context manager associated with this renderer (per-instance manager if set,
+  otherwise the global singleton).
   
   \param major Minimum major version required
   \param minor Minimum minor version required  
@@ -2033,9 +2039,9 @@ SoOffscreenRenderer::hasFramebufferObjectSupport(void)
   \since Coin 4.0
 */
 SbBool
-SoOffscreenRenderer::isVersionAtLeast(int major, int minor, int release)
+SoOffscreenRenderer::isVersionAtLeast(int major, int minor, int release) const
 {
-  SoDB::ContextManager* manager = SoDB::getContextManager();
+  SoDB::ContextManager* manager = PRIVATE(this)->effectiveMgr();
   void* temp_context = nullptr;
   SbBool context_created = FALSE;
   SbBool result = FALSE;

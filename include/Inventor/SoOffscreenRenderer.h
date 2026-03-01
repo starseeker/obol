@@ -105,11 +105,13 @@ public:
   void setPbufferEnable(SbBool enable);
   SbBool getPbufferEnable(void) const;
 
-  // Context management and OpenGL capability detection
-  static void getOpenGLVersion(int & major, int & minor, int & release);
-  static SbBool isOpenGLExtensionSupported(const char * extension);
-  static SbBool hasFramebufferObjectSupport(void);
-  static SbBool isVersionAtLeast(int major, int minor, int release = 0);
+  // Context management and OpenGL capability detection.
+  // These instance methods use the per-instance context manager when one has
+  // been set via setContextManager(), falling back to the global singleton.
+  void getOpenGLVersion(int & major, int & minor, int & release) const;
+  SbBool isOpenGLExtensionSupported(const char * extension) const;
+  SbBool hasFramebufferObjectSupport(void) const;
+  SbBool isVersionAtLeast(int major, int minor, int release = 0) const;
 
   // Per-instance context manager.  When set via setContextManager(), this
   // renderer uses the provided manager for all GL context lifecycle calls
