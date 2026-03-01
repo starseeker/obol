@@ -51,6 +51,7 @@
 // Coin headers used by the unit tests
 // ---------------------------------------------------------------------------
 #include <Inventor/SoDB.h>
+#include <Inventor/SoOffscreenRenderer.h>
 #include <Inventor/SbVec3f.h>
 #include <Inventor/SbVec2f.h>
 #include <Inventor/SbMatrix.h>
@@ -1532,6 +1533,10 @@ REGISTER_TEST(background_gradient, ObolTest::TestCategory::Rendering,
     e.has_interactive = true;
     e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createBackgroundGradient;
+    e.configure_renderer = [](SoOffscreenRenderer* r) {
+        r->setBackgroundGradient(SbColor(0.05f, 0.05f, 0.25f),
+                                 SbColor(0.40f, 0.60f, 0.85f));
+    };
 );
 
 REGISTER_TEST(bump_map, ObolTest::TestCategory::Rendering,
