@@ -304,9 +304,10 @@ static void coingl_osmesa_registry_cleanup(void)
   coingl_osmesa_context_ids = NULL;
 }
 
-/* Forward declaration of the osmesa-prefixed implementation compiled in
-   gl_osmesa.cpp.  The linker resolves this from the glue_osmesa object. */
+/* Forward declarations of the osmesa-prefixed implementations compiled in
+   gl_osmesa.cpp.  The linker resolves these from the glue_osmesa object. */
 const SoGLContext * osmesa_SoGLContext_instance(int contextid);
+void osmesa_SoGLContext_destruct(uint32_t contextid);
 #endif /* OBOL_BUILD_DUAL_GL */
 
 /* Public C API: register an OSMesa-backed render-context ID.
@@ -324,6 +325,22 @@ coingl_register_osmesa_context(int contextid)
     coin_atexit((coin_atexit_f *)coingl_osmesa_registry_cleanup, CC_ATEXIT_NORMAL);
   }
   coingl_osmesa_context_ids->insert(contextid);
+#else
+  (void)contextid;
+#endif
+}
+
+/* Remove an OSMesa context ID from the backend registry.
+   Called from SoGLContext_destruct() to keep the registry consistent.
+   Safe to call even when OBOL_BUILD_DUAL_GL is not defined (no-op). */
+void
+coingl_unregister_osmesa_context(int contextid)
+{
+#if defined(OBOL_BUILD_DUAL_GL)
+  std::lock_guard<std::mutex> lock(coingl_osmesa_context_mutex);
+  if (coingl_osmesa_context_ids) {
+    coingl_osmesa_context_ids->erase(contextid);
+  }
 #else
   (void)contextid;
 #endif
@@ -688,12 +705,17 @@ SoGLContext_getprocaddress(const SoGLContext * glue, const char * symname)
   ptr = cc_dl_sym(SoGLContext_dl_handle(glue), symname);
 #endif
 
-  /* Final fallback: ask the context manager.  For OSMesa contexts the
-     manager overrides getProcAddress() to call OSMesaGetProcAddress().
-     For system GL contexts (GLX, WGL, EGL) the application provides a
-     context manager that calls the platform's proc-address resolver
-     (e.g. glXGetProcAddress).  This keeps all platform-specific code
-     outside of Obol proper. */
+  /* Final fallback: ask the context manager.  For system-GL contexts (GLX,
+     WGL, EGL) the application provides a context manager that calls the
+     platform's proc-address resolver (e.g. glXGetProcAddress).  This keeps
+     all platform-specific code outside of Obol proper.
+     NOTE: This fallback is intentionally skipped in the OSMesa compilation
+     unit (SOGL_PREFIX_SET).  In a dual-GL build the global context manager
+     may be a system-GL manager whose getProcAddress() would return system-GL
+     function pointers; storing those in an OSMesa SoGLContext struct causes
+     cross-backend contamination and subtle rendering corruption.  The OSMesa
+     variant must rely solely on OSMesaGetProcAddress() (attempted above). */
+#ifndef SOGL_PREFIX_SET
   if (ptr == NULL) {
     SoDB::ContextManager * mgr = getSoDBContextManager();
     if (mgr) {
@@ -705,6 +727,7 @@ SoGLContext_getprocaddress(const SoGLContext * glue, const char * symname)
       }
     }
   }
+#endif /* !SOGL_PREFIX_SET */
 
   if (SoGLContext_debug()) {
     cc_debugerror_postinfo("SoGLContext_getprocaddress", "%s==%p", symname, ptr);
@@ -2678,6 +2701,18 @@ SoGLContext_instance_from_context_ptr(void * ctx)
 void
 SoGLContext_destruct(uint32_t contextid)
 {
+#if defined(OBOL_BUILD_DUAL_GL) && !defined(SOGL_PREFIX_SET)
+  /* In dual-GL builds, OSMesa contexts are stored in the osmesa variant's
+     own dictionary.  Dispatch to the osmesa implementation and clean up the
+     backend registry entry so the context ID can be treated as system-GL in
+     the future if it were ever reused (monotonic IDs make reuse impossible
+     in practice, but correctness demands we keep the registry consistent). */
+  if (coingl_context_backend_is_osmesa(static_cast<int>(contextid))) {
+    osmesa_SoGLContext_destruct(contextid);
+    coingl_unregister_osmesa_context(static_cast<int>(contextid));
+    return;
+  }
+#endif
   SbBool found;
   void * ptr;
   if (gldict) { // might happen if a context is destructed without using the SoGLContext interface
