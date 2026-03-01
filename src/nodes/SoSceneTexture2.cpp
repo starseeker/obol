@@ -751,8 +751,8 @@ SoSceneTexture2P::updateBuffer(SoState * state, const float quality)
   }
 
   // make sure we've finished rendering to this context
-  glFlush();
   const SoGLContext * glue = SoGLContext_instance(SoGLCacheContextElement::get(state));
+  SoGLContext_glFlush(glue);
 
   SbBool candofbo = SoGLDriverDatabase::isSupported(glue, SO_GL_FRAMEBUFFER_OBJECT);
   if (candofbo) {
@@ -878,16 +878,16 @@ SoSceneTexture2P::updateFrameBuffer(SoState * state, const float OBOL_UNUSED_ARG
   // just disable all active light source
   int numlights = SoLightElement::getLights(state).getLength();
   for (i = 0; i < numlights; i++) {
-    glDisable((GLenum) (GL_LIGHT0 + i));
+    SoGLContext_glDisable(glue, (GLenum) (GL_LIGHT0 + i));
   }
   float oldclearcolor[4];
-  glGetFloatv(GL_COLOR_CLEAR_VALUE, oldclearcolor);
+  SoGLContext_glGetFloatv(glue, GL_COLOR_CLEAR_VALUE, oldclearcolor);
 
   SoModelMatrixElement::set(state, PUBLIC(this), SbMatrix::identity());
 
   // store current framebuffer
   GLint oldfb;
-  glGetIntegerv( GL_FRAMEBUFFER_BINDING_EXT, &oldfb );
+  SoGLContext_glGetIntegerv(glue, GL_FRAMEBUFFER_BINDING_EXT, &oldfb);
 
   // set up framebuffer for rendering
   SoGLContext_glBindFramebuffer(glue, GL_FRAMEBUFFER_EXT, fbodata->fbo_frameBuffer);
@@ -895,8 +895,8 @@ SoSceneTexture2P::updateFrameBuffer(SoState * state, const float OBOL_UNUSED_ARG
 
   SoViewportRegionElement::set(state, SbViewportRegion(fbodata->fbo_size));
   SbVec4f col = PUBLIC(this)->backgroundColor.getValue();
-  glClearColor(col[0], col[1], col[2], col[3]);
-  glClear(GL_DEPTH_BUFFER_BIT|GL_COLOR_BUFFER_BIT);
+  SoGLContext_glClearColor(glue, col[0], col[1], col[2], col[3]);
+  SoGLContext_glClear(glue, GL_DEPTH_BUFFER_BIT|GL_COLOR_BUFFER_BIT);
 
   SoGLRenderAction * glaction = (SoGLRenderAction*) state->getAction();
   // traverse the new scene graph
@@ -914,12 +914,12 @@ SoSceneTexture2P::updateFrameBuffer(SoState * state, const float OBOL_UNUSED_ARG
   glaction->setAbortCallback(old_func, old_userdata);
 
   // make sure rendering has completed before switching back to the previous context
-  glFlush();
+  SoGLContext_glFlush(glue);
 
   if (PUBLIC(this)->type.getValue() == SoSceneTexture2::DEPTH) {
     // need to copy the depth buffer into the depth texture object
     SoGLContext_glBindTexture(glue,GL_TEXTURE_2D, fbodata->fbo_depthmap->getFirstIndex());
-    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0,
+    SoGLContext_glCopyTexSubImage2D(glue, GL_TEXTURE_2D, 0, 0, 0, 0, 0,
                         fbodata->fbo_size[0], fbodata->fbo_size[1]);
     SoGLContext_glBindTexture(glue, GL_TEXTURE_2D, 0);
   }
@@ -936,11 +936,11 @@ SoSceneTexture2P::updateFrameBuffer(SoState * state, const float OBOL_UNUSED_ARG
 
 
   // restore old clear color
-  glClearColor(oldclearcolor[0], oldclearcolor[1], oldclearcolor[2], oldclearcolor[3]);
+  SoGLContext_glClearColor(glue, oldclearcolor[0], oldclearcolor[1], oldclearcolor[2], oldclearcolor[3]);
 
   // enable lights again
   for (i = 0; i < numlights; i++) {
-    glEnable((GLenum) (GL_LIGHT0 + i));
+    SoGLContext_glEnable(glue, (GLenum) (GL_LIGHT0 + i));
   }
   state->pop();
 
@@ -1053,11 +1053,12 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
                                         SoShapeStyleElement::getTransparencyType(state));
 
     if (this->contextManager) this->contextManager->makeContextCurrent(this->glcontext);
-    glEnable(GL_DEPTH_TEST);
+    const SoGLContext * pbglue = SoGLContext_instance(this->contextid);
+    SoGLContext_glEnable(pbglue, GL_DEPTH_TEST);
     this->glaction->apply(scene);
     // Make sure that rendering to pBuffer is completed to avoid
     // flickering. DON'T REMOVE THIS. You have been warned.
-    glFlush();
+    SoGLContext_glFlush(pbglue);
 
     if (!this->canrendertotexture) {
       SbVec2s size = this->glcontextsize;
@@ -1067,10 +1068,10 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
         this->offscreenbuffer = new unsigned char[reqbytes];
         this->offscreenbuffersize = reqbytes;
       }
-      glPixelStorei(GL_PACK_ALIGNMENT, 1);
-      glReadPixels(0, 0, size[0], size[1], GL_RGBA, GL_UNSIGNED_BYTE,
+      SoGLContext_glPixelStorei(pbglue, GL_PACK_ALIGNMENT, 1);
+      SoGLContext_glReadPixels(pbglue, 0, 0, size[0], size[1], GL_RGBA, GL_UNSIGNED_BYTE,
                    this->offscreenbuffer);
-      glPixelStorei(GL_PACK_ALIGNMENT, 4);
+      SoGLContext_glPixelStorei(pbglue, GL_PACK_ALIGNMENT, 4);
     }
     
     if (this->contextManager) this->contextManager->restorePreviousContext(this->glcontext);
@@ -1125,12 +1126,14 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
 }
 
 void
-SoSceneTexture2P::prerendercb(void * userdata, SoGLRenderAction * OBOL_UNUSED_ARG(action))
+SoSceneTexture2P::prerendercb(void * userdata, SoGLRenderAction * action)
 {
   SoSceneTexture2 * thisp = (SoSceneTexture2*) userdata;
   SbVec4f col = thisp->backgroundColor.getValue();
-  glClearColor(col[0], col[1], col[2], col[3]);
-  glClear(GL_DEPTH_BUFFER_BIT|GL_COLOR_BUFFER_BIT);
+  const SoGLContext * glue = SoGLContext_instance(
+      SoGLCacheContextElement::get(action->getState()));
+  SoGLContext_glClearColor(glue, col[0], col[1], col[2], col[3]);
+  SoGLContext_glClear(glue, GL_DEPTH_BUFFER_BIT|GL_COLOR_BUFFER_BIT);
 }
 
 static void soscenetexture2_translate_type(SoSceneTexture2::Type type, GLenum & internalformat, GLenum & format)
@@ -1221,7 +1224,7 @@ SoSceneTexture2P::createFramebufferObjects(const SoGLContext * glue, SoState * s
 
   // store old framebuffer
   GLint oldfb;
-  glGetIntegerv( GL_FRAMEBUFFER_BINDING_EXT, &oldfb );
+  SoGLContext_glGetIntegerv(glue, GL_FRAMEBUFFER_BINDING_EXT, &oldfb);
 
   SoGLContext_glGenFramebuffers(glue, 1, &fbodata->fbo_frameBuffer);
   SoGLContext_glGenRenderbuffers(glue, 1, &fbodata->fbo_depthBuffer);
@@ -1246,7 +1249,7 @@ SoSceneTexture2P::createFramebufferObjects(const SoGLContext * glue, SoState * s
     break;
   }
 
-  glTexImage2D(GL_TEXTURE_2D, 0,
+  SoGLContext_glTexImage2D(glue, GL_TEXTURE_2D, 0,
                internalformat,
                fbodata->fbo_size[0], fbodata->fbo_size[1],
                0, /* border */
@@ -1266,17 +1269,17 @@ SoSceneTexture2P::createFramebufferObjects(const SoGLContext * glue, SoState * s
   if (wraps == GL_CLAMP_TO_BORDER && !clamptoborder_ok) wraps = GL_CLAMP;
   if (wrapt == GL_CLAMP_TO_BORDER && !clamptoborder_ok) wrapt = GL_CLAMP;
 
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wraps);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapt);
+  SoGLContext_glTexParameteri(glue, GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wraps);
+  SoGLContext_glTexParameteri(glue, GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapt);
 
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, fbodata->fbo_mipmap ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  SoGLContext_glTexParameteri(glue, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, fbodata->fbo_mipmap ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
+  SoGLContext_glTexParameteri(glue, GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   if (fbodata->fbo_mipmap) {
     SoGLContext_glGenerateMipmap(glue, GL_TEXTURE_2D);
   }
 
   if (SoGLDriverDatabase::isSupported(glue, SO_GL_ANISOTROPIC_FILTERING)) {
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+    SoGLContext_glTexParameterf(glue, GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
                     SoGLContext_get_max_anisotropy(glue));
   }
 
@@ -1287,7 +1290,7 @@ SoSceneTexture2P::createFramebufferObjects(const SoGLContext * glue, SoState * s
     fbodata->fbo_depthmap->ref();
     fbodata->fbo_depthmap->open(state);
 
-    glTexImage2D(GL_TEXTURE_2D, 0,
+    SoGLContext_glTexImage2D(glue, GL_TEXTURE_2D, 0,
                  GL_DEPTH_COMPONENT, /* GL_DEPTH_COMPONENT24? */
                  fbodata->fbo_size[0], fbodata->fbo_size[1],
                  0, /* border */
@@ -1296,20 +1299,20 @@ SoSceneTexture2P::createFramebufferObjects(const SoGLContext * glue, SoState * s
 
     if (SoGLDriverDatabase::isSupported(glue, "GL_ARB_texture_border_clamp") ||
         SoGLDriverDatabase::isSupported(glue, "GL_SGIS_texture_border_clamp")) {
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+      SoGLContext_glTexParameteri(glue, GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+      SoGLContext_glTexParameteri(glue, GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     }
     else {
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+      SoGLContext_glTexParameteri(glue, GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+      SoGLContext_glTexParameteri(glue, GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
     }
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_R_TO_TEXTURE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+    SoGLContext_glTexParameteri(glue, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    SoGLContext_glTexParameteri(glue, GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    SoGLContext_glTexParameteri(glue, GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_R_TO_TEXTURE);
+    SoGLContext_glTexParameteri(glue, GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
 
     if (SoGLDriverDatabase::isSupported(glue, SO_GL_ANISOTROPIC_FILTERING)) {
-      glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+      SoGLContext_glTexParameterf(glue, GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
                       SoGLContext_get_max_anisotropy(glue));
     }
 

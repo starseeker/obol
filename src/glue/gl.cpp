@@ -1070,6 +1070,23 @@ glglue_resolve_symbols(SoGLContext * w)
 
 
 
+  /* Core GL 1.0/1.1 functions — always available, stored as function
+     pointers so dual-GL builds (OBOL_BUILD_DUAL_GL) dispatch through
+     the correct backend rather than always calling system GL. */
+  w->glTexImage2D      = (OBOL_PFNGLTEXIMAGE2DPROC)PROC(w, glTexImage2D);
+  w->glTexParameteri   = (OBOL_PFNGLTEXPARAMETERIPROC)PROC(w, glTexParameteri);
+  w->glTexParameterf   = (OBOL_PFNGLTEXPARAMETERFPROC)PROC(w, glTexParameterf);
+  w->glGetIntegerv     = (OBOL_PFNGLGETINTEGERVPROC)PROC(w, glGetIntegerv);
+  w->glGetFloatv       = (OBOL_PFNGLGETFLOATVPROC)PROC(w, glGetFloatv);
+  w->glClearColor      = (OBOL_PFNGLCLEARCOLORPROC)PROC(w, glClearColor);
+  w->glClear           = (OBOL_PFNGLCLEARPROC)PROC(w, glClear);
+  w->glFlush           = (OBOL_PFNGLFLUSHPROC)PROC(w, glFlush);
+  w->glEnable          = (OBOL_PFNGLENABLEPROC)PROC(w, glEnable);
+  w->glDisable         = (OBOL_PFNGLDISABLEPROC)PROC(w, glDisable);
+  w->glPixelStorei     = (OBOL_PFNGLPIXELSTOREIPROC)PROC(w, glPixelStorei);
+  w->glReadPixels      = (OBOL_PFNGLREADPIXELSPROC)PROC(w, glReadPixels);
+  w->glCopyTexSubImage2D = (OBOL_PFNGLCOPYTEXSUBIMAGE2DPROC)PROC(w, glCopyTexSubImage2D);
+
   /* Appeared in OpenGL v1.1. */
   w->glGenTextures = NULL;
   w->glBindTexture = NULL;
@@ -5353,6 +5370,124 @@ SoGLContext_has_framebuffer_objects(const SoGLContext * glue)
 {
   if (!glglue_allow_newer_opengl(glue)) return FALSE;
   return glue->has_fbo;
+}
+
+/* Core GL 1.0/1.1 wrappers.
+ *
+ * These must be used instead of bare gl* calls anywhere the active
+ * backend (system GL vs. OSMesa) is not known at compile time — in
+ * particular inside SoSceneTexture2 and any other node that runs in
+ * both a system-GL context and an OSMesa context within the same
+ * process (OBOL_BUILD_DUAL_GL).  The function pointers were filled in
+ * by glglue_resolve_symbols() from the correct backend. */
+
+void
+SoGLContext_glTexImage2D(const SoGLContext * glue,
+                         GLenum target, GLint level, GLint internalformat,
+                         GLsizei width, GLsizei height, GLint border,
+                         GLenum format, GLenum type, const GLvoid * pixels)
+{
+  assert(glue->glTexImage2D);
+  glue->glTexImage2D(target, level, internalformat, width, height,
+                     border, format, type, pixels);
+}
+
+void
+SoGLContext_glTexParameteri(const SoGLContext * glue,
+                            GLenum target, GLenum pname, GLint param)
+{
+  assert(glue->glTexParameteri);
+  glue->glTexParameteri(target, pname, param);
+}
+
+void
+SoGLContext_glTexParameterf(const SoGLContext * glue,
+                            GLenum target, GLenum pname, GLfloat param)
+{
+  assert(glue->glTexParameterf);
+  glue->glTexParameterf(target, pname, param);
+}
+
+void
+SoGLContext_glGetIntegerv(const SoGLContext * glue,
+                          GLenum pname, GLint * params)
+{
+  assert(glue->glGetIntegerv);
+  glue->glGetIntegerv(pname, params);
+}
+
+void
+SoGLContext_glGetFloatv(const SoGLContext * glue,
+                        GLenum pname, GLfloat * params)
+{
+  assert(glue->glGetFloatv);
+  glue->glGetFloatv(pname, params);
+}
+
+void
+SoGLContext_glClearColor(const SoGLContext * glue,
+                         GLclampf red, GLclampf green,
+                         GLclampf blue, GLclampf alpha)
+{
+  assert(glue->glClearColor);
+  glue->glClearColor(red, green, blue, alpha);
+}
+
+void
+SoGLContext_glClear(const SoGLContext * glue, GLbitfield mask)
+{
+  assert(glue->glClear);
+  glue->glClear(mask);
+}
+
+void
+SoGLContext_glFlush(const SoGLContext * glue)
+{
+  assert(glue->glFlush);
+  glue->glFlush();
+}
+
+void
+SoGLContext_glEnable(const SoGLContext * glue, GLenum cap)
+{
+  assert(glue->glEnable);
+  glue->glEnable(cap);
+}
+
+void
+SoGLContext_glDisable(const SoGLContext * glue, GLenum cap)
+{
+  assert(glue->glDisable);
+  glue->glDisable(cap);
+}
+
+void
+SoGLContext_glPixelStorei(const SoGLContext * glue,
+                          GLenum pname, GLint param)
+{
+  assert(glue->glPixelStorei);
+  glue->glPixelStorei(pname, param);
+}
+
+void
+SoGLContext_glReadPixels(const SoGLContext * glue,
+                         GLint x, GLint y, GLsizei width, GLsizei height,
+                         GLenum format, GLenum type, GLvoid * pixels)
+{
+  assert(glue->glReadPixels);
+  glue->glReadPixels(x, y, width, height, format, type, pixels);
+}
+
+void
+SoGLContext_glCopyTexSubImage2D(const SoGLContext * glue,
+                                GLenum target, GLint level,
+                                GLint xoffset, GLint yoffset,
+                                GLint x, GLint y,
+                                GLsizei width, GLsizei height)
+{
+  assert(glue->glCopyTexSubImage2D);
+  glue->glCopyTexSubImage2D(target, level, xoffset, yoffset,
+                            x, y, width, height);
 }
 
 /* ********************************************************************** */

@@ -365,6 +365,23 @@
 #define SoGLContext_glGenerateMipmap               SOGL_ADD_PREFIX(SoGLContext_glGenerateMipmap)
 
 /* -----------------------------------------------------------------------
+ * GL function wrappers (core GL 1.0/1.1 — must never mix backends)
+ * --------------------------------------------------------------------- */
+#define SoGLContext_glTexImage2D                   SOGL_ADD_PREFIX(SoGLContext_glTexImage2D)
+#define SoGLContext_glTexParameteri                SOGL_ADD_PREFIX(SoGLContext_glTexParameteri)
+#define SoGLContext_glTexParameterf                SOGL_ADD_PREFIX(SoGLContext_glTexParameterf)
+#define SoGLContext_glGetIntegerv                  SOGL_ADD_PREFIX(SoGLContext_glGetIntegerv)
+#define SoGLContext_glGetFloatv                    SOGL_ADD_PREFIX(SoGLContext_glGetFloatv)
+#define SoGLContext_glClearColor                   SOGL_ADD_PREFIX(SoGLContext_glClearColor)
+#define SoGLContext_glClear                        SOGL_ADD_PREFIX(SoGLContext_glClear)
+#define SoGLContext_glFlush                        SOGL_ADD_PREFIX(SoGLContext_glFlush)
+#define SoGLContext_glEnable                       SOGL_ADD_PREFIX(SoGLContext_glEnable)
+#define SoGLContext_glDisable                      SOGL_ADD_PREFIX(SoGLContext_glDisable)
+#define SoGLContext_glPixelStorei                  SOGL_ADD_PREFIX(SoGLContext_glPixelStorei)
+#define SoGLContext_glReadPixels                   SOGL_ADD_PREFIX(SoGLContext_glReadPixels)
+#define SoGLContext_glCopyTexSubImage2D            SOGL_ADD_PREFIX(SoGLContext_glCopyTexSubImage2D)
+
+/* -----------------------------------------------------------------------
  * GL context management helpers
  * --------------------------------------------------------------------- */
 #define SoGLContext_glXGetCurrentDisplay           SOGL_ADD_PREFIX(SoGLContext_glXGetCurrentDisplay)

@@ -120,6 +120,44 @@ typedef void (APIENTRY * OBOL_PFNGLCOPYTEXSUBIMAGE3DPROC)(GLenum target,
                                                           GLsizei width,
                                                           GLsizei height);
 
+/* Core GL 1.0/1.1 functions needed for proper dual-GL dispatch in
+   SoSceneTexture2 and other nodes that must never mix backends. */
+typedef void (APIENTRY * OBOL_PFNGLTEXIMAGE2DPROC)(GLenum target, GLint level,
+                                                   GLint internalformat,
+                                                   GLsizei width, GLsizei height,
+                                                   GLint border, GLenum format,
+                                                   GLenum type,
+                                                   const GLvoid * pixels);
+typedef void (APIENTRY * OBOL_PFNGLTEXPARAMETERIPROC)(GLenum target,
+                                                      GLenum pname, GLint param);
+typedef void (APIENTRY * OBOL_PFNGLTEXPARAMETERFPROC)(GLenum target,
+                                                      GLenum pname,
+                                                      GLfloat param);
+typedef void (APIENTRY * OBOL_PFNGLGETINTEGERVPROC)(GLenum pname,
+                                                    GLint * params);
+typedef void (APIENTRY * OBOL_PFNGLGETFLOATVPROC)(GLenum pname,
+                                                   GLfloat * params);
+typedef void (APIENTRY * OBOL_PFNGLCLEARCOLORPROC)(GLclampf red,
+                                                   GLclampf green,
+                                                   GLclampf blue,
+                                                   GLclampf alpha);
+typedef void (APIENTRY * OBOL_PFNGLCLEARPROC)(GLbitfield mask);
+typedef void (APIENTRY * OBOL_PFNGLFLUSHPROC)(void);
+typedef void (APIENTRY * OBOL_PFNGLENABLEPROC)(GLenum cap);
+typedef void (APIENTRY * OBOL_PFNGLDISABLEPROC)(GLenum cap);
+typedef void (APIENTRY * OBOL_PFNGLPIXELSTOREIPROC)(GLenum pname, GLint param);
+typedef void (APIENTRY * OBOL_PFNGLREADPIXELSPROC)(GLint x, GLint y,
+                                                   GLsizei width, GLsizei height,
+                                                   GLenum format, GLenum type,
+                                                   GLvoid * pixels);
+typedef void (APIENTRY * OBOL_PFNGLCOPYTEXSUBIMAGE2DPROC)(GLenum target,
+                                                          GLint level,
+                                                          GLint xoffset,
+                                                          GLint yoffset,
+                                                          GLint x, GLint y,
+                                                          GLsizei width,
+                                                          GLsizei height);
+
 typedef void (APIENTRY * OBOL_PFNGLPOLYGONOFFSETPROC)(GLfloat factor,
                                                       GLfloat bias);
 
@@ -598,6 +636,23 @@ struct SoGLContext {
      contain a valid function pointer into the OpenGL library. */
   OBOL_PFNGLPOLYGONOFFSETPROC glPolygonOffset;
   OBOL_PFNGLPOLYGONOFFSETPROC glPolygonOffsetEXT;
+
+  /* Core GL 1.0/1.1 dispatch pointers — always non-NULL after init.
+     Required so that dual-GL builds (OBOL_BUILD_DUAL_GL) never mix
+     system-GL and OSMesa calls within the same render pass. */
+  OBOL_PFNGLTEXIMAGE2DPROC      glTexImage2D;
+  OBOL_PFNGLTEXPARAMETERIPROC   glTexParameteri;
+  OBOL_PFNGLTEXPARAMETERFPROC   glTexParameterf;
+  OBOL_PFNGLGETINTEGERVPROC     glGetIntegerv;
+  OBOL_PFNGLGETFLOATVPROC       glGetFloatv;
+  OBOL_PFNGLCLEARCOLORPROC      glClearColor;
+  OBOL_PFNGLCLEARPROC           glClear;
+  OBOL_PFNGLFLUSHPROC           glFlush;
+  OBOL_PFNGLENABLEPROC          glEnable;
+  OBOL_PFNGLDISABLEPROC         glDisable;
+  OBOL_PFNGLPIXELSTOREIPROC     glPixelStorei;
+  OBOL_PFNGLREADPIXELSPROC      glReadPixels;
+  OBOL_PFNGLCOPYTEXSUBIMAGE2DPROC glCopyTexSubImage2D;
 
   OBOL_PFNGLGENTEXTURESPROC glGenTextures;
   OBOL_PFNGLBINDTEXTUREPROC glBindTexture;
@@ -1403,6 +1458,40 @@ void SoGLContext_glFramebufferRenderbuffer(const SoGLContext * glue, GLenum targ
 void SoGLContext_glGetFramebufferAttachmentParameteriv(const SoGLContext * glue, GLenum target, GLenum attachment, GLenum pname, GLint *params);
 void SoGLContext_glGenerateMipmap(const SoGLContext * glue, GLenum target);
 SbBool SoGLContext_has_framebuffer_objects(const SoGLContext * glue);
+
+/* Core GL 1.0/1.1 wrappers — always dispatch through the correct backend.
+   Use these everywhere a bare gl* call would otherwise mix backends in
+   dual-GL (OBOL_BUILD_DUAL_GL) builds. */
+void SoGLContext_glTexImage2D(const SoGLContext * glue,
+                              GLenum target, GLint level, GLint internalformat,
+                              GLsizei width, GLsizei height, GLint border,
+                              GLenum format, GLenum type, const GLvoid * pixels);
+void SoGLContext_glTexParameteri(const SoGLContext * glue,
+                                 GLenum target, GLenum pname, GLint param);
+void SoGLContext_glTexParameterf(const SoGLContext * glue,
+                                 GLenum target, GLenum pname, GLfloat param);
+void SoGLContext_glGetIntegerv(const SoGLContext * glue,
+                               GLenum pname, GLint * params);
+void SoGLContext_glGetFloatv(const SoGLContext * glue,
+                             GLenum pname, GLfloat * params);
+void SoGLContext_glClearColor(const SoGLContext * glue,
+                              GLclampf red, GLclampf green,
+                              GLclampf blue, GLclampf alpha);
+void SoGLContext_glClear(const SoGLContext * glue, GLbitfield mask);
+void SoGLContext_glFlush(const SoGLContext * glue);
+void SoGLContext_glEnable(const SoGLContext * glue, GLenum cap);
+void SoGLContext_glDisable(const SoGLContext * glue, GLenum cap);
+void SoGLContext_glPixelStorei(const SoGLContext * glue,
+                               GLenum pname, GLint param);
+void SoGLContext_glReadPixels(const SoGLContext * glue,
+                              GLint x, GLint y,
+                              GLsizei width, GLsizei height,
+                              GLenum format, GLenum type, GLvoid * pixels);
+void SoGLContext_glCopyTexSubImage2D(const SoGLContext * glue,
+                                     GLenum target, GLint level,
+                                     GLint xoffset, GLint yoffset,
+                                     GLint x, GLint y,
+                                     GLsizei width, GLsizei height);
 
 /* GL feature queries */
 SbBool SoGLContext_can_do_bumpmapping(const SoGLContext * glue);
