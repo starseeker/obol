@@ -55,6 +55,13 @@ public:
   SbBool isSupported(void) const;
   void setContextManager(SoDB::ContextManager * manager);
 
+  // Preferred constructor: the context manager is captured at construction
+  // time and used for isSupported() without ever calling SoDB::getContextManager().
+  // Passing NULL is an error.
+  explicit SoShadowGroup(SoDB::ContextManager * manager);
+
+  // Default constructor: captures SoDB::getContextManager() at construction
+  // time.  Asserts that a manager has been set via SoDB::init() first.
   SoShadowGroup(void);
 
   enum VisibilityFlag {
@@ -87,6 +94,7 @@ protected:
   virtual ~SoShadowGroup();
 
 private:
+  void initFields(void);
   SoShadowGroupP * pimpl;
 
 };

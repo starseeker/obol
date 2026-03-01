@@ -615,9 +615,9 @@ public:
 
 class SoShadowGroupP {
 public:
-  SoShadowGroupP(SoShadowGroup * master) :
+  SoShadowGroupP(SoShadowGroup * master, SoDB::ContextManager * mgr) :
     master(master),
-    contextManager(nullptr),
+    contextManager(mgr),
     bboxaction(SbViewportRegion(SbVec2s(100,100))),
     matrixaction(SbViewportRegion(SbVec2s(100,100))),
     shadowlightsvalid(FALSE),
@@ -773,8 +773,35 @@ SO_NODE_SOURCE(SoShadowGroup);
 */
 SoShadowGroup::SoShadowGroup(void)
 {
-  PRIVATE(this) = new SoShadowGroupP(this);
+  SoDB::ContextManager * mgr = SoDB::getContextManager();
+  assert(mgr && "SoDB must be initialized with a ContextManager before creating SoShadowGroup");
+  PRIVATE(this) = new SoShadowGroupP(this, mgr);
+  initFields();
+}
 
+/*!
+  Explicit-manager constructor.  The \a manager is captured at construction
+  time and used by isSupported() without any call to SoDB::getContextManager().
+  Passing NULL is an error.
+
+  \param manager  The context manager to use for GL context operations.
+                  Must not be NULL.
+*/
+SoShadowGroup::SoShadowGroup(SoDB::ContextManager * manager)
+{
+  assert(manager && "SoShadowGroup requires a non-NULL SoDB::ContextManager");
+  PRIVATE(this) = new SoShadowGroupP(this, manager);
+  initFields();
+}
+
+/*!
+  Shared field-registration helper called by both public constructors.
+  Sets up all SO_NODE_ADD_FIELD entries and enum definitions so that
+  neither constructor duplicates this code.
+*/
+void
+SoShadowGroup::initFields(void)
+{
   SO_NODE_INTERNAL_CONSTRUCTOR(SoShadowGroup);
 
   SO_NODE_ADD_FIELD(isActive, (TRUE));
@@ -794,7 +821,6 @@ SoShadowGroup::SoShadowGroup(void)
   SO_NODE_DEFINE_ENUM_VALUE(VisibilityFlag, ABSOLUTE_RADIUS);
   SO_NODE_DEFINE_ENUM_VALUE(VisibilityFlag, PROJECTED_BBOX_DEPTH_FACTOR);
   SO_NODE_SET_SF_ENUM_TYPE(visibilityFlag, VisibilityFlag);
-
 }
 
 /*!
@@ -852,7 +878,9 @@ SoShadowGroup::init(void)
   tests. This should usually be sufficient to decide whether or not
   the graphics driver / card supports the features needed for
   rendering shadows.  The context manager captured at construction
-  time is used to create the probe context.
+  time (or set via setContextManager()) is used to create the probe
+  context.  Calling this method on a node with no context manager set
+  is a programming error and will abort.
 
   \since Coin 3.1
 */
@@ -866,16 +894,12 @@ SoShadowGroup::isSupported(void) const
   static int supp = -1;
   if (supp != -1) { return supp ? true : false; }
 
-  // Prefer the instance manager (set via setContextManager() or populated from
-  // the state element during a prior render).  Fall back to the global only if
-  // the instance hasn't been rendered yet and no explicit manager was set.
+  // The context manager must be set -- either by the explicit constructor,
+  // via setContextManager(), or populated from the render state element
+  // during a prior render.  No silent global fallback.
   SoDB::ContextManager * mgr = PRIVATE(this)->contextManager;
-  if (!mgr) mgr = SoDB::getContextManager();
-  if (!mgr) {
-    SoDebugError::postWarning("SoShadowGroup::isSupported",
-                              "No context manager available.");
-    return false;
-  }
+  assert(mgr && "SoShadowGroup::isSupported() called without a context manager. "
+                "Use SoShadowGroup(manager) or call setContextManager() first.");
 
   void * glctx = mgr->createOffscreenContext(256, 256);
   SbBool ok = glctx ? mgr->makeContextCurrent(glctx) : FALSE;

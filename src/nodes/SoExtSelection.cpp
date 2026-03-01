@@ -2660,6 +2660,7 @@ SoExtSelectionP::performSelection(SoHandleEventAction * action)
     */
     unsigned int maxsize[2];
     SoDB::ContextManager * mgr = this->contextManager ? this->contextManager : SoDB::getContextManager();
+    assert(mgr && "SoExtSelection: no context manager available (call SoDB::init() or setContextManager() first)");
     SoGLContext_context_max_dimensions(mgr, &maxsize[0], &maxsize[1]);
 
     this->requestedsize = action->getViewportRegion().getViewportSizePixels();
@@ -2680,17 +2681,11 @@ SoExtSelectionP::performSelection(SoHandleEventAction * action)
     // only (re)allocate the renderers if the viewport has changed
     if (this->renderer == NULL || this->renderer->getViewportRegion() != vp) {
       delete this->renderer;
-      if (mgr)
-        this->renderer = new SoOffscreenRenderer(mgr, vp);
-      else
-        this->renderer = new SoOffscreenRenderer(vp);
+      this->renderer = new SoOffscreenRenderer(mgr, vp);
     }
     if (this->lassorenderer == NULL || this->lassorenderer->getViewportRegion() != vp) {
       delete this->lassorenderer;
-      if (mgr)
-        this->lassorenderer = new SoOffscreenRenderer(mgr, vp);
-      else
-        this->lassorenderer = new SoOffscreenRenderer(vp);
+      this->lassorenderer = new SoOffscreenRenderer(mgr, vp);
     }
 
     SoCallback * cbnode = new SoCallback;
