@@ -636,6 +636,16 @@ inline SoOffscreenRenderer* getSharedRenderer() {
 }
 
 /**
+ * Return the context manager installed by initCoinHeadless() (system OpenGL backend).
+ * Must be called after initCoinHeadless().
+ */
+inline SoDB::ContextManager * getCoinHeadlessContextManager() {
+    SoDB::ContextManager * mgr = SoDB::getContextManager();
+    assert(mgr && "getCoinHeadlessContextManager: call initCoinHeadless() first");
+    return mgr;
+}
+
+/**
  * Render a scene to an image file (system OpenGL backend).
  * Uses the shared renderer to avoid GLX context recreation issues.
  */
