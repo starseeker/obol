@@ -710,6 +710,7 @@ SoSceneTexture2P::~SoSceneTexture2P()
   delete[] this->offscreenbuffer;
   if (this->glaction) {
     coingl_unregister_context_manager(this->contextid);
+    coingl_unregister_osmesa_context(this->contextid);
   }
   delete this->glaction;
 }
@@ -720,7 +721,34 @@ SoSceneTexture2P::updateBuffer(SoState * state, const float quality)
   // Update the context manager from the state element pushed by SoOffscreenRenderer.
   // This ensures we use the correct backend without calling SoDB::getContextManager().
   SoDB::ContextManager * stateMgr = SoContextManagerElement::get(state);
-  if (stateMgr) this->contextManager = stateMgr;
+  if (stateMgr) {
+    if (stateMgr != this->contextManager) {
+      // The context manager has changed (e.g. the same SoSceneTexture2 node is
+      // rendered by a different backend such as system-GL then OSMesa).  Any
+      // inner context that was created by the OLD manager must be destroyed
+      // through that same manager before we adopt the new one.  Mixing context
+      // pointers across managers causes type confusion and crashes.
+      if (this->glcontext && this->contextManager) {
+        this->contextManager->destroyContext(this->glcontext);
+        this->glcontext = NULL;
+        this->glcontextsize.setValue(-1, -1);
+      }
+      if (this->glimage) {
+        this->glimage->unref(NULL);
+        this->glimage = NULL;
+        this->glimagecontext = 0;
+      }
+      if (this->glaction) {
+        coingl_unregister_context_manager(this->contextid);
+        coingl_unregister_osmesa_context(this->contextid);
+        delete this->glaction;
+        this->glaction = NULL;
+      }
+      this->glimagevalid = FALSE;
+      this->buffervalid = FALSE;
+    }
+    this->contextManager = stateMgr;
+  }
 
   // make sure we've finished rendering to this context
   glFlush();
@@ -947,6 +975,7 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
     // Note: Recreating the glaction (below) will also get us a new contextid.
     if (this->glaction) {
       coingl_unregister_context_manager(this->contextid);
+      coingl_unregister_osmesa_context(this->contextid);
     }
     delete this->glaction;
     this->glaction = NULL;
@@ -997,8 +1026,14 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
                                            (void*) PUBLIC(this));
       /* Register the inner context ID so SoGLContext_instance() can resolve
        * GL capabilities without needing a current system-GL context. */
-      if (this->contextManager)
+      if (this->contextManager) {
         coingl_register_context_manager(this->contextid, this->contextManager);
+        /* In dual-GL builds the dispatch layer needs to know which backend
+         * this context ID belongs to so SoGLContext_instance() routes to the
+         * correct GL dispatch (OSMesa vs system GL). */
+        if (this->contextManager->isOSMesaContext(this->glcontext))
+          coingl_register_osmesa_context(this->contextid);
+      }
     } else {
       this->glaction->setViewportRegion(SbViewportRegion(this->glcontextsize));
     }
