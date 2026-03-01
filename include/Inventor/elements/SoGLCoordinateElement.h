@@ -35,6 +35,8 @@
 
 #include <Inventor/elements/SoCoordinateElement.h>
 
+struct SoGLContext;
+
 class OBOL_DLL_API SoGLCoordinateElement : public SoCoordinateElement {
   typedef SoCoordinateElement inherited;
 
@@ -49,6 +51,8 @@ public:
   const SbVec4f *getPtr4() const;
   void send(const int index) const;
 
+private:
+  mutable const SoGLContext * glue = nullptr;
 };
 
 #endif // !OBOL_SOGLCOORDINATEELEMENT_H

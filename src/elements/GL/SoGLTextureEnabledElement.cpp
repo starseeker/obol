@@ -136,6 +136,7 @@ void
 SoGLTextureEnabledElement::init(SoState * state)
 {
   inherited::init(state);
+  this->glue = sogl_glue_from_state(state);
 }
 
 // Documented in superclass. Overridden to track GL state.
@@ -206,15 +207,15 @@ void
 SoGLTextureEnabledElement::updategl(void)
 {
   assert(0 && "obsoleted");
-  if (this->data) SoGLContext_glEnable(sogl_current_render_glue(), GL_TEXTURE_2D);
-  else SoGLContext_glDisable(sogl_current_render_glue(), GL_TEXTURE_2D);
+  if (this->data) SoGLContext_glEnable(this->glue, GL_TEXTURE_2D);
+  else SoGLContext_glDisable(this->glue, GL_TEXTURE_2D);
 }
 
 void
 SoGLTextureEnabledElement::updategl(const Mode newvalue, const Mode oldvalue)
 {
   // FIXME: the code below looks fairly non-optimal. Should at least
-  // avoid doing SoGLContext_glDisable(sogl_current_render_glue()) then SoGLContext_glEnable(sogl_current_render_glue()). 20040802 mortene.
+  // avoid doing SoGLContext_glDisable(this->glue) then SoGLContext_glEnable(this->glue). 20040802 mortene.
   //
   // We check for this before calling this method. 2005-01-27 pederb.
 
@@ -222,13 +223,13 @@ SoGLTextureEnabledElement::updategl(const Mode newvalue, const Mode oldvalue)
   case DISABLED:
     break;
   case TEXTURE2D:
-    SoGLContext_glDisable(sogl_current_render_glue(), GL_TEXTURE_2D);
+    SoGLContext_glDisable(this->glue, GL_TEXTURE_2D);
     break;
   case RECTANGLE:
-    SoGLContext_glDisable(sogl_current_render_glue(), GL_TEXTURE_RECTANGLE_EXT);
+    SoGLContext_glDisable(this->glue, GL_TEXTURE_RECTANGLE_EXT);
     break;
   case CUBEMAP:
-    SoGLContext_glDisable(sogl_current_render_glue(), GL_TEXTURE_CUBE_MAP);
+    SoGLContext_glDisable(this->glue, GL_TEXTURE_CUBE_MAP);
     break;
   default:
     assert(0 && "should not happen");
@@ -238,13 +239,13 @@ SoGLTextureEnabledElement::updategl(const Mode newvalue, const Mode oldvalue)
   case DISABLED:
     break;
   case TEXTURE2D:
-    SoGLContext_glEnable(sogl_current_render_glue(), GL_TEXTURE_2D);
+    SoGLContext_glEnable(this->glue, GL_TEXTURE_2D);
     break;
   case RECTANGLE:
-    SoGLContext_glEnable(sogl_current_render_glue(), GL_TEXTURE_RECTANGLE_EXT);
+    SoGLContext_glEnable(this->glue, GL_TEXTURE_RECTANGLE_EXT);
     break;
   case CUBEMAP:
-    SoGLContext_glEnable(sogl_current_render_glue(), GL_TEXTURE_CUBE_MAP);
+    SoGLContext_glEnable(this->glue, GL_TEXTURE_CUBE_MAP);
     break;
   default:
     assert(0 && "should not happen");

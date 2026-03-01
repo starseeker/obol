@@ -69,6 +69,7 @@ void
 SoGLDrawStyleElement::init(SoState * state)
 {
   inherited::init(state);
+  this->glue = sogl_glue_from_state(state);
 }
 
 // doc in superclass
@@ -108,13 +109,13 @@ SoGLDrawStyleElement::updategl(void)
 {
   switch ((Style)this->data) {
   case SoDrawStyleElement::FILLED:
-    SoGLContext_glPolygonMode(sogl_current_render_glue(), GL_FRONT_AND_BACK, GL_FILL);
+    SoGLContext_glPolygonMode(this->glue, GL_FRONT_AND_BACK, GL_FILL);
     break;
   case SoDrawStyleElement::LINES:
-    SoGLContext_glPolygonMode(sogl_current_render_glue(), GL_FRONT_AND_BACK, GL_LINE);
+    SoGLContext_glPolygonMode(this->glue, GL_FRONT_AND_BACK, GL_LINE);
     break;
   case SoDrawStyleElement::POINTS:
-    SoGLContext_glPolygonMode(sogl_current_render_glue(), GL_FRONT_AND_BACK, GL_POINT);
+    SoGLContext_glPolygonMode(this->glue, GL_FRONT_AND_BACK, GL_POINT);
     break;
   case SoDrawStyleElement::INVISIBLE:
     // handled in SoShape::shouldGLRender()

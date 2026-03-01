@@ -35,6 +35,8 @@
 
 #include <Inventor/elements/SoProjectionMatrixElement.h>
 
+struct SoGLContext;
+
 class OBOL_DLL_API SoGLProjectionMatrixElement : public SoProjectionMatrixElement {
   typedef SoProjectionMatrixElement inherited;
 
@@ -52,6 +54,7 @@ protected:
   virtual void setElt(const SbMatrix & matrix);
 
 private:
+  mutable const SoGLContext * glue = nullptr;
   void updategl();
 };
 

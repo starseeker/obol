@@ -93,7 +93,7 @@ SoGLProjectionMatrixElement::setElt(const SbMatrix & matrix)
 void
 SoGLProjectionMatrixElement::updategl(void)
 {
-  SoGLContext_glMatrixMode(sogl_current_render_glue(), GL_PROJECTION);
-  SoGLContext_glLoadMatrixf(sogl_current_render_glue(), (float*)this->projectionMatrix);
-  SoGLContext_glMatrixMode(sogl_current_render_glue(), GL_MODELVIEW);
+  SoGLContext_glMatrixMode(this->glue, GL_PROJECTION);
+  SoGLContext_glLoadMatrixf(this->glue, (float*)this->projectionMatrix);
+  SoGLContext_glMatrixMode(this->glue, GL_MODELVIEW);
 }

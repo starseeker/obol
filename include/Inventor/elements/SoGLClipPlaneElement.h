@@ -35,6 +35,8 @@
 
 #include <Inventor/elements/SoClipPlaneElement.h>
 
+struct SoGLContext;
+
 class OBOL_DLL_API SoGLClipPlaneElement : public SoClipPlaneElement {
   typedef SoClipPlaneElement inherited;
 
@@ -55,6 +57,7 @@ protected:
                         const SbMatrix & modelMatrix);
 
 private:
+  mutable const SoGLContext * glue = nullptr;
 };
 
 #endif // !OBOL_SOGLCLIPPLANEELEMENT_H

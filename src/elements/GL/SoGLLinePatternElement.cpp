@@ -80,6 +80,7 @@ void
 SoGLLinePatternElement::init(SoState * state)
 {
   inherited::init(state);
+  this->glue = sogl_glue_from_state(state);
 }
 
 /*!
@@ -131,11 +132,11 @@ SoGLLinePatternElement::updategl()
   // FIXME: store flag to keep enable/disable state, pederb 990624
   //
   if ((this->data & 0xffff) == (int32_t) CONTINUOUS) {
-    SoGLContext_glDisable(sogl_current_render_glue(), GL_LINE_STIPPLE);
+    SoGLContext_glDisable(this->glue, GL_LINE_STIPPLE);
   }
   else {
     // Enable line stipple before setting the pattern (required by OpenGL spec).
-    SoGLContext_glEnable(sogl_current_render_glue(), GL_LINE_STIPPLE);
-    SoGLContext_glLineStipple(sogl_current_render_glue(), (GLint) (this->data >> 16), (GLushort) (this->data & 0xffff));
+    SoGLContext_glEnable(this->glue, GL_LINE_STIPPLE);
+    SoGLContext_glLineStipple(this->glue, (GLint) (this->data >> 16), (GLushort) (this->data & 0xffff));
   }
 }

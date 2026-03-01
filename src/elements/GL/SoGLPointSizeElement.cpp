@@ -50,9 +50,9 @@
 
   \code
     GLfloat bounds[2];
-    SoGLContext_glGetFloatv(sogl_current_render_glue(), GL_POINT_SIZE_RANGE, bounds);
+    SoGLContext_glGetFloatv(this->glue, GL_POINT_SIZE_RANGE, bounds);
     GLfloat granularity[1];
-    SoGLContext_glGetFloatv(sogl_current_render_glue(), GL_POINT_SIZE_GRANULARITY, granularity);
+    SoGLContext_glGetFloatv(this->glue, GL_POINT_SIZE_GRANULARITY, granularity);
   \endcode
 
   Another, perhaps more convenient, way of acquiring the OpenGL
@@ -102,6 +102,7 @@ void
 SoGLPointSizeElement::init(SoState * state)
 {
   inherited::init(state);
+  this->glue = sogl_glue_from_state(state);
 }
 
 // Doc in super.
@@ -142,7 +143,7 @@ SoGLPointSizeElement::updategl(void)
 {
   if (SoGLPointSizeElement::sizerange[0] == RANGE_NOT_CHECKED) {
     GLfloat vals[2];
-    SoGLContext_glGetFloatv(sogl_current_render_glue(), GL_POINT_SIZE_RANGE, vals);
+    SoGLContext_glGetFloatv(this->glue, GL_POINT_SIZE_RANGE, vals);
 
     // Matthias Koenig reported on coin-discuss that the OpenGL
     // implementation on SGI Onyx 2 InfiniteReality returns 0 for the
@@ -192,7 +193,7 @@ SoGLPointSizeElement::updategl(void)
         SoDebugError::postWarning("SoGLPointSizeElement::updategl",
                                   "%f is outside the legal range of [%f, %f] "
                                   "for this OpenGL implementation's "
-                                  "SoGLContext_glPointSize(sogl_current_render_glue()) settings. It was now clamped.\n\n"
+                                  "SoGLContext_glPointSize(this->glue) settings. It was now clamped.\n\n"
                                   "See the documentation of SoGLPointSizeElement for "
                                   "information on how the application programmer should "
                                   "acquire the boundary values for the legal "
@@ -206,7 +207,7 @@ SoGLPointSizeElement::updategl(void)
 
   // Forward to OpenGL state.
 
-  SoGLContext_glPointSize(sogl_current_render_glue(), useval);
+  SoGLContext_glPointSize(this->glue, useval);
 }
 
 #undef RANGE_NOT_CHECKED

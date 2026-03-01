@@ -35,6 +35,8 @@
 
 #include <Inventor/elements/SoNormalElement.h>
 
+struct SoGLContext;
+
 class OBOL_DLL_API SoGLNormalElement : public SoNormalElement {
   typedef SoNormalElement inherited;
 
@@ -48,6 +50,8 @@ public:
   virtual void init(SoState * state);
   void send(const int index) const;
 
+private:
+  mutable const SoGLContext * glue = nullptr;
 };
 
 #endif // !OBOL_SOGLNORMALELEMENT_H
