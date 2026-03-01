@@ -1,25 +1,25 @@
-#ifndef OBOL_SOINPUTP_H
-#define OBOL_SOINPUTP_H
+#ifndef OBOL_SOCONTEXTMANAGERELEMENT_H
+#define OBOL_SOCONTEXTMANAGERELEMENT_H
 
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  * Redistributions of source code must retain the above copyright notice,
  * this list of conditions and the following disclaimer.
- * 
+ *
  * Redistributions in binary form must reproduce the above copyright
  * notice, this list of conditions and the following disclaimer in the
  * documentation and/or other materials provided with the distribution.
- * 
+ *
  * Neither the name of the copyright holder nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -33,45 +33,43 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#ifndef OBOL_INTERNAL
-#error this is a private header file
-#endif /* ! OBOL_INTERNAL */
-
-// *************************************************************************
-
-#include "misc/SbHash.h"
+#include <Inventor/elements/SoSubElement.h>
 #include <Inventor/SoDB.h>
 
-class SoInput;
-class SoInput_FileInfo;
+/*!
+  \class SoContextManagerElement SoContextManagerElement.h Inventor/elements/SoContextManagerElement.h
+  \brief Carries the active SoDB::ContextManager through the GL render state.
 
-// *************************************************************************
+  SoOffscreenRenderer pushes the per-instance context manager onto the
+  state before traversal.  Scene-graph nodes that need to create their
+  own offscreen GL contexts (SoSceneTexture2, SoSceneTextureCubeMap,
+  SoShadowGroup, etc.) read it from the state so that no node ever has
+  to call SoDB::getContextManager() directly.
 
-class SoInputP {
+  \ingroup coin_elements
+*/
+
+class OBOL_DLL_API SoContextManagerElement : public SoElement {
+  typedef SoElement inherited;
+
+  SO_ELEMENT_HEADER(SoContextManagerElement);
+
 public:
-  SoInputP(SoInput * owner) {
-    this->owner = owner;
-    this->usingstdin = FALSE;
-    this->contextManager = nullptr;
-  }
+  static void initClass(void);
+protected:
+  virtual ~SoContextManagerElement();
 
-  static SbBool debug(void);
-  static SbBool debugBinary(void);
+public:
+  virtual void init(SoState * state);
 
-  SoInput_FileInfo * getTopOfStackPopOnEOF(void);
+  virtual SbBool matches(const SoElement * elt) const;
+  virtual SoElement * copyMatchInfo(void) const;
 
-  static SbBool isNameStartChar(unsigned char c, SbBool validIdent);
-  static SbBool isNameChar(unsigned char c, SbBool validIdent);
+  static void set(SoState * state, SoDB::ContextManager * manager);
+  static SoDB::ContextManager * get(SoState * state);
 
-  SbBool usingstdin;
-  SoDB::ContextManager * contextManager;
-
-  SbHash<const char *, SoBase *> copied_references;
-
-private:
-  SoInput * owner;
+protected:
+  SoDB::ContextManager * manager;
 };
 
-// *************************************************************************
-
-#endif // ! OBOL_SOINPUTP_H
+#endif // !OBOL_SOCONTEXTMANAGERELEMENT_H

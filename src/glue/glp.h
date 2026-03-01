@@ -1413,12 +1413,7 @@ float SoGLContext_get_max_anisotropy(const SoGLContext * glue);
 void * SoGLContext_glXGetCurrentDisplay(const SoGLContext * w);
 
 /* Offscreen buffer creation */
-void SoGLContext_context_max_dimensions(unsigned int * width, unsigned int * height);
-
-void * SoGLContext_context_create_offscreen(unsigned int width, unsigned int height);
-SbBool SoGLContext_context_make_current(void * ctx);
-void SoGLContext_context_reinstate_previous(void * ctx);
-void SoGLContext_context_destruct(void * ctx);
+void SoGLContext_context_max_dimensions(void * mgr, unsigned int * width, unsigned int * height);
 
 void SoGLContext_context_bind_pbuffer(void * ctx);
 void SoGLContext_context_release_pbuffer(void * ctx);
@@ -1427,9 +1422,6 @@ SbBool SoGLContext_context_can_render_to_texture(void * ctx);
 
 const void * SoGLContext_win32_HDC(void * ctx);
 void SoGLContext_win32_updateHDCBitmap(void * ctx);
-
-/* Offscreen context creation now uses SoDB::ContextManager directly */
-/* Legacy function declarations maintained for compatibility */
 
 /* -----------------------------------------------------------------------
  * Dual-GL backend registration

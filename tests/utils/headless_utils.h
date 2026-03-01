@@ -259,6 +259,17 @@ inline void initCoinHeadless() {
 }
 
 /**
+ * Return the context manager installed by initCoinHeadless().
+ * Must be called after initCoinHeadless().
+ */
+inline SoDB::ContextManager * getCoinHeadlessContextManager() {
+    // Returns the global set by SoDB::init() in initCoinHeadless().
+    SoDB::ContextManager * mgr = SoDB::getContextManager();
+    assert(mgr && "getCoinHeadlessContextManager: call initCoinHeadless() first");
+    return mgr;
+}
+
+/**
  * Get a shared persistent SoOffscreenRenderer for the OSMesa backend.
  * Some examples reuse an offscreen renderer to capture intermediate frames
  * (e.g. to generate a texture map from a rendered scene).  Providing a
