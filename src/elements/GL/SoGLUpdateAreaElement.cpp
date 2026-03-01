@@ -95,8 +95,9 @@ SoGLUpdateAreaElement::init(SoState * state)
   // test state.
   this->scissorstate = FALSE;
 
-  // disabled by default
-  SoGLContext_glDisable(sogl_current_render_glue(), GL_SCISSOR_TEST);
+  // disabled by default (guard against NULL glue during state initialization)
+  const SoGLContext * glue = sogl_current_render_glue();
+  if (glue) SoGLContext_glDisable(glue, GL_SCISSOR_TEST);
 }
 
 // doc from parent
