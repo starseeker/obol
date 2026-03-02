@@ -157,6 +157,8 @@ add_rendering_test(render_quad_mesh_deep)
 add_rendering_test(render_field_connections)
 add_rendering_test(render_sogl_bindings)
 add_rendering_test(render_rt_proxy_shapes)
+add_rendering_test(render_viewport)
+add_rendering_test(render_quad_viewport)
 
 # ---- NanoRT raytracing backend -------------------------------------------
 #
@@ -645,7 +647,9 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_quad_mesh_deep
                render_field_connections
                render_sogl_bindings
-               render_rt_proxy_shapes)
+               render_rt_proxy_shapes
+               render_viewport
+               render_quad_viewport)
     add_test(
         NAME ${_vtest}
         COMMAND "${CMAKE_COMMAND}"

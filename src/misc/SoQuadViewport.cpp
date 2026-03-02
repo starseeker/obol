@@ -34,20 +34,17 @@
  * @file SoQuadViewport.cpp
  * @brief Implementation of the SoQuadViewport four-quadrant viewport manager.
  *
- * Each quadrant owns an internal SoSeparator root that holds (optionally) a
- * camera followed by the shared scene graph.  Multiple parents of the shared
- * scene graph are handled transparently by Inventor's reference counting.
+ * SoQuadViewport composes four SoViewport instances arranged in a 2×2 grid.
+ * All non-trivial logic lives in SoViewport; this class only manages the
+ * tile layout and shared-scene distribution.
  */
 
 #include <Inventor/SoQuadViewport.h>
 
+#include <Inventor/SoViewport.h>
 #include <Inventor/SoOffscreenRenderer.h>
-#include <Inventor/SbViewportRegion.h>
-#include <Inventor/actions/SoHandleEventAction.h>
-#include <Inventor/events/SoEvent.h>
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/nodes/SoNode.h>
-#include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/errors/SoDebugError.h>
 
 // ---------------------------------------------------------------------------
@@ -59,38 +56,18 @@ SoQuadViewport::SoQuadViewport()
     , windowSize_(800, 600)
     , activeQuad_(0)
 {
-    for (int i = 0; i < NUM_QUADS; ++i) {
-        quads_[i].root     = new SoSeparator;
-        quads_[i].root->ref();
-        quads_[i].camera   = nullptr;
-        quads_[i].bgColor  = SbColor(0.0f, 0.0f, 0.0f);
-        quads_[i].heAction = nullptr;
-    }
     updateViewports();
 }
 
 SoQuadViewport::~SoQuadViewport()
 {
-    // Detach the shared scene from every quad root before releasing refs.
+    // Remove the shared scene from all tiles before their destructors run,
+    // so the scene's ref count is brought back down correctly.
     if (scene_) {
-        for (int i = 0; i < NUM_QUADS; ++i) {
-            if (quads_[i].root->findChild(scene_) >= 0)
-                quads_[i].root->removeChild(scene_);
-        }
+        for (int i = 0; i < NUM_QUADS; ++i)
+            tiles_[i].setSceneGraph(nullptr);
         scene_->unref();
         scene_ = nullptr;
-    }
-
-    for (int i = 0; i < NUM_QUADS; ++i) {
-        if (quads_[i].camera) {
-            quads_[i].camera->unref();
-            quads_[i].camera = nullptr;
-        }
-        delete quads_[i].heAction;
-        quads_[i].heAction = nullptr;
-
-        quads_[i].root->unref();
-        quads_[i].root = nullptr;
     }
 }
 
@@ -103,23 +80,16 @@ void SoQuadViewport::setSceneGraph(SoNode * newScene)
     if (newScene == scene_)
         return;
 
-    // Remove old scene from all quad roots.
-    if (scene_) {
-        for (int i = 0; i < NUM_QUADS; ++i) {
-            if (quads_[i].root->findChild(scene_) >= 0)
-                quads_[i].root->removeChild(scene_);
-        }
-        scene_->unref();
-    }
+    // Distribute the new scene to every tile.  SoViewport::setSceneGraph()
+    // manages its own ref/unref, so we only hold an extra ref here to keep
+    // the scene alive between setSceneGraph() calls even if all tiles are
+    // temporarily set to nullptr.
+    for (int i = 0; i < NUM_QUADS; ++i)
+        tiles_[i].setSceneGraph(newScene);
 
+    if (scene_)  scene_->unref();
     scene_ = newScene;
-
-    if (scene_) {
-        scene_->ref();
-        // Append shared scene after any camera already in each quad root.
-        for (int i = 0; i < NUM_QUADS; ++i)
-            quads_[i].root->addChild(scene_);
-    }
+    if (scene_)  scene_->ref();
 }
 
 SoNode * SoQuadViewport::getSceneGraph() const
@@ -135,11 +105,6 @@ void SoQuadViewport::setWindowSize(const SbVec2s & size)
 {
     windowSize_ = size;
     updateViewports();
-    // Rebuild handle-event actions with updated viewport
-    for (int i = 0; i < NUM_QUADS; ++i) {
-        delete quads_[i].heAction;
-        quads_[i].heAction = nullptr;
-    }
 }
 
 SbVec2s SoQuadViewport::getWindowSize() const
@@ -157,17 +122,18 @@ const SbViewportRegion & SoQuadViewport::getViewportRegion(int quad) const
     if (quad < 0 || quad >= NUM_QUADS) {
         SoDebugError::post("SoQuadViewport::getViewportRegion",
                            "quad index %d out of range [0,%d)", quad, NUM_QUADS);
-        return quads_[0].viewport;
+        return tiles_[0].getViewportRegion();
     }
-    return quads_[quad].viewport;
+    return tiles_[quad].getViewportRegion();
 }
 
-// Internal: recompute all four viewport sub-regions.
-// Layout (2x2 grid, OpenGL origin bottom-left):
-//   TOP_LEFT  (0): origin (0,      H/2),   size (W/2, H/2)
-//   TOP_RIGHT (1): origin (W/2,    H/2),   size (W/2, H/2)
-//   BOT_LEFT  (2): origin (0,      0),     size (W/2, H/2)
-//   BOT_RIGHT (3): origin (W/2,    0),     size (W/2, H/2)
+// Internal: assign sub-viewport regions to each tile.
+//
+// Layout (OpenGL origin at bottom-left, window W×H):
+//   TOP_LEFT  (0): origin (0,   qH),  size (qW, qH)
+//   TOP_RIGHT (1): origin (qW,  qH),  size (qW, qH)
+//   BOT_LEFT  (2): origin (0,   0),   size (qW, qH)
+//   BOT_RIGHT (3): origin (qW,  0),   size (qW, qH)
 void SoQuadViewport::updateViewports()
 {
     short W  = windowSize_[0];
@@ -175,25 +141,48 @@ void SoQuadViewport::updateViewports()
     short qW = W / 2;
     short qH = H / 2;
 
-    // TOP_LEFT
-    quads_[TOP_LEFT].viewport.setWindowSize(W, H);
-    quads_[TOP_LEFT].viewport.setViewportPixels(SbVec2s(0, qH), SbVec2s(qW, qH));
+    struct { short ox, oy; } origins[NUM_QUADS] = {
+        { 0,  qH },   // TOP_LEFT
+        { qW, qH },   // TOP_RIGHT
+        { 0,  0  },   // BOTTOM_LEFT
+        { qW, 0  }    // BOTTOM_RIGHT
+    };
 
-    // TOP_RIGHT
-    quads_[TOP_RIGHT].viewport.setWindowSize(W, H);
-    quads_[TOP_RIGHT].viewport.setViewportPixels(SbVec2s(qW, qH), SbVec2s(qW, qH));
-
-    // BOTTOM_LEFT
-    quads_[BOTTOM_LEFT].viewport.setWindowSize(W, H);
-    quads_[BOTTOM_LEFT].viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(qW, qH));
-
-    // BOTTOM_RIGHT
-    quads_[BOTTOM_RIGHT].viewport.setWindowSize(W, H);
-    quads_[BOTTOM_RIGHT].viewport.setViewportPixels(SbVec2s(qW, 0), SbVec2s(qW, qH));
+    for (int i = 0; i < NUM_QUADS; ++i) {
+        SbViewportRegion vp;
+        vp.setWindowSize(W, H);
+        vp.setViewportPixels(SbVec2s(origins[i].ox, origins[i].oy),
+                             SbVec2s(qW, qH));
+        tiles_[i].setViewportRegion(vp);
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Cameras
+// Per-quadrant SoViewport access
+// ---------------------------------------------------------------------------
+
+SoViewport * SoQuadViewport::getViewport(int quad)
+{
+    if (quad < 0 || quad >= NUM_QUADS) {
+        SoDebugError::post("SoQuadViewport::getViewport",
+                           "quad index %d out of range [0,%d)", quad, NUM_QUADS);
+        return nullptr;
+    }
+    return &tiles_[quad];
+}
+
+const SoViewport * SoQuadViewport::getViewport(int quad) const
+{
+    if (quad < 0 || quad >= NUM_QUADS) {
+        SoDebugError::post("SoQuadViewport::getViewport",
+                           "quad index %d out of range [0,%d)", quad, NUM_QUADS);
+        return nullptr;
+    }
+    return &tiles_[quad];
+}
+
+// ---------------------------------------------------------------------------
+// Camera convenience wrappers
 // ---------------------------------------------------------------------------
 
 void SoQuadViewport::setCamera(int quad, SoCamera * camera)
@@ -203,31 +192,14 @@ void SoQuadViewport::setCamera(int quad, SoCamera * camera)
                            "quad index %d out of range [0,%d)", quad, NUM_QUADS);
         return;
     }
-
-    SoSeparator * root = quads_[quad].root;
-
-    // Remove the previous camera from the root.
-    if (quads_[quad].camera) {
-        if (root->findChild(quads_[quad].camera) >= 0)
-            root->removeChild(quads_[quad].camera);
-        quads_[quad].camera->unref();
-        quads_[quad].camera = nullptr;
-    }
-
-    quads_[quad].camera = camera;
-
-    if (camera) {
-        camera->ref();
-        // Insert camera as the first child so it precedes the shared scene.
-        root->insertChild(camera, 0);
-    }
+    tiles_[quad].setCamera(camera);
 }
 
 SoCamera * SoQuadViewport::getCamera(int quad) const
 {
     if (quad < 0 || quad >= NUM_QUADS)
         return nullptr;
-    return quads_[quad].camera;
+    return tiles_[quad].getCamera();
 }
 
 // ---------------------------------------------------------------------------
@@ -250,60 +222,49 @@ int SoQuadViewport::getActiveQuadrant() const
 }
 
 // ---------------------------------------------------------------------------
-// View-all
+// View-all convenience wrappers
 // ---------------------------------------------------------------------------
 
 void SoQuadViewport::viewAll(int quad)
 {
     if (quad < 0 || quad >= NUM_QUADS)
         return;
-    SoCamera * cam = quads_[quad].camera;
-    if (!cam || !scene_)
-        return;
-    // Use the quadrant-sized viewport for the view-all computation.
-    SbVec2s qs = getQuadrantSize();
-    SbViewportRegion vp(qs[0], qs[1]);
-    cam->viewAll(quads_[quad].root, vp);
+    tiles_[quad].viewAll();
 }
 
 void SoQuadViewport::viewAllQuadrants()
 {
     for (int i = 0; i < NUM_QUADS; ++i)
-        viewAll(i);
+        tiles_[i].viewAll();
 }
 
 // ---------------------------------------------------------------------------
-// Background colours
+// Background colour convenience wrappers
 // ---------------------------------------------------------------------------
 
 void SoQuadViewport::setBackgroundColor(int quad, const SbColor & color)
 {
     if (quad < 0 || quad >= NUM_QUADS)
         return;
-    quads_[quad].bgColor = color;
+    tiles_[quad].setBackgroundColor(color);
 }
 
 const SbColor & SoQuadViewport::getBackgroundColor(int quad) const
 {
     if (quad < 0 || quad >= NUM_QUADS)
-        return quads_[0].bgColor;
-    return quads_[quad].bgColor;
+        return tiles_[0].getBackgroundColor();
+    return tiles_[quad].getBackgroundColor();
 }
 
 // ---------------------------------------------------------------------------
-// Rendering
+// Rendering convenience wrapper
 // ---------------------------------------------------------------------------
 
 SbBool SoQuadViewport::renderQuadrant(int quad, SoOffscreenRenderer * renderer)
 {
     if (quad < 0 || quad >= NUM_QUADS || !renderer)
         return FALSE;
-
-    SbVec2s qs = getQuadrantSize();
-    SbViewportRegion qvp(qs[0], qs[1]);
-    renderer->setViewportRegion(qvp);
-    renderer->setBackgroundColor(quads_[quad].bgColor);
-    return renderer->render(quads_[quad].root);
+    return tiles_[quad].render(renderer);
 }
 
 // ---------------------------------------------------------------------------
@@ -312,18 +273,7 @@ SbBool SoQuadViewport::renderQuadrant(int quad, SoOffscreenRenderer * renderer)
 
 SbBool SoQuadViewport::processEvent(const SoEvent * event)
 {
-    if (!event || activeQuad_ < 0 || activeQuad_ >= NUM_QUADS)
+    if (!event)
         return FALSE;
-
-    // Lazily create handle-event action for the active quadrant.
-    if (!quads_[activeQuad_].heAction) {
-        quads_[activeQuad_].heAction =
-            new SoHandleEventAction(quads_[activeQuad_].viewport);
-    }
-
-    SoHandleEventAction * hea = quads_[activeQuad_].heAction;
-    hea->setViewportRegion(quads_[activeQuad_].viewport);
-    hea->setEvent(event);
-    hea->apply(quads_[activeQuad_].root);
-    return hea->isHandled();
+    return tiles_[activeQuad_].processEvent(event);
 }

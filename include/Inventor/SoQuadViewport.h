@@ -37,15 +37,18 @@
  * @file SoQuadViewport.h
  * @brief Four-quadrant viewport manager for split-view 3D display.
  *
- * SoQuadViewport partitions a window into a 2×2 grid of independent camera
- * views that all render the same shared scene graph.  Each quadrant has its
- * own SoCamera, SbViewportRegion, and background colour.  One quadrant is
- * designated as "active" at any time for event routing and interaction.
+ * SoQuadViewport partitions a window into a 2×2 grid of four independent
+ * SoViewport tiles that all render the same shared scene graph.  Each tile
+ * is a full SoViewport instance, so every per-quadrant operation is simply
+ * delegated to the underlying SoViewport API.
+ *
+ * One quadrant is designated as "active" at any time; events routed through
+ * processEvent() are forwarded to that quadrant's SoViewport.
  *
  * Level-of-Detail (SoLOD / SoLevelOfDetail) nodes in the shared scene are
- * automatically resolved per-quadrant based on each quadrant camera's
- * position, so zoomed-in views get higher-detail geometry while zoomed-out
- * views use coarser representations.
+ * automatically resolved per-quadrant based on each quadrant's camera
+ * position, so a zoomed-in view renders fine detail while a zoomed-out view
+ * renders coarser geometry — all from the same shared scene graph.
  *
  * Typical usage:
  * @code
@@ -53,29 +56,31 @@
  *   qv.setWindowSize(SbVec2s(800, 600));
  *   qv.setSceneGraph(myGeometryScene);      // scene without cameras
  *
- *   qv.setCamera(SoQuadViewport::TOP_LEFT,  frontCam);
- *   qv.setCamera(SoQuadViewport::TOP_RIGHT, sideCam);
+ *   qv.setCamera(SoQuadViewport::TOP_LEFT,     frontCam);
+ *   qv.setCamera(SoQuadViewport::TOP_RIGHT,    sideCam);
  *   qv.setCamera(SoQuadViewport::BOTTOM_LEFT,  topCam);
  *   qv.setCamera(SoQuadViewport::BOTTOM_RIGHT, perspCam);
  *   qv.viewAllQuadrants();
  *
- *   // Render quadrant 0 into a half-size offscreen renderer:
+ *   // Access the underlying SoViewport for a quadrant directly:
+ *   SoViewport * tile = qv.getViewport(SoQuadViewport::TOP_LEFT);
  *   SbVec2s qs = qv.getQuadrantSize();
  *   SoOffscreenRenderer ren(SbViewportRegion(qs[0], qs[1]));
- *   qv.renderQuadrant(SoQuadViewport::TOP_LEFT, &ren);
+ *   tile->render(&ren);
  * @endcode
+ *
+ * @see SoViewport
  */
 
 #include <Inventor/SbVec2s.h>
 #include <Inventor/SbColor.h>
 #include <Inventor/SbViewportRegion.h>
+#include <Inventor/SoViewport.h>
 
 class SoCamera;
 class SoNode;
-class SoSeparator;
 class SoOffscreenRenderer;
 class SoEvent;
-class SoHandleEventAction;
 
 class OBOL_DLL_API SoQuadViewport {
 public:
@@ -90,7 +95,7 @@ public:
      *  ┌──────────┬──────────┐
      *  │ TOP_LEFT │TOP_RIGHT │
      *  ├──────────┼──────────┤
-     *  │BOT_LEFT  │BOT_RIGHT │
+     *  │ BOT_LEFT │BOT_RIGHT │
      *  └──────────┴──────────┘
      * @endverbatim
      */
@@ -107,10 +112,11 @@ public:
     // ---- Scene graph -------------------------------------------------------
 
     /**
-     * Set the shared scene graph rendered by all quadrants.
+     * Set the shared scene graph rendered by all four quadrants.
      * The scene should NOT contain cameras; cameras are supplied per-quadrant
-     * via setCamera().  If the scene contains directional lights or other
-     * camera-relative nodes, they apply independently in each quadrant.
+     * via setCamera().  The same SoNode is assigned to all four underlying
+     * SoViewport instances; Inventor's multi-parent reference counting keeps
+     * it alive as long as any viewport holds it.
      * Passing NULL removes the current scene from all quadrants.
      */
     void    setSceneGraph(SoNode * scene);
@@ -120,99 +126,82 @@ public:
 
     /**
      * Set the full window size.  The four quadrant viewports are recomputed
-     * as equal W/2 × H/2 tiles.
+     * as equal floor(W/2) × floor(H/2) tiles arranged in a 2×2 grid.
      */
-    void          setWindowSize(const SbVec2s & size);
-    SbVec2s       getWindowSize() const;
+    void    setWindowSize(const SbVec2s & size);
+    SbVec2s getWindowSize() const;
 
-    /** Returns the pixel size of one quadrant (floor(W/2) × floor(H/2)). */
-    SbVec2s       getQuadrantSize() const;
+    /** Returns the pixel size of one quadrant tile (floor(W/2) × floor(H/2)). */
+    SbVec2s getQuadrantSize() const;
 
     /**
      * Returns the SbViewportRegion for quadrant @a quad.
-     * The viewport region has window-size equal to getWindowSize() and a
-     * sub-viewport corresponding to the quadrant's tile within the window.
-     * This can be passed directly to SoGLRenderAction or SoOffscreenRenderer.
+     * Delegates to getViewport(quad)->getViewportRegion().
      */
     const SbViewportRegion& getViewportRegion(int quad) const;
 
-    // ---- Cameras -----------------------------------------------------------
+    // ---- Per-quadrant SoViewport access ------------------------------------
 
     /**
-     * Set the camera for quadrant @a quad.
-     * The previous camera (if any) is removed from the quadrant's scene root
-     * and unreffed.  The new camera is ref'd and inserted as the first child
-     * of the quadrant's internal scene root so it is applied before the
-     * shared geometry scene.
-     * Passing NULL removes the current camera without replacing it.
+     * Return the SoViewport that manages quadrant @a quad.
+     * Through the returned pointer the full SoViewport API is available:
+     * setCamera(), viewAll(), render(), processEvent(), etc.
+     * Returns NULL for out-of-range indices.
      */
-    void       setCamera(int quad, SoCamera * camera);
-    SoCamera * getCamera(int quad) const;
+    SoViewport *       getViewport(int quad);
+    const SoViewport * getViewport(int quad) const;
+
+    // ---- Cameras (convenience wrappers around getViewport()->setCamera()) --
+
+    void      setCamera(int quad, SoCamera * camera);
+    SoCamera* getCamera(int quad) const;
 
     // ---- Active quadrant ---------------------------------------------------
 
     /**
      * Select the active quadrant (0–3).  Events routed through processEvent()
-     * are dispatched to this quadrant's SoHandleEventAction.
+     * are forwarded to getViewport(activeQuad)->processEvent().
      */
     void setActiveQuadrant(int quad);
     int  getActiveQuadrant() const;
 
-    // ---- View-all ----------------------------------------------------------
+    // ---- View-all (convenience wrappers) -----------------------------------
 
-    /**
-     * Adjust camera @a quad so the entire shared scene fits in the view.
-     * Does nothing if no camera or no scene has been set for this quadrant.
-     */
+    /** Call viewAll() on quadrant @a quad. */
     void viewAll(int quad);
 
     /** Call viewAll() on every quadrant. */
     void viewAllQuadrants();
 
-    // ---- Background colours ------------------------------------------------
+    // ---- Background colours (convenience wrappers) -------------------------
 
     void           setBackgroundColor(int quad, const SbColor & color);
     const SbColor& getBackgroundColor(int quad) const;
 
-    // ---- Rendering ---------------------------------------------------------
+    // ---- Rendering (convenience wrapper) -----------------------------------
 
     /**
      * Render quadrant @a quad using the supplied SoOffscreenRenderer.
-     * The renderer's viewport region is updated to the quadrant size before
-     * rendering.  Background colour is applied to the renderer.
-     *
-     * @note  The caller is responsible for creating @a renderer with an
-     *        appropriate context manager.  A renderer of size getQuadrantSize()
-     *        is sufficient.
-     *
-     * @return TRUE if the render succeeded, FALSE otherwise.
+     * Delegates to getViewport(quad)->render(renderer).
      */
     SbBool renderQuadrant(int quad, SoOffscreenRenderer * renderer);
 
     // ---- Event routing -----------------------------------------------------
 
     /**
-     * Dispatch @a event to the active quadrant's SoHandleEventAction.
-     * @return TRUE if the event was handled by some node in the scene.
+     * Dispatch @a event to the active quadrant's SoViewport.
+     * @return TRUE if the event was handled.
      */
     SbBool processEvent(const SoEvent * event);
 
 private:
-    SoQuadViewport(const SoQuadViewport &);            // not copyable
+    SoQuadViewport(const SoQuadViewport &);
     SoQuadViewport & operator=(const SoQuadViewport &);
 
     void updateViewports();
 
-    struct QuadState {
-        SoSeparator *     root;       // internal root: [camera] [scene]
-        SoCamera *        camera;     // owned (ref'd), may be NULL
-        SbViewportRegion  viewport;   // sub-viewport within the full window
-        SbColor           bgColor;
-        SoHandleEventAction * heAction;
-    };
-
-    QuadState    quads_[NUM_QUADS];
-    SoNode *     scene_;             // shared geometry (ref'd), may be NULL
+    SoViewport   tiles_[NUM_QUADS];  // the four underlying viewports
+    SoNode *     scene_;             // shared scene (ref'd), may be NULL
     SbVec2s      windowSize_;
     int          activeQuad_;
 };

@@ -1,36 +1,38 @@
 /*
  * render_quad_viewport.cpp — SoQuadViewport API coverage test
  *
- * Exercises the SoQuadViewport manager:
- *   1. Four independent cameras sharing the same scene graph (SoLOD geometry).
- *   2. Per-quadrant viewAll() to fit the scene in each camera's frustum.
- *   3. Render each quadrant to a separate offscreen buffer; verify non-blank.
- *   4. LOD selection validation: close camera should see a different LOD level
- *      than a far camera — confirmed by differing pixel colours.
- *   5. Active quadrant selection and getCamera() round-trip.
- *   6. processEvent() routing to the active quadrant (no-crash smoke test).
- *   7. Background colour round-trip.
- *   8. setSceneGraph(nullptr) and replacement scene smoke test.
+ * Exercises the SoQuadViewport manager and its SoViewport composition:
+ *   1. getQuadrantSize() for a standard window.
+ *   2. setCamera / getCamera round-trip + active-quadrant selection.
+ *   3. Background colour round-trip (via underlying SoViewport).
+ *   4. Viewport tile layout (origin/size for TOP_LEFT and BOTTOM_RIGHT).
+ *   5. Render all four quadrants (shared LOD scene); verify non-blank output.
+ *      LOD per-view: close camera → green sphere, far camera → red cone.
+ *   6. getViewport() gives direct access to the underlying SoViewport tile.
+ *   7. processEvent() smoke test (routes to active quadrant, no crash).
+ *   8. setSceneGraph() replacement and nullptr removal.
+ *   9. viewAll() / viewAllQuadrants() with no camera — must not crash.
  *
- * The last quadrant rendered is written to argv[1]+".rgb".
+ * The last rendered quadrant is written to argv[1]+".rgb".
  * Returns 0 on pass, 1 on fail.
  */
 
 #include "headless_utils.h"
 #include <Inventor/SoQuadViewport.h>
+#include <Inventor/SoViewport.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoSphere.h>
 #include <Inventor/nodes/SoCube.h>
 #include <Inventor/nodes/SoCone.h>
-#include <Inventor/nodes/SoTranslation.h>
 #include <Inventor/nodes/SoLOD.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
+#include <Inventor/events/SoKeyboardEvent.h>
+#include <Inventor/events/SoButtonEvent.h>
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/SbVec2s.h>
-#include <Inventor/events/SoKeyboardEvent.h>
 #include <cstdio>
 #include <cmath>
 
@@ -53,7 +55,7 @@ static bool validateNonBlack(const unsigned char * buf, int npix,
     return nonbg >= threshold;
 }
 
-// Return dominant colour channel of a pixel buffer (0=R, 1=G, 2=B).
+// Return index of the dominant colour channel (0=R, 1=G, 2=B).
 static int dominantChannel(const unsigned char * buf, int npix)
 {
     long sum[3] = { 0, 0, 0 };
@@ -69,17 +71,9 @@ static int dominantChannel(const unsigned char * buf, int npix)
 }
 
 // ---------------------------------------------------------------------------
-// Scene builders
+// Shared LOD scene (no camera)
 // ---------------------------------------------------------------------------
-
-/**
- * Build a geometry-only scene (no camera): directional light + SoLOD.
- *
- * SoLOD levels (distance from LOD center to camera):
- *   [0, 5)   → green sphere   (high detail)
- *   [5, 12)  → orange cube    (medium detail)
- *   [12, ∞)  → red cone       (low detail)
- */
+// SoLOD ranges: [0,5) → green sphere, [5,12) → orange cube, [12,∞) → red cone
 static SoSeparator * buildLODScene()
 {
     SoSeparator * root = new SoSeparator;
@@ -93,26 +87,23 @@ static SoSeparator * buildLODScene()
     lod->range.set1Value(0, 5.0f);
     lod->range.set1Value(1, 12.0f);
 
-    // High detail: green sphere
     SoSeparator * hi = new SoSeparator;
-    SoMaterial * hiMat = new SoMaterial;
-    hiMat->diffuseColor.setValue(0.1f, 0.8f, 0.1f);
+    SoMaterial  * hiMat = new SoMaterial;
+    hiMat->diffuseColor.setValue(0.1f, 0.8f, 0.1f);   // green
     hi->addChild(hiMat);
     hi->addChild(new SoSphere);
     lod->addChild(hi);
 
-    // Medium detail: orange cube
     SoSeparator * med = new SoSeparator;
-    SoMaterial * medMat = new SoMaterial;
-    medMat->diffuseColor.setValue(0.9f, 0.5f, 0.1f);
+    SoMaterial  * medMat = new SoMaterial;
+    medMat->diffuseColor.setValue(0.9f, 0.5f, 0.1f);  // orange
     med->addChild(medMat);
     med->addChild(new SoCube);
     lod->addChild(med);
 
-    // Low detail: red cone
     SoSeparator * lo = new SoSeparator;
-    SoMaterial * loMat = new SoMaterial;
-    loMat->diffuseColor.setValue(0.8f, 0.1f, 0.1f);
+    SoMaterial  * loMat = new SoMaterial;
+    loMat->diffuseColor.setValue(0.8f, 0.1f, 0.1f);   // red
     lo->addChild(loMat);
     lo->addChild(new SoCone);
     lod->addChild(lo);
@@ -124,7 +115,6 @@ static SoSeparator * buildLODScene()
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
-
 int main(int argc, char ** argv)
 {
     initCoinHeadless();
@@ -137,7 +127,7 @@ int main(int argc, char ** argv)
     printf("\n=== SoQuadViewport tests ===\n");
 
     // -----------------------------------------------------------------------
-    // Test 1: basic construction, setWindowSize, getQuadrantSize
+    // Test 1: getQuadrantSize
     // -----------------------------------------------------------------------
     {
         SoQuadViewport qv;
@@ -149,7 +139,7 @@ int main(int argc, char ** argv)
     }
 
     // -----------------------------------------------------------------------
-    // Test 2: setCamera / getCamera round-trip, active quadrant
+    // Test 2: setCamera / getCamera round-trip + active quadrant
     // -----------------------------------------------------------------------
     {
         SoQuadViewport qv;
@@ -162,9 +152,8 @@ int main(int argc, char ** argv)
         }
 
         bool ok = true;
-        for (int i = 0; i < SoQuadViewport::NUM_QUADS; ++i) {
+        for (int i = 0; i < SoQuadViewport::NUM_QUADS; ++i)
             ok = ok && (qv.getCamera(i) == cams[i]);
-        }
 
         qv.setActiveQuadrant(2);
         ok = ok && (qv.getActiveQuadrant() == 2);
@@ -173,7 +162,7 @@ int main(int argc, char ** argv)
     }
 
     // -----------------------------------------------------------------------
-    // Test 3: background colour round-trip
+    // Test 3: background colour round-trip via underlying SoViewport
     // -----------------------------------------------------------------------
     {
         SoQuadViewport qv;
@@ -183,12 +172,16 @@ int main(int argc, char ** argv)
         bool ok = (std::fabs(got[0] - col[0]) < 1e-4f &&
                    std::fabs(got[1] - col[1]) < 1e-4f &&
                    std::fabs(got[2] - col[2]) < 1e-4f);
+        // Also verify the underlying SoViewport sees the same colour.
+        const SoViewport * tile = qv.getViewport(1);
+        ok = ok && tile &&
+             (std::fabs(tile->getBackgroundColor()[0] - col[0]) < 1e-4f);
         printf("  test3 background colour ok=%d\n", (int)ok);
         if (!ok) { printf("FAIL test3\n"); ++failures; }
     }
 
     // -----------------------------------------------------------------------
-    // Test 4: viewport regions layout
+    // Test 4: viewport tile layout
     // -----------------------------------------------------------------------
     {
         SoQuadViewport qv;
@@ -198,23 +191,21 @@ int main(int argc, char ** argv)
         const SbViewportRegion & tl = qv.getViewportRegion(SoQuadViewport::TOP_LEFT);
         const SbViewportRegion & br = qv.getViewportRegion(SoQuadViewport::BOTTOM_RIGHT);
 
-        // TOP_LEFT: origin (0, qH)
         SbVec2s tlOrig = tl.getViewportOriginPixels();
         SbVec2s tlSize = tl.getViewportSizePixels();
-        // BOTTOM_RIGHT: origin (qW, 0)
         SbVec2s brOrig = br.getViewportOriginPixels();
 
-        bool ok = (tlOrig[0] == 0 && tlOrig[1] == qH &&
+        bool ok = (tlOrig[0] == 0  && tlOrig[1] == qH &&
                    tlSize[0] == qW && tlSize[1] == qH &&
                    brOrig[0] == qW && brOrig[1] == 0);
-        printf("  test4 viewport layout ok=%d  tl=(%d,%d/%dx%d) br=(%d,%d)\n",
+        printf("  test4 layout ok=%d  tl=(%d,%d %dx%d) br=(%d,%d)\n",
                (int)ok, tlOrig[0], tlOrig[1], tlSize[0], tlSize[1],
                brOrig[0], brOrig[1]);
         if (!ok) { printf("FAIL test4\n"); ++failures; }
     }
 
     // -----------------------------------------------------------------------
-    // Test 5: render each quadrant non-blank (with shared LOD scene)
+    // Test 5: render all quadrants; verify non-blank + LOD per-view
     // -----------------------------------------------------------------------
     {
         SoSeparator * geom = buildLODScene();
@@ -223,28 +214,34 @@ int main(int argc, char ** argv)
         qv.setWindowSize(SbVec2s((short)W, (short)H));
         qv.setSceneGraph(geom);
 
-        // Four cameras at varying distances (controls LOD level selection):
-        //   Quad 0 (TOP_LEFT):     z=3   → distance < 5   → high detail (green sphere)
-        //   Quad 1 (TOP_RIGHT):    z=8   → distance 5-12  → medium detail (orange cube)
-        //   Quad 2 (BOTTOM_LEFT):  z=20  → distance > 12  → low detail (red cone)
-        //   Quad 3 (BOTTOM_RIGHT): orthographic from side → medium/high
+        // Camera z-distances chosen to hit specific LOD ranges:
+        //   quad 0: z=3  → distance < 5  → green sphere   (dominant G)
+        //   quad 1: z=8  → distance 5–12 → orange cube
+        //   quad 2: z=20 → distance > 12 → red cone        (dominant R)
+        //   quad 3: orthographic from the side
+        // near/far set explicitly to ensure the origin (scene centre) is visible
+        // from every camera position without moving the cameras via viewAll().
         float cameraZ[3] = { 3.0f, 8.0f, 20.0f };
         for (int i = 0; i < 3; ++i) {
             SoPerspectiveCamera * cam = new SoPerspectiveCamera;
             cam->position.setValue(0.0f, 0.0f, cameraZ[i]);
             cam->pointAt(SbVec3f(0.0f, 0.0f, 0.0f));
+            cam->nearDistance.setValue(0.1f);
+            cam->farDistance.setValue(cameraZ[i] + 5.0f);
             qv.setCamera(i, cam);
         }
         SoOrthographicCamera * ortho = new SoOrthographicCamera;
         ortho->position.setValue(5.0f, 0.0f, 5.0f);
         ortho->pointAt(SbVec3f(0.0f, 0.0f, 0.0f));
         ortho->height.setValue(4.0f);
+        ortho->nearDistance.setValue(0.1f);
+        ortho->farDistance.setValue(20.0f);
         qv.setCamera(3, ortho);
 
-        SbVec2s qs  = qv.getQuadrantSize();
-        SbViewportRegion qVp(qs[0], qs[1]);
+        SbVec2s qs = qv.getQuadrantSize();
         SoOffscreenRenderer * renderer =
-            new SoOffscreenRenderer(getCoinHeadlessContextManager(), qVp);
+            new SoOffscreenRenderer(getCoinHeadlessContextManager(),
+                                    SbViewportRegion(qs[0], qs[1]));
         renderer->setComponents(SoOffscreenRenderer::RGB);
 
         bool ok = true;
@@ -265,36 +262,45 @@ int main(int argc, char ** argv)
             dominants[i] = dominantChannel(buf, npix);
         }
 
-        // LOD validation: quad 0 (close camera) should show green (dominant G),
-        // quad 2 (far camera) should show red (dominant R).
-        // This is a best-effort check; LOD selection also depends on the
-        // internal Inventor distance calculation.
-        printf("  test5 LOD dominant channels: q0=%d q1=%d q2=%d q3=%d "
-               "(0=R 1=G 2=B)\n",
+        printf("  test5 LOD dominants: q0=%d q1=%d q2=%d q3=%d (0=R 1=G 2=B)\n",
                dominants[0], dominants[1], dominants[2], dominants[3]);
-        if (dominants[0] == 1 && dominants[2] == 0) {
+        if (dominants[0] == 1 && dominants[2] == 0)
             printf("  test5 LOD per-view: PASS (different detail levels)\n");
-        } else {
-            printf("  test5 LOD per-view: NOTE – dominant channels differ "
-                   "from expected (LOD distances may vary by context)\n");
-        }
+        else
+            printf("  test5 LOD per-view: NOTE – expected G for q0 and R for q2\n");
 
-        // Write the last rendered quadrant as the test output image.
         renderer->writeToRGB(outpath);
         printf("  test5: wrote %s\n", outpath);
 
         delete renderer;
         geom->unref();
-
         if (!ok) { printf("FAIL test5\n"); ++failures; }
     }
 
     // -----------------------------------------------------------------------
-    // Test 6: processEvent() smoke test (no crash)
+    // Test 6: getViewport() gives direct SoViewport access
+    // -----------------------------------------------------------------------
+    {
+        SoQuadViewport qv;
+        qv.setWindowSize(SbVec2s((short)W, (short)H));
+
+        bool ok = true;
+        for (int i = 0; i < SoQuadViewport::NUM_QUADS; ++i) {
+            SoViewport * tile = qv.getViewport(i);
+            ok = ok && (tile != nullptr);
+        }
+        // Out-of-range must return nullptr.
+        ok = ok && (qv.getViewport(-1) == nullptr);
+        ok = ok && (qv.getViewport(SoQuadViewport::NUM_QUADS) == nullptr);
+        printf("  test6 getViewport ok=%d\n", (int)ok);
+        if (!ok) { printf("FAIL test6\n"); ++failures; }
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 7: processEvent() routes to active quadrant (smoke test)
     // -----------------------------------------------------------------------
     {
         SoSeparator * geom = buildLODScene();
-
         SoQuadViewport qv;
         qv.setWindowSize(SbVec2s((short)W, (short)H));
         qv.setSceneGraph(geom);
@@ -305,48 +311,46 @@ int main(int argc, char ** argv)
         qv.setActiveQuadrant(0);
 
         SoKeyboardEvent evt;
-        SoKeyboardEvent::setClassTypeId(SoKeyboardEvent::getClassTypeId());
         evt.setKey(SoKeyboardEvent::ESCAPE);
-        qv.processEvent(&evt);   // should not crash
+        evt.setState(SoButtonEvent::DOWN);
+        qv.processEvent(&evt);   // must not crash
 
-        printf("  test6 processEvent smoke test: PASS\n");
+        printf("  test7 processEvent smoke: PASS\n");
         geom->unref();
     }
 
     // -----------------------------------------------------------------------
-    // Test 7: setSceneGraph replacement
+    // Test 8: setSceneGraph replacement + nullptr removal
     // -----------------------------------------------------------------------
     {
-        SoSeparator * geom1 = buildLODScene();
-        SoSeparator * geom2 = buildLODScene();
+        SoSeparator * g1 = buildLODScene();
+        SoSeparator * g2 = buildLODScene();
 
         SoQuadViewport qv;
-        qv.setWindowSize(SbVec2s((short)W, (short)H));
-        qv.setSceneGraph(geom1);
-
-        bool ok = (qv.getSceneGraph() == geom1);
-        qv.setSceneGraph(geom2);
-        ok = ok && (qv.getSceneGraph() == geom2);
+        qv.setSceneGraph(g1);
+        bool ok = (qv.getSceneGraph() == g1);
+        qv.setSceneGraph(g2);
+        ok = ok && (qv.getSceneGraph() == g2);
         qv.setSceneGraph(nullptr);
         ok = ok && (qv.getSceneGraph() == nullptr);
 
-        printf("  test7 scene replacement ok=%d\n", (int)ok);
-        geom1->unref();
-        geom2->unref();
-        if (!ok) { printf("FAIL test7\n"); ++failures; }
+        printf("  test8 scene replacement ok=%d\n", (int)ok);
+        g1->unref();
+        g2->unref();
+        if (!ok) { printf("FAIL test8\n"); ++failures; }
     }
 
     // -----------------------------------------------------------------------
-    // Test 8: viewAll() does not crash with no camera
+    // Test 9: viewAll / viewAllQuadrants with no camera — must not crash
     // -----------------------------------------------------------------------
     {
         SoSeparator * geom = buildLODScene();
         SoQuadViewport qv;
         qv.setWindowSize(SbVec2s((short)W, (short)H));
         qv.setSceneGraph(geom);
-        qv.viewAll(0);          // no camera set — should be a no-op
-        qv.viewAllQuadrants();  // same
-        printf("  test8 viewAll no-camera: PASS\n");
+        qv.viewAll(0);
+        qv.viewAllQuadrants();
+        printf("  test9 viewAll no-camera: PASS\n");
         geom->unref();
     }
 

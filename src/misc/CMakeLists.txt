@@ -32,6 +32,7 @@ set(OBOL_MISC_FILES
 	CoinResources.cpp
 	SoDBP.cpp
 	SoEventManager.cpp
+	SoViewport.cpp
 	SoQuadViewport.cpp
 )
 
