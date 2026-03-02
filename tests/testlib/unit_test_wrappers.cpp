@@ -5180,4 +5180,663 @@ REGISTER_TEST(unit_node_names, ObolTest::TestCategory::Nodes,
     e.run_unit = runNodeNameTests;
 );
 
+// =========================================================================
+// Unit test: SbLine, SbPlane, SbSphere, SbCylinder - comprehensive
+// =========================================================================
+static int runGeomPrimTests()
+{
+    int failures = 0;
+
+    // --- SbLine ---
+    {
+        SbLine l(SbVec3f(0.0f, 0.0f, 0.0f), SbVec3f(1.0f, 0.0f, 0.0f));
+        // getClosestPoint
+        SbVec3f cp = l.getClosestPoint(SbVec3f(3.0f, 5.0f, 0.0f));
+        if (!approxEqual(cp[0], 3.0f) || !approxEqual(cp[1], 0.0f)) {
+            fprintf(stderr, "  FAIL: SbLine getClosestPoint (got %f %f)\n", cp[0], cp[1]); ++failures;
+        }
+        // setPosDir
+        SbLine l2;
+        l2.setPosDir(SbVec3f(0.0f, 0.0f, 0.0f), SbVec3f(0.0f, 1.0f, 0.0f));
+        if (!approxEqual(l2.getDirection()[1], 1.0f)) {
+            fprintf(stderr, "  FAIL: SbLine setPosDir\n"); ++failures;
+        }
+        // getClosestPoints between two lines
+        SbLine la(SbVec3f(0,0,0), SbVec3f(1,0,0));
+        SbLine lb(SbVec3f(0,2,0), SbVec3f(1,2,0));
+        SbVec3f ptA, ptB;
+        SbBool ok = la.getClosestPoints(lb, ptA, ptB);
+        (void)ok; // parallel lines return false; just exercise path
+        // getPosition
+        SbVec3f pos = la.getPosition();
+        if (!approxEqual(pos[0], 0.0f)) {
+            fprintf(stderr, "  FAIL: SbLine getPosition\n"); ++failures;
+        }
+    }
+
+    // --- SbPlane ---
+    {
+        // 3-point constructor
+        SbPlane p(SbVec3f(0,0,0), SbVec3f(1,0,0), SbVec3f(0,1,0));
+        // Normal should be Z (or -Z depending on winding)
+        SbVec3f n = p.getNormal();
+        if (std::fabs(n[2]) < 0.9f) {
+            fprintf(stderr, "  FAIL: SbPlane 3-pt normal (got %f %f %f)\n", n[0], n[1], n[2]); ++failures;
+        }
+        // intersect with line
+        SbLine l(SbVec3f(0.5f, 0.5f, -1.0f), SbVec3f(0.5f, 0.5f, 1.0f));
+        SbVec3f pt;
+        if (p.intersect(l, pt)) {
+            if (!approxEqual(pt[0], 0.5f, 1e-3f) || !approxEqual(pt[1], 0.5f, 1e-3f)) {
+                fprintf(stderr, "  FAIL: SbPlane intersect point (got %f %f %f)\n", pt[0], pt[1], pt[2]); ++failures;
+            }
+        }
+        // plane-plane intersection
+        SbPlane pXZ(SbVec3f(0,1,0), 0.0f); // XZ plane
+        SbPlane pYZ(SbVec3f(1,0,0), 0.0f); // YZ plane
+        SbLine iline;
+        if (pXZ.intersect(pYZ, iline)) {
+            SbVec3f dir = iline.getDirection();
+            if (!approxEqual(std::fabs(dir[2]), 1.0f, 0.1f)) {
+                fprintf(stderr, "  FAIL: plane-plane intersect direction\n"); ++failures;
+            }
+        } else {
+            fprintf(stderr, "  FAIL: plane-plane intersect returned false\n"); ++failures;
+        }
+        // offset
+        SbPlane p2(SbVec3f(0,1,0), 0.0f);
+        float d0 = p2.getDistanceFromOrigin();
+        p2.offset(3.0f);
+        if (!approxEqual(p2.getDistanceFromOrigin(), d0 + 3.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbPlane offset\n"); ++failures;
+        }
+        // transform
+        SbPlane p3(SbVec3f(0,1,0), 0.0f);
+        SbMatrix trans;
+        trans.setTranslate(SbVec3f(0.0f, 5.0f, 0.0f));
+        p3.transform(trans);
+        // plane after translate by 5 in Y should have different distance
+        float d3 = p3.getDistanceFromOrigin();
+        if (!approxEqual(std::fabs(d3), 5.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: SbPlane transform distance (got %f)\n", d3); ++failures;
+        }
+        // operator==
+        SbPlane pa(SbVec3f(0,1,0), 2.0f);
+        SbPlane pb(SbVec3f(0,1,0), 2.0f);
+        if (!(pa == pb)) {
+            fprintf(stderr, "  FAIL: SbPlane operator==\n"); ++failures;
+        }
+        if (pa != pb) {
+            fprintf(stderr, "  FAIL: SbPlane operator!= false positive\n"); ++failures;
+        }
+    }
+
+    // --- SbSphere ---
+    {
+        SbSphere s(SbVec3f(0,0,0), 3.0f);
+        if (!approxEqual(s.getRadius(), 3.0f)) {
+            fprintf(stderr, "  FAIL: SbSphere getRadius\n"); ++failures;
+        }
+        // circumscribe
+        s.circumscribe(SbBox3f(SbVec3f(-2,-2,-2), SbVec3f(2,2,2)));
+        // circumscribed radius >= half-diagonal = sqrt(12) ≈ 3.46
+        if (s.getRadius() < 3.0f) {
+            fprintf(stderr, "  FAIL: SbSphere circumscribe radius too small (got %f)\n", s.getRadius()); ++failures;
+        }
+        // pointInside
+        s.setRadius(5.0f); s.setCenter(SbVec3f(0,0,0));
+        if (!s.pointInside(SbVec3f(1,0,0))) {
+            fprintf(stderr, "  FAIL: SbSphere pointInside\n"); ++failures;
+        }
+        if (s.pointInside(SbVec3f(10,0,0))) {
+            fprintf(stderr, "  FAIL: SbSphere pointInside outside\n"); ++failures;
+        }
+        // intersect 2-arg
+        SbLine l(SbVec3f(-10,0,0), SbVec3f(10,0,0));
+        SbVec3f enter, exit;
+        if (!s.intersect(l, enter, exit)) {
+            fprintf(stderr, "  FAIL: SbSphere intersect ray\n"); ++failures;
+        } else {
+            if (!approxEqual(enter[0], -5.0f, 0.1f)) {
+                fprintf(stderr, "  FAIL: SbSphere enter point (got %f)\n", enter[0]); ++failures;
+            }
+        }
+        // intersect 1-arg
+        SbVec3f isect;
+        s.intersect(l, isect);
+        if (!approxEqual(std::fabs(isect[0]), 5.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: SbSphere 1-arg intersect (got %f)\n", isect[0]); ++failures;
+        }
+    }
+
+    // --- SbCylinder ---
+    {
+        SbLine axis(SbVec3f(0,0,0), SbVec3f(0,1,0)); // vertical axis
+        SbCylinder cyl(axis, 2.0f);
+        if (!approxEqual(cyl.getRadius(), 2.0f)) {
+            fprintf(stderr, "  FAIL: SbCylinder getRadius\n"); ++failures;
+        }
+        // intersect with horizontal ray
+        SbLine ray(SbVec3f(-10,0,0), SbVec3f(10,0,0));
+        SbVec3f enter, exit;
+        if (!cyl.intersect(ray, enter, exit)) {
+            fprintf(stderr, "  FAIL: SbCylinder intersect\n"); ++failures;
+        } else {
+            if (!approxEqual(enter[0], -2.0f, 0.1f)) {
+                fprintf(stderr, "  FAIL: SbCylinder enter (got %f)\n", enter[0]); ++failures;
+            }
+        }
+        // single-intersection test
+        SbVec3f pt;
+        cyl.intersect(ray, pt);
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbRotation comprehensive
+// =========================================================================
+static int runRotationCompTests()
+{
+    int failures = 0;
+
+    // --- invert ---
+    {
+        SbRotation r(SbVec3f(0,1,0), float(M_PI/2));
+        SbRotation inv = r;
+        inv.invert();
+        SbRotation prod = r * inv;
+        SbVec3f v(1,0,0), result;
+        prod.multVec(v, result);
+        if (!approxEqual(result[0], 1.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbRotation invert (got %f %f %f)\n", result[0], result[1], result[2]); ++failures;
+        }
+    }
+
+    // --- getValue(4 floats) ---
+    {
+        SbRotation r(SbVec3f(1,0,0), float(M_PI/2));
+        float q0, q1, q2, q3;
+        r.getValue(q0, q1, q2, q3);
+        // For 90° around X: q = (sin(45°)*1, 0, 0, cos(45°)) = (0.707, 0, 0, 0.707)
+        if (!approxEqual(q0, float(std::sin(M_PI/4)), 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbRotation getValue4 q0 (got %f)\n", q0); ++failures;
+        }
+        // setValue from 4 floats
+        SbRotation r2;
+        r2.setValue(q0, q1, q2, q3);
+        SbVec3f a1; float ang1, ang2;
+        r2.getValue(a1, ang1);
+        r.getValue(a1, ang2);
+        if (!approxEqual(ang1, ang2, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbRotation setValue4 round-trip (got %f vs %f)\n", ang1, ang2); ++failures;
+        }
+    }
+
+    // --- getValue(matrix) ---
+    {
+        SbRotation r(SbVec3f(0,0,1), float(M_PI/2));
+        SbMatrix m;
+        r.getValue(m);
+        // matrix should rotate (1,0,0) to approx (0,1,0)
+        SbVec3f v(1,0,0), result;
+        m.multVecMatrix(v, result);
+        if (!approxEqual(result[0], 0.0f, 1e-3f) || !approxEqual(result[1], 1.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbRotation getValue matrix (got %f %f %f)\n", result[0], result[1], result[2]); ++failures;
+        }
+    }
+
+    // --- setValue from matrix ---
+    {
+        SbMatrix m;
+        m.setRotate(SbRotation(SbVec3f(0,1,0), float(M_PI/4)));
+        SbRotation r;
+        r.setValue(m);
+        SbVec3f axis; float angle;
+        r.getValue(axis, angle);
+        if (!approxEqual(angle, float(M_PI/4), 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbRotation setValue(matrix) (got angle=%f)\n", angle); ++failures;
+        }
+    }
+
+    // --- operator[] ---
+    {
+        SbRotation r(SbVec3f(0,1,0), float(M_PI/2));
+        float q[4];
+        for (int i = 0; i < 4; ++i) q[i] = r[i];
+        SbRotation r2; r2.setValue(q[0], q[1], q[2], q[3]);
+        SbVec3f v(1,0,0), result;
+        r2.multVec(v, result);
+        if (!approxEqual(result[0], 0.0f, 1e-3f) || !approxEqual(result[2], -1.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbRotation operator[] (got %f %f %f)\n", result[0], result[1], result[2]); ++failures;
+        }
+    }
+
+    // --- operator*= ---
+    {
+        SbRotation r1(SbVec3f(0,1,0), float(M_PI/2));
+        SbRotation r2(SbVec3f(0,1,0), float(M_PI/2));
+        r1 *= r2;
+        SbVec3f axis; float angle;
+        r1.getValue(axis, angle);
+        if (!approxEqual(angle, float(M_PI), 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbRotation operator*= (got angle=%f)\n", angle); ++failures;
+        }
+    }
+
+    // --- operator*= float scale ---
+    {
+        SbRotation r(SbVec3f(0,0,1), float(M_PI/2));
+        r *= 0.5f; // scale by half - this is NOT slerp, it's scalar multiplication
+        // Verify it doesn't crash and still has valid quaternion
+        float len = std::sqrt(r[0]*r[0] + r[1]*r[1] + r[2]*r[2] + r[3]*r[3]);
+        if (len < 0.01f) {
+            fprintf(stderr, "  FAIL: SbRotation operator*= float (near-zero)\n"); ++failures;
+        }
+    }
+
+    // --- operator== and != ---
+    {
+        SbRotation r1(SbVec3f(1,0,0), float(M_PI/4));
+        SbRotation r2(SbVec3f(1,0,0), float(M_PI/4));
+        if (!(r1 == r2)) {
+            fprintf(stderr, "  FAIL: SbRotation operator==\n"); ++failures;
+        }
+        if (r1 != r2) {
+            fprintf(stderr, "  FAIL: SbRotation operator!= false positive\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoCamera extended (orbitCamera, stereo, SoOrthographicCamera)
+// =========================================================================
+static int runCameraExtTests()
+{
+    int failures = 0;
+
+    // --- orbitCamera ---
+    {
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->ref();
+        cam->position.setValue(0.0f, 0.0f, 5.0f);
+        SbVec3f center(0.0f, 0.0f, 0.0f);
+        cam->orbitCamera(center, 0.1f, 0.0f);
+        SbVec3f newPos = cam->position.getValue();
+        // Camera should have moved (orbited around origin)
+        if (approxEqual(newPos[0], 0.0f) && approxEqual(newPos[2], 5.0f)) {
+            fprintf(stderr, "  FAIL: orbitCamera didn't move camera\n"); ++failures;
+        }
+        cam->unref();
+    }
+
+    // --- stereo ---
+    {
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->ref();
+        cam->setStereoMode(SoCamera::MONOSCOPIC);
+        if (cam->getStereoMode() != SoCamera::MONOSCOPIC) {
+            fprintf(stderr, "  FAIL: getStereoMode\n"); ++failures;
+        }
+        cam->setStereoAdjustment(0.1f);
+        if (!approxEqual(cam->getStereoAdjustment(), 0.1f)) {
+            fprintf(stderr, "  FAIL: setStereoAdjustment\n"); ++failures;
+        }
+        cam->unref();
+    }
+
+    // --- SoOrthographicCamera ---
+    {
+        SoOrthographicCamera* cam = new SoOrthographicCamera();
+        cam->ref();
+        SbViewportRegion vp(512, 512);
+        SbViewVolume vv = cam->getViewVolume(1.0f);
+        // Ortho camera view volume should be valid
+        SbVec3f sight = vv.getSightPoint(cam->nearDistance.getValue());
+        if (sight[0] != sight[0]) {
+            fprintf(stderr, "  FAIL: ortho camera viewVolume NaN\n"); ++failures;
+        }
+        // scaleHeight
+        float oldHeight = cam->height.getValue();
+        cam->scaleHeight(2.0f);
+        if (!approxEqual(cam->height.getValue(), oldHeight * 2.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SoOrthographicCamera scaleHeight\n"); ++failures;
+        }
+        cam->unref();
+    }
+
+    // --- viewAll with SoPath ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCube* cube = new SoCube(); cube->setName("viewAllCube");
+        root->addChild(cube);
+        SoSearchAction sa;
+        sa.setName("viewAllCube");
+        sa.setFind(SoSearchAction::NAME);
+        sa.apply(root);
+        SoPath* path = sa.getPath();
+        if (path) {
+            SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+            cam->ref();
+            cam->viewAll(path, SbViewportRegion(512, 512));
+            // camera should have moved
+            if (cam->position.getValue().length() < 0.01f) {
+                fprintf(stderr, "  FAIL: viewAll(path) didn't move camera\n"); ++failures;
+            }
+            cam->unref();
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoFaceSet and SoIndexedFaceSet (geometry primitives)
+// =========================================================================
+static int runFaceSetTests()
+{
+    int failures = 0;
+
+    // --- SoFaceSet: triangle ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(0,0,0));
+        coords->point.set1Value(1, SbVec3f(1,0,0));
+        coords->point.set1Value(2, SbVec3f(0,1,0));
+        root->addChild(coords);
+        SoFaceSet* fs = new SoFaceSet();
+        fs->numVertices.set1Value(0, 3);
+        root->addChild(fs);
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        SbBox3f box = bba.getBoundingBox();
+        if (box.isEmpty()) {
+            fprintf(stderr, "  FAIL: SoFaceSet bbox empty\n"); ++failures;
+        } else {
+            SbVec3f c = box.getCenter();
+            // Triangle center should be near (1/3, 1/3, 0)
+            if (c[0] < 0.0f || c[0] > 1.0f) {
+                fprintf(stderr, "  FAIL: SoFaceSet bbox center x (got %f)\n", c[0]); ++failures;
+            }
+        }
+
+        // primitive count
+        SoGetPrimitiveCountAction pca;
+        pca.apply(root);
+        if (pca.getTriangleCount() < 1) {
+            fprintf(stderr, "  FAIL: SoFaceSet primitive count (got %d)\n", pca.getTriangleCount()); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- SoIndexedFaceSet: quad split into 2 triangles ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1,0));
+        coords->point.set1Value(1, SbVec3f( 1,-1,0));
+        coords->point.set1Value(2, SbVec3f( 1, 1,0));
+        coords->point.set1Value(3, SbVec3f(-1, 1,0));
+        root->addChild(coords);
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        int32_t indices[] = {0, 1, 2, -1, 0, 2, 3, -1};
+        ifs->coordIndex.setValues(0, 8, indices);
+        root->addChild(ifs);
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        SbBox3f box = bba.getBoundingBox();
+        if (box.isEmpty()) {
+            fprintf(stderr, "  FAIL: SoIndexedFaceSet bbox empty\n"); ++failures;
+        } else {
+            SbVec3f c = box.getCenter();
+            if (!approxEqual(c[0], 0.0f, 0.1f) || !approxEqual(c[1], 0.0f, 0.1f)) {
+                fprintf(stderr, "  FAIL: SoIndexedFaceSet center (got %f %f)\n", c[0], c[1]); ++failures;
+            }
+        }
+
+        SoGetPrimitiveCountAction pca;
+        pca.apply(root);
+        if (pca.getTriangleCount() < 2) {
+            fprintf(stderr, "  FAIL: SoIndexedFaceSet prim count (got %d)\n", pca.getTriangleCount()); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: Scene graph node actions (more paths)
+// =========================================================================
+static int runNodeActionTests()
+{
+    int failures = 0;
+
+    // --- SoDrawStyle action traversal ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoDrawStyle* ds = new SoDrawStyle();
+        ds->style.setValue(SoDrawStyle::LINES);
+        ds->lineWidth.setValue(2.0f);
+        root->addChild(ds);
+        root->addChild(new SoCube());
+
+        SoCallbackAction ca;
+        static int nodeCount = 0;
+        nodeCount = 0;
+        ca.addPreCallback(SoNode::getClassTypeId(),
+            [](void*, SoCallbackAction*, const SoNode*) -> SoCallbackAction::Response {
+                ++nodeCount; return SoCallbackAction::CONTINUE;
+            }, nullptr);
+        ca.apply(root);
+        if (nodeCount == 0) {
+            fprintf(stderr, "  FAIL: SoDrawStyle callback traversal\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- SoComplexity action traversal ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoComplexity* cp = new SoComplexity();
+        cp->value.setValue(0.5f);
+        root->addChild(cp);
+        root->addChild(new SoSphere());
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        SbBox3f box = bba.getBoundingBox();
+        if (box.isEmpty()) {
+            fprintf(stderr, "  FAIL: SoComplexity+sphere bbox\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- SoCoordinate3 doAction ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCoordinate3* c = new SoCoordinate3();
+        c->point.set1Value(0, SbVec3f(1,2,3));
+        root->addChild(c);
+        root->addChild(new SoSphere());
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        root->unref();
+    }
+
+    // --- SoDrawStyle all values ---
+    {
+        SoDrawStyle* ds = new SoDrawStyle();
+        ds->ref();
+        ds->style.setValue(SoDrawStyle::FILLED);
+        ds->pointSize.setValue(3.0f);
+        ds->lineWidth.setValue(2.0f);
+        ds->linePattern.setValue(0xAAAAu);
+        if (!approxEqual(ds->pointSize.getValue(), 3.0f)) {
+            fprintf(stderr, "  FAIL: SoDrawStyle pointSize\n"); ++failures;
+        }
+        ds->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoSeparator caching and culling modes
+// =========================================================================
+static int runSeparatorCachingTests()
+{
+    int failures = 0;
+
+    {
+        SoSeparator* s = new SoSeparator();
+        s->ref();
+        s->renderCaching.setValue(SoSeparator::OFF);
+        s->boundingBoxCaching.setValue(SoSeparator::OFF);
+        s->renderCulling.setValue(SoSeparator::OFF);
+        s->pickCulling.setValue(SoSeparator::OFF);
+        s->addChild(new SoCube());
+
+        // BBox should still work with caching disabled
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(s);
+        SbBox3f box = bba.getBoundingBox();
+        if (box.isEmpty()) {
+            fprintf(stderr, "  FAIL: separator with caching off bbox empty\n"); ++failures;
+        }
+
+        s->renderCaching.setValue(SoSeparator::ON);
+        s->boundingBoxCaching.setValue(SoSeparator::ON);
+        s->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbMatrix getMatrix/inverse paths
+// =========================================================================
+static int runMatrixFurtherTests()
+{
+    int failures = 0;
+
+    // --- setScale uniform ---
+    {
+        SbMatrix m;
+        m.setScale(3.0f);
+        SbVec3f v(1,1,1), r;
+        m.multVecMatrix(v, r);
+        if (!approxEqual(r[0], 3.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbMatrix setScale uniform (got %f)\n", r[0]); ++failures;
+        }
+    }
+
+    // --- setScale per-axis ---
+    {
+        SbMatrix m;
+        m.setScale(SbVec3f(2.0f, 3.0f, 4.0f));
+        SbVec3f v(1,1,1), r;
+        m.multVecMatrix(v, r);
+        if (!approxEqual(r[0], 2.0f, 1e-3f) || !approxEqual(r[1], 3.0f, 1e-3f) || !approxEqual(r[2], 4.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbMatrix setScale per-axis (got %f %f %f)\n", r[0], r[1], r[2]); ++failures;
+        }
+    }
+
+    // --- multRight ---
+    {
+        SbMatrix a, b;
+        a.setTranslate(SbVec3f(1,0,0));
+        b.setTranslate(SbVec3f(0,2,0));
+        a.multRight(b);
+        SbVec3f v(0,0,0), r;
+        a.multVecMatrix(v, r);
+        if (!approxEqual(r[0], 1.0f, 1e-3f) || !approxEqual(r[1], 2.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbMatrix multRight (got %f %f %f)\n", r[0], r[1], r[2]); ++failures;
+        }
+    }
+
+    // --- multDirMatrix ---
+    {
+        SbMatrix m;
+        m.setRotate(SbRotation(SbVec3f(0,0,1), float(M_PI/2)));
+        SbVec3f dir(1,0,0), result;
+        m.multDirMatrix(dir, result);
+        // 90° around Z should map (1,0,0) to (0,1,0)
+        if (!approxEqual(result[0], 0.0f, 1e-3f) || !approxEqual(result[1], 1.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: multDirMatrix (got %f %f %f)\n", result[0], result[1], result[2]); ++failures;
+        }
+    }
+
+    // --- equals ---
+    {
+        SbMatrix a = SbMatrix::identity();
+        SbMatrix b = SbMatrix::identity();
+        if (!a.equals(b, 0.0f)) {
+            fprintf(stderr, "  FAIL: SbMatrix equals identity\n"); ++failures;
+        }
+        b[3][0] = 1.0f;
+        if (a.equals(b, 0.0f)) {
+            fprintf(stderr, "  FAIL: SbMatrix equals should differ\n"); ++failures;
+        }
+    }
+
+    // --- print/operator<< just ensure no crash ---
+    {
+        SbMatrix m = SbMatrix::identity();
+        m.print(stdout); printf("\n");
+    }
+
+    return failures;
+}
+
+REGISTER_TEST(unit_geom_prim, ObolTest::TestCategory::Base,
+    "SbLine (getClosestPoints, setPosDir), SbPlane (3pt, intersect, offset, transform, ==), SbSphere (circumscribe, pointInside, intersect), SbCylinder",
+    e.has_visual = false;
+    e.run_unit = runGeomPrimTests;
+);
+
+REGISTER_TEST(unit_rotation_comp, ObolTest::TestCategory::Base,
+    "SbRotation: invert, getValue(4floats), getValue(matrix), setValue(matrix), operator[], *=, ==",
+    e.has_visual = false;
+    e.run_unit = runRotationCompTests;
+);
+
+REGISTER_TEST(unit_camera_ext, ObolTest::TestCategory::Nodes,
+    "SoCamera: orbitCamera, stereo mode, SoOrthographicCamera, viewAll(path)",
+    e.has_visual = false;
+    e.run_unit = runCameraExtTests;
+);
+
+REGISTER_TEST(unit_faceset, ObolTest::TestCategory::Nodes,
+    "SoFaceSet and SoIndexedFaceSet: bbox, primitive count",
+    e.has_visual = false;
+    e.run_unit = runFaceSetTests;
+);
+
+REGISTER_TEST(unit_node_actions, ObolTest::TestCategory::Nodes,
+    "SoDrawStyle, SoComplexity, SoCoordinate3 action traversal",
+    e.has_visual = false;
+    e.run_unit = runNodeActionTests;
+);
+
+REGISTER_TEST(unit_sep_caching, ObolTest::TestCategory::Nodes,
+    "SoSeparator caching/culling modes with bbox action",
+    e.has_visual = false;
+    e.run_unit = runSeparatorCachingTests;
+);
+
+REGISTER_TEST(unit_matrix_further, ObolTest::TestCategory::Base,
+    "SbMatrix: setScale, multRight, multDirMatrix, equals, print",
+    e.has_visual = false;
+    e.run_unit = runMatrixFurtherTests;
+);
+
 } // anonymous namespace
