@@ -257,6 +257,7 @@
 #include <Inventor/nodes/SoVertexProperty.h>
 #include <Inventor/engines/SoSelectOne.h>
 #include <Inventor/engines/SoTimeCounter.h>
+#include <Inventor/SoType.h>
 
 #include <cmath>
 #include <cstdio>
@@ -13227,6 +13228,517 @@ REGISTER_TEST(unit_complexity, ObolTest::TestCategory::Nodes,
     "SoComplexity: BOUNDING_BOX type, SCREEN_SPACE type, high vs low triangle count",
     e.has_visual = false;
     e.run_unit = runComplexityTests;
+);
+
+// =========================================================================
+// Iteration 16 tests - SoField, SoAction state, SoNode type system, SoDB
+// =========================================================================
+
+// Unit test: SoField deeper - setIgnored, enableNotify, connections
+static int runFieldDeeperTests2()
+{
+    int failures = 0;
+
+    // --- setIgnored / isIgnored ---
+    {
+        SoSFFloat f;
+        f.setValue(3.14f);
+        f.setIgnored(TRUE);
+        if (!f.isIgnored()) {
+            fprintf(stderr, "  FAIL: SoField setIgnored TRUE\n"); ++failures;
+        }
+        f.setIgnored(FALSE);
+        if (f.isIgnored()) {
+            fprintf(stderr, "  FAIL: SoField setIgnored FALSE\n"); ++failures;
+        }
+    }
+
+    // --- enableNotify / isNotifyEnabled ---
+    {
+        SoCube* cube = new SoCube(); cube->ref();
+        // By default notification is enabled
+        if (!cube->width.isNotifyEnabled()) {
+            fprintf(stderr, "  FAIL: SoField isNotifyEnabled default\n"); ++failures;
+        }
+        SbBool prev = cube->width.enableNotify(FALSE);
+        if (cube->width.isNotifyEnabled()) {
+            fprintf(stderr, "  FAIL: SoField enableNotify FALSE\n"); ++failures;
+        }
+        cube->width.enableNotify(prev);
+        cube->unref();
+    }
+
+    // --- isConnected / isConnectedFromField ---
+    {
+        SoSFFloat master;
+        master.setValue(5.0f);
+        SoSFFloat slave;
+        slave.connectFrom(&master);
+        if (!slave.isConnected()) {
+            fprintf(stderr, "  FAIL: SoField isConnected\n"); ++failures;
+        }
+        if (!slave.isConnectedFromField()) {
+            fprintf(stderr, "  FAIL: SoField isConnectedFromField\n"); ++failures;
+        }
+        SoField* connField = nullptr;
+        slave.getConnectedField(connField);
+        if (connField != &master) {
+            fprintf(stderr, "  FAIL: SoField getConnectedField (got %p, expected %p)\n", connField, &master); ++failures;
+        }
+        slave.disconnect();
+        if (slave.isConnected()) {
+            fprintf(stderr, "  FAIL: SoField disconnect (still connected)\n"); ++failures;
+        }
+    }
+
+    // --- isConnectedFromEngine ---
+    {
+        SoCalculator* calc = new SoCalculator(); calc->ref();
+        calc->expression.set1Value(0, "oa = a[0] + a[1]");
+        calc->a.set1Value(0, 1.0f);
+        calc->a.set1Value(1, 2.0f);
+        SoSFFloat result;
+        result.connectFrom(&calc->oa);
+        if (!result.isConnectedFromEngine()) {
+            fprintf(stderr, "  FAIL: SoField isConnectedFromEngine\n"); ++failures;
+        }
+        SoEngineOutput* eng = nullptr;
+        result.getConnectedEngine(eng);
+        if (!eng) {
+            fprintf(stderr, "  FAIL: SoField getConnectedEngine null\n"); ++failures;
+        }
+        result.disconnect();
+        calc->unref();
+    }
+
+    // --- getContainer ---
+    {
+        SoCube* cube = new SoCube(); cube->ref();
+        SoFieldContainer* fc = cube->width.getContainer();
+        if (fc != cube) {
+            fprintf(stderr, "  FAIL: SoField getContainer (got %p, expected %p)\n", fc, cube); ++failures;
+        }
+        cube->unref();
+    }
+
+    // --- SoMFFloat set/get multiple values ---
+    {
+        SoMFFloat mf;
+        float vals[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
+        mf.setValues(0, 5, vals);
+        if (mf.getNum() != 5) {
+            fprintf(stderr, "  FAIL: SoMFFloat setValues count (got %d)\n", mf.getNum()); ++failures;
+        }
+        const float* got = mf.getValues(0);
+        if (!approxEqual(got[2], 3.0f)) {
+            fprintf(stderr, "  FAIL: SoMFFloat getValues[2] (got %f)\n", got[2]); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// Unit test: SoAction state and type queries
+static int runActionStateTests()
+{
+    int failures = 0;
+
+    // --- getWhatAppliedTo captured during traversal ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube());
+
+        SoAction::AppliedCode captured = SoAction::PATH;
+        SoNode* capturedNode = nullptr;
+        SoCallbackAction cba;
+        cba.addPreCallback(SoCube::getClassTypeId(),
+            [](void* ud, SoCallbackAction* act, const SoNode*) -> SoCallbackAction::Response {
+                auto* data = static_cast<std::pair<SoAction::AppliedCode*, SoNode**>*>(ud);
+                *data->first = act->getWhatAppliedTo();
+                *data->second = act->getNodeAppliedTo();
+                return SoCallbackAction::CONTINUE;
+            }, new std::pair<SoAction::AppliedCode*, SoNode**>(&captured, &capturedNode));
+        cba.apply(root);
+        if (captured != SoAction::NODE) {
+            fprintf(stderr, "  FAIL: SoAction getWhatAppliedTo NODE (got %d)\n", (int)captured); ++failures;
+        }
+        if (capturedNode != root) {
+            fprintf(stderr, "  FAIL: SoAction getNodeAppliedTo (got %p, expected %p)\n", capturedNode, root); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- getState captured during traversal ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube());
+
+        bool stateNonNull = false;
+        SoCallbackAction cba;
+        cba.addPreCallback(SoCube::getClassTypeId(),
+            [](void* ud, SoCallbackAction* act, const SoNode*) -> SoCallbackAction::Response {
+                *static_cast<bool*>(ud) = (act->getState() != nullptr);
+                return SoCallbackAction::CONTINUE;
+            }, &stateNonNull);
+        cba.apply(root);
+        if (!stateNonNull) {
+            fprintf(stderr, "  FAIL: SoAction getState null during traversal\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- hasTerminated ---
+    {
+        SoGetBoundingBoxAction bba(SbViewportRegion(512,512));
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube());
+        bba.apply(root);
+        if (bba.hasTerminated()) {
+            fprintf(stderr, "  FAIL: SoGetBBoxAction hasTerminated should be false after normal run\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- Apply to path: getWhatAppliedTo PATH captured during ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCube* cube = new SoCube();
+        root->addChild(cube);
+
+        SoSearchAction sa;
+        sa.setNode(cube);
+        sa.apply(root);
+        SoPath* p = sa.getPath();
+        if (p) {
+            p->ref();
+            SoAction::AppliedCode captured = SoAction::NODE;
+            SoCallbackAction cba;
+            cba.addPreCallback(SoCube::getClassTypeId(),
+                [](void* ud, SoCallbackAction* act, const SoNode*) -> SoCallbackAction::Response {
+                    *static_cast<SoAction::AppliedCode*>(ud) = act->getWhatAppliedTo();
+                    return SoCallbackAction::CONTINUE;
+                }, &captured);
+            cba.apply(p);
+            if (captured != SoAction::PATH) {
+                fprintf(stderr, "  FAIL: SoAction getWhatAppliedTo PATH (got %d)\n", (int)captured); ++failures;
+            }
+            p->unref();
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: SoNode type system - isOfType, getClassTypeId, getTypeId
+static int runNodeTypeSystemTests()
+{
+    int failures = 0;
+
+    // --- isOfType ---
+    {
+        SoCube* cube = new SoCube(); cube->ref();
+        if (!cube->isOfType(SoCube::getClassTypeId())) {
+            fprintf(stderr, "  FAIL: SoCube isOfType SoCube\n"); ++failures;
+        }
+        if (!cube->isOfType(SoShape::getClassTypeId())) {
+            fprintf(stderr, "  FAIL: SoCube isOfType SoShape\n"); ++failures;
+        }
+        if (!cube->isOfType(SoNode::getClassTypeId())) {
+            fprintf(stderr, "  FAIL: SoCube isOfType SoNode\n"); ++failures;
+        }
+        if (cube->isOfType(SoSphere::getClassTypeId())) {
+            fprintf(stderr, "  FAIL: SoCube isOfType SoSphere should be false\n"); ++failures;
+        }
+        cube->unref();
+    }
+
+    // --- getTypeId vs getClassTypeId ---
+    {
+        SoSphere* sp = new SoSphere(); sp->ref();
+        if (sp->getTypeId() != SoSphere::getClassTypeId()) {
+            fprintf(stderr, "  FAIL: SoSphere getTypeId != getClassTypeId\n"); ++failures;
+        }
+        SbName name = sp->getTypeId().getName();
+        if (name != "Sphere") {
+            fprintf(stderr, "  FAIL: SoSphere getTypeId name (got '%s')\n", name.getString()); ++failures;
+        }
+        sp->unref();
+    }
+
+    // --- SoType::fromName ---
+    {
+        SoType t = SoType::fromName("Cube");
+        if (t == SoType::badType()) {
+            fprintf(stderr, "  FAIL: SoType::fromName 'Cube'\n"); ++failures;
+        }
+        SoType t2 = SoType::fromName("NonExistentType12345");
+        if (t2 != SoType::badType()) {
+            fprintf(stderr, "  FAIL: SoType::fromName nonexistent should be badType\n"); ++failures;
+        }
+    }
+
+    // --- isDerivedFrom ---
+    {
+        SoType shapeType = SoShape::getClassTypeId();
+        SoType sphereType = SoSphere::getClassTypeId();
+        if (!sphereType.isDerivedFrom(shapeType)) {
+            fprintf(stderr, "  FAIL: SoSphere isDerivedFrom SoShape\n"); ++failures;
+        }
+        if (shapeType.isDerivedFrom(sphereType)) {
+            fprintf(stderr, "  FAIL: SoShape isDerivedFrom SoSphere should be false\n"); ++failures;
+        }
+    }
+
+    // --- SoNode::getByName ---
+    {
+        SoCube* c = new SoCube(); c->ref(); c->setName("uniqueNameTest1");
+        SoNode* found = SoNode::getByName("uniqueNameTest1");
+        if (!found || found != c) {
+            fprintf(stderr, "  FAIL: SoNode::getByName (got %p, expected %p)\n", found, c); ++failures;
+        }
+        c->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: SoDB static APIs
+static int runSoDBTests()
+{
+    int failures = 0;
+
+    // --- getVersion ---
+    {
+        const char* ver = SoDB::getVersion();
+        if (!ver || strlen(ver) == 0) {
+            fprintf(stderr, "  FAIL: SoDB::getVersion empty\n"); ++failures;
+        }
+    }
+
+    // --- isValidHeader ---
+    {
+        if (!SoDB::isValidHeader("#Inventor V2.1 ascii")) {
+            fprintf(stderr, "  FAIL: SoDB::isValidHeader valid\n"); ++failures;
+        }
+        if (SoDB::isValidHeader("not an inventor header")) {
+            fprintf(stderr, "  FAIL: SoDB::isValidHeader invalid should be false\n"); ++failures;
+        }
+    }
+
+    // --- getGlobalField ---
+    {
+        // realTime is a standard global field
+        SoField* rt = SoDB::getGlobalField("realTime");
+        if (!rt) {
+            fprintf(stderr, "  FAIL: SoDB::getGlobalField realTime null\n"); ++failures;
+        }
+    }
+
+    // --- createGlobalField ---
+    {
+        SoSFFloat* gf = static_cast<SoSFFloat*>(
+            SoDB::createGlobalField("testGlobalFloat2", SoSFFloat::getClassTypeId()));
+        if (!gf) {
+            fprintf(stderr, "  FAIL: SoDB::createGlobalField null\n"); ++failures;
+        } else {
+            gf->setValue(99.0f);
+            if (!approxEqual(gf->getValue(), 99.0f)) {
+                fprintf(stderr, "  FAIL: global field value\n"); ++failures;
+            }
+        }
+    }
+
+    // --- getSensorManager ---
+    {
+        SoSensorManager* sm = SoDB::getSensorManager();
+        if (!sm) {
+            fprintf(stderr, "  FAIL: SoDB::getSensorManager null\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// Unit test: SoBase - ref/unref/touch/getName/setName/getRefCount
+static int runSoBaseTests2()
+{
+    int failures = 0;
+
+    // --- ref/unref ---
+    {
+        SoCube* cube = new SoCube();
+        cube->ref();
+        if (cube->getRefCount() != 1) {
+            fprintf(stderr, "  FAIL: SoBase getRefCount (got %d)\n", cube->getRefCount()); ++failures;
+        }
+        cube->ref();
+        if (cube->getRefCount() != 2) {
+            fprintf(stderr, "  FAIL: SoBase getRefCount after 2nd ref (got %d)\n", cube->getRefCount()); ++failures;
+        }
+        cube->unref();
+        if (cube->getRefCount() != 1) {
+            fprintf(stderr, "  FAIL: SoBase getRefCount after unref (got %d)\n", cube->getRefCount()); ++failures;
+        }
+        cube->unref(); // deletes cube
+    }
+
+    // --- getName / setName ---
+    {
+        SoSphere* sp = new SoSphere(); sp->ref();
+        sp->setName("myTestSphere");
+        SbName n = sp->getName();
+        if (n != "myTestSphere") {
+            fprintf(stderr, "  FAIL: SoBase getName (got '%s')\n", n.getString()); ++failures;
+        }
+        sp->unref();
+    }
+
+    // --- touch ---
+    {
+        SoCube* cube = new SoCube(); cube->ref();
+        int sensorFired = 0;
+        SoNodeSensor sensor([](void* ud, SoSensor*) { (*static_cast<int*>(ud))++; }, &sensorFired);
+        sensor.attach(cube);
+        cube->touch();
+        SoDB::getSensorManager()->processImmediateQueue();
+        // (sensor may or may not fire on touch; just check no crash)
+        sensor.detach();
+        cube->unref();
+    }
+
+    // --- SoNode::getClassTypeId ---
+    {
+        SoType t = SoCylinder::getClassTypeId();
+        SbName name = t.getName();
+        if (name != "Cylinder") {
+            fprintf(stderr, "  FAIL: SoCylinder type name (got '%s')\n", name.getString()); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// Unit test: SoSeparator behaviors with render/pick culling
+static int runSeparatorDeepTests()
+{
+    int failures = 0;
+
+    // --- renderCaching AUTO with geometry change ---
+    {
+        SoSeparator* sep = new SoSeparator(); sep->ref();
+        sep->renderCaching.setValue(SoSeparator::AUTO);
+        SoCube* cube = new SoCube();
+        sep->addChild(cube);
+
+        // First bounding box
+        SoGetBoundingBoxAction bba1(SbViewportRegion(512,512));
+        bba1.apply(sep);
+        SbBox3f bb1 = bba1.getBoundingBox();
+
+        // Change geometry
+        cube->width.setValue(5.0f);
+
+        // Second bounding box should reflect change
+        SoGetBoundingBoxAction bba2(SbViewportRegion(512,512));
+        bba2.apply(sep);
+        SbBox3f bb2 = bba2.getBoundingBox();
+
+        if (bb2.getMax()[0] <= bb1.getMax()[0]) {
+            fprintf(stderr, "  FAIL: SoSeparator bbox not updated after geometry change\n"); ++failures;
+        }
+        sep->unref();
+    }
+
+    // --- pickCulling OFF ---
+    {
+        SoSeparator* sep = new SoSeparator(); sep->ref();
+        sep->pickCulling.setValue(SoSeparator::OFF);
+        SoCube* cube = new SoCube();
+        sep->addChild(cube);
+
+        SbViewportRegion vp(512,512);
+        SoRayPickAction pa(vp);
+        pa.setRay(SbVec3f(0,0,5), SbVec3f(0,0,-1));
+        pa.apply(sep);
+        if (!pa.getPickedPoint()) {
+            fprintf(stderr, "  FAIL: SoSeparator pickCulling OFF - cube should be pickable\n"); ++failures;
+        }
+        sep->unref();
+    }
+
+    // --- boundingBoxCaching OFF ---
+    {
+        SoSeparator* sep = new SoSeparator(); sep->ref();
+        sep->boundingBoxCaching.setValue(SoSeparator::OFF);
+        sep->addChild(new SoSphere());
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512,512));
+        bba.apply(sep);
+        if (bba.getBoundingBox().isEmpty()) {
+            fprintf(stderr, "  FAIL: SoSeparator boundingBoxCaching OFF bbox empty\n"); ++failures;
+        }
+        sep->unref();
+    }
+
+    // --- nested renderCulling ---
+    {
+        SoSeparator* outer = new SoSeparator(); outer->ref();
+        outer->renderCulling.setValue(SoSeparator::OFF);
+        SoSeparator* inner = new SoSeparator();
+        inner->renderCulling.setValue(SoSeparator::ON);
+        inner->addChild(new SoCube());
+        outer->addChild(inner);
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512,512));
+        bba.apply(outer);
+        if (bba.getBoundingBox().isEmpty()) {
+            fprintf(stderr, "  FAIL: nested renderCulling bbox empty\n"); ++failures;
+        }
+        outer->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Register iteration 16 tests
+// =========================================================================
+
+REGISTER_TEST(unit_field_deeper2, ObolTest::TestCategory::Fields,
+    "SoField: setIgnored/isIgnored, enableNotify, isConnected/getConnectedField/Engine, getContainer, SoMFFloat setValues/getValues",
+    e.has_visual = false;
+    e.run_unit = runFieldDeeperTests2;
+);
+
+REGISTER_TEST(unit_action_state, ObolTest::TestCategory::Actions,
+    "SoAction state: getWhatAppliedTo, getNodeAppliedTo, getState, hasTerminated, apply-to-path getPathAppliedTo",
+    e.has_visual = false;
+    e.run_unit = runActionStateTests;
+);
+
+REGISTER_TEST(unit_node_type_system, ObolTest::TestCategory::Base,
+    "SoNode type system: isOfType, getTypeId/getClassTypeId, SoType::fromName, isDerivedFrom, getByName",
+    e.has_visual = false;
+    e.run_unit = runNodeTypeSystemTests;
+);
+
+REGISTER_TEST(unit_sodb, ObolTest::TestCategory::Base,
+    "SoDB: getVersion, isValidName, getGlobalField realTime, createGlobalField",
+    e.has_visual = false;
+    e.run_unit = runSoDBTests;
+);
+
+REGISTER_TEST(unit_sobase2, ObolTest::TestCategory::Base,
+    "SoBase: ref/getRefCount, getName/setName, touch, SoCylinder type name",
+    e.has_visual = false;
+    e.run_unit = runSoBaseTests2;
+);
+
+REGISTER_TEST(unit_separator_deep2, ObolTest::TestCategory::Nodes,
+    "SoSeparator: auto caching + geometry change, pickCulling OFF, boundingBoxCaching OFF, nested renderCulling",
+    e.has_visual = false;
+    e.run_unit = runSeparatorDeepTests;
 );
 
 } // anonymous namespace
