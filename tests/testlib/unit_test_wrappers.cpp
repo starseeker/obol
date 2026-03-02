@@ -277,6 +277,8 @@
 #include <Inventor/nodes/SoDrawStyle.h>
 #include <Inventor/nodes/SoLightModel.h>
 #include <Inventor/nodes/SoPackedColor.h>
+#include <Inventor/nodes/SoTexture2.h>
+#include <Inventor/nodes/SoTextureCoordinate2.h>
 
 #include <cmath>
 #include <cstdio>
@@ -16236,6 +16238,882 @@ REGISTER_TEST(unit_gl_render_smoothing, ObolTest::TestCategory::Rendering,
     "GL render: smoothing on/off, RGBA components, LUMINANCE_ALPHA components",
     e.has_visual = false;
     e.run_unit = runGLRenderSmoothingTest;
+);
+
+// =========================================================================
+// Session 5 / Iteration 20: IFS texture paths, SbTesselator, SoExtSelection,
+// Text GL render, normal generation, line/point VBO paths
+// =========================================================================
+
+// Unit test: IFS GL render with texture coordinates (triggers texture paths in IFS::GLRender)
+static int runIFSTextureGLTest()
+{
+    int failures = 0;
+
+    // --- IFS with texture and texture coordinates (exercises doTextures path) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        // Simple checker texture
+        SoTexture2* tex = new SoTexture2();
+        unsigned char imgdata[4*4*3];
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j) {
+                unsigned char v = ((i+j)%2) ? 255 : 50;
+                imgdata[(i*4+j)*3+0] = v;
+                imgdata[(i*4+j)*3+1] = v;
+                imgdata[(i*4+j)*3+2] = v;
+            }
+        tex->image.setValue(SbVec2s(4,4), 3, imgdata);
+        root->addChild(tex);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1, 0));
+        coords->point.set1Value(1, SbVec3f( 1,-1, 0));
+        coords->point.set1Value(2, SbVec3f( 1, 1, 0));
+        coords->point.set1Value(3, SbVec3f(-1, 1, 0));
+        root->addChild(coords);
+
+        SoTextureCoordinate2* tc = new SoTextureCoordinate2();
+        tc->point.set1Value(0, SbVec2f(0,0));
+        tc->point.set1Value(1, SbVec2f(1,0));
+        tc->point.set1Value(2, SbVec2f(1,1));
+        tc->point.set1Value(3, SbVec2f(0,1));
+        root->addChild(tc);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        // Two triangles making a quad (with separate texture coord indices)
+        ifs->coordIndex.set1Value(0, 0); ifs->coordIndex.set1Value(1, 1);
+        ifs->coordIndex.set1Value(2, 2); ifs->coordIndex.set1Value(3, -1);
+        ifs->coordIndex.set1Value(4, 0); ifs->coordIndex.set1Value(5, 2);
+        ifs->coordIndex.set1Value(6, 3); ifs->coordIndex.set1Value(7, -1);
+        root->addChild(ifs);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: IFS textured render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- IFS with normals explicitly set (exercises normal binding paths) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1, 0));
+        coords->point.set1Value(1, SbVec3f( 1,-1, 0));
+        coords->point.set1Value(2, SbVec3f( 1, 1, 0));
+        coords->point.set1Value(3, SbVec3f(-1, 1, 0));
+        root->addChild(coords);
+
+        // Explicit normals PER_VERTEX
+        SoNormal* normals = new SoNormal();
+        normals->vector.set1Value(0, SbVec3f(0,0,1));
+        normals->vector.set1Value(1, SbVec3f(0,0,1));
+        normals->vector.set1Value(2, SbVec3f(0,0,1));
+        normals->vector.set1Value(3, SbVec3f(0,0,1));
+        root->addChild(normals);
+
+        SoNormalBinding* nb = new SoNormalBinding();
+        nb->value.setValue(SoNormalBinding::PER_VERTEX_INDEXED);
+        root->addChild(nb);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0,0.8f,0.4f));
+        root->addChild(mat);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        ifs->coordIndex.set1Value(0, 0); ifs->coordIndex.set1Value(1, 1);
+        ifs->coordIndex.set1Value(2, 2); ifs->coordIndex.set1Value(3, -1);
+        ifs->coordIndex.set1Value(4, 0); ifs->coordIndex.set1Value(5, 2);
+        ifs->coordIndex.set1Value(6, 3); ifs->coordIndex.set1Value(7, -1);
+        // Use same indices for normals as coordinates
+        ifs->normalIndex.set1Value(0, 0); ifs->normalIndex.set1Value(1, 1);
+        ifs->normalIndex.set1Value(2, 2); ifs->normalIndex.set1Value(3, -1);
+        ifs->normalIndex.set1Value(4, 0); ifs->normalIndex.set1Value(5, 2);
+        ifs->normalIndex.set1Value(6, 3); ifs->normalIndex.set1Value(7, -1);
+        root->addChild(ifs);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: IFS explicit normals render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- IFS with OVERALL material (simplest path) + auto-normals ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.8f,0.5f,0.2f));
+        root->addChild(mat);
+
+        SoMaterialBinding* mb = new SoMaterialBinding();
+        mb->value.setValue(SoMaterialBinding::OVERALL);
+        root->addChild(mb);
+
+        // A larger mesh to exercise more GL code paths
+        SoCoordinate3* coords = new SoCoordinate3();
+        for (int i = 0; i < 8; ++i) {
+            float angle = float(i) * float(M_PI*2) / 8.0f;
+            coords->point.set1Value(i, SbVec3f(cosf(angle), sinf(angle), 0));
+        }
+        root->addChild(coords);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        // 6 triangles as a fan
+        for (int i = 0; i < 6; ++i) {
+            ifs->coordIndex.set1Value(i*4+0, 0);
+            ifs->coordIndex.set1Value(i*4+1, i+1);
+            ifs->coordIndex.set1Value(i*4+2, i+2);
+            ifs->coordIndex.set1Value(i*4+3, -1);
+        }
+        root->addChild(ifs);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: IFS OVERALL material render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- IFS with PER_FACE_INDEXED material + normals ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.set1Value(0, SbColor(1,0,0));
+        mat->diffuseColor.set1Value(1, SbColor(0,1,0));
+        mat->diffuseColor.set1Value(2, SbColor(0,0,1));
+        root->addChild(mat);
+
+        SoMaterialBinding* mb = new SoMaterialBinding();
+        mb->value.setValue(SoMaterialBinding::PER_FACE_INDEXED);
+        root->addChild(mb);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1, 0));
+        coords->point.set1Value(1, SbVec3f( 0,-1, 0));
+        coords->point.set1Value(2, SbVec3f( 1,-1, 0));
+        coords->point.set1Value(3, SbVec3f(-0.5f, 0, 0));
+        coords->point.set1Value(4, SbVec3f( 0.5f, 0, 0));
+        coords->point.set1Value(5, SbVec3f(0, 1, 0));
+        root->addChild(coords);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        ifs->coordIndex.set1Value(0, 0); ifs->coordIndex.set1Value(1, 1);
+        ifs->coordIndex.set1Value(2, 3); ifs->coordIndex.set1Value(3, -1);
+        ifs->coordIndex.set1Value(4, 1); ifs->coordIndex.set1Value(5, 2);
+        ifs->coordIndex.set1Value(6, 4); ifs->coordIndex.set1Value(7, -1);
+        ifs->coordIndex.set1Value(8, 3); ifs->coordIndex.set1Value(9, 4);
+        ifs->coordIndex.set1Value(10, 5); ifs->coordIndex.set1Value(11, -1);
+        ifs->materialIndex.set1Value(0, 0);
+        ifs->materialIndex.set1Value(1, 1);
+        ifs->materialIndex.set1Value(2, 2);
+        root->addChild(ifs);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: IFS PER_FACE_INDEXED render\n"); ++failures; }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: SbTesselator - polygon tesselation
+static int runSbTesselatorTest()
+{
+    int failures = 0;
+
+    // --- Simple triangle ---
+    {
+        int triCount = 0;
+        auto cb = [](void* v0, void* v1, void* v2, void* data) {
+            (*reinterpret_cast<int*>(data))++;
+        };
+
+        SbTesselator tess(cb, &triCount);
+        SbVec3f pts[3] = { {0,0,0}, {1,0,0}, {0.5f,1,0} };
+        tess.beginPolygon(FALSE, SbVec3f(0,0,1));
+        for (int i = 0; i < 3; ++i) tess.addVertex(pts[i], &pts[i]);
+        tess.endPolygon();
+
+        if (triCount != 1) {
+            fprintf(stderr, "  FAIL: SbTesselator triangle (got %d tris)\n", triCount); ++failures;
+        }
+    }
+
+    // --- Quad (4 vertices) ---
+    {
+        int triCount = 0;
+        auto cb = [](void* v0, void* v1, void* v2, void* data) {
+            (*reinterpret_cast<int*>(data))++;
+        };
+
+        SbTesselator tess(cb, &triCount);
+        SbVec3f pts[4] = { {-1,-1,0}, {1,-1,0}, {1,1,0}, {-1,1,0} };
+        tess.beginPolygon(FALSE, SbVec3f(0,0,1));
+        for (int i = 0; i < 4; ++i) tess.addVertex(pts[i], &pts[i]);
+        tess.endPolygon();
+
+        if (triCount != 2) {
+            fprintf(stderr, "  FAIL: SbTesselator quad (got %d tris, expected 2)\n", triCount); ++failures;
+        }
+    }
+
+    // --- Pentagon (5 vertices) ---
+    {
+        int triCount = 0;
+        auto cb = [](void* v0, void* v1, void* v2, void* data) {
+            (*reinterpret_cast<int*>(data))++;
+        };
+
+        SbTesselator tess(cb, &triCount);
+        tess.beginPolygon(FALSE, SbVec3f(0,0,1));
+        for (int i = 0; i < 5; ++i) {
+            float angle = float(i) * float(M_PI*2) / 5.0f;
+            SbVec3f pt(cosf(angle), sinf(angle), 0);
+            tess.addVertex(pt, nullptr);
+        }
+        tess.endPolygon();
+
+        if (triCount != 3) {
+            fprintf(stderr, "  FAIL: SbTesselator pentagon (got %d tris, expected 3)\n", triCount); ++failures;
+        }
+    }
+
+    // --- keepVertices = TRUE ---
+    {
+        int triCount = 0;
+        auto cb = [](void* v0, void* v1, void* v2, void* data) {
+            (*reinterpret_cast<int*>(data))++;
+        };
+
+        SbTesselator tess(cb, &triCount);
+        SbVec3f pts[4] = { {0,0,0}, {2,0,0}, {2,2,0}, {0,2,0} };
+        tess.beginPolygon(TRUE, SbVec3f(0,0,1)); // keepVertices=TRUE
+        for (int i = 0; i < 4; ++i) tess.addVertex(pts[i], &pts[i]);
+        tess.endPolygon();
+
+        if (triCount < 1) {
+            fprintf(stderr, "  FAIL: SbTesselator keepVerts (got %d tris)\n", triCount); ++failures;
+        }
+    }
+
+    // --- Concave polygon (L-shape) ---
+    {
+        int triCount = 0;
+        auto cb = [](void* v0, void* v1, void* v2, void* data) {
+            (*reinterpret_cast<int*>(data))++;
+        };
+
+        SbTesselator tess(cb, &triCount);
+        // L-shape (concave)
+        SbVec3f pts[6] = {
+            {0,0,0}, {2,0,0}, {2,1,0}, {1,1,0}, {1,2,0}, {0,2,0}
+        };
+        tess.beginPolygon(FALSE, SbVec3f(0,0,1));
+        for (int i = 0; i < 6; ++i) tess.addVertex(pts[i], &pts[i]);
+        tess.endPolygon();
+
+        // L-shape = 4 triangles
+        if (triCount < 3) {
+            fprintf(stderr, "  FAIL: SbTesselator concave polygon (got %d tris)\n", triCount); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// Unit test: SoText2 GL render (exercises font + text rendering paths)
+static int runText2GLRenderTest()
+{
+    int failures = 0;
+
+    // --- SoText2 basic render ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,10));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoFont* font = new SoFont();
+        font->size.setValue(16.0f);
+        root->addChild(font);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(1,1,1));
+        root->addChild(mat);
+
+        SoText2* text = new SoText2();
+        text->string.set1Value(0, "Hello");
+        text->justification.setValue(SoText2::LEFT);
+        root->addChild(text);
+
+        SbViewportRegion vp(128, 64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoText2 render\n"); ++failures; }
+
+        root->unref();
+    }
+
+    // --- SoText2 with CENTER justification ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,10));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoText2* text = new SoText2();
+        text->string.set1Value(0, "Center");
+        text->justification.setValue(SoText2::CENTER);
+        root->addChild(text);
+
+        SbViewportRegion vp(128, 64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root); // Don't fail - font may not be available
+        root->unref();
+    }
+
+    // --- SoText2 with RIGHT justification + multiple strings ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,10));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoText2* text = new SoText2();
+        text->string.set1Value(0, "Line 1");
+        text->string.set1Value(1, "Line 2");
+        text->justification.setValue(SoText2::RIGHT);
+        root->addChild(text);
+
+        SbViewportRegion vp(128, 128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root); // Don't fail
+        root->unref();
+    }
+
+    // --- SoText3 GL render ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,10));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.8f,0.8f,0.2f));
+        root->addChild(mat);
+
+        SoText3* text = new SoText3();
+        text->string.set1Value(0, "3D");
+        text->parts.setValue(SoText3::FRONT | SoText3::BACK | SoText3::SIDES);
+        root->addChild(text);
+
+        SbViewportRegion vp(128, 64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root); // Just verify no crash
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: SoExtSelection lasso/rectangle selection modes
+static int runExtSelectionTest()
+{
+    int failures = 0;
+
+    // --- RECTANGLE lasso type ---
+    {
+        SoExtSelection* sel = new SoExtSelection(); sel->ref();
+        sel->lassoType.setValue(SoExtSelection::RECTANGLE);
+        sel->lassoPolicy.setValue(SoExtSelection::FULL_BBOX);
+        sel->lassoMode.setValue(SoExtSelection::ALL_SHAPES);
+
+        if (!sel->isOfType(SoGroup::getClassTypeId())) {
+            fprintf(stderr, "  FAIL: SoExtSelection isOfType SoGroup\n"); ++failures;
+        }
+
+        // Add some geometry to select
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(1,0,0));
+        sel->addChild(mat);
+        sel->addChild(new SoSphere());
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(sel);
+        SbBox3f bbox = bba.getBoundingBox();
+        if (bbox.isEmpty()) {
+            fprintf(stderr, "  FAIL: SoExtSelection bbox empty\n"); ++failures;
+        }
+
+        sel->unref();
+    }
+
+    // --- LASSO type ---
+    {
+        SoExtSelection* sel = new SoExtSelection(); sel->ref();
+        sel->lassoType.setValue(SoExtSelection::LASSO);
+        sel->lassoPolicy.setValue(SoExtSelection::PART_BBOX);
+        sel->lassoMode.setValue(SoExtSelection::VISIBLE_SHAPES);
+
+        sel->addChild(new SoCube());
+
+        // Render it in a GL context
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        root->addChild(sel);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoExtSelection LASSO render\n"); ++failures; }
+
+        root->unref();
+        sel->unref();
+    }
+
+    // --- NOLASSO type ---
+    {
+        SoExtSelection* sel = new SoExtSelection(); sel->ref();
+        sel->lassoType.setValue(SoExtSelection::NOLASSO);
+        sel->addChild(new SoCylinder());
+
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        root->addChild(sel);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root); // Don't fail
+        root->unref();
+        sel->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: GL render with FaceSet binding variations
+static int runFaceSetGLTest()
+{
+    int failures = 0;
+
+    // --- FaceSet with PER_FACE normal binding ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.6f,0.2f,0.9f));
+        root->addChild(mat);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1, 0));
+        coords->point.set1Value(1, SbVec3f( 1,-1, 0));
+        coords->point.set1Value(2, SbVec3f( 1, 1, 0));
+        coords->point.set1Value(3, SbVec3f( 0,-1, 0.5f));
+        coords->point.set1Value(4, SbVec3f( 1.5f, 0, 0.5f));
+        coords->point.set1Value(5, SbVec3f( 0.5f, 1, 0.5f));
+        root->addChild(coords);
+
+        SoNormal* normals = new SoNormal();
+        normals->vector.set1Value(0, SbVec3f(0,0,1));
+        normals->vector.set1Value(1, SbVec3f(0,0,1));
+        root->addChild(normals);
+
+        SoNormalBinding* nb = new SoNormalBinding();
+        nb->value.setValue(SoNormalBinding::PER_FACE);
+        root->addChild(nb);
+
+        SoFaceSet* fs = new SoFaceSet();
+        fs->numVertices.set1Value(0, 3);
+        fs->numVertices.set1Value(1, 3);
+        root->addChild(fs);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: FaceSet PER_FACE normal render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- FaceSet with PER_VERTEX material binding ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.set1Value(0, SbColor(1,0,0));
+        mat->diffuseColor.set1Value(1, SbColor(0,1,0));
+        mat->diffuseColor.set1Value(2, SbColor(0,0,1));
+        mat->diffuseColor.set1Value(3, SbColor(1,1,0));
+        root->addChild(mat);
+
+        SoMaterialBinding* mb = new SoMaterialBinding();
+        mb->value.setValue(SoMaterialBinding::PER_VERTEX);
+        root->addChild(mb);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1, 0));
+        coords->point.set1Value(1, SbVec3f( 1,-1, 0));
+        coords->point.set1Value(2, SbVec3f( 0, 1, 0));
+        coords->point.set1Value(3, SbVec3f(-1, 1, 0));
+        root->addChild(coords);
+
+        SoFaceSet* fs = new SoFaceSet();
+        fs->numVertices.set1Value(0, 4); // quad
+        root->addChild(fs);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: FaceSet PER_VERTEX material render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- FaceSet with texture coordinates ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+
+        SoTexture2* tex = new SoTexture2();
+        unsigned char imgdata[4] = {255, 0, 0, 255}; // 1x1 red pixel
+        tex->image.setValue(SbVec2s(1,1), 3, imgdata);
+        root->addChild(tex);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1, 0));
+        coords->point.set1Value(1, SbVec3f( 1,-1, 0));
+        coords->point.set1Value(2, SbVec3f( 0, 1, 0));
+        root->addChild(coords);
+
+        SoTextureCoordinate2* tc = new SoTextureCoordinate2();
+        tc->point.set1Value(0, SbVec2f(0,0));
+        tc->point.set1Value(1, SbVec2f(1,0));
+        tc->point.set1Value(2, SbVec2f(0.5f,1));
+        root->addChild(tc);
+
+        SoFaceSet* fs = new SoFaceSet();
+        fs->numVertices.set1Value(0, 3);
+        root->addChild(fs);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: FaceSet textured render\n"); ++failures; }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: IndexedLineSet and PointSet GL render
+static int runLinePointSetGLTest()
+{
+    int failures = 0;
+
+    // --- IndexedLineSet GL render ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(1,1,0));
+        root->addChild(mat);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        for (int i = 0; i < 6; ++i) {
+            float t = float(i) / 5.0f;
+            coords->point.set1Value(i, SbVec3f(t*2-1, sinf(t*float(M_PI)*2)*0.5f, 0));
+        }
+        root->addChild(coords);
+
+        SoIndexedLineSet* ils = new SoIndexedLineSet();
+        for (int i = 0; i < 5; ++i) ils->coordIndex.set1Value(i, i);
+        ils->coordIndex.set1Value(5, -1);
+        root->addChild(ils);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: IndexedLineSet render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- IndexedLineSet with PER_VERTEX material ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.set1Value(0, SbColor(1,0,0));
+        mat->diffuseColor.set1Value(1, SbColor(0,1,0));
+        mat->diffuseColor.set1Value(2, SbColor(0,0,1));
+        root->addChild(mat);
+
+        SoMaterialBinding* mb = new SoMaterialBinding();
+        mb->value.setValue(SoMaterialBinding::PER_VERTEX_INDEXED);
+        root->addChild(mb);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,0,0));
+        coords->point.set1Value(1, SbVec3f( 0,1,0));
+        coords->point.set1Value(2, SbVec3f( 1,0,0));
+        root->addChild(coords);
+
+        SoIndexedLineSet* ils = new SoIndexedLineSet();
+        ils->coordIndex.set1Value(0, 0);
+        ils->coordIndex.set1Value(1, 1);
+        ils->coordIndex.set1Value(2, 2);
+        ils->coordIndex.set1Value(3, -1);
+        ils->materialIndex.set1Value(0, 0);
+        ils->materialIndex.set1Value(1, 1);
+        ils->materialIndex.set1Value(2, 2);
+        root->addChild(ils);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: ILS PER_VERTEX_INDEXED render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- PointSet with multiple materials ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+
+        SoDrawStyle* ds = new SoDrawStyle();
+        ds->pointSize.setValue(5.0f);
+        root->addChild(ds);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.set1Value(0, SbColor(1,0,0));
+        mat->diffuseColor.set1Value(1, SbColor(0,1,0));
+        mat->diffuseColor.set1Value(2, SbColor(0,0,1));
+        root->addChild(mat);
+
+        SoMaterialBinding* mb = new SoMaterialBinding();
+        mb->value.setValue(SoMaterialBinding::PER_VERTEX);
+        root->addChild(mb);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,0,0));
+        coords->point.set1Value(1, SbVec3f( 0,1,0));
+        coords->point.set1Value(2, SbVec3f( 1,0,0));
+        root->addChild(coords);
+
+        SoPointSet* ps = new SoPointSet();
+        ps->numPoints.setValue(3);
+        root->addChild(ps);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: PointSet PER_VERTEX render\n"); ++failures; }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: GL render of all shape types with normals for GL state coverage
+static int runAllShapesGLTest()
+{
+    int failures = 0;
+
+    auto renderShape = [&](SoNode* shape, const char* name) {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.7f,0.5f,0.3f));
+        mat->specularColor.setValue(SbColor(1,1,1));
+        mat->shininess.setValue(0.6f);
+        root->addChild(mat);
+        root->addChild(shape);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) {
+            fprintf(stderr, "  FAIL: %s GL render\n", name); ++failures;
+        }
+        // Check something is visible
+        const unsigned char* buf = renderer.getBuffer();
+        if (buf) {
+            int nonBlack = 0;
+            for (int i = 0; i < 64*64; ++i)
+                if (buf[i*3] > 5 || buf[i*3+1] > 5 || buf[i*3+2] > 5) ++nonBlack;
+            if (nonBlack < 10) {
+                fprintf(stderr, "  FAIL: %s no visible pixels\n", name); ++failures;
+            }
+        }
+        root->unref();
+    };
+
+    // Render all shapes with specular lighting (exercises full GL material path)
+    renderShape(new SoSphere(), "SoSphere with specular");
+    renderShape(new SoCube(), "SoCube with specular");
+    renderShape(new SoCylinder(), "SoCylinder with specular");
+    renderShape(new SoCone(), "SoCone with specular");
+
+    // Render with different crease angles
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        SoShapeHints* sh = new SoShapeHints();
+        sh->creaseAngle.setValue(float(M_PI/3));
+        sh->vertexOrdering.setValue(SoShapeHints::COUNTERCLOCKWISE);
+        sh->shapeType.setValue(SoShapeHints::SOLID);
+        root->addChild(sh);
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.5f,0.7f,0.9f));
+        root->addChild(mat);
+        root->addChild(new SoCylinder());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: creaseAngle render\n"); ++failures; }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Register session 5 / iteration 20 tests
+// =========================================================================
+
+REGISTER_TEST(unit_ifs_texture_gl, ObolTest::TestCategory::Rendering,
+    "GL render: IFS with textures, explicit normals PER_VERTEX_INDEXED, OVERALL material, PER_FACE_INDEXED material",
+    e.has_visual = false;
+    e.run_unit = runIFSTextureGLTest;
+);
+
+REGISTER_TEST(unit_sbtesselator, ObolTest::TestCategory::Base,
+    "SbTesselator: triangle, quad, pentagon, keepVertices, concave L-shape",
+    e.has_visual = false;
+    e.run_unit = runSbTesselatorTest;
+);
+
+REGISTER_TEST(unit_text2_gl_render, ObolTest::TestCategory::Rendering,
+    "GL render: SoText2 LEFT/CENTER/RIGHT + multi-string, SoText3 ALL parts",
+    e.has_visual = false;
+    e.run_unit = runText2GLRenderTest;
+);
+
+REGISTER_TEST(unit_extselection, ObolTest::TestCategory::Rendering,
+    "SoExtSelection: RECTANGLE/LASSO/NOLASSO lasso types, FULL_BBOX/PART_BBOX policies, GL render",
+    e.has_visual = false;
+    e.run_unit = runExtSelectionTest;
+);
+
+REGISTER_TEST(unit_faceset_gl, ObolTest::TestCategory::Rendering,
+    "GL render: FaceSet PER_FACE normals, PER_VERTEX material, textured FaceSet",
+    e.has_visual = false;
+    e.run_unit = runFaceSetGLTest;
+);
+
+REGISTER_TEST(unit_lineset_pointset_gl, ObolTest::TestCategory::Rendering,
+    "GL render: IndexedLineSet basic+PER_VERTEX_INDEXED material, PointSet PER_VERTEX material",
+    e.has_visual = false;
+    e.run_unit = runLinePointSetGLTest;
+);
+
+REGISTER_TEST(unit_all_shapes_gl, ObolTest::TestCategory::Rendering,
+    "GL render: all shape types with specular lighting, creaseAngle variations",
+    e.has_visual = false;
+    e.run_unit = runAllShapesGLTest;
 );
 
 } // anonymous namespace

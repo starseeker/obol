@@ -1,0 +1,129 @@
+        -:    0:Source:/home/runner/work/obol/obol/include/Inventor/elements/SoGLMultiTextureCoordinateElement.h
+        -:    0:Graph:/tmp/obol_cov5/src/CMakeFiles/Obol.dir/Unity/unity_73_cxx.cxx.gcno
+        -:    0:Data:/tmp/obol_cov5/src/CMakeFiles/Obol.dir/Unity/unity_73_cxx.cxx.gcda
+        -:    0:Runs:510
+        -:    1:#ifndef OBOL_SOGLMULTITEXTURECOORDINATEELEMENT_H
+        -:    2:#define OBOL_SOGLMULTITEXTURECOORDINATEELEMENT_H
+        -:    3:
+        -:    4:/**************************************************************************\
+        -:    5: * Copyright (c) Kongsberg Oil & Gas Technologies AS
+        -:    6: * All rights reserved.
+        -:    7: * 
+        -:    8: * Redistribution and use in source and binary forms, with or without
+        -:    9: * modification, are permitted provided that the following conditions are
+        -:   10: * met:
+        -:   11: * 
+        -:   12: * Redistributions of source code must retain the above copyright notice,
+        -:   13: * this list of conditions and the following disclaimer.
+        -:   14: * 
+        -:   15: * Redistributions in binary form must reproduce the above copyright
+        -:   16: * notice, this list of conditions and the following disclaimer in the
+        -:   17: * documentation and/or other materials provided with the distribution.
+        -:   18: * 
+        -:   19: * Neither the name of the copyright holder nor the names of its
+        -:   20: * contributors may be used to endorse or promote products derived from
+        -:   21: * this software without specific prior written permission.
+        -:   22: * 
+        -:   23: * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+        -:   24: * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+        -:   25: * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+        -:   26: * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+        -:   27: * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+        -:   28: * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+        -:   29: * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   30: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   31: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   32: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+        -:   33: * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   34:\**************************************************************************/
+        -:   35:
+        -:   36:#include <Inventor/elements/SoMultiTextureCoordinateElement.h>
+        -:   37:
+        -:   38:struct SoGLContext;
+        -:   39:
+        -:   40:class SoGLMultiTextureCoordinateElementP;
+        -:   41:typedef void SoTexCoordTexgenCB(void * data);
+        -:   42:
+        -:   43:class OBOL_DLL_API SoGLMultiTextureCoordinateElement : public SoMultiTextureCoordinateElement {
+        -:   44:  typedef SoMultiTextureCoordinateElement inherited;
+        -:   45:
+        -:   46:  SO_ELEMENT_HEADER(SoGLMultiTextureCoordinateElement);
+        -:   47:public:
+        -:   48:  static void initClass(void);
+        -:   49:protected:
+        -:   50:  virtual ~SoGLMultiTextureCoordinateElement();
+        -:   51:
+        -:   52:public:
+        -:   53:  virtual void init(SoState * state);
+        -:   54:  virtual void push(SoState * state);
+        -:   55:  virtual void pop(SoState * state,
+        -:   56:                   const SoElement * prevTopElement);
+        -:   57:
+        -:   58:  static  void setTexGen(SoState * const state, SoNode * const node,
+        -:   59:                         const int unit,
+        -:   60:                         SoTexCoordTexgenCB * const texgenFunc,
+        -:   61:                         void * const texgenData = NULL,
+        -:   62:                         SoTextureCoordinateFunctionCB * const func = NULL,
+        -:   63:                         void * const funcData = NULL);
+        -:   64:
+        -:   65:  virtual CoordType getType(const int unit = 0) const;
+        -:   66:
+        -:   67:  static const SoGLMultiTextureCoordinateElement * getInstance(SoState * const state);
+        -:   68:
+        -:   69:  void send(const int unit, const int index) const;
+        -:   70:  void send(const int unit, const int index, const SbVec3f &c, const SbVec3f &n) const;
+        -:   71:
+        -:   72:  class GLUnitData {
+        -:   73:  public:
+        -:   74:    GLUnitData() : texgenCB(NULL), texgenData(NULL) {}
+        -:   75:    GLUnitData(const GLUnitData & org) : texgenCB(org.texgenCB), texgenData(org.texgenData) {}
+        -:   76:    SoTexCoordTexgenCB * texgenCB;
+        -:   77:    void * texgenData;
+        -:   78:  };
+        -:   79:
+        -:   80:  void initRender(const SbBool * enabled, const int maxenabled) const;
+        -:   81:
+        -:   82:  // Coin-3 support
+        -:   83:  void send(const int index) const {
+        -:   84:    for (int i = 0; i <= this->multimax; i++) {
+        -:   85:      if (this->multienabled[i]) {
+        -:   86:        this->send(i, index);
+        -:   87:      }
+        -:   88:    }
+        -:   89:  }
+function _ZNK33SoGLMultiTextureCoordinateElement4sendEiRK7SbVec3fS2_ called 0 returned 0% blocks executed 0%
+    #####:   90:  void send(const int index, const SbVec3f &c, const SbVec3f &n) const {
+    #####:   91:    for (int i = 0; i <= this->multimax; i++) {
+branch  0 never executed
+branch  1 never executed (fallthrough)
+    #####:   92:      if (this->multienabled[i]) {
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:   93:        this->send(i, index, c, n);
+call    0 never executed
+        -:   94:      }
+        -:   95:    }
+    #####:   96:  }
+        -:   97:  void initMulti(SoState * state) const;
+        -:   98:  static  void setTexGen(SoState * const state, SoNode * const node,
+        -:   99:                         SoTexCoordTexgenCB * const texgenFunc,
+        -:  100:                         void * const texgenData = NULL,
+        -:  101:                         SoTextureCoordinateFunctionCB * const func = NULL,
+        -:  102:                         void * const funcData = NULL) {
+        -:  103:    setTexGen(state, node, 0, texgenFunc, texgenData, func, funcData);
+        -:  104:  }
+        -:  105:
+        -:  106:protected:
+        -:  107:  virtual void setElt(const int unit,
+        -:  108:                      SoTexCoordTexgenCB *func,
+        -:  109:                      void *data = NULL);
+        -:  110:
+        -:  111:private:
+        -:  112:  mutable const SoGLContext * glue = nullptr;
+        -:  113:  void doCallback(const int unit) const;
+        -:  114:  SoGLMultiTextureCoordinateElementP * pimpl;
+        -:  115:  mutable const SbBool * multienabled;
+        -:  116:  mutable int multimax;
+        -:  117:};
+        -:  118:
+        -:  119:#endif // !OBOL_SOGLMULTITEXTURECOORDINATEELEMENT_H
