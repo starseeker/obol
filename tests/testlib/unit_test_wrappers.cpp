@@ -229,6 +229,22 @@
 #include <Inventor/draggers/SoTranslate1Dragger.h>
 #include <Inventor/draggers/SoRotateSphericalDragger.h>
 #include <Inventor/draggers/SoTrackballDragger.h>
+#include <Inventor/draggers/SoHandleBoxDragger.h>
+#include <Inventor/draggers/SoTabPlaneDragger.h>
+#include <Inventor/draggers/SoTransformerDragger.h>
+#include <Inventor/draggers/SoDragPointDragger.h>
+#include <Inventor/draggers/SoScale1Dragger.h>
+#include <Inventor/draggers/SoRotateCylindricalDragger.h>
+#include <Inventor/manips/SoHandleBoxManip.h>
+#include <Inventor/manips/SoTrackballManip.h>
+#include <Inventor/manips/SoTransformerManip.h>
+#include <Inventor/manips/SoTransformManip.h>
+#include <Inventor/sensors/SoOneShotSensor.h>
+#include <Inventor/sensors/SoIdleSensor.h>
+#include <Inventor/sensors/SoSensorManager.h>
+#include <Inventor/lists/SoBaseList.h>
+#include <Inventor/fields/SoSFVec3f.h>
+#include <Inventor/fields/SoMFFloat.h>
 
 #include <cmath>
 #include <cstdio>
@@ -9698,6 +9714,411 @@ REGISTER_TEST(unit_ext_selection, ObolTest::TestCategory::Nodes,
     "SoExtSelection: isOfType, select/deselect, deselectAll, bbox",
     e.has_visual = false;
     e.run_unit = runExtSelectionTests;
+);
+
+// =========================================================================
+// Unit test: More draggers
+// =========================================================================
+static int runMoreDraggerTests()
+{
+    int failures = 0;
+
+    {
+        SoHandleBoxDragger* d = new SoHandleBoxDragger(); d->ref();
+        if (!d->isOfType(SoDragger::getClassTypeId())) { fprintf(stderr, "  FAIL: SoHandleBoxDragger isOfType\n"); ++failures; }
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512)); bba.apply(d);
+        d->unref();
+    }
+    {
+        SoTabPlaneDragger* d = new SoTabPlaneDragger(); d->ref();
+        if (!d->isOfType(SoDragger::getClassTypeId())) { fprintf(stderr, "  FAIL: SoTabPlaneDragger isOfType\n"); ++failures; }
+        d->unref();
+    }
+    {
+        SoTransformerDragger* d = new SoTransformerDragger(); d->ref();
+        if (!d->isOfType(SoDragger::getClassTypeId())) { fprintf(stderr, "  FAIL: SoTransformerDragger isOfType\n"); ++failures; }
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512)); bba.apply(d);
+        d->unref();
+    }
+    {
+        SoDragPointDragger* d = new SoDragPointDragger(); d->ref();
+        if (!d->isOfType(SoDragger::getClassTypeId())) { fprintf(stderr, "  FAIL: SoDragPointDragger isOfType\n"); ++failures; }
+        d->unref();
+    }
+    {
+        SoScale1Dragger* d = new SoScale1Dragger(); d->ref();
+        if (!d->isOfType(SoDragger::getClassTypeId())) { fprintf(stderr, "  FAIL: SoScale1Dragger isOfType\n"); ++failures; }
+        d->unref();
+    }
+    {
+        SoRotateCylindricalDragger* d = new SoRotateCylindricalDragger(); d->ref();
+        if (!d->isOfType(SoDragger::getClassTypeId())) { fprintf(stderr, "  FAIL: SoRotateCylindricalDragger isOfType\n"); ++failures; }
+        d->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoTransformManip
+// =========================================================================
+static int runTransformManipTests()
+{
+    int failures = 0;
+
+    {
+        SoHandleBoxManip* m = new SoHandleBoxManip(); m->ref();
+        if (!m->isOfType(SoTransformManip::getClassTypeId())) { fprintf(stderr, "  FAIL: SoHandleBoxManip isOfType\n"); ++failures; }
+        SoDragger* d = m->getDragger();
+        if (!d) { fprintf(stderr, "  FAIL: SoHandleBoxManip getDragger null\n"); ++failures; }
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512)); bba.apply(m);
+        m->unref();
+    }
+    {
+        SoTrackballManip* m = new SoTrackballManip(); m->ref();
+        if (!m->isOfType(SoTransformManip::getClassTypeId())) { fprintf(stderr, "  FAIL: SoTrackballManip isOfType\n"); ++failures; }
+        SoDragger* d = m->getDragger();
+        if (!d) { fprintf(stderr, "  FAIL: SoTrackballManip getDragger null\n"); ++failures; }
+        m->unref();
+    }
+    {
+        SoTransformerManip* m = new SoTransformerManip(); m->ref();
+        if (!m->isOfType(SoTransformManip::getClassTypeId())) { fprintf(stderr, "  FAIL: SoTransformerManip isOfType\n"); ++failures; }
+        m->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoBase deeper paths
+// =========================================================================
+static int runSoBaseTests()
+{
+    int failures = 0;
+
+    {
+        SoCube* cube = new SoCube(); cube->ref();
+        if (cube->getRefCount() != 1) { fprintf(stderr, "  FAIL: getRefCount 1 (got %d)\n", cube->getRefCount()); ++failures; }
+        cube->ref();
+        if (cube->getRefCount() != 2) { fprintf(stderr, "  FAIL: getRefCount 2 (got %d)\n", cube->getRefCount()); ++failures; }
+        cube->unref(); cube->unref();
+    }
+    {
+        SoSphere* sphere = new SoSphere(); sphere->ref();
+        sphere->setName("myNamedSphere99");
+        SbName name = sphere->getName();
+        if (name != "myNamedSphere99") { fprintf(stderr, "  FAIL: SoBase getName (got '%s')\n", name.getString()); ++failures; }
+        sphere->unref();
+    }
+    {
+        SoCylinder* cyl = new SoCylinder(); cyl->ref();
+        cyl->setName("namedCylinder42");
+        SoBase* found = SoBase::getNamedBase("namedCylinder42", SoNode::getClassTypeId());
+        if (!found || found != cyl) { fprintf(stderr, "  FAIL: SoBase::getNamedBase\n"); ++failures; }
+        cyl->unref();
+    }
+    {
+        SoCone* c1 = new SoCone(); c1->ref(); c1->setName("multiBaseTest");
+        SoCone* c2 = new SoCone(); c2->ref(); c2->setName("multiBaseTest");
+        SoBaseList found;
+        int count = SoBase::getNamedBases("multiBaseTest", found, SoNode::getClassTypeId());
+        if (count < 2) { fprintf(stderr, "  FAIL: getNamedBases count (got %d)\n", count); ++failures; }
+        c1->unref(); c2->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoSensorManager + one-shot/idle sensors
+// =========================================================================
+static int runSensorManagerTests()
+{
+    int failures = 0;
+
+    {
+        SoSensorManager* mgr = SoDB::getSensorManager();
+        if (!mgr) { fprintf(stderr, "  FAIL: getSensorManager null\n"); ++failures; }
+        else {
+            mgr->processTimerQueue();
+            mgr->processDelayQueue(TRUE);
+            (void)mgr->isDelaySensorPending();
+        }
+    }
+    {
+        static int fireCount = 0; fireCount = 0;
+        SoOneShotSensor* s = new SoOneShotSensor(
+            [](void* d, SoSensor*) { ++(*reinterpret_cast<int*>(d)); }, &fireCount);
+        s->schedule();
+        SoDB::getSensorManager()->processDelayQueue(TRUE);
+        if (fireCount == 0) { fprintf(stderr, "  FAIL: SoOneShotSensor did not fire\n"); ++failures; }
+        delete s;
+    }
+    {
+        static int idleFired = 0; idleFired = 0;
+        SoIdleSensor* s = new SoIdleSensor(
+            [](void* d, SoSensor*) { ++(*reinterpret_cast<int*>(d)); }, &idleFired);
+        s->schedule();
+        SoDB::getSensorManager()->processDelayQueue(TRUE);
+        if (idleFired == 0) { fprintf(stderr, "  FAIL: SoIdleSensor did not fire\n"); ++failures; }
+        delete s;
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoField deeper paths
+// =========================================================================
+static int runFieldDeeperTests()
+{
+    int failures = 0;
+
+    {
+        SoCube* cube = new SoCube(); cube->ref();
+        SoFieldContainer* container = cube->width.getContainer();
+        if (container != cube) { fprintf(stderr, "  FAIL: SoField getContainer\n"); ++failures; }
+        cube->unref();
+    }
+    {
+        SoCube* c1 = new SoCube(); c1->ref();
+        SoCube* c2 = new SoCube(); c2->ref();
+        c1->width.setValue(5.0f);
+        c2->width.copyFrom(c1->width);
+        if (!approxEqual(c2->width.getValue(), 5.0f)) { fprintf(stderr, "  FAIL: SoField copyFrom\n"); ++failures; }
+        if (!c1->width.isSame(c2->width)) { fprintf(stderr, "  FAIL: SoField equals equal\n"); ++failures; }
+        c2->width.setValue(4.0f);
+        if (c1->width.isSame(c2->width)) { fprintf(stderr, "  FAIL: SoField equals not-equal\n"); ++failures; }
+        c1->unref(); c2->unref();
+    }
+    {
+        SoMFFloat mf;
+        mf.set1Value(0, 1.0f); mf.set1Value(1, 2.0f); mf.set1Value(2, 3.0f);
+        mf.insertSpace(1, 1);
+        if (mf.getNum() != 4) { fprintf(stderr, "  FAIL: SoMFFloat insertSpace (got %d)\n", mf.getNum()); ++failures; }
+        mf.deleteValues(0, 2);
+        if (mf.getNum() != 2) { fprintf(stderr, "  FAIL: SoMFFloat deleteValues (got %d)\n", mf.getNum()); ++failures; }
+    }
+    {
+        SoSFVec3f sf; sf.setValue(SbVec3f(1,2,3));
+        if (!approxEqual(sf.getValue()[2], 3.0f)) { fprintf(stderr, "  FAIL: SoSFVec3f\n"); ++failures; }
+    }
+    {
+        SoSFRotation sf;
+        SbRotation r(SbVec3f(0,1,0), float(M_PI/3)); sf.setValue(r);
+        SbVec3f ax; float ang; sf.getValue().getValue(ax, ang);
+        if (!approxEqual(ang, float(M_PI/3), 1e-3f)) { fprintf(stderr, "  FAIL: SoSFRotation (got %f)\n", ang); ++failures; }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoAction deeper paths
+// =========================================================================
+static int runActionDeeperTests()
+{
+    int failures = 0;
+
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube()); root->addChild(new SoSphere()); root->addChild(new SoCone());
+        SoGetPrimitiveCountAction pca(SbViewportRegion(512, 512));
+        pca.apply(root);
+        if (pca.getTriangleCount() == 0) { fprintf(stderr, "  FAIL: SoGetPrimitiveCountAction triangles=0\n"); ++failures; }
+        root->unref();
+    }
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube()); root->addChild(new SoSphere()); root->addChild(new SoCylinder());
+        int triCount = 0;
+        SoCallbackAction cba;
+        cba.addTriangleCallback(SoShape::getClassTypeId(),
+            [](void* ud, SoCallbackAction*, const SoPrimitiveVertex*, const SoPrimitiveVertex*, const SoPrimitiveVertex*) {
+                ++(*reinterpret_cast<int*>(ud));
+            }, &triCount);
+        cba.apply(root);
+        if (triCount == 0) { fprintf(stderr, "  FAIL: SoCallbackAction multi-shape triangles=0\n"); ++failures; }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbMatrix deeper
+// =========================================================================
+static int runMatrixDeepTests2()
+{
+    int failures = 0;
+
+    {
+        SbVec3f t, s; SbRotation r, sor; SbVec3f soc(0,0,0);
+        SbMatrix::identity().getTransform(t, r, s, sor, soc);
+        if (!approxEqual(t.length(), 0.0f, 1e-3f)) { fprintf(stderr, "  FAIL: identity getTransform t\n"); ++failures; }
+        if (!approxEqual(s[0], 1.0f, 1e-3f)) { fprintf(stderr, "  FAIL: identity getTransform s\n"); ++failures; }
+    }
+    {
+        SbMatrix a; a.setTranslate(SbVec3f(1,0,0));
+        SbMatrix b; b.setTranslate(SbVec3f(0,2,0));
+        SbMatrix c = b; c.multLeft(a);
+        SbVec3f v(0,0,0), result; c.multVecMatrix(v, result);
+        if (!approxEqual(result[0], 1.0f) || !approxEqual(result[1], 2.0f)) {
+            fprintf(stderr, "  FAIL: SbMatrix multLeft (got %f %f)\n", result[0], result[1]); ++failures; }
+    }
+    {
+        SbMatrix a; a.setTranslate(SbVec3f(1,0,0));
+        SbMatrix b; b.setTranslate(SbVec3f(0,2,0));
+        a.multRight(b);
+        SbVec3f v(0,0,0), result; a.multVecMatrix(v, result);
+        if (!approxEqual(result[0], 1.0f) || !approxEqual(result[1], 2.0f)) {
+            fprintf(stderr, "  FAIL: SbMatrix multRight (got %f %f)\n", result[0], result[1]); ++failures; }
+    }
+    {
+        SbMatrix m(2,1,0,0, 1,3,1,0, 0,1,2,0, 0,0,0,1);
+        int index[4]; float d;
+        SbBool ok = m.LUDecomposition(index, d);
+        if (!ok) { fprintf(stderr, "  FAIL: LUDecomposition singular\n"); ++failures; }
+        else {
+            float b[4] = {1.0f, 1.0f, 1.0f, 0.0f};
+            m.LUBackSubstitution(index, b);
+            float mag = std::sqrt(b[0]*b[0]+b[1]*b[1]+b[2]*b[2]);
+            if (mag == 0.0f) { fprintf(stderr, "  FAIL: LUBackSubstitution zero\n"); ++failures; }
+        }
+    }
+    {
+        SbMatrix a = SbMatrix::identity(), b = SbMatrix::identity();
+        if (!a.equals(b, 1e-6f)) { fprintf(stderr, "  FAIL: SbMatrix equals equal\n"); ++failures; }
+        b[0][0] = 2.0f;
+        if (a.equals(b, 1e-6f)) { fprintf(stderr, "  FAIL: SbMatrix equals not-equal\n"); ++failures; }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbBox3f more operations
+// =========================================================================
+static int runBox3fTests()
+{
+    int failures = 0;
+
+    {
+        SbBox3f box;
+        box.extendBy(SbVec3f(1,0,0)); box.extendBy(SbVec3f(0,2,0)); box.extendBy(SbVec3f(0,0,3));
+        if (!approxEqual(box.getMax()[2], 3.0f)) { fprintf(stderr, "  FAIL: extendBy pt max z\n"); ++failures; }
+    }
+    {
+        SbBox3f b1(SbVec3f(0,0,0), SbVec3f(1,1,1)), b2(SbVec3f(2,2,2), SbVec3f(3,3,3));
+        b1.extendBy(b2);
+        if (!approxEqual(b1.getMax()[0], 3.0f)) { fprintf(stderr, "  FAIL: extendBy box max\n"); ++failures; }
+    }
+    {
+        SbBox3f box(SbVec3f(-1,-1,-1), SbVec3f(1,1,1));
+        if (!box.intersect(SbVec3f(0,0,0))) { fprintf(stderr, "  FAIL: intersect inside\n"); ++failures; }
+        if (box.intersect(SbVec3f(5,5,5))) { fprintf(stderr, "  FAIL: intersect outside\n"); ++failures; }
+    }
+    {
+        SbBox3f b1(SbVec3f(-1,-1,-1), SbVec3f(1,1,1));
+        SbBox3f b2(SbVec3f(0,0,0), SbVec3f(2,2,2));
+        SbBox3f b3(SbVec3f(3,3,3), SbVec3f(5,5,5));
+        if (!b1.intersect(b2)) { fprintf(stderr, "  FAIL: box overlap\n"); ++failures; }
+        if (b1.intersect(b3)) { fprintf(stderr, "  FAIL: box disjoint\n"); ++failures; }
+    }
+    {
+        SbBox3f box(SbVec3f(-1,-1,-1), SbVec3f(1,1,1));
+        SbMatrix t; t.setTranslate(SbVec3f(5,0,0));
+        box.transform(t);
+        SbVec3f center = box.getCenter();
+        if (!approxEqual(center[0], 5.0f, 0.1f)) { fprintf(stderr, "  FAIL: transform center.x=%f\n", center[0]); ++failures; }
+    }
+    {
+        SbBox3f box(SbVec3f(0,0,0), SbVec3f(2,2,2));
+        float dMin, dMax;
+        box.getSpan(SbVec3f(1,0,0), dMin, dMax);
+        if (!approxEqual(dMin, 0.0f, 0.01f) || !approxEqual(dMax, 2.0f, 0.01f)) {
+            fprintf(stderr, "  FAIL: getSpan (got %f - %f)\n", dMin, dMax); ++failures; }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbBox2f and box volume
+// =========================================================================
+static int runBox2Tests()
+{
+    int failures = 0;
+
+    {
+        SbBox2f box(SbVec2f(0,0), SbVec2f(1,1));
+        if (!approxEqual(box.getCenter()[0], 0.5f)) { fprintf(stderr, "  FAIL: SbBox2f center\n"); ++failures; }
+        box.extendBy(SbVec2f(2,2));
+        if (!approxEqual(box.getMax()[0], 2.0f)) { fprintf(stderr, "  FAIL: SbBox2f extendBy\n"); ++failures; }
+        if (!box.intersect(SbVec2f(1,1))) { fprintf(stderr, "  FAIL: SbBox2f intersect\n"); ++failures; }
+    }
+    {
+        SbBox3f box(SbVec3f(0,0,0), SbVec3f(2,3,4));
+        float vol = box.getVolume();
+        if (!approxEqual(vol, 24.0f, 0.01f)) { fprintf(stderr, "  FAIL: SbBox3f volume (got %f)\n", vol); ++failures; }
+    }
+
+    return failures;
+}
+
+REGISTER_TEST(unit_more_draggers, ObolTest::TestCategory::Draggers,
+    "SoHandleBoxDragger, SoTabPlaneDragger, SoTransformerDragger, SoDragPointDragger, SoScale1Dragger, SoRotateCylindricalDragger",
+    e.has_visual = false;
+    e.run_unit = runMoreDraggerTests;
+);
+
+REGISTER_TEST(unit_transform_manip, ObolTest::TestCategory::Manips,
+    "SoHandleBoxManip, SoTrackballManip, SoTransformerManip: getDragger, isOfType, bbox",
+    e.has_visual = false;
+    e.run_unit = runTransformManipTests;
+);
+
+REGISTER_TEST(unit_so_base, ObolTest::TestCategory::Misc,
+    "SoBase: getRefCount, getName/setName, getNamedBase, getNamedBases",
+    e.has_visual = false;
+    e.run_unit = runSoBaseTests;
+);
+
+REGISTER_TEST(unit_sensor_manager, ObolTest::TestCategory::Sensors,
+    "SoSensorManager: processDelayQueue/TimerQueue, SoOneShotSensor, SoIdleSensor",
+    e.has_visual = false;
+    e.run_unit = runSensorManagerTests;
+);
+
+REGISTER_TEST(unit_field_deeper, ObolTest::TestCategory::Fields,
+    "SoField: getContainer, copyFrom, equals, SoMFFloat insertSpace, SoSFVec3f, SoSFRotation",
+    e.has_visual = false;
+    e.run_unit = runFieldDeeperTests;
+);
+
+REGISTER_TEST(unit_action_deeper, ObolTest::TestCategory::Actions,
+    "SoGetPrimitiveCountAction 3-shape, SoCallbackAction multi-shape triangles",
+    e.has_visual = false;
+    e.run_unit = runActionDeeperTests;
+);
+
+REGISTER_TEST(unit_matrix_deep2, ObolTest::TestCategory::Base,
+    "SbMatrix: getTransform(identity), multLeft, multRight, LUDecomposition+BackSub, equals",
+    e.has_visual = false;
+    e.run_unit = runMatrixDeepTests2;
+);
+
+REGISTER_TEST(unit_box3f, ObolTest::TestCategory::Base,
+    "SbBox3f: extendBy(pt/box), intersect(pt/box), transform, getSpan",
+    e.has_visual = false;
+    e.run_unit = runBox3fTests;
+);
+
+REGISTER_TEST(unit_box2, ObolTest::TestCategory::Base,
+    "SbBox2f: center, extendBy, intersect; SbBox3f volume",
+    e.has_visual = false;
+    e.run_unit = runBox2Tests;
 );
 
 } // anonymous namespace
