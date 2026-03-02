@@ -216,6 +216,9 @@
 #include <Inventor/SbOctTree.h>
 #include <Inventor/SbBSPTree.h>
 #include <Inventor/SbViewportRegion.h>
+#include <Inventor/lists/SoNodeList.h>
+#include <Inventor/SbColor4f.h>
+#include <Inventor/SoRenderManager.h>
 
 #include <cmath>
 #include <cstdio>
@@ -8253,6 +8256,321 @@ REGISTER_TEST(unit_group_deep, ObolTest::TestCategory::Nodes,
     "SoGroup: insertChild, removeChild(idx), removeAllChildren, findChild",
     e.has_visual = false;
     e.run_unit = runGroupDeepTests;
+);
+
+// =========================================================================
+// Unit test: SoNode deeper API (setOverride, setNodeType, getByName multiple)
+// =========================================================================
+static int runNodeDeepTests()
+{
+    int failures = 0;
+
+    // --- setOverride / isOverride ---
+    {
+        SoCube* cube = new SoCube(); cube->ref();
+        cube->setOverride(TRUE);
+        if (!cube->isOverride()) {
+            fprintf(stderr, "  FAIL: SoNode setOverride/isOverride\n"); ++failures;
+        }
+        cube->setOverride(FALSE);
+        if (cube->isOverride()) {
+            fprintf(stderr, "  FAIL: SoNode setOverride(FALSE)\n"); ++failures;
+        }
+        cube->unref();
+    }
+
+    // --- getByName (multiple nodes) ---
+    {
+        SoSphere* s1 = new SoSphere(); s1->ref(); s1->setName("multiNamed");
+        SoSphere* s2 = new SoSphere(); s2->ref(); s2->setName("multiNamed");
+
+        SoNodeList found;
+        int count = SoNode::getByName("multiNamed", found);
+        if (count < 2) {
+            fprintf(stderr, "  FAIL: getByName(name, list) got %d (expected >=2)\n", count); ++failures;
+        }
+
+        s1->unref(); s2->unref();
+    }
+
+    // --- getNextNodeId ---
+    {
+        SbUniqueId id1 = SoNode::getNextNodeId();
+        SoCube* cube = new SoCube(); cube->ref();
+        SbUniqueId id2 = SoNode::getNextNodeId();
+        if (id2 <= id1) {
+            fprintf(stderr, "  FAIL: getNextNodeId not incrementing\n"); ++failures;
+        }
+        cube->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoAction deeper (apply to path, apply to list)
+// =========================================================================
+static int runActionPath2Tests()
+{
+    int failures = 0;
+
+    // --- apply bbox to SoPath ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoTranslation* t = new SoTranslation(); t->translation.setValue(5,0,0);
+        SoCube* cube = new SoCube();
+        root->addChild(t);
+        root->addChild(cube);
+
+        // Build path to cube
+        SoPath* path = new SoPath(root); path->ref();
+        path->append(1); // cube
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(path);
+        SbBox3f box = bba.getBoundingBox();
+        if (box.isEmpty()) {
+            fprintf(stderr, "  FAIL: bbox action apply(path) empty\n"); ++failures;
+        }
+        // The bbox should include translation
+        SbVec3f center = box.getCenter();
+        if (!approxEqual(center[0], 5.0f, 0.5f)) {
+            fprintf(stderr, "  FAIL: bbox via path center x (got %f)\n", center[0]); ++failures;
+        }
+
+        path->unref();
+        root->unref();
+    }
+
+    // --- apply getMatrix via path ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoTransform* xf = new SoTransform();
+        xf->translation.setValue(1.0f, 2.0f, 3.0f);
+        SoCube* cube = new SoCube();
+        root->addChild(xf);
+        root->addChild(cube);
+
+        SoPath* path = new SoPath(root); path->ref();
+        path->append(1); // cube
+
+        SoGetMatrixAction gma(SbViewportRegion(512, 512));
+        gma.apply(path);
+        SbMatrix mat = gma.getMatrix();
+        // Matrix should contain translation
+        SbVec3f v(0,0,0), result;
+        mat.multVecMatrix(v, result);
+        if (!approxEqual(result[0], 1.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: getMatrixAction(path) t.x (got %f)\n", result[0]); ++failures;
+        }
+
+        path->unref();
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoField deeper - SoMFFloat, SoMFVec3f, set1Value/setValues
+// =========================================================================
+static int runFieldDeepTests()
+{
+    int failures = 0;
+
+    // --- SoMFFloat set1Value/getNum ---
+    {
+        SoMFFloat mf;
+        mf.set1Value(0, 1.0f);
+        mf.set1Value(1, 2.0f);
+        mf.set1Value(2, 3.0f);
+        if (mf.getNum() != 3) {
+            fprintf(stderr, "  FAIL: SoMFFloat getNum (got %d)\n", mf.getNum()); ++failures;
+        }
+        if (!approxEqual(mf[2], 3.0f)) {
+            fprintf(stderr, "  FAIL: SoMFFloat [2] (got %f)\n", mf[2]); ++failures;
+        }
+        mf.deleteValues(1, -1); // delete from index 1 to end
+        if (mf.getNum() != 1) {
+            fprintf(stderr, "  FAIL: SoMFFloat deleteValues (got %d)\n", mf.getNum()); ++failures;
+        }
+    }
+
+    // --- SoMFVec3f setValues ---
+    {
+        SoMFVec3f mfv;
+        SbVec3f vals[3] = {SbVec3f(1,0,0), SbVec3f(0,1,0), SbVec3f(0,0,1)};
+        mfv.setValues(0, 3, vals);
+        if (mfv.getNum() != 3) {
+            fprintf(stderr, "  FAIL: SoMFVec3f setValues (got %d)\n", mfv.getNum()); ++failures;
+        }
+        SbVec3f v = mfv[1];
+        if (!approxEqual(v[1], 1.0f)) {
+            fprintf(stderr, "  FAIL: SoMFVec3f [1] (got %f)\n", v[1]); ++failures;
+        }
+    }
+
+    // --- field notification across nodes ---
+    {
+        SoCube* cube = new SoCube(); cube->ref();
+        static int notifyCount = 0;
+        notifyCount = 0;
+        SoFieldSensor sensor([](void*, SoSensor*) { ++notifyCount; }, nullptr);
+        sensor.attach(&cube->width);
+        cube->width.setValue(10.0f);
+        SoDB::getSensorManager()->processTimerQueue();
+        SoDB::getSensorManager()->processDelayQueue(TRUE);
+        if (notifyCount == 0) {
+            fprintf(stderr, "  FAIL: field notification (got %d)\n", notifyCount); ++failures;
+        }
+        sensor.detach();
+        cube->unref();
+    }
+
+    // --- SoSFFloat set/get ---
+    {
+        SoSFFloat sf;
+        sf.setValue(3.14f);
+        if (!approxEqual(sf.getValue(), 3.14f, 1e-4f)) {
+            fprintf(stderr, "  FAIL: SoSFFloat set/get\n"); ++failures;
+        }
+        sf.setDefault(TRUE);
+        if (!sf.isDefault()) {
+            fprintf(stderr, "  FAIL: SoSFFloat setDefault\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoGetBoundingBoxAction - more shapes
+// =========================================================================
+static int runBBoxDeepTests()
+{
+    int failures = 0;
+
+    // --- SoCone bbox ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCone* cone = new SoCone();
+        cone->bottomRadius.setValue(2.0f);
+        cone->height.setValue(4.0f);
+        root->addChild(cone);
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        SbBox3f box = bba.getBoundingBox();
+        if (box.isEmpty()) {
+            fprintf(stderr, "  FAIL: SoCone custom size bbox empty\n"); ++failures;
+        }
+        SbVec3f sz = box.getSize();
+        float height = sz[1];
+        if (!approxEqual(height, 4.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: SoCone height (got %f)\n", height); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- inCameraSpace ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoSphere());
+        SbViewportRegion vp(512, 512);
+        SoGetBoundingBoxAction bba(vp);
+        bba.setInCameraSpace(TRUE);
+        bba.apply(root);
+        if (!bba.isInCameraSpace()) {
+            fprintf(stderr, "  FAIL: BBoxAction inCameraSpace\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- center --- 
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoTranslation* t = new SoTranslation(); t->translation.setValue(3.0f, 0.0f, 0.0f);
+        root->addChild(t);
+        root->addChild(new SoSphere());
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        SbVec3f center = bba.getBoundingBox().getCenter();
+        if (!approxEqual(center[0], 3.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: bbox center after translate (got %f)\n", center[0]); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoRenderManager (deeper)
+// =========================================================================
+static int runRenderManagerTests()
+{
+    int failures = 0;
+
+    {
+        SoRenderManager* mgr = new SoRenderManager();
+
+        // setSceneGraph
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube());
+        mgr->setSceneGraph(root);
+        if (mgr->getSceneGraph() != root) {
+            fprintf(stderr, "  FAIL: SoRenderManager setSceneGraph\n"); ++failures;
+        }
+
+        // setViewportRegion
+        SbViewportRegion vp(640, 480);
+        mgr->setViewportRegion(vp);
+        SbVec2s sz = mgr->getViewportRegion().getWindowSize();
+        if (sz[0] != 640) {
+            fprintf(stderr, "  FAIL: SoRenderManager viewportRegion (got %d)\n", sz[0]); ++failures;
+        }
+
+        // setBackgroundColor
+        mgr->setBackgroundColor(SbColor4f(0.5f, 0.5f, 0.5f, 1.0f));
+        SbColor4f bg = mgr->getBackgroundColor();
+        if (!approxEqual(bg[0], 0.5f)) {
+            fprintf(stderr, "  FAIL: SoRenderManager bgColor (got %f)\n", bg[0]); ++failures;
+        }
+
+        delete mgr;
+        root->unref();
+    }
+
+    return failures;
+}
+
+REGISTER_TEST(unit_node_deep, ObolTest::TestCategory::Nodes,
+    "SoNode: setOverride/isOverride, getByName(multi), getNextNodeId",
+    e.has_visual = false;
+    e.run_unit = runNodeDeepTests;
+);
+
+REGISTER_TEST(unit_action_deep2, ObolTest::TestCategory::Actions,
+    "SoAction: apply(path) for bbox/getMatrix, path-based traversal",
+    e.has_visual = false;
+    e.run_unit = runActionPath2Tests;
+);
+
+REGISTER_TEST(unit_field_deep, ObolTest::TestCategory::Fields,
+    "SoMFFloat set1Value/deleteValues, SoMFVec3f setValues, field notification, SoSFFloat setDefault",
+    e.has_visual = false;
+    e.run_unit = runFieldDeepTests;
+);
+
+REGISTER_TEST(unit_bbox_deep, ObolTest::TestCategory::Actions,
+    "SoGetBoundingBoxAction: SoCone custom size, inCameraSpace, translated center",
+    e.has_visual = false;
+    e.run_unit = runBBoxDeepTests;
+);
+
+REGISTER_TEST(unit_render_manager, ObolTest::TestCategory::Rendering,
+    "SoRenderManager: setSceneGraph, viewportRegion, backgroundColor",
+    e.has_visual = false;
+    e.run_unit = runRenderManagerTests;
 );
 
 } // anonymous namespace
