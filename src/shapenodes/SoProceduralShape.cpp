@@ -514,8 +514,10 @@ static void handleDragStartCB(void* userdata, SoDragger*)
     ctx->initParams.clear();
   }
 
-  // Recompute initPos from the topology so that subsequent drags (after a
-  // previous drag moved the handle) start from the correct world position.
+  // Update initPos to the handle's actual world position derived from the
+  // current params snapshot.  The constructor's initPos was set when the scene
+  // was first built; after one or more earlier drags have moved the handle,
+  // this recomputes the correct starting position for the new drag.
   const ShapeTypeEntry* entry =
     findEntry(ctx->shape->shapeType.getValue().getString());
   if (entry && !ctx->initParams.empty() &&
@@ -956,7 +958,7 @@ SoProceduralShape::buildHandleDraggers()
     if (sz[1] > maxDim) maxDim = sz[1];
     if (sz[2] > maxDim) maxDim = sz[2];
     if (maxDim > 1e-6f) {
-      // Target: handle widget ≈ 20% of the largest bounding-box dimension,
+      // Handle widget size = 20% of the largest bounding-box dimension,
       // clamped to [0.04, 2.0] to avoid degenerate sizes.
       handleScale = maxDim * 0.20f;
       if (handleScale < 0.04f) handleScale = 0.04f;
