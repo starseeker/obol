@@ -84,6 +84,7 @@ void
 SoGLUpdateAreaElement::init(SoState * state)
 {
   inherited::init(state);
+  this->glue = sogl_glue_from_state(state);
   this->origin = getDefaultOrigin();
   this->size = getDefaultSize();
 
@@ -96,7 +97,7 @@ SoGLUpdateAreaElement::init(SoState * state)
   this->scissorstate = FALSE;
 
   // disabled by default (guard against NULL glue during state initialization)
-  const SoGLContext * glue = sogl_current_render_glue();
+  const SoGLContext * glue = this->glue;
   if (glue) SoGLContext_glDisable(glue, GL_SCISSOR_TEST);
 }
 
@@ -105,6 +106,7 @@ void
 SoGLUpdateAreaElement::push(SoState * state)
 {
   inherited::push(state);
+  this->glue = sogl_glue_from_state(state);
   SoGLUpdateAreaElement * prev = (SoGLUpdateAreaElement*)
     this->getNextInStack();
   this->scissorstate = prev->scissorstate;
@@ -221,16 +223,16 @@ SoGLUpdateAreaElement::updategl(void)
 {
   if (this->isDefault()) {
     if (this->scissorstate) {
-      SoGLContext_glDisable(sogl_current_render_glue(), GL_SCISSOR_TEST);
+      SoGLContext_glDisable(this->glue, GL_SCISSOR_TEST);
       this->scissorstate = FALSE;
     }
   }
   else {
     if (!this->scissorstate) {
-      SoGLContext_glEnable(sogl_current_render_glue(), GL_SCISSOR_TEST);
+      SoGLContext_glEnable(this->glue, GL_SCISSOR_TEST);
       this->scissorstate = TRUE;
     }
-    SoGLContext_glScissor(sogl_current_render_glue(), (GLint) this->screenorigin[0],
+    SoGLContext_glScissor(this->glue, (GLint) this->screenorigin[0],
               (GLint) this->screenorigin[1],
               (GLint) this->screensize[0],
               (GLint) this->screensize[1]);
