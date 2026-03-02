@@ -170,6 +170,20 @@
 #include <Inventor/events/SoMouseButtonEvent.h>
 #include <Inventor/events/SoKeyboardEvent.h>
 #include <Inventor/events/SoLocation2Event.h>
+#include <Inventor/SbVec2i32.h>
+#include <Inventor/SbVec2s.h>
+#include <Inventor/SbVec2b.h>
+#include <Inventor/SbVec3s.h>
+#include <Inventor/SbVec3i32.h>
+#include <Inventor/SbVec3b.h>
+#include <Inventor/SbVec4i32.h>
+#include <Inventor/SbDPViewVolume.h>
+#include <Inventor/SbDPMatrix.h>
+#include <Inventor/SbHeap.h>
+#include <Inventor/SbTesselator.h>
+#include <Inventor/SbOctTree.h>
+#include <Inventor/SbBSPTree.h>
+#include <Inventor/SbViewportRegion.h>
 
 #include <cmath>
 #include <cstdio>
@@ -4416,6 +4430,754 @@ REGISTER_TEST(unit_box_variants, ObolTest::TestCategory::Base,
     "SbBox3d, SbBox2f, SbBox2s: empty, extendBy, getCenter, getSize",
     e.has_visual = false;
     e.run_unit = runBoxVariantsTests;
+);
+
+// =========================================================================
+// Unit test: Integer/byte SbVec variants (all at 0% coverage)
+// =========================================================================
+static int runIntVecVariantsTests()
+{
+    int failures = 0;
+
+    // --- SbVec2s ---
+    {
+        SbVec2s a(3, 4);
+        if (a[0] != 3 || a[1] != 4) { fprintf(stderr, "  FAIL: SbVec2s indexing\n"); ++failures; }
+        SbVec2s b(1, 2);
+        SbVec2s sum = a + b;
+        if (sum[0] != 4 || sum[1] != 6) { fprintf(stderr, "  FAIL: SbVec2s add\n"); ++failures; }
+        SbVec2s diff = a - b;
+        if (diff[0] != 2 || diff[1] != 2) { fprintf(stderr, "  FAIL: SbVec2s sub\n"); ++failures; }
+        a.negate();
+        if (a[0] != -3 || a[1] != -4) { fprintf(stderr, "  FAIL: SbVec2s negate\n"); ++failures; }
+        SbVec2s c;
+        c.setValue(5, 6);
+        if (c[0] != 5 || c[1] != 6) { fprintf(stderr, "  FAIL: SbVec2s setValue\n"); ++failures; }
+    }
+
+    // --- SbVec2i32 ---
+    {
+        SbVec2i32 a(100, 200);
+        if (a[0] != 100 || a[1] != 200) { fprintf(stderr, "  FAIL: SbVec2i32 indexing\n"); ++failures; }
+        SbVec2i32 b(50, 75);
+        SbVec2i32 s = a + b;
+        if (s[0] != 150 || s[1] != 275) { fprintf(stderr, "  FAIL: SbVec2i32 add\n"); ++failures; }
+        int32_t dot = a.dot(b);
+        if (dot != 100*50 + 200*75) { fprintf(stderr, "  FAIL: SbVec2i32 dot\n"); ++failures; }
+        a.negate();
+        if (a[0] != -100) { fprintf(stderr, "  FAIL: SbVec2i32 negate\n"); ++failures; }
+    }
+
+    // --- SbVec3s ---
+    {
+        SbVec3s a(1, 2, 3);
+        if (a[0] != 1 || a[1] != 2 || a[2] != 3) { fprintf(stderr, "  FAIL: SbVec3s indexing\n"); ++failures; }
+        SbVec3s b(4, 5, 6);
+        int32_t dot = a.dot(b);
+        if (dot != 1*4+2*5+3*6) { fprintf(stderr, "  FAIL: SbVec3s dot\n"); ++failures; }
+        SbVec3s diff = a - b;
+        if (diff[0] != -3) { fprintf(stderr, "  FAIL: SbVec3s sub\n"); ++failures; }
+        a.negate();
+        if (a[0] != -1) { fprintf(stderr, "  FAIL: SbVec3s negate\n"); ++failures; }
+    }
+
+    // --- SbVec3i32 ---
+    {
+        SbVec3i32 a(10, 20, 30);
+        if (a[0] != 10 || a[2] != 30) { fprintf(stderr, "  FAIL: SbVec3i32 indexing\n"); ++failures; }
+        SbVec3i32 b(1, 2, 3);
+        SbVec3i32 s = a + b;
+        if (s[0] != 11 || s[2] != 33) { fprintf(stderr, "  FAIL: SbVec3i32 add\n"); ++failures; }
+        a.negate();
+        if (a[0] != -10) { fprintf(stderr, "  FAIL: SbVec3i32 negate\n"); ++failures; }
+    }
+
+    // --- SbVec4i32 ---
+    {
+        SbVec4i32 a(1, 2, 3, 4);
+        if (a[0] != 1 || a[3] != 4) { fprintf(stderr, "  FAIL: SbVec4i32 indexing\n"); ++failures; }
+        SbVec4i32 b(2, 2, 2, 2);
+        SbVec4i32 s = a + b;
+        if (s[0] != 3 || s[3] != 6) { fprintf(stderr, "  FAIL: SbVec4i32 add\n"); ++failures; }
+        a.negate();
+        if (a[0] != -1) { fprintf(stderr, "  FAIL: SbVec4i32 negate\n"); ++failures; }
+    }
+
+    // --- SbVec3b ---
+    {
+        SbVec3b a(1, 2, 3);
+        if (a[0] != 1 || a[2] != 3) { fprintf(stderr, "  FAIL: SbVec3b indexing\n"); ++failures; }
+        SbVec3b b(4, 5, 6);
+        SbVec3b s = a + b;
+        if (s[0] != 5 || s[2] != 9) { fprintf(stderr, "  FAIL: SbVec3b add\n"); ++failures; }
+        a.negate();
+        if (a[0] != -1) { fprintf(stderr, "  FAIL: SbVec3b negate\n"); ++failures; }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbDPViewVolume
+// =========================================================================
+static int runDPViewVolumeTests()
+{
+    int failures = 0;
+
+    // --- ortho: basic construction ---
+    {
+        SbDPViewVolume vv;
+        vv.ortho(-1.0, 1.0, -1.0, 1.0, 0.1, 100.0);
+        SbPlane nearPlane = vv.getPlane(0.1);
+        SbVec3f n = nearPlane.getNormal();
+        if (std::fabs(n[2]) < 0.5f) {
+            fprintf(stderr, "  FAIL: SbDPViewVolume ortho near plane normal\n"); ++failures;
+        }
+    }
+
+    // --- perspective: getSightPoint ---
+    {
+        SbDPViewVolume vv;
+        vv.perspective(M_PI / 2.0, 1.0, 0.1, 100.0);
+        SbVec3d sight = vv.getSightPoint(10.0);
+        if (std::fabs(sight[0]) > 0.1 || std::fabs(sight[1]) > 0.1) {
+            fprintf(stderr, "  FAIL: SbDPViewVolume perspective sight (got %f %f %f)\n", sight[0], sight[1], sight[2]); ++failures;
+        }
+    }
+
+    // --- getMatrices ---
+    {
+        SbDPViewVolume vv;
+        vv.ortho(-2.0, 2.0, -2.0, 2.0, 1.0, 10.0);
+        SbDPMatrix affine, proj;
+        vv.getMatrices(affine, proj);
+        // affine should be non-trivial
+        SbVec3d v(0.0, 0.0, 0.0), r;
+        affine.multVecMatrix(v, r);
+        // At least verify no NaN
+        if (r[0] != r[0]) {
+            fprintf(stderr, "  FAIL: SbDPViewVolume getMatrices NaN\n"); ++failures;
+        }
+    }
+
+    // --- projectToScreen ---
+    {
+        SbDPViewVolume vv;
+        vv.ortho(-1.0, 1.0, -1.0, 1.0, 0.1, 100.0);
+        SbVec3d world(0.0, 0.0, 0.0);
+        SbVec3d screen;
+        vv.projectToScreen(world, screen);
+        // Center of view volume should project near (0.5, 0.5)
+        if (std::fabs(screen[0] - 0.5) > 0.1 || std::fabs(screen[1] - 0.5) > 0.1) {
+            fprintf(stderr, "  FAIL: SbDPViewVolume projectToScreen center (got %f %f)\n", screen[0], screen[1]); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbHeap priority queue
+// =========================================================================
+static int runHeapTests()
+{
+    int failures = 0;
+
+    struct Item { float val; int idx; };
+    static Item items[5] = {{5.0f, -1}, {2.0f, -1}, {8.0f, -1}, {1.0f, -1}, {4.0f, -1}};
+
+    SbHeapFuncs hf;
+    hf.eval_func = [](void* p) -> float { return static_cast<Item*>(p)->val; };
+    hf.get_index_func = [](void* p) -> int { return static_cast<Item*>(p)->idx; };
+    hf.set_index_func = [](void* p, int idx) { static_cast<Item*>(p)->idx = idx; };
+    SbHeap heap(hf, 5);
+
+    for (int i = 0; i < 5; ++i) heap.add(&items[i]);
+
+    if (heap.size() != 5) {
+        fprintf(stderr, "  FAIL: SbHeap size (got %d)\n", heap.size()); ++failures;
+    }
+
+    // extractMin should return min item (val=1.0)
+    Item* min1 = static_cast<Item*>(heap.extractMin());
+    if (!min1 || !approxEqual(min1->val, 1.0f)) {
+        fprintf(stderr, "  FAIL: SbHeap extractMin (got %f)\n", min1 ? min1->val : -1.0f); ++failures;
+    }
+
+    // Next min should be 2.0
+    Item* min2 = static_cast<Item*>(heap.extractMin());
+    if (!min2 || !approxEqual(min2->val, 2.0f)) {
+        fprintf(stderr, "  FAIL: SbHeap extractMin 2 (got %f)\n", min2 ? min2->val : -1.0f); ++failures;
+    }
+
+    // getMin should return 4.0 without removing
+    Item* m = static_cast<Item*>(heap.getMin());
+    if (!m || !approxEqual(m->val, 4.0f)) {
+        fprintf(stderr, "  FAIL: SbHeap getMin (got %f)\n", m ? m->val : -1.0f); ++failures;
+    }
+
+    heap.emptyHeap();
+    if (heap.size() != 0) {
+        fprintf(stderr, "  FAIL: SbHeap emptyHeap (got %d)\n", heap.size()); ++failures;
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbTesselator
+// =========================================================================
+static int runTesselatorTests()
+{
+    int failures = 0;
+
+    // --- tessellate a simple quad (2 triangles expected) ---
+    {
+        static int triCount = 0;
+        triCount = 0;
+        static float quad[4][3] = {
+            {-1.0f, -1.0f, 0.0f}, {1.0f, -1.0f, 0.0f},
+            {1.0f,  1.0f, 0.0f}, {-1.0f,  1.0f, 0.0f}
+        };
+
+        SbTesselator tess([](void* v0, void* v1, void* v2, void*) { ++triCount; }, nullptr);
+        tess.beginPolygon();
+        for (int i = 0; i < 4; ++i) {
+            SbVec3f v(quad[i][0], quad[i][1], quad[i][2]);
+            tess.addVertex(v, &quad[i]);
+        }
+        tess.endPolygon();
+
+        if (triCount != 2) {
+            fprintf(stderr, "  FAIL: SbTesselator quad → %d triangles (expected 2)\n", triCount); ++failures;
+        }
+    }
+
+    // --- setCallback ---
+    {
+        static int count2 = 0;
+        count2 = 0;
+        SbTesselator tess;
+        tess.setCallback([](void*, void*, void*, void*) { ++count2; }, nullptr);
+        tess.beginPolygon();
+        SbVec3f v0(0,0,0), v1(1,0,0), v2(0,1,0);
+        tess.addVertex(v0, nullptr);
+        tess.addVertex(v1, nullptr);
+        tess.addVertex(v2, nullptr);
+        tess.endPolygon();
+        if (count2 != 1) {
+            fprintf(stderr, "  FAIL: SbTesselator triangle → %d calls (expected 1)\n", count2); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbOctTree
+// =========================================================================
+static int runOctTreeTests()
+{
+    int failures = 0;
+
+    // Set up item funcs for SbVec3f points
+    SbOctTreeFuncs funcs;
+    funcs.ptinsidefunc = [](void* item, const SbVec3f& pt) -> SbBool {
+        SbVec3f* p = static_cast<SbVec3f*>(item);
+        return (*p - pt).sqrLength() < 0.01f;
+    };
+    funcs.insideboxfunc = [](void* item, const SbBox3f& box) -> SbBool {
+        SbVec3f* p = static_cast<SbVec3f*>(item);
+        return box.intersect(*p);
+    };
+    funcs.insidespherefunc = [](void* item, const SbSphere& sphere) -> SbBool {
+        SbVec3f* p = static_cast<SbVec3f*>(item);
+        SbVec3f dummy;
+        SbLine l(*p, *p + SbVec3f(0,0,1));
+        return sphere.intersect(l, dummy);
+    };
+    funcs.insideplanesfunc = [](void*, const SbPlane*, const int) -> SbBool { return TRUE; };
+
+    SbBox3f bbox(SbVec3f(-10,-10,-10), SbVec3f(10,10,10));
+    SbOctTree tree(bbox, funcs, 4);
+
+    static SbVec3f pts[4] = {
+        {1.0f, 1.0f, 1.0f}, {-1.0f, -1.0f, -1.0f},
+        {5.0f, 5.0f, 5.0f}, {-5.0f, -5.0f, -5.0f}
+    };
+
+    for (int i = 0; i < 4; ++i) tree.addItem(&pts[i]);
+
+    // findItems by point
+    SbList<void*> found;
+    tree.findItems(SbVec3f(1.0f, 1.0f, 1.0f), found);
+    if (found.getLength() == 0) {
+        fprintf(stderr, "  FAIL: SbOctTree findItems by point\n"); ++failures;
+    }
+
+    // findItems by box
+    SbList<void*> found2;
+    SbBox3f searchBox(SbVec3f(0,0,0), SbVec3f(2,2,2));
+    tree.findItems(searchBox, found2);
+    if (found2.getLength() == 0) {
+        fprintf(stderr, "  FAIL: SbOctTree findItems by box\n"); ++failures;
+    }
+
+    // removeItem
+    tree.removeItem(&pts[0]);
+    SbList<void*> found3;
+    tree.findItems(SbVec3f(1.0f, 1.0f, 1.0f), found3);
+    if (found3.getLength() != 0) {
+        fprintf(stderr, "  FAIL: SbOctTree removeItem didn't work\n"); ++failures;
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbViewVolume deeper
+// =========================================================================
+static int runViewVolumeDeepTests()
+{
+    int failures = 0;
+
+    // --- perspective: projectToScreen ---
+    {
+        SbViewVolume vv;
+        vv.ortho(-1.0f, 1.0f, -1.0f, 1.0f, 0.1f, 100.0f);
+        SbVec3f world(0.0f, 0.0f, 0.0f);
+        SbVec3f screen;
+        vv.projectToScreen(world, screen);
+        if (!approxEqual(screen[0], 0.5f, 0.1f) || !approxEqual(screen[1], 0.5f, 0.1f)) {
+            fprintf(stderr, "  FAIL: ortho projectToScreen center (got %f %f)\n", screen[0], screen[1]); ++failures;
+        }
+    }
+
+    // --- getWorldToScreenScale ---
+    {
+        SbViewVolume vv;
+        vv.perspective(float(M_PI/2), 1.0f, 0.1f, 100.0f);
+        float scale = vv.getWorldToScreenScale(SbVec3f(0,0,0), 0.1f);
+        if (scale <= 0.0f) {
+            fprintf(stderr, "  FAIL: getWorldToScreenScale (got %f)\n", scale); ++failures;
+        }
+    }
+
+    // --- narrow ---
+    {
+        SbViewVolume vv;
+        vv.ortho(-2.0f, 2.0f, -2.0f, 2.0f, 0.1f, 100.0f);
+        SbViewVolume narrow = vv.narrow(0.25f, 0.25f, 0.75f, 0.75f);
+        // Narrowed view volume should be smaller
+        SbVec3f s1 = vv.getSightPoint(10.0f);
+        SbVec3f s2 = narrow.getSightPoint(10.0f);
+        // Both should be valid (no NaN)
+        if (s1[0] != s1[0] || s2[0] != s2[0]) {
+            fprintf(stderr, "  FAIL: narrow produced NaN\n"); ++failures;
+        }
+    }
+
+    // --- getPlanePoint ---
+    {
+        SbViewVolume vv;
+        vv.perspective(float(M_PI/2), 1.0f, 1.0f, 100.0f);
+        SbVec3f pt = vv.getPlanePoint(10.0f, SbVec2f(0.5f, 0.5f));
+        // Center of view plane at dist 10
+        if (!approxEqual(pt[0], 0.0f, 0.5f) || !approxEqual(pt[1], 0.0f, 0.5f)) {
+            fprintf(stderr, "  FAIL: getPlanePoint center (got %f %f %f)\n", pt[0], pt[1], pt[2]); ++failures;
+        }
+    }
+
+    // --- projectPointToLine ---
+    {
+        SbViewVolume vv;
+        vv.perspective(float(M_PI/2), 1.0f, 0.1f, 100.0f);
+        SbLine line;
+        vv.projectPointToLine(SbVec2f(0.5f, 0.5f), line);
+        // Line should pass through the view origin
+        SbVec3f dir = line.getDirection();
+        if (dir.length() < 0.5f) {
+            fprintf(stderr, "  FAIL: projectPointToLine direction is near-zero\n"); ++failures;
+        }
+    }
+
+    // --- getCameraSpaceMatrix ---
+    {
+        SbViewVolume vv;
+        vv.ortho(-1.0f, 1.0f, -1.0f, 1.0f, 0.1f, 100.0f);
+        SbMatrix m = vv.getCameraSpaceMatrix();
+        if (!approxEqual(m[0][0], 1.0f, 0.01f)) {
+            fprintf(stderr, "  FAIL: getCameraSpaceMatrix identity\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbMatrix factor/LU/more paths
+// =========================================================================
+static int runMatrixDeepTests()
+{
+    int failures = 0;
+
+    // --- multMatrixVec (M * column vector) ---
+    {
+        SbMatrix m;
+        m.setScale(3.0f); // uniform scale
+        SbVec3f v(1.0f, 2.0f, 0.0f), r;
+        m.multMatrixVec(v, r); // r = M * v (column convention)
+        if (!approxEqual(r[0], 3.0f, 1e-3f) || !approxEqual(r[1], 6.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: multMatrixVec scale (got %f %f %f)\n", r[0], r[1], r[2]); ++failures;
+        }
+    }
+
+    // --- inverse of rotation ---
+    {
+        SbRotation rot(SbVec3f(1.0f, 0.0f, 0.0f), float(M_PI/4.0));
+        SbMatrix m;
+        m.setRotate(rot);
+        SbMatrix inv = m.inverse();
+        SbMatrix prod = m * inv;
+        // Product should be identity
+        SbMatrix id = SbMatrix::identity();
+        if (!prod.equals(id, 1e-4f)) {
+            fprintf(stderr, "  FAIL: rotation matrix * inverse != identity\n"); ++failures;
+        }
+    }
+
+    // --- setTransform with scaleOrientation ---
+    {
+        SbVec3f t(1.0f, 0.0f, 0.0f);
+        SbRotation r = SbRotation::identity();
+        SbVec3f s(2.0f, 2.0f, 2.0f);
+        SbRotation so = SbRotation::identity();
+        SbMatrix m;
+        m.setTransform(t, r, s, so);
+        SbVec3f v(0.0f, 0.0f, 0.0f), result;
+        m.multVecMatrix(v, result);
+        if (!approxEqual(result[0], 1.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: setTransform with scaleOrientation (got %f %f %f)\n", result[0], result[1], result[2]); ++failures;
+        }
+    }
+
+    // --- getTransform with 5-arg version (center=(0,0,0), point transform test) ---
+    {
+        SbMatrix m;
+        SbVec3f t(1.0f, 0.0f, 0.0f);
+        SbRotation r = SbRotation::identity(); // no rotation makes this simpler
+        SbVec3f s(1.0f, 1.0f, 1.0f);
+        SbRotation so = SbRotation::identity();
+        SbVec3f center(0.0f, 0.0f, 0.0f);
+        m.setTransform(t, r, s, so, center);
+        // With identity rotation, 5-arg should give same result as 3-arg
+        SbVec3f pt(0.0f, 0.0f, 0.0f), result;
+        m.multVecMatrix(pt, result);
+        if (!approxEqual(result[0], 1.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: 5-arg setTransform point transform (got %f %f %f)\n", result[0], result[1], result[2]); ++failures;
+        }
+        // Exercise 5-arg getTransform path
+        SbVec3f tout; SbRotation rout; SbVec3f sout; SbRotation soout; SbVec3f cout;
+        m.getTransform(tout, rout, sout, soout, center); // just exercise, don't check value
+        (void)tout;
+    }
+
+    // --- multLeft ---
+    {
+        SbMatrix a, b;
+        a.setTranslate(SbVec3f(1.0f, 0.0f, 0.0f));
+        b.setTranslate(SbVec3f(0.0f, 2.0f, 0.0f));
+        a.multLeft(b); // a = b * a
+        SbVec3f v(0.0f, 0.0f, 0.0f), r;
+        a.multVecMatrix(v, r);
+        if (!approxEqual(r[0], 1.0f, 1e-3f) || !approxEqual(r[1], 2.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: multLeft (got %f %f %f)\n", r[0], r[1], r[2]); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbViewportRegion
+// =========================================================================
+static int runViewportRegionTests()
+{
+    int failures = 0;
+
+    {
+        SbViewportRegion vp(800, 600);
+        if (vp.getWindowSize()[0] != 800 || vp.getWindowSize()[1] != 600) {
+            fprintf(stderr, "  FAIL: getWindowSize (got %d %d)\n", vp.getWindowSize()[0], vp.getWindowSize()[1]); ++failures;
+        }
+        float aspect = vp.getViewportAspectRatio();
+        if (!approxEqual(aspect, 800.0f/600.0f, 0.01f)) {
+            fprintf(stderr, "  FAIL: getViewportAspectRatio (got %f)\n", aspect); ++failures;
+        }
+        SbVec2f vpOrig = vp.getViewportOrigin();
+        if (!approxEqual(vpOrig[0], 0.0f) || !approxEqual(vpOrig[1], 0.0f)) {
+            fprintf(stderr, "  FAIL: getViewportOrigin (got %f %f)\n", vpOrig[0], vpOrig[1]); ++failures;
+        }
+        SbVec2f vpSize = vp.getViewportSize();
+        if (!approxEqual(vpSize[0], 1.0f) || !approxEqual(vpSize[1], 1.0f)) {
+            fprintf(stderr, "  FAIL: getViewportSize (got %f %f)\n", vpSize[0], vpSize[1]); ++failures;
+        }
+
+        // setPixelPerInch / getPixelsPerInch
+        vp.setPixelsPerInch(96.0f);
+        if (!approxEqual(vp.getPixelsPerInch(), 96.0f)) {
+            fprintf(stderr, "  FAIL: getPixelsPerInch (got %f)\n", vp.getPixelsPerInch()); ++failures;
+        }
+
+        // setViewportPixels
+        SbVec2s origin(10, 10);
+        SbVec2s size(200, 150);
+        vp.setViewportPixels(origin, size);
+        if (vp.getViewportSizePixels()[0] != 200) {
+            fprintf(stderr, "  FAIL: setViewportPixels size (got %d)\n", vp.getViewportSizePixels()[0]); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoHandleEventAction
+// =========================================================================
+static int runHandleEventActionTests()
+{
+    int failures = 0;
+
+    // --- basic construction and viewport ---
+    {
+        SbViewportRegion vp(512, 512);
+        SoHandleEventAction hea(vp);
+        if (hea.getViewportRegion().getWindowSize()[0] != 512) {
+            fprintf(stderr, "  FAIL: SoHandleEventAction viewport\n"); ++failures;
+        }
+    }
+
+    // --- set/get event ---
+    {
+        SbViewportRegion vp(512, 512);
+        SoHandleEventAction hea(vp);
+        SoMouseButtonEvent ev;
+        ev.setButton(SoMouseButtonEvent::BUTTON1);
+        ev.setState(SoButtonEvent::DOWN);
+        ev.setPosition(SbVec2s(100, 100));
+        hea.setEvent(&ev);
+        const SoEvent* got = hea.getEvent();
+        if (got != &ev) {
+            fprintf(stderr, "  FAIL: HEA setEvent/getEvent\n"); ++failures;
+        }
+    }
+
+    // --- setHandled / isHandled ---
+    {
+        SbViewportRegion vp(512, 512);
+        SoHandleEventAction hea(vp);
+        if (hea.isHandled()) {
+            fprintf(stderr, "  FAIL: HEA isHandled initial should be false\n"); ++failures;
+        }
+        hea.setHandled();
+        if (!hea.isHandled()) {
+            fprintf(stderr, "  FAIL: HEA isHandled after setHandled\n"); ++failures;
+        }
+    }
+
+    // --- setPickRadius / getPickRadius ---
+    {
+        SbViewportRegion vp(512, 512);
+        SoHandleEventAction hea(vp);
+        hea.setPickRadius(5.0f);
+        if (!approxEqual(hea.getPickRadius(), 5.0f)) {
+            fprintf(stderr, "  FAIL: HEA pickRadius (got %f)\n", hea.getPickRadius()); ++failures;
+        }
+    }
+
+    // --- apply to an SoEventCallback scene ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoSphere* sphere = new SoSphere(); sphere->radius = 1.0f;
+        root->addChild(sphere);
+
+        SbViewportRegion vp(512, 512);
+        SoHandleEventAction hea(vp);
+        SoMouseButtonEvent ev;
+        ev.setButton(SoMouseButtonEvent::BUTTON1);
+        ev.setState(SoButtonEvent::DOWN);
+        ev.setPosition(SbVec2s(256, 256));
+        hea.setEvent(&ev);
+        hea.apply(root); // should not crash
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbBSPTree
+// =========================================================================
+static int runBSPTreeTests()
+{
+    int failures = 0;
+
+    {
+        SbBSPTree bsp;
+        SbVec3f p0(0.0f, 0.0f, 0.0f);
+        SbVec3f p1(1.0f, 0.0f, 0.0f);
+        SbVec3f p2(0.0f, 1.0f, 0.0f);
+        int i0 = bsp.addPoint(p0);
+        int i1 = bsp.addPoint(p1);
+        int i2 = bsp.addPoint(p2);
+        if (i0 < 0 || i1 < 0 || i2 < 0) {
+            fprintf(stderr, "  FAIL: SbBSPTree addPoint returns negative\n"); ++failures;
+        }
+        if (bsp.numPoints() != 3) {
+            fprintf(stderr, "  FAIL: SbBSPTree numPoints (got %d)\n", bsp.numPoints()); ++failures;
+        }
+
+        // findPoint
+        int found = bsp.findPoint(p1);
+        if (found != i1) {
+            fprintf(stderr, "  FAIL: SbBSPTree findPoint (got %d, expected %d)\n", found, i1); ++failures;
+        }
+
+        // Don't add duplicate
+        int dup = bsp.addPoint(p0);
+        if (dup != i0) {
+            fprintf(stderr, "  FAIL: SbBSPTree addPoint dup should return existing index\n"); ++failures;
+        }
+
+        // findClosest
+        SbVec3f query(0.1f, 0.1f, 0.0f);
+        int closest = bsp.findClosest(query);
+        if (closest != i0) {
+            fprintf(stderr, "  FAIL: SbBSPTree findClosest (got %d)\n", closest); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoNode name lookup
+// =========================================================================
+static int runNodeNameTests()
+{
+    int failures = 0;
+
+    {
+        SoCube* c = new SoCube();
+        c->ref();
+        c->setName("uniqueNameXYZ");
+        SoNode* found = SoNode::getByName("uniqueNameXYZ");
+        if (found != c) {
+            fprintf(stderr, "  FAIL: SoNode::getByName\n"); ++failures;
+        }
+        // getName
+        SbName n = c->getName();
+        if (n != SbName("uniqueNameXYZ")) {
+            fprintf(stderr, "  FAIL: SoNode::getName (got '%s')\n", n.getString()); ++failures;
+        }
+        c->unref();
+    }
+
+    // --- getTypeId / isOfType ---
+    {
+        SoCube* c = new SoCube(); c->ref();
+        if (!c->isOfType(SoShape::getClassTypeId())) {
+            fprintf(stderr, "  FAIL: SoCube isOfType SoShape\n"); ++failures;
+        }
+        if (!c->isOfType(SoNode::getClassTypeId())) {
+            fprintf(stderr, "  FAIL: SoCube isOfType SoNode\n"); ++failures;
+        }
+        if (c->isOfType(SoSphere::getClassTypeId())) {
+            fprintf(stderr, "  FAIL: SoCube isOfType SoSphere should be false\n"); ++failures;
+        }
+        c->unref();
+    }
+
+    // --- SoNode::copy ---
+    {
+        SoCube* orig = new SoCube(); orig->ref();
+        orig->width = 5.0f;
+        SoNode* copy = orig->copy();
+        copy->ref();
+        if (static_cast<SoCube*>(copy)->width.getValue() != orig->width.getValue()) {
+            fprintf(stderr, "  FAIL: SoNode::copy width mismatch\n"); ++failures;
+        }
+        orig->unref();
+        copy->unref();
+    }
+
+    return failures;
+}
+
+REGISTER_TEST(unit_int_vec_variants, ObolTest::TestCategory::Base,
+    "SbVec2s, SbVec2i32, SbVec3s, SbVec3i32, SbVec4i32, SbVec3b integer vector ops",
+    e.has_visual = false;
+    e.run_unit = runIntVecVariantsTests;
+);
+
+REGISTER_TEST(unit_dp_viewvolume, ObolTest::TestCategory::Base,
+    "SbDPViewVolume: ortho, perspective, getSightPoint, getMatrices, projectToScreen",
+    e.has_visual = false;
+    e.run_unit = runDPViewVolumeTests;
+);
+
+REGISTER_TEST(unit_heap, ObolTest::TestCategory::Base,
+    "SbHeap: add, size, extractMin, getMin, emptyHeap",
+    e.has_visual = false;
+    e.run_unit = runHeapTests;
+);
+
+REGISTER_TEST(unit_tesselator, ObolTest::TestCategory::Base,
+    "SbTesselator: quad tessellation (2 triangles), triangle callback",
+    e.has_visual = false;
+    e.run_unit = runTesselatorTests;
+);
+
+REGISTER_TEST(unit_octtree, ObolTest::TestCategory::Base,
+    "SbOctTree: addItem, findItems by point/box, removeItem",
+    e.has_visual = false;
+    e.run_unit = runOctTreeTests;
+);
+
+REGISTER_TEST(unit_viewvolume_deep, ObolTest::TestCategory::Base,
+    "SbViewVolume: projectToScreen, getWorldToScreenScale, narrow, getPlanePoint, getCameraSpaceMatrix",
+    e.has_visual = false;
+    e.run_unit = runViewVolumeDeepTests;
+);
+
+REGISTER_TEST(unit_matrix_deep, ObolTest::TestCategory::Base,
+    "SbMatrix: multMatrixVec, rotation inverse, 4-5 arg setTransform/getTransform, multLeft",
+    e.has_visual = false;
+    e.run_unit = runMatrixDeepTests;
+);
+
+REGISTER_TEST(unit_viewport_region, ObolTest::TestCategory::Base,
+    "SbViewportRegion: getAspectRatio, setViewportPixels, setPixelsPerInch",
+    e.has_visual = false;
+    e.run_unit = runViewportRegionTests;
+);
+
+REGISTER_TEST(unit_handle_event, ObolTest::TestCategory::Actions,
+    "SoHandleEventAction: viewport, setEvent, setHandled, setPickRadius, apply",
+    e.has_visual = false;
+    e.run_unit = runHandleEventActionTests;
+);
+
+REGISTER_TEST(unit_bsp_tree, ObolTest::TestCategory::Base,
+    "SbBSPTree: addPoint, numPoints, findPoint, findClosest, dedup",
+    e.has_visual = false;
+    e.run_unit = runBSPTreeTests;
+);
+
+REGISTER_TEST(unit_node_names, ObolTest::TestCategory::Nodes,
+    "SoNode: setName/getByName/getName, isOfType, copy",
+    e.has_visual = false;
+    e.run_unit = runNodeNameTests;
 );
 
 } // anonymous namespace
