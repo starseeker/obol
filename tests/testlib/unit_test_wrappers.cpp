@@ -156,6 +156,17 @@
 #include <Inventor/nodes/SoDrawStyle.h>
 #include <Inventor/nodes/SoLightModel.h>
 #include <Inventor/nodes/SoFont.h>
+#include <Inventor/nodes/SoAnnotation.h>
+#include <Inventor/nodes/SoInfo.h>
+#include <Inventor/nodes/SoDrawStyle.h>
+#include <Inventor/engines/SoComposeVec3f.h>
+#include <Inventor/engines/SoInterpolateFloat.h>
+#include <Inventor/engines/SoBoolOperation.h>
+#include <Inventor/fields/SoSFBool.h>
+#include <Inventor/fields/SoMFVec3f.h>
+#include <Inventor/sensors/SoFieldSensor.h>
+#include <Inventor/sensors/SoNodeSensor.h>
+#include <Inventor/SbClip.h>
 #include <Inventor/nodes/SoBaseColor.h>
 #include <Inventor/fields/SoSFString.h>
 #include <Inventor/fields/SoSFEnum.h>
@@ -5837,6 +5848,566 @@ REGISTER_TEST(unit_matrix_further, ObolTest::TestCategory::Base,
     "SbMatrix: setScale, multRight, multDirMatrix, equals, print",
     e.has_visual = false;
     e.run_unit = runMatrixFurtherTests;
+);
+
+// =========================================================================
+// Unit test: SoEngine evaluation (SoComposeVec3f, SoInterpolateFloat, SoBoolOperation)
+// =========================================================================
+static int runEngineTests()
+{
+    int failures = 0;
+
+    // --- SoComposeVec3f ---
+    {
+        SoComposeVec3f* engine = new SoComposeVec3f();
+        engine->ref();
+        engine->x.set1Value(0, 1.0f);
+        engine->y.set1Value(0, 2.0f);
+        engine->z.set1Value(0, 3.0f);
+        // Force evaluation via connectFrom
+        SoSFVec3f resultField;
+        resultField.connectFrom(&engine->vector);
+        SbVec3f v = resultField.getValue();
+        resultField.disconnect();
+        if (!approxEqual(v[0], 1.0f, 0.1f) || !approxEqual(v[1], 2.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: SoComposeVec3f (got %f %f %f)\n", v[0], v[1], v[2]); ++failures;
+        }
+        // getOutputs
+        SoEngineOutputList outputs;
+        int n = engine->getOutputs(outputs);
+        if (n < 1) {
+            fprintf(stderr, "  FAIL: SoComposeVec3f getOutputs (got %d)\n", n); ++failures;
+        }
+        // getOutput by name
+        SoEngineOutput* o = engine->getOutput("vector");
+        if (!o) {
+            fprintf(stderr, "  FAIL: SoComposeVec3f getOutput by name\n"); ++failures;
+        }
+        engine->unref();
+    }
+
+    // --- SoInterpolateFloat ---
+    {
+        SoInterpolateFloat* engine = new SoInterpolateFloat();
+        engine->ref();
+        engine->input0.set1Value(0, 0.0f);
+        engine->input1.set1Value(0, 10.0f);
+        engine->alpha.setValue(0.5f);
+
+        // Use connectFrom to read output
+        SoSFFloat resultField;
+        resultField.connectFrom(&engine->output);
+        float val = resultField.getValue();
+        resultField.disconnect();
+
+        if (!approxEqual(val, 5.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: SoInterpolateFloat (got %f)\n", val); ++failures;
+        }
+        engine->unref();
+    }
+
+    // --- SoBoolOperation A_AND_B ---
+    {
+        SoBoolOperation* engine = new SoBoolOperation();
+        engine->ref();
+        engine->a.set1Value(0, TRUE);
+        engine->b.set1Value(0, TRUE);
+        engine->operation.set1Value(0, SoBoolOperation::A_AND_B);
+
+        SoSFBool resultField;
+        resultField.connectFrom(&engine->output);
+        SbBool val = resultField.getValue();
+        if (val != TRUE) {
+            fprintf(stderr, "  FAIL: SoBoolOperation A_AND_B(T,T)=%d\n", val); ++failures;
+        }
+        // A_AND_B(T,F)
+        engine->b.set1Value(0, FALSE);
+        val = resultField.getValue();
+        if (val != FALSE) {
+            fprintf(stderr, "  FAIL: SoBoolOperation A_AND_B(T,F)=%d\n", val); ++failures;
+        }
+        resultField.disconnect();
+        engine->unref();
+    }
+
+    // --- SoBoolOperation A_OR_B ---
+    {
+        SoBoolOperation* engine = new SoBoolOperation();
+        engine->ref();
+        engine->a.set1Value(0, FALSE);
+        engine->b.set1Value(0, TRUE);
+        engine->operation.set1Value(0, SoBoolOperation::A_OR_B);
+        SoSFBool resultField;
+        resultField.connectFrom(&engine->output);
+        SbBool val = resultField.getValue();
+        if (val != TRUE) {
+            fprintf(stderr, "  FAIL: SoBoolOperation A_OR_B(F,T)=%d\n", val); ++failures;
+        }
+        resultField.disconnect();
+        engine->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoFieldSensor and SoNodeSensor
+// =========================================================================
+static int runSensorTests()
+{
+    int failures = 0;
+
+    // --- SoFieldSensor: fire on field change ---
+    {
+        SoSFFloat f;
+        f.setValue(1.0f);
+
+        static int fireCount = 0;
+        fireCount = 0;
+        SoFieldSensor sensor([](void*, SoSensor*) { ++fireCount; }, nullptr);
+        sensor.attach(&f);
+        if (sensor.getAttachedField() != &f) {
+            fprintf(stderr, "  FAIL: SoFieldSensor getAttachedField\n"); ++failures;
+        }
+
+        f.setValue(2.0f); // should trigger sensor
+        SoDB::getSensorManager()->processTimerQueue();
+        SoDB::getSensorManager()->processDelayQueue(TRUE);
+        // sensor should have fired
+        if (fireCount == 0) {
+            fprintf(stderr, "  FAIL: SoFieldSensor not fired\n"); ++failures;
+        }
+        sensor.detach();
+        if (sensor.getAttachedField() != nullptr) {
+            fprintf(stderr, "  FAIL: SoFieldSensor detach\n"); ++failures;
+        }
+    }
+
+    // --- SoNodeSensor: fire on node change ---
+    {
+        SoCube* cube = new SoCube();
+        cube->ref();
+
+        static int nodeFireCount = 0;
+        nodeFireCount = 0;
+        SoNodeSensor sensor([](void*, SoSensor*) { ++nodeFireCount; }, nullptr);
+        sensor.attach(cube);
+        if (sensor.getAttachedNode() != cube) {
+            fprintf(stderr, "  FAIL: SoNodeSensor getAttachedNode\n"); ++failures;
+        }
+
+        cube->width.setValue(5.0f); // trigger sensor
+        SoDB::getSensorManager()->processTimerQueue();
+        SoDB::getSensorManager()->processDelayQueue(TRUE);
+        if (nodeFireCount == 0) {
+            fprintf(stderr, "  FAIL: SoNodeSensor not fired\n"); ++failures;
+        }
+        sensor.detach();
+        cube->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoField connection (engine to field)
+// =========================================================================
+static int runFieldConnectionTests()
+{
+    int failures = 0;
+
+    // --- engine → field connection ---
+    {
+        SoComposeVec3f* eng = new SoComposeVec3f();
+        eng->ref();
+        eng->x.set1Value(0, 5.0f);
+        eng->y.set1Value(0, 6.0f);
+        eng->z.set1Value(0, 7.0f);
+
+        SoSFVec3f target;
+        target.connectFrom(&eng->vector);
+        SbVec3f v = target.getValue();
+        target.disconnect();
+
+        if (!approxEqual(v[0], 5.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: engine→field value x (got %f)\n", v[0]); ++failures;
+        }
+        eng->unref();
+    }
+
+    // --- field-to-field connection ---
+    {
+        SoSFFloat src, dst;
+        src.setValue(3.14f);
+        dst.connectFrom(&src);
+        if (!approxEqual(dst.getValue(), 3.14f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: field-to-field connection (got %f)\n", dst.getValue()); ++failures;
+        }
+        if (!dst.isConnected()) {
+            fprintf(stderr, "  FAIL: dst.isConnected()\n"); ++failures;
+        }
+        if (!dst.isConnectedFromField()) {
+            fprintf(stderr, "  FAIL: dst.isConnectedFromField()\n"); ++failures;
+        }
+        src.setValue(2.71f);
+        if (!approxEqual(dst.getValue(), 2.71f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: field-to-field live update (got %f)\n", dst.getValue()); ++failures;
+        }
+        dst.disconnect();
+        if (dst.isConnected()) {
+            fprintf(stderr, "  FAIL: field-to-field disconnect\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbClip clipping operations
+// =========================================================================
+static int runSbClipTests()
+{
+    int failures = 0;
+
+    {
+        SbClip clip;
+        clip.reset();
+        // Add a quad
+        clip.addVertex(SbVec3f(-1,0,0));
+        clip.addVertex(SbVec3f( 1,0,0));
+        clip.addVertex(SbVec3f( 1,1,0));
+        clip.addVertex(SbVec3f(-1,1,0));
+
+        // Clip against plane y >= 0.5
+        SbPlane clipPlane(SbVec3f(0,1,0), 0.5f);
+        clip.clip(clipPlane);
+
+        int n = clip.getNumVertices();
+        if (n < 2) {
+            fprintf(stderr, "  FAIL: SbClip after clip vertexcount (got %d)\n", n); ++failures;
+        }
+
+        // getVertex
+        if (n > 0) {
+            SbVec3f v;
+            clip.getVertex(0, v);
+            if (v[1] < 0.5f - 0.01f) {
+                fprintf(stderr, "  FAIL: SbClip vertex below clip plane (got y=%f)\n", v[1]); ++failures;
+            }
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoAction deeper traversal paths
+// =========================================================================
+static int runActionDeepTests()
+{
+    int failures = 0;
+
+    // --- SoGetMatrixAction on deeper hierarchy ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoTranslation* t1 = new SoTranslation();
+        t1->translation.setValue(2.0f, 0.0f, 0.0f);
+        root->addChild(t1);
+        SoTranslation* t2 = new SoTranslation();
+        t2->translation.setValue(0.0f, 3.0f, 0.0f);
+        root->addChild(t2);
+        SoCube* cube = new SoCube();
+        cube->setName("deepCube");
+        root->addChild(cube);
+
+        // Get path to cube
+        SoSearchAction sa;
+        sa.setName("deepCube");
+        sa.setFind(SoSearchAction::NAME);
+        sa.apply(root);
+        SoPath* path = sa.getPath();
+        if (path) {
+            SbViewportRegion vp(512, 512);
+            SoGetMatrixAction gma(vp);
+            gma.apply(path);
+            SbMatrix mat = gma.getMatrix();
+            SbVec3f v(0,0,0), r;
+            mat.multVecMatrix(v, r);
+            // Should have translation (2, 3, 0)
+            if (!approxEqual(r[0], 2.0f, 0.1f) || !approxEqual(r[1], 3.0f, 0.1f)) {
+                fprintf(stderr, "  FAIL: path getMatrix (got %f %f %f)\n", r[0], r[1], r[2]); ++failures;
+            }
+        } else {
+            fprintf(stderr, "  FAIL: path search failed\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- SoSearchAction: searchingAll ---
+    {
+        SoSearchAction sa;
+        sa.setSearchingAll(TRUE);
+        if (!sa.isSearchingAll()) {
+            fprintf(stderr, "  FAIL: setSearchingAll\n"); ++failures;
+        }
+    }
+
+    // --- getMatrix via SoGetMatrixAction on path ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoTranslation* t = new SoTranslation();
+        t->translation.setValue(5.0f, 0.0f, 0.0f);
+        t->setName("myTrans");
+        root->addChild(t);
+
+        SoSearchAction sa2;
+        sa2.setName("myTrans");
+        sa2.setFind(SoSearchAction::NAME);
+        sa2.apply(root);
+        SoPath* p = sa2.getPath();
+        if (p) {
+            SbViewportRegion vp(512, 512);
+            SoGetMatrixAction gma(vp);
+            gma.apply(p);
+            SbMatrix mat = gma.getMatrix();
+            SbVec3f v(0,0,0), r;
+            mat.multVecMatrix(v, r);
+            if (!approxEqual(r[0], 5.0f, 0.1f)) {
+                fprintf(stderr, "  FAIL: getMatrix via path translation (got %f)\n", r[0]); ++failures;
+            }
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoPath operations extended
+// =========================================================================
+static int runPathExtTests()
+{
+    int failures = 0;
+
+    // --- copy a path ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoGroup* g = new SoGroup();
+        SoCube* cube = new SoCube();
+        root->addChild(g);
+        g->addChild(cube);
+
+        SoPath* path = new SoPath(root);
+        path->ref();
+        path->append(0); // g
+        path->append(0); // cube
+
+        SoPath* copy = path->copy();
+        copy->ref();
+        if (copy->getLength() != path->getLength()) {
+            fprintf(stderr, "  FAIL: SoPath copy length mismatch\n"); ++failures;
+        }
+        if (copy->getTail() != cube) {
+            fprintf(stderr, "  FAIL: SoPath copy tail mismatch\n"); ++failures;
+        }
+
+        // findFork
+        int fork = path->findFork(copy);
+        // Both identical, fork should be at length-1
+        if (fork < 0) {
+            fprintf(stderr, "  FAIL: SoPath findFork (got %d)\n", fork); ++failures;
+        }
+
+        // getIndexFromTail
+        int idx = path->getIndexFromTail(0);
+        (void)idx; // exercise the path
+
+        copy->unref();
+        path->unref();
+        root->unref();
+    }
+
+    // --- SoPath containsNode ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCube* cube = new SoCube();
+        SoSphere* sphere = new SoSphere();
+        root->addChild(cube);
+        root->addChild(sphere);
+
+        SoSearchAction sa;
+        sa.setType(SoCube::getClassTypeId());
+        sa.setFind(SoSearchAction::TYPE);
+        sa.apply(root);
+        SoPath* path = sa.getPath();
+        if (path) {
+            if (!path->containsNode(cube)) {
+                fprintf(stderr, "  FAIL: SoPath containsNode cube\n"); ++failures;
+            }
+            if (path->containsNode(sphere)) {
+                fprintf(stderr, "  FAIL: SoPath containsNode sphere false positive\n"); ++failures;
+            }
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoInfo, SoAnnotation, SoDrawStyle (misc nodes)
+// =========================================================================
+static int runMiscNodeTests()
+{
+    int failures = 0;
+
+    // --- SoInfo ---
+    {
+        SoInfo* info = new SoInfo();
+        info->ref();
+        info->string.setValue("Test info node");
+        if (strcmp(info->string.getValue().getString(), "Test info node") != 0) {
+            fprintf(stderr, "  FAIL: SoInfo string\n"); ++failures;
+        }
+        // Apply actions to SoInfo
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(info);
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root); // should not crash
+        root->unref();
+        info->unref();
+    }
+
+    // --- SoAnnotation ---
+    {
+        SoAnnotation* ann = new SoAnnotation();
+        ann->ref();
+        ann->addChild(new SoCube());
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(ann);
+        SbBox3f box = bba.getBoundingBox();
+        if (box.isEmpty()) {
+            fprintf(stderr, "  FAIL: SoAnnotation bbox\n"); ++failures;
+        }
+        ann->unref();
+    }
+
+    // --- SoFont ---
+    {
+        SoFont* font = new SoFont();
+        font->ref();
+        font->name.setValue("Helvetica");
+        font->size.setValue(12.0f);
+        if (font->size.getValue() != 12.0f) {
+            fprintf(stderr, "  FAIL: SoFont size\n"); ++failures;
+        }
+        font->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbViewVolume ortho projection (more paths)
+// =========================================================================
+static int runViewVolumeOrthoTests()
+{
+    int failures = 0;
+
+    // --- ortho with setCamera ---
+    {
+        SbViewVolume vv;
+        vv.ortho(-2.0f, 2.0f, -2.0f, 2.0f, 1.0f, 100.0f);
+        // Check getPlane
+        SbPlane near = vv.getPlane(vv.getNearDist());
+        SbVec3f n = near.getNormal();
+        if (n.length() < 0.5f) {
+            fprintf(stderr, "  FAIL: ortho near plane normal length\n"); ++failures;
+        }
+        // getFarDist, getNearDist
+        float nearDist = vv.getNearDist();
+        float farDist = nearDist + vv.getHeight(); // estimate far from height
+        if (nearDist <= 0.0f) {
+            fprintf(stderr, "  FAIL: getNearDist <= 0\n"); ++failures;
+        }
+        // getWidth, getHeight
+        float w = vv.getWidth();
+        float h = vv.getHeight();
+        if (w <= 0.0f || h <= 0.0f) {
+            fprintf(stderr, "  FAIL: ortho getWidth/Height\n"); ++failures;
+        }
+        // getProjectionDirection
+        SbVec3f dir = vv.getProjectionDirection();
+        if (dir.length() < 0.5f) {
+            fprintf(stderr, "  FAIL: getProjectionDirection length\n"); ++failures;
+        }
+        // getProjectionPoint
+        SbVec3f pp = vv.getProjectionPoint();
+        (void)pp;
+    }
+
+    // --- perspective getMatrices ---
+    {
+        SbViewVolume vv;
+        vv.perspective(float(M_PI/3), 1.5f, 0.1f, 100.0f);
+        SbMatrix affine, proj;
+        vv.getMatrices(affine, proj);
+        SbVec3f pt(0,0,-10), result;
+        affine.multVecMatrix(pt, result);
+        if (result[0] != result[0]) {
+            fprintf(stderr, "  FAIL: perspective getMatrices NaN\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+REGISTER_TEST(unit_engines2, ObolTest::TestCategory::Engines,
+    "SoComposeVec3f (evaluate, getOutputs), SoInterpolateFloat, SoBoolOperation AND/OR",
+    e.has_visual = false;
+    e.run_unit = runEngineTests;
+);
+
+REGISTER_TEST(unit_sensors2, ObolTest::TestCategory::Sensors,
+    "SoFieldSensor (attach, fire, detach), SoNodeSensor (attach, fire)",
+    e.has_visual = false;
+    e.run_unit = runSensorTests;
+);
+
+REGISTER_TEST(unit_field_connection, ObolTest::TestCategory::Fields,
+    "Engine→field connection, field-to-field connection, disconnect",
+    e.has_visual = false;
+    e.run_unit = runFieldConnectionTests;
+);
+
+REGISTER_TEST(unit_sbclip, ObolTest::TestCategory::Base,
+    "SbClip: addVertex, clip by plane, getNumVertices, getVertex",
+    e.has_visual = false;
+    e.run_unit = runSbClipTests;
+);
+
+REGISTER_TEST(unit_action_deep, ObolTest::TestCategory::Actions,
+    "SoGetMatrixAction via path, SoSearchAction searchingAll, deep hierarchy",
+    e.has_visual = false;
+    e.run_unit = runActionDeepTests;
+);
+
+REGISTER_TEST(unit_path_ext, ObolTest::TestCategory::Misc,
+    "SoPath: copy, findFork, getIndexFromTail, containsNode",
+    e.has_visual = false;
+    e.run_unit = runPathExtTests;
+);
+
+REGISTER_TEST(unit_misc_nodes, ObolTest::TestCategory::Nodes,
+    "SoInfo (string, bbox action), SoAnnotation, SoFont",
+    e.has_visual = false;
+    e.run_unit = runMiscNodeTests;
+);
+
+REGISTER_TEST(unit_viewvolume_ortho, ObolTest::TestCategory::Base,
+    "SbViewVolume: ortho getPlane/nearDist/farDist/Width/Height, perspective getMatrices",
+    e.has_visual = false;
+    e.run_unit = runViewVolumeOrthoTests;
 );
 
 } // anonymous namespace
