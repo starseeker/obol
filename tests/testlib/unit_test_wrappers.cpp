@@ -1278,11 +1278,15 @@ REGISTER_TEST(text2, ObolTest::TestCategory::Rendering,
 );
 
 REGISTER_TEST(gradient, ObolTest::TestCategory::Rendering,
-    "Background gradient via callback node",
+    "Background gradient via renderer API (works with System GL, OSMesa and NanoRT)",
     e.has_visual = true;
     e.has_interactive = true;
     e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createGradient;
+    e.configure_renderer = [](SoOffscreenRenderer* r) {
+        r->setBackgroundGradient(SbColor(0.05f, 0.05f, 0.20f),
+                                 SbColor(0.20f, 0.35f, 0.60f));
+    };
 );
 
 REGISTER_TEST(colored_cube, ObolTest::TestCategory::Rendering,
