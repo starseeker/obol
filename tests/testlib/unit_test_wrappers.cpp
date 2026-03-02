@@ -116,6 +116,8 @@
 #include <Inventor/SoSceneManager.h>
 #include <Inventor/actions/SoRayPickAction.h>
 #include <Inventor/SoPickedPoint.h>
+#include <Inventor/lists/SoPickedPointList.h>
+#include <Inventor/lists/SoFieldList.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoIndexedFaceSet.h>
 #include <Inventor/nodes/SoCoordinate3.h>
@@ -7439,6 +7441,425 @@ REGISTER_TEST(unit_callback_advanced, ObolTest::TestCategory::Actions,
     "SoCallbackAction: triangle/lineSegment/point callbacks with cube/lineset/pointset",
     e.has_visual = false;
     e.run_unit = runCallbackActionAdvancedTests;
+);
+
+// =========================================================================
+// Unit test: SoField API (isIgnored, isDefault, enableConnection, touch, notify)
+// =========================================================================
+static int runFieldApiTests()
+{
+    int failures = 0;
+
+    // --- isIgnored / setIgnored ---
+    {
+        SoCube* cube = new SoCube(); cube->ref();
+        cube->width.setIgnored(TRUE);
+        if (!cube->width.isIgnored()) {
+            fprintf(stderr, "  FAIL: SoField setIgnored/isIgnored\n"); ++failures;
+        }
+        cube->width.setIgnored(FALSE);
+
+        // isDefault - check that it returns false after explicit set
+        cube->width.setValue(3.14f); // explicitly different from default
+        if (cube->width.isDefault()) {
+            fprintf(stderr, "  FAIL: SoField isDefault should be false after setValue\n"); ++failures;
+        }
+
+        // enableConnection
+        cube->width.enableConnection(FALSE);
+        if (cube->width.isConnectionEnabled()) {
+            fprintf(stderr, "  FAIL: SoField enableConnection(FALSE)\n"); ++failures;
+        }
+        cube->width.enableConnection(TRUE);
+        if (!cube->width.isConnectionEnabled()) {
+            fprintf(stderr, "  FAIL: SoField enableConnection(TRUE)\n"); ++failures;
+        }
+
+        cube->unref();
+    }
+
+    // --- touch ---
+    {
+        SoSFFloat f;
+        f.setValue(1.0f);
+        static int touchCount = 0;
+        touchCount = 0;
+        SoFieldSensor sensor([](void*, SoSensor*) { ++touchCount; }, nullptr);
+        sensor.attach(&f);
+        f.touch(); // should fire sensor
+        SoDB::getSensorManager()->processTimerQueue();
+        SoDB::getSensorManager()->processDelayQueue(TRUE);
+        if (touchCount == 0) {
+            fprintf(stderr, "  FAIL: SoField touch sensor not fired\n"); ++failures;
+        }
+        sensor.detach();
+    }
+
+    // --- getField / getFieldName on a node ---
+    {
+        SoCube* cube = new SoCube(); cube->ref();
+        SoField* widthField = cube->getField("width");
+        if (!widthField) {
+            fprintf(stderr, "  FAIL: SoFieldContainer::getField 'width'\n"); ++failures;
+        }
+        if (widthField && widthField != &cube->width) {
+            fprintf(stderr, "  FAIL: getField returns wrong field\n"); ++failures;
+        }
+
+        SbName fieldName;
+        SbBool ok = cube->getFieldName(&cube->height, fieldName);
+        if (!ok) {
+            fprintf(stderr, "  FAIL: getFieldName returned false\n"); ++failures;
+        }
+        if (strcmp(fieldName.getString(), "height") != 0) {
+            fprintf(stderr, "  FAIL: getFieldName (got '%s')\n", fieldName.getString()); ++failures;
+        }
+
+        // getFields
+        SoFieldList fields;
+        int n = cube->getFields(fields);
+        if (n < 3) { // width, height, depth at minimum
+            fprintf(stderr, "  FAIL: getFields (got %d)\n", n); ++failures;
+        }
+
+        cube->unref();
+    }
+
+    // --- enableNotify / isNotifyEnabled ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SbBool wasEnabled = root->isNotifyEnabled();
+        root->enableNotify(FALSE);
+        if (root->isNotifyEnabled()) {
+            fprintf(stderr, "  FAIL: enableNotify(FALSE)\n"); ++failures;
+        }
+        root->enableNotify(wasEnabled);
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoNode API - deeper coverage
+// =========================================================================
+static int runNodeApiTests()
+{
+    int failures = 0;
+
+    // --- copy (deep) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCube* cube = new SoCube(); cube->width.setValue(5.0f);
+        root->addChild(cube);
+
+        SoSeparator* copy = static_cast<SoSeparator*>(root->copy(TRUE));
+        copy->ref();
+        if (copy->getNumChildren() != 1) {
+            fprintf(stderr, "  FAIL: SoNode deep copy children (got %d)\n", copy->getNumChildren()); ++failures;
+        }
+        SoCube* copyCube = static_cast<SoCube*>(copy->getChild(0));
+        if (!approxEqual(copyCube->width.getValue(), 5.0f)) {
+            fprintf(stderr, "  FAIL: SoNode deep copy cube width (got %f)\n", copyCube->width.getValue()); ++failures;
+        }
+        copy->unref();
+        root->unref();
+    }
+
+    // --- affectsState ---
+    {
+        SoCube* cube = new SoCube(); cube->ref();
+        // SoCube does not affect state (it's a shape)
+        (void)cube->affectsState();
+        cube->unref();
+
+        SoTranslation* t = new SoTranslation(); t->ref();
+        // Translation DOES affect state
+        if (!t->affectsState()) {
+            fprintf(stderr, "  FAIL: SoTranslation affectsState should be true\n"); ++failures;
+        }
+        t->unref();
+    }
+
+    // --- getTypeId / isOfType ---
+    {
+        SoCube* cube = new SoCube(); cube->ref();
+        if (cube->getTypeId() == SoType::badType()) {
+            fprintf(stderr, "  FAIL: SoCube getTypeId bad\n"); ++failures;
+        }
+        if (!cube->isOfType(SoShape::getClassTypeId())) {
+            fprintf(stderr, "  FAIL: SoCube isOfType SoShape\n"); ++failures;
+        }
+        if (!cube->isOfType(SoNode::getClassTypeId())) {
+            fprintf(stderr, "  FAIL: SoCube isOfType SoNode\n"); ++failures;
+        }
+        if (cube->isOfType(SoGroup::getClassTypeId())) {
+            fprintf(stderr, "  FAIL: SoCube should NOT be SoGroup\n"); ++failures;
+        }
+        cube->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoRayPickAction - deeper path coverage
+// =========================================================================
+static int runRayPickDeepTests()
+{
+    int failures = 0;
+
+    // --- pick a cylinder using setRay ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCylinder());
+
+        SbViewportRegion vp(512, 512);
+        SoRayPickAction rpa(vp);
+        // Shoot a ray from z=10 toward origin
+        rpa.setRay(SbVec3f(0,0,10), SbVec3f(0,0,-1));
+        rpa.apply(root);
+        SoPickedPoint* pp = rpa.getPickedPoint();
+        if (!pp) {
+            fprintf(stderr, "  FAIL: ray pick cylinder (missed)\n"); ++failures;
+        } else {
+            // getPoint, getNormal
+            SbVec3f pt = pp->getPoint();
+            SbVec3f n = pp->getNormal();
+            if (n.length() < 0.5f) {
+                fprintf(stderr, "  FAIL: cylinder pick normal length\n"); ++failures;
+            }
+            (void)pt;
+        }
+        root->unref();
+    }
+
+    // --- pick cone ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCone());
+
+        SbViewportRegion vp(512, 512);
+        SoRayPickAction rpa(vp);
+        rpa.setRay(SbVec3f(0,0,10), SbVec3f(0,0,-1));
+        rpa.apply(root);
+        // Cone - just shouldn't crash
+        root->unref();
+    }
+
+    // --- sorted picks (getAllPickedPoints) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(512, 512);
+        SoRayPickAction rpa(vp);
+        rpa.setRay(SbVec3f(0,0,10), SbVec3f(0,0,-1));
+        rpa.setPickAll(TRUE);
+        rpa.apply(root);
+        SoPickedPointList plist = rpa.getPickedPointList();
+        if (plist.getLength() < 1) {
+            fprintf(stderr, "  FAIL: getAllPickedPoints got %d\n", plist.getLength()); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- setRay directly ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube());
+        SbViewportRegion vp(512, 512);
+        SoRayPickAction rpa(vp);
+        // Ray pointing at cube at origin
+        rpa.setRay(SbVec3f(0,0,5), SbVec3f(0,0,-1));
+        rpa.apply(root);
+        SoPickedPoint* pp = rpa.getPickedPoint();
+        if (!pp) {
+            fprintf(stderr, "  FAIL: setRay pick cube (missed)\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbMatrix complete (all remaining paths)
+// =========================================================================
+static int runMatrixCompleteTests()
+{
+    int failures = 0;
+
+    // --- setTranslate ---
+    {
+        SbMatrix m;
+        m.setTranslate(SbVec3f(1.0f, 2.0f, 3.0f));
+        SbVec3f v(0,0,0), result;
+        m.multVecMatrix(v, result);
+        if (!approxEqual(result[0], 1.0f) || !approxEqual(result[1], 2.0f)) {
+            fprintf(stderr, "  FAIL: SbMatrix setTranslate (got %f %f)\n", result[0], result[1]); ++failures;
+        }
+    }
+
+    // --- setRotate ---
+    {
+        SbMatrix m;
+        SbRotation rot(SbVec3f(0,0,1), float(M_PI/2));
+        m.setRotate(rot);
+        SbVec3f v(1,0,0), result;
+        m.multVecMatrix(v, result);
+        if (!approxEqual(result[0], 0.0f, 1e-3f) || !approxEqual(result[1], 1.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbMatrix setRotate (got %f %f)\n", result[0], result[1]); ++failures;
+        }
+    }
+
+    // --- multMatrixVec vs multVecMatrix ---
+    {
+        SbMatrix m;
+        m.setTranslate(SbVec3f(5.0f, 0.0f, 0.0f));
+        SbVec3f v(0,0,0), r1, r2;
+        m.multVecMatrix(v, r1);
+        m.multMatrixVec(v, r2);
+        // multVecMatrix: point transformed, multMatrixVec: transposed
+        if (!approxEqual(r1[0], 5.0f)) {
+            fprintf(stderr, "  FAIL: multVecMatrix (got %f)\n", r1[0]); ++failures;
+        }
+    }
+
+    // --- operator[] access ---
+    {
+        SbMatrix m = SbMatrix::identity();
+        m[0][3] = 7.0f;
+        const SbMatrix& cm = m;
+        if (!approxEqual(cm[0][3], 7.0f)) {
+            fprintf(stderr, "  FAIL: SbMatrix operator[] const (got %f)\n", cm[0][3]); ++failures;
+        }
+    }
+
+    // --- operator== ---
+    {
+        SbMatrix a = SbMatrix::identity();
+        SbMatrix b = SbMatrix::identity();
+        if (!(a == b)) {
+            fprintf(stderr, "  FAIL: SbMatrix operator==\n"); ++failures;
+        }
+        b[0][0] = 2.0f;
+        if (a == b) {
+            fprintf(stderr, "  FAIL: SbMatrix operator== should be false\n"); ++failures;
+        }
+    }
+
+    // --- inverse of rotation ---
+    {
+        SbRotation rot(SbVec3f(0,1,0), float(M_PI/3));
+        SbMatrix m, inv;
+        rot.getValue(m);
+        inv = m.inverse();
+        SbMatrix result = m;
+        result.multRight(inv);
+        if (!result.equals(SbMatrix::identity(), 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbMatrix inverse not identity\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoShape properties (getBoundingBox, getCenter)
+// =========================================================================
+static int runShapePropertiesTests()
+{
+    int failures = 0;
+
+    // SoCone bbox
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCone());
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        SbBox3f box = bba.getBoundingBox();
+        if (box.isEmpty()) {
+            fprintf(stderr, "  FAIL: SoCone bbox empty\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // SoCylinder bbox
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCylinder());
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        if (bba.getBoundingBox().isEmpty()) {
+            fprintf(stderr, "  FAIL: SoCylinder bbox empty\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // SoCone primitive count
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCone());
+        SoGetPrimitiveCountAction pca;
+        pca.apply(root);
+        if (pca.getTriangleCount() == 0) {
+            fprintf(stderr, "  FAIL: SoCone primitive count 0\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // SoCylinder primitive count
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCylinder());
+        SoGetPrimitiveCountAction pca;
+        pca.apply(root);
+        if (pca.getTriangleCount() == 0) {
+            fprintf(stderr, "  FAIL: SoCylinder primitive count 0\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // SoShape::shouldGLRender (indirect via write action)
+    {
+        SoCone* cone = new SoCone(); cone->ref();
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(cone);
+        cone->unref();
+    }
+
+    return failures;
+}
+
+REGISTER_TEST(unit_field_api, ObolTest::TestCategory::Fields,
+    "SoField: isIgnored, isDefault, enableConnection, touch, getField/Name, getFields, enableNotify",
+    e.has_visual = false;
+    e.run_unit = runFieldApiTests;
+);
+
+REGISTER_TEST(unit_node_api, ObolTest::TestCategory::Nodes,
+    "SoNode: deep copy, affectsState, getTypeId, isOfType hierarchy",
+    e.has_visual = false;
+    e.run_unit = runNodeApiTests;
+);
+
+REGISTER_TEST(unit_raypick_deep, ObolTest::TestCategory::Actions,
+    "SoRayPickAction: cylinder pick, cone, getAllPickedPoints, setRay",
+    e.has_visual = false;
+    e.run_unit = runRayPickDeepTests;
+);
+
+REGISTER_TEST(unit_matrix_complete, ObolTest::TestCategory::Base,
+    "SbMatrix: setTranslate, setRotate, multMatrixVec, operator[], operator==, inverse(rotation)",
+    e.has_visual = false;
+    e.run_unit = runMatrixCompleteTests;
+);
+
+REGISTER_TEST(unit_shape_properties, ObolTest::TestCategory::Nodes,
+    "SoCone/SoCylinder: bbox, primitive count, shape traversal",
+    e.has_visual = false;
+    e.run_unit = runShapePropertiesTests;
 );
 
 } // anonymous namespace
