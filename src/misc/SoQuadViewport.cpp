@@ -45,6 +45,7 @@
 #include <Inventor/SoOffscreenRenderer.h>
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/nodes/SoNode.h>
+#include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/errors/SoDebugError.h>
 
 #include <cstdio>
