@@ -470,6 +470,7 @@
 #define SoGLContext_glEndList                      SOGL_ADD_PREFIX(SoGLContext_glEndList)
 #define SoGLContext_glCallList                     SOGL_ADD_PREFIX(SoGLContext_glCallList)
 #define SoGLContext_glDeleteLists                  SOGL_ADD_PREFIX(SoGLContext_glDeleteLists)
+#define SoGLContext_glGenLists                     SOGL_ADD_PREFIX(SoGLContext_glGenLists)
 #define SoGLContext_glPushAttrib                   SOGL_ADD_PREFIX(SoGLContext_glPushAttrib)
 #define SoGLContext_glPopAttrib                    SOGL_ADD_PREFIX(SoGLContext_glPopAttrib)
 
