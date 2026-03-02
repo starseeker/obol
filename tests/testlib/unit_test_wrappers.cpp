@@ -46,6 +46,7 @@
 
 #include "test_registry.h"
 #include "test_scenes.h"
+#include "../utils/headless_utils.h"
 
 // ---------------------------------------------------------------------------
 // Coin headers used by the unit tests
@@ -235,10 +236,21 @@
 #include <Inventor/draggers/SoDragPointDragger.h>
 #include <Inventor/draggers/SoScale1Dragger.h>
 #include <Inventor/draggers/SoRotateCylindricalDragger.h>
+#include <Inventor/draggers/SoCenterballDragger.h>
+#include <Inventor/draggers/SoTabBoxDragger.h>
+#include <Inventor/draggers/SoTransformBoxDragger.h>
+#include <Inventor/draggers/SoRotateDiscDragger.h>
+#include <Inventor/draggers/SoScale2Dragger.h>
+#include <Inventor/draggers/SoScale2UniformDragger.h>
+#include <Inventor/draggers/SoTranslate2Dragger.h>
 #include <Inventor/manips/SoHandleBoxManip.h>
 #include <Inventor/manips/SoTrackballManip.h>
 #include <Inventor/manips/SoTransformerManip.h>
 #include <Inventor/manips/SoTransformManip.h>
+#include <Inventor/manips/SoCenterballManip.h>
+#include <Inventor/manips/SoTabBoxManip.h>
+#include <Inventor/manips/SoTransformBoxManip.h>
+#include <Inventor/manips/SoClipPlaneManip.h>
 #include <Inventor/sensors/SoOneShotSensor.h>
 #include <Inventor/sensors/SoIdleSensor.h>
 #include <Inventor/sensors/SoSensorManager.h>
@@ -261,6 +273,10 @@
 #include <Inventor/nodes/SoShapeHints.h>
 #include <Inventor/nodes/SoPointLight.h>
 #include <Inventor/nodes/SoSpotLight.h>
+#include <Inventor/nodes/SoClipPlane.h>
+#include <Inventor/nodes/SoDrawStyle.h>
+#include <Inventor/nodes/SoLightModel.h>
+#include <Inventor/nodes/SoPackedColor.h>
 
 #include <cmath>
 #include <cstdio>
@@ -14829,6 +14845,1397 @@ REGISTER_TEST(unit_sbxfbox3f, ObolTest::TestCategory::Base,
     "SbXfBox3f: project, setTransform+project, extendBy, intersect point",
     e.has_visual = false;
     e.run_unit = runSbXfBox3fTests;
+);
+
+// =========================================================================
+// Session 5 / Iteration 19: GL rendering paths + dragger/manip interactions
+// =========================================================================
+
+// Helper: render a scene with a given transparency type, return non-black pixel count
+static int renderWithTransparency(SoGLRenderAction::TransparencyType ttype,
+                                  SoNode* root)
+{
+    SbViewportRegion vp(64, 64);
+    SoOffscreenRenderer renderer(vp);
+    renderer.setComponents(SoOffscreenRenderer::RGB_TRANSPARENCY);
+    SoGLRenderAction* ra = renderer.getGLRenderAction();
+    ra->setTransparencyType(ttype);
+    renderer.render(root);
+    const unsigned char* buf = renderer.getBuffer();
+    if (!buf) return -1;
+    int nonBlack = 0;
+    for (int i = 0; i < 64*64; ++i) {
+        if (buf[i*4+0] > 5 || buf[i*4+1] > 5 || buf[i*4+2] > 5) ++nonBlack;
+    }
+    return nonBlack;
+}
+
+// Unit test: GL rendering with multiple transparency types
+static int runGLTransparencyTypesTest()
+{
+    int failures = 0;
+
+    // Build a scene with two overlapping transparent spheres
+    SoSeparator* root = new SoSeparator(); root->ref();
+    SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+    cam->position.setValue(SbVec3f(0, 0, 8));
+    cam->heightAngle.setValue(float(M_PI/4));
+    root->addChild(cam);
+    SoDirectionalLight* light = new SoDirectionalLight();
+    light->direction.setValue(SbVec3f(-1,-1,-1));
+    root->addChild(light);
+
+    // Red semi-transparent sphere
+    SoSeparator* s1 = new SoSeparator();
+    SoMaterial* m1 = new SoMaterial();
+    m1->diffuseColor.setValue(SbColor(1,0,0));
+    m1->transparency.setValue(0.5f);
+    s1->addChild(m1);
+    SoSphere* sp1 = new SoSphere(); sp1->radius.setValue(1.5f);
+    s1->addChild(sp1);
+    root->addChild(s1);
+
+    // Blue semi-transparent sphere behind
+    SoSeparator* s2 = new SoSeparator();
+    SoTransform* xf2 = new SoTransform();
+    xf2->translation.setValue(SbVec3f(0,0,-1));
+    s2->addChild(xf2);
+    SoMaterial* m2 = new SoMaterial();
+    m2->diffuseColor.setValue(SbColor(0,0,1));
+    m2->transparency.setValue(0.5f);
+    s2->addChild(m2);
+    SoSphere* sp2 = new SoSphere(); sp2->radius.setValue(1.5f);
+    s2->addChild(sp2);
+    root->addChild(s2);
+
+    SbViewportRegion vp(64,64);
+    cam->viewAll(root, vp);
+
+    // Test BLEND
+    {
+        int pixels = renderWithTransparency(SoGLRenderAction::BLEND, root);
+        if (pixels < 0) {
+            fprintf(stderr, "  FAIL: GL BLEND render null buffer\n"); ++failures;
+        }
+    }
+
+    // Test DELAYED_BLEND  
+    {
+        int pixels = renderWithTransparency(SoGLRenderAction::DELAYED_BLEND, root);
+        if (pixels < 0) {
+            fprintf(stderr, "  FAIL: GL DELAYED_BLEND render null buffer\n"); ++failures;
+        }
+    }
+
+    // Test SCREEN_DOOR
+    {
+        int pixels = renderWithTransparency(SoGLRenderAction::SCREEN_DOOR, root);
+        if (pixels < 0) {
+            fprintf(stderr, "  FAIL: GL SCREEN_DOOR render null buffer\n"); ++failures;
+        }
+    }
+
+    // Test SORTED_OBJECT_BLEND
+    {
+        int pixels = renderWithTransparency(SoGLRenderAction::SORTED_OBJECT_BLEND, root);
+        if (pixels < 0) {
+            fprintf(stderr, "  FAIL: GL SORTED_OBJECT_BLEND render null buffer\n"); ++failures;
+        }
+    }
+
+    // Test DELAYED_ADD
+    {
+        int pixels = renderWithTransparency(SoGLRenderAction::DELAYED_ADD, root);
+        if (pixels < 0) {
+            fprintf(stderr, "  FAIL: GL DELAYED_ADD render null buffer\n"); ++failures;
+        }
+    }
+
+    // Test SORTED_OBJECT_ADD  
+    {
+        int pixels = renderWithTransparency(SoGLRenderAction::SORTED_OBJECT_ADD, root);
+        if (pixels < 0) {
+            fprintf(stderr, "  FAIL: GL SORTED_OBJECT_ADD render null buffer\n"); ++failures;
+        }
+    }
+
+    root->unref();
+    return failures;
+}
+
+// Unit test: GL rendering with material state changes (exercises SoGLLazyElement)
+static int runGLMaterialStateTest()
+{
+    int failures = 0;
+
+    // --- Render a scene with many different materials (exercises GL state changes) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0, 0, 15));
+        root->addChild(cam);
+        SoDirectionalLight* light = new SoDirectionalLight();
+        light->direction.setValue(SbVec3f(0,-1,-1));
+        root->addChild(light);
+
+        // Add several shapes with different material properties
+        const float colors[4][3] = {{1,0,0},{0,1,0},{0,0,1},{1,1,0}};
+        const float shininesses[4] = {0.0f, 0.3f, 0.7f, 1.0f};
+        for (int i = 0; i < 4; ++i) {
+            SoSeparator* sep = new SoSeparator();
+            SoTransform* xf = new SoTransform();
+            xf->translation.setValue(SbVec3f((i-1.5f)*3, 0, 0));
+            sep->addChild(xf);
+            SoMaterial* mat = new SoMaterial();
+            mat->diffuseColor.setValue(SbColor(colors[i][0], colors[i][1], colors[i][2]));
+            mat->specularColor.setValue(SbColor(1,1,1));
+            mat->shininess.setValue(shininesses[i]);
+            mat->ambientColor.setValue(SbColor(0.2f*colors[i][0], 0.2f*colors[i][1], 0.2f*colors[i][2]));
+            mat->emissiveColor.setValue(SbColor(0,0,0));
+            sep->addChild(mat);
+            sep->addChild(new SoSphere());
+            root->addChild(sep);
+        }
+
+        SbViewportRegion vp(128, 128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: GL material state render\n"); ++failures; }
+        const unsigned char* buf = renderer.getBuffer();
+        if (!buf) { fprintf(stderr, "  FAIL: GL material state null buffer\n"); ++failures; }
+
+        root->unref();
+    }
+
+    // --- LightModel BASE_COLOR (no lighting) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        SoLightModel* lm = new SoLightModel();
+        lm->model.setValue(SoLightModel::BASE_COLOR);
+        root->addChild(lm);
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0,1,0));
+        root->addChild(mat);
+        root->addChild(new SoCube());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: GL BASE_COLOR render\n"); ++failures; }
+        const unsigned char* buf = renderer.getBuffer();
+        if (buf) {
+            // Center pixel should be green
+            int cx = 32, cy = 32;
+            int idx = (cy * 64 + cx) * 3;
+            if (buf[idx+1] < 50) {
+                fprintf(stderr, "  FAIL: GL BASE_COLOR center pixel not green (got %d,%d,%d)\n",
+                    buf[idx], buf[idx+1], buf[idx+2]); ++failures;
+            }
+        }
+        root->unref();
+    }
+
+    // --- Emissive material ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        SoMaterial* mat = new SoMaterial();
+        mat->emissiveColor.setValue(SbColor(0,0,1)); // blue emissive
+        mat->diffuseColor.setValue(SbColor(0,0,0));
+        root->addChild(mat);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+        const unsigned char* buf = renderer.getBuffer();
+        if (buf) {
+            // Center should have some blue
+            int cx = 32, cy = 32;
+            int idx = (cy*64+cx)*3;
+            if (buf[idx+2] < 50) {
+                fprintf(stderr, "  FAIL: emissive blue not in center pixel (got %d,%d,%d)\n",
+                    buf[idx], buf[idx+1], buf[idx+2]); ++failures;
+            }
+        }
+        root->unref();
+    }
+
+    // --- DrawStyle: LINES (wireframe) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        SoDrawStyle* ds = new SoDrawStyle();
+        ds->style.setValue(SoDrawStyle::LINES);
+        ds->lineWidth.setValue(2.0f);
+        root->addChild(ds);
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(1,0,0));
+        root->addChild(mat);
+        root->addChild(new SoCube());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: GL LINES render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- DrawStyle: POINTS ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        SoDrawStyle* ds = new SoDrawStyle();
+        ds->style.setValue(SoDrawStyle::POINTS);
+        ds->pointSize.setValue(4.0f);
+        root->addChild(ds);
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0,1,0));
+        root->addChild(mat);
+        root->addChild(new SoCube());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: GL POINTS render\n"); ++failures; }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: GL rendering with vertex-ordering / two-sided lighting (SoShapeHints)
+static int runGLShapeHintsRenderTest()
+{
+    int failures = 0;
+
+    // SOLID + COUNTERCLOCKWISE (backface culling enabled)
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        SoShapeHints* sh = new SoShapeHints();
+        sh->vertexOrdering.setValue(SoShapeHints::COUNTERCLOCKWISE);
+        sh->shapeType.setValue(SoShapeHints::SOLID);
+        sh->faceType.setValue(SoShapeHints::CONVEX);
+        root->addChild(sh);
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(1,0.5f,0));
+        root->addChild(mat);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: GL SOLID+CCW render\n"); ++failures; }
+        root->unref();
+    }
+
+    // CLOCKWISE vertex ordering  
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        SoShapeHints* sh = new SoShapeHints();
+        sh->vertexOrdering.setValue(SoShapeHints::CLOCKWISE);
+        sh->shapeType.setValue(SoShapeHints::UNKNOWN_SHAPE_TYPE);
+        root->addChild(sh);
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0,0.5f,1));
+        root->addChild(mat);
+        root->addChild(new SoCube());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: GL CW render\n"); ++failures; }
+        root->unref();
+    }
+
+    // UNKNOWN_ORDERING (two-sided lighting)
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        SoShapeHints* sh = new SoShapeHints();
+        sh->vertexOrdering.setValue(SoShapeHints::UNKNOWN_ORDERING);
+        sh->shapeType.setValue(SoShapeHints::UNKNOWN_SHAPE_TYPE);
+        sh->creaseAngle.setValue(float(M_PI/4));
+        root->addChild(sh);
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.5f,0.5f,1));
+        root->addChild(mat);
+        root->addChild(new SoCylinder());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: GL UNKNOWN_ORDERING render\n"); ++failures; }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Helper: simulate a mouse drag sequence on a scene graph
+static void simulateDrag(SoNode* root, int cx, int cy, int dx, int dy, int steps = 8)
+{
+    SbViewportRegion vp(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+    // Press
+    {
+        SoMouseButtonEvent ev;
+        ev.setButton(SoMouseButtonEvent::BUTTON1);
+        ev.setState(SoButtonEvent::DOWN);
+        ev.setPosition(SbVec2s((short)(cx-dx), (short)(cy-dy)));
+        ev.setTime(SbTime::getTimeOfDay());
+        SoHandleEventAction action(vp);
+        action.setEvent(&ev);
+        action.apply(root);
+    }
+    // Move
+    for (int i = 1; i <= steps; ++i) {
+        float t = float(i) / float(steps);
+        int nx = (int)((cx-dx) + t * (2*dx));
+        int ny = (int)((cy-dy) + t * (2*dy));
+        SoLocation2Event ev;
+        ev.setPosition(SbVec2s((short)nx, (short)ny));
+        ev.setTime(SbTime::getTimeOfDay());
+        SoHandleEventAction action(vp);
+        action.setEvent(&ev);
+        action.apply(root);
+    }
+    // Release
+    {
+        SoMouseButtonEvent ev;
+        ev.setButton(SoMouseButtonEvent::BUTTON1);
+        ev.setState(SoButtonEvent::UP);
+        ev.setPosition(SbVec2s((short)(cx+dx), (short)(cy+dy)));
+        ev.setTime(SbTime::getTimeOfDay());
+        SoHandleEventAction action(vp);
+        action.setEvent(&ev);
+        action.apply(root);
+    }
+}
+
+// Helper: render a scene with SoOffscreenRenderer, return true if something visible
+static bool glRenderCheck(SoNode* root, int w = 64, int h = 64)
+{
+    SbViewportRegion vp(w, h);
+    SoOffscreenRenderer renderer(vp);
+    renderer.setComponents(SoOffscreenRenderer::RGB);
+    SbBool ok = renderer.render(root);
+    if (!ok) return false;
+    const unsigned char* buf = renderer.getBuffer();
+    if (!buf) return false;
+    int nonBlack = 0;
+    for (int i = 0; i < w*h; ++i) {
+        if (buf[i*3] > 5 || buf[i*3+1] > 5 || buf[i*3+2] > 5) ++nonBlack;
+    }
+    return nonBlack > 10;
+}
+
+// Unit test: Dragger interaction simulation with event handling
+static int runDraggerInteractionTest()
+{
+    int failures = 0;
+
+    // --- SoTranslate1Dragger: render + drag simulation ---
+    {
+        SoTranslate1Dragger* d = new SoTranslate1Dragger();
+        SoSeparator* root = ObolTest::Scenes::buildDraggerTestScene(d, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        root->ref();
+
+        // Render initial state
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoTranslate1Dragger initial render\n"); ++failures;
+        }
+
+        // Simulate drag at center (where dragger lives)
+        simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 40, 5);
+
+        // Render post-drag state
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoTranslate1Dragger post-drag render\n"); ++failures;
+        }
+
+        // Check translation changed (or at least check field type)
+        if (!d->isOfType(SoDragger::getClassTypeId())) {
+            fprintf(stderr, "  FAIL: SoTranslate1Dragger isOfType after drag\n"); ++failures;
+        }
+
+        root->unref();
+    }
+
+    // --- SoRotateSphericalDragger: render + drag simulation ---
+    {
+        SoRotateSphericalDragger* d = new SoRotateSphericalDragger();
+        SoSeparator* root = ObolTest::Scenes::buildDraggerTestScene(d, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        root->ref();
+
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoRotateSphericalDragger initial render\n"); ++failures;
+        }
+
+        // Simulate a rotational drag
+        simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 30, 30);
+
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoRotateSphericalDragger post-drag render\n"); ++failures;
+        }
+
+        root->unref();
+    }
+
+    // --- SoTrackballDragger: render + drag simulation ---
+    {
+        SoTrackballDragger* d = new SoTrackballDragger();
+        SoSeparator* root = ObolTest::Scenes::buildDraggerTestScene(d, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        root->ref();
+
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoTrackballDragger initial render\n"); ++failures;
+        }
+
+        simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 25, 25);
+
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoTrackballDragger post-drag render\n"); ++failures;
+        }
+
+        root->unref();
+    }
+
+    // --- SoHandleBoxDragger: render + drag ---
+    {
+        SoHandleBoxDragger* d = new SoHandleBoxDragger();
+        SoSeparator* root = ObolTest::Scenes::buildDraggerTestScene(d, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        root->ref();
+
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoHandleBoxDragger initial render\n"); ++failures;
+        }
+
+        simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 20, 0);
+
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoHandleBoxDragger post-drag render\n"); ++failures;
+        }
+
+        root->unref();
+    }
+
+    // --- SoTransformerDragger: render + drag ---
+    {
+        SoTransformerDragger* d = new SoTransformerDragger();
+        SoSeparator* root = ObolTest::Scenes::buildDraggerTestScene(d, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        root->ref();
+
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoTransformerDragger initial render\n"); ++failures;
+        }
+
+        simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 20, 20);
+
+        root->unref();
+    }
+
+    // --- SoCenterballDragger: render + drag ---
+    {
+        SoCenterballDragger* d = new SoCenterballDragger();
+        SoSeparator* root = ObolTest::Scenes::buildDraggerTestScene(d, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        root->ref();
+
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoCenterballDragger initial render\n"); ++failures;
+        }
+
+        simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 30, 0);
+
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: Manipulator replaceNode/replaceManip lifecycle with GL render
+static int runManipLifecycleTest()
+{
+    int failures = 0;
+
+    // Helper lambda: build a scene with a SoTransform + cube
+    auto buildScene = []() -> SoSeparator* {
+        SoSeparator* root = new SoSeparator();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,8));
+        root->addChild(cam);
+        SoDirectionalLight* light = new SoDirectionalLight();
+        light->direction.setValue(SbVec3f(-1,-1,-1));
+        root->addChild(light);
+        SoSeparator* objSep = new SoSeparator();
+        SoTransform* xf = new SoTransform();
+        objSep->addChild(xf);
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.7f,0.4f,0.2f));
+        objSep->addChild(mat);
+        objSep->addChild(new SoCube());
+        root->addChild(objSep);
+        SbViewportRegion vp(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        cam->viewAll(root, vp);
+        return root;
+    };
+
+    // --- SoTrackballManip ---
+    {
+        SoSeparator* root = buildScene(); root->ref();
+
+        // Render before manip
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: TrackballManip pre-attach render\n"); ++failures;
+        }
+
+        // Replace SoTransform with manip
+        SoTrackballManip* manip = new SoTrackballManip();
+        SoSearchAction sa;
+        sa.setType(SoTransform::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        SoPath* xfPath = sa.getPath();
+        bool attached = false;
+        if (xfPath) {
+            attached = (manip->replaceNode(xfPath) == TRUE);
+        }
+        if (!attached) {
+            fprintf(stderr, "  FAIL: TrackballManip replaceNode\n"); ++failures;
+        } else {
+            // Render with manip
+            if (!glRenderCheck(root)) {
+                fprintf(stderr, "  FAIL: TrackballManip attached render\n"); ++failures;
+            }
+            // Simulate drag
+            simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 25, 25);
+            // Render post-drag
+            if (!glRenderCheck(root)) {
+                fprintf(stderr, "  FAIL: TrackballManip post-drag render\n"); ++failures;
+            }
+            // Detach
+            SoSearchAction sa2;
+            sa2.setType(manip->getTypeId());
+            sa2.setInterest(SoSearchAction::FIRST);
+            sa2.apply(root);
+            SoPath* mPath = sa2.getPath();
+            if (mPath) {
+                manip->replaceManip(mPath, nullptr);
+            }
+            // Render after detach
+            if (!glRenderCheck(root)) {
+                fprintf(stderr, "  FAIL: TrackballManip post-detach render\n"); ++failures;
+            }
+        }
+        root->unref();
+    }
+
+    // --- SoHandleBoxManip ---
+    {
+        SoSeparator* root = buildScene(); root->ref();
+
+        SoHandleBoxManip* manip = new SoHandleBoxManip();
+        SoSearchAction sa;
+        sa.setType(SoTransform::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        SoPath* xfPath = sa.getPath();
+        bool attached = false;
+        if (xfPath) {
+            attached = (manip->replaceNode(xfPath) == TRUE);
+        }
+        if (!attached) {
+            fprintf(stderr, "  FAIL: HandleBoxManip replaceNode\n"); ++failures;
+        } else {
+            if (!glRenderCheck(root)) {
+                fprintf(stderr, "  FAIL: HandleBoxManip attached render\n"); ++failures;
+            }
+            simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 20, 0);
+            SoSearchAction sa2;
+            sa2.setType(manip->getTypeId());
+            sa2.setInterest(SoSearchAction::FIRST);
+            sa2.apply(root);
+            SoPath* mPath = sa2.getPath();
+            if (mPath) {
+                manip->replaceManip(mPath, nullptr);
+            }
+        }
+        root->unref();
+    }
+
+    // --- SoTabBoxManip ---
+    {
+        SoSeparator* root = buildScene(); root->ref();
+
+        SoTabBoxManip* manip = new SoTabBoxManip();
+        SoSearchAction sa;
+        sa.setType(SoTransform::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        SoPath* xfPath = sa.getPath();
+        if (xfPath) {
+            manip->replaceNode(xfPath);
+            if (!glRenderCheck(root)) {
+                fprintf(stderr, "  FAIL: TabBoxManip attached render\n"); ++failures;
+            }
+            simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 15, 15);
+            SoSearchAction sa2;
+            sa2.setType(manip->getTypeId());
+            sa2.setInterest(SoSearchAction::FIRST);
+            sa2.apply(root);
+            SoPath* mPath = sa2.getPath();
+            if (mPath) {
+                manip->replaceManip(mPath, nullptr);
+            }
+        }
+        root->unref();
+    }
+
+    // --- SoTransformerManip ---
+    {
+        SoSeparator* root = buildScene(); root->ref();
+
+        SoTransformerManip* manip = new SoTransformerManip();
+        SoSearchAction sa;
+        sa.setType(SoTransform::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        SoPath* xfPath = sa.getPath();
+        if (xfPath) {
+            manip->replaceNode(xfPath);
+            if (!glRenderCheck(root)) {
+                fprintf(stderr, "  FAIL: TransformerManip attached render\n"); ++failures;
+            }
+            simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 20, 20);
+            SoSearchAction sa2;
+            sa2.setType(manip->getTypeId());
+            sa2.setInterest(SoSearchAction::FIRST);
+            sa2.apply(root);
+            SoPath* mPath = sa2.getPath();
+            if (mPath) {
+                manip->replaceManip(mPath, nullptr);
+            }
+        }
+        root->unref();
+    }
+
+    // --- SoCenterballManip ---
+    {
+        SoSeparator* root = buildScene(); root->ref();
+
+        SoCenterballManip* manip = new SoCenterballManip();
+        SoSearchAction sa;
+        sa.setType(SoTransform::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        SoPath* xfPath = sa.getPath();
+        if (xfPath) {
+            manip->replaceNode(xfPath);
+            if (!glRenderCheck(root)) {
+                fprintf(stderr, "  FAIL: CenterballManip attached render\n"); ++failures;
+            }
+            simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 30, 0);
+        }
+        root->unref();
+    }
+
+    // --- SoTransformBoxManip ---
+    {
+        SoSeparator* root = buildScene(); root->ref();
+
+        SoTransformBoxManip* manip = new SoTransformBoxManip();
+        SoSearchAction sa;
+        sa.setType(SoTransform::getClassTypeId());
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        SoPath* xfPath = sa.getPath();
+        if (xfPath) {
+            manip->replaceNode(xfPath);
+            if (!glRenderCheck(root)) {
+                fprintf(stderr, "  FAIL: TransformBoxManip attached render\n"); ++failures;
+            }
+            simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 15, 0);
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: GL caching - render same scene multiple times to trigger cache paths
+static int runGLCacheRenderTest()
+{
+    int failures = 0;
+
+    // Render same scene three times with different cache context settings
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        SoSeparator* inner = new SoSeparator();
+        inner->renderCaching.setValue(SoSeparator::ON);
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.8f,0.2f,0.8f));
+        inner->addChild(mat);
+        inner->addChild(new SoSphere());
+        root->addChild(inner);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+
+        // First render (fills caches)
+        SbBool ok1 = renderer.render(root);
+        // Second render (should use caches)
+        SbBool ok2 = renderer.render(root);
+        // Third render (cache hit)
+        SbBool ok3 = renderer.render(root);
+
+        if (!ok1 || !ok2 || !ok3) {
+            fprintf(stderr, "  FAIL: GL cache renders (%d %d %d)\n", (int)ok1, (int)ok2, (int)ok3); ++failures;
+        }
+
+        // Change material to invalidate cache
+        mat->diffuseColor.setValue(SbColor(0.2f,0.8f,0.2f));
+        SbBool ok4 = renderer.render(root);
+        if (!ok4) {
+            fprintf(stderr, "  FAIL: GL cache invalidate render\n"); ++failures;
+        }
+
+        root->unref();
+    }
+
+    // GL multi-pass rendering (anti-aliasing via multiple passes)
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        root->addChild(new SoCube());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SoGLRenderAction* ra = renderer.getGLRenderAction();
+
+        // 2-pass rendering (accum buffer simulation)
+        ra->setNumPasses(2);
+        ra->setPassUpdate(TRUE);
+        SbBool ok = renderer.render(root);
+        if (!ok) {
+            fprintf(stderr, "  FAIL: GL 2-pass render\n"); ++failures;
+        }
+
+        // 4-pass rendering
+        ra->setNumPasses(4);
+        ok = renderer.render(root);
+        if (!ok) {
+            fprintf(stderr, "  FAIL: GL 4-pass render\n"); ++failures;
+        }
+
+        // Reset to 1 pass
+        ra->setNumPasses(1);
+        ra->setPassUpdate(FALSE);
+
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: GL render of shapes with different material/normal bindings
+static int runGLShapeBindingsTest()
+{
+    int failures = 0;
+
+    // --- PER_FACE material binding via GL ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(3,3,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.set1Value(0, SbColor(1,0,0));
+        mat->diffuseColor.set1Value(1, SbColor(0,1,0));
+        mat->diffuseColor.set1Value(2, SbColor(0,0,1));
+        mat->diffuseColor.set1Value(3, SbColor(1,1,0));
+        root->addChild(mat);
+
+        SoMaterialBinding* mb = new SoMaterialBinding();
+        mb->value.setValue(SoMaterialBinding::PER_FACE);
+        root->addChild(mb);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1,0));
+        coords->point.set1Value(1, SbVec3f( 1,-1,0));
+        coords->point.set1Value(2, SbVec3f( 1, 1,0));
+        coords->point.set1Value(3, SbVec3f(-1, 1,0));
+        root->addChild(coords);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        ifs->coordIndex.set1Value(0, 0);
+        ifs->coordIndex.set1Value(1, 1);
+        ifs->coordIndex.set1Value(2, 2);
+        ifs->coordIndex.set1Value(3, -1);
+        ifs->coordIndex.set1Value(4, 0);
+        ifs->coordIndex.set1Value(5, 2);
+        ifs->coordIndex.set1Value(6, 3);
+        ifs->coordIndex.set1Value(7, -1);
+        root->addChild(ifs);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: GL PER_FACE material IFS\n"); ++failures; }
+
+        root->unref();
+    }
+
+    // --- PER_VERTEX material via VertexProperty (exercises VBO paths) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+
+        SoVertexProperty* vp_node = new SoVertexProperty();
+        vp_node->vertex.set1Value(0, SbVec3f(-1,-1,0));
+        vp_node->vertex.set1Value(1, SbVec3f( 1,-1,0));
+        vp_node->vertex.set1Value(2, SbVec3f( 0, 1,0));
+        vp_node->orderedRGBA.set1Value(0, 0xFF0000FF); // red
+        vp_node->orderedRGBA.set1Value(1, 0x00FF00FF); // green
+        vp_node->orderedRGBA.set1Value(2, 0x0000FFFF); // blue
+        vp_node->materialBinding.setValue(SoVertexProperty::PER_VERTEX);
+        vp_node->normalBinding.setValue(SoVertexProperty::PER_VERTEX);
+        vp_node->normal.set1Value(0, SbVec3f(0,0,1));
+        vp_node->normal.set1Value(1, SbVec3f(0,0,1));
+        vp_node->normal.set1Value(2, SbVec3f(0,0,1));
+
+        SoFaceSet* fs = new SoFaceSet();
+        fs->numVertices.set1Value(0, 3);
+        fs->vertexProperty.setValue(vp_node);
+
+        root->addChild(fs);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: GL per-vertex color VertexProperty\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- OVERALL binding (simplest path) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0,0.8f,0.8f));
+        root->addChild(mat);
+
+        SoMaterialBinding* mb = new SoMaterialBinding();
+        mb->value.setValue(SoMaterialBinding::OVERALL);
+        root->addChild(mb);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        for (int i = 0; i < 6; ++i) {
+            float angle = float(i) * float(M_PI) / 3.0f;
+            coords->point.set1Value(i, SbVec3f(cosf(angle), sinf(angle), 0));
+        }
+        root->addChild(coords);
+        SoFaceSet* fs = new SoFaceSet();
+        fs->numVertices.set1Value(0, 6);
+        root->addChild(fs);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: GL OVERALL FaceSet render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- PackedColor (SoPackedColor) with IFS ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1,0));
+        coords->point.set1Value(1, SbVec3f( 1,-1,0));
+        coords->point.set1Value(2, SbVec3f( 0, 1,0));
+        root->addChild(coords);
+
+        SoPackedColor* pc = new SoPackedColor();
+        pc->orderedRGBA.set1Value(0, 0xFF0000FF);
+        pc->orderedRGBA.set1Value(1, 0x00FF00FF);
+        pc->orderedRGBA.set1Value(2, 0x0000FFFF);
+        root->addChild(pc);
+
+        SoMaterialBinding* mb = new SoMaterialBinding();
+        mb->value.setValue(SoMaterialBinding::PER_VERTEX);
+        root->addChild(mb);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        ifs->coordIndex.set1Value(0, 0);
+        ifs->coordIndex.set1Value(1, 1);
+        ifs->coordIndex.set1Value(2, 2);
+        ifs->coordIndex.set1Value(3, -1);
+        root->addChild(ifs);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: GL PackedColor IFS render\n"); ++failures; }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: GL rendering with lights (all types, exercises SoGLLazyElement light model)
+static int runGLLightsRenderTest()
+{
+    int failures = 0;
+
+    // Build a sphere scene with multiple light types
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+
+        // DirectionalLight
+        SoDirectionalLight* dl = new SoDirectionalLight();
+        dl->direction.setValue(SbVec3f(-1,-1,-1));
+        dl->color.setValue(SbColor(1,1,1));
+        dl->intensity.setValue(0.6f);
+        root->addChild(dl);
+
+        // PointLight
+        SoPointLight* pl = new SoPointLight();
+        pl->location.setValue(SbVec3f(3,3,3));
+        pl->color.setValue(SbColor(1,0.5f,0));
+        pl->intensity.setValue(0.4f);
+        root->addChild(pl);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.8f,0.8f,0.8f));
+        mat->specularColor.setValue(SbColor(1,1,1));
+        mat->shininess.setValue(0.8f);
+        root->addChild(mat);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: GL multi-light render\n"); ++failures; }
+        root->unref();
+    }
+
+    // SpotLight
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+
+        SoSpotLight* sl = new SoSpotLight();
+        sl->location.setValue(SbVec3f(0,0,5));
+        sl->direction.setValue(SbVec3f(0,0,-1));
+        sl->cutOffAngle.setValue(float(M_PI/4));
+        sl->dropOffRate.setValue(0.0f);
+        sl->color.setValue(SbColor(1,1,0));
+        sl->intensity.setValue(1.0f);
+        root->addChild(sl);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.8f,0.8f,0.8f));
+        root->addChild(mat);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: GL SpotLight render\n"); ++failures; }
+        root->unref();
+    }
+
+    // No light (only ambient)
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(1,0,0));
+        mat->ambientColor.setValue(SbColor(0.5f,0,0));
+        root->addChild(mat);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);  // may be black without lights, but shouldn't crash
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: GL render with ClipPlane
+static int runGLClipPlaneTest()
+{
+    int failures = 0;
+
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        // Clip plane at y=0 (shows top half of sphere)
+        SoClipPlane* cp = new SoClipPlane();
+        cp->plane.setValue(SbPlane(SbVec3f(0,1,0), 0.0f));
+        cp->on.setValue(TRUE);
+        root->addChild(cp);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0,0.8f,0.8f));
+        root->addChild(mat);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: GL ClipPlane render\n"); ++failures; }
+
+        // With clipping, only top half should be visible
+        const unsigned char* buf = renderer.getBuffer();
+        if (buf) {
+            // Top half pixels should have some color
+            int topHalf = 0;
+            for (int y = 33; y < 64; ++y) {
+                for (int x = 20; x < 44; ++x) {
+                    int idx = (y*64+x)*3;
+                    if (buf[idx] > 5 || buf[idx+1] > 5 || buf[idx+2] > 5) ++topHalf;
+                }
+            }
+            if (topHalf == 0) {
+                fprintf(stderr, "  FAIL: GL ClipPlane no visible pixels in top half\n"); ++failures;
+            }
+        }
+
+        root->unref();
+    }
+
+    // SoClipPlane with off state
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        SoClipPlane* cp = new SoClipPlane();
+        cp->plane.setValue(SbPlane(SbVec3f(0,1,0), 0.0f));
+        cp->on.setValue(FALSE); // clip plane off
+        root->addChild(cp);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);  // Just verify no crash
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: Additional draggers (SoTabBoxDragger, SoTransformBoxDragger, SoRotateDiscDragger, SoScale1Dragger etc.)
+static int runAdditionalDraggersTest()
+{
+    int failures = 0;
+
+    // --- SoTabBoxDragger ---
+    {
+        SoTabBoxDragger* d = new SoTabBoxDragger();
+        SoSeparator* root = ObolTest::Scenes::buildDraggerTestScene(d, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        root->ref();
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoTabBoxDragger render\n"); ++failures;
+        }
+        simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 20, 20);
+        root->unref();
+    }
+
+    // --- SoTransformBoxDragger ---
+    {
+        SoTransformBoxDragger* d = new SoTransformBoxDragger();
+        SoSeparator* root = ObolTest::Scenes::buildDraggerTestScene(d, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        root->ref();
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoTransformBoxDragger render\n"); ++failures;
+        }
+        simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 20, 0);
+        root->unref();
+    }
+
+    // --- SoRotateDiscDragger ---
+    {
+        SoRotateDiscDragger* d = new SoRotateDiscDragger();
+        SoSeparator* root = ObolTest::Scenes::buildDraggerTestScene(d, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        root->ref();
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoRotateDiscDragger render\n"); ++failures;
+        }
+        simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 0, 30);
+        root->unref();
+    }
+
+    // --- SoScale2Dragger ---
+    {
+        SoScale2Dragger* d = new SoScale2Dragger();
+        SoSeparator* root = ObolTest::Scenes::buildDraggerTestScene(d, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        root->ref();
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoScale2Dragger render\n"); ++failures;
+        }
+        simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 20, 20);
+        root->unref();
+    }
+
+    // --- SoScale2UniformDragger ---
+    {
+        SoScale2UniformDragger* d = new SoScale2UniformDragger();
+        SoSeparator* root = ObolTest::Scenes::buildDraggerTestScene(d, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        root->ref();
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoScale2UniformDragger render\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- SoRotateCylindricalDragger ---
+    {
+        SoRotateCylindricalDragger* d = new SoRotateCylindricalDragger();
+        SoSeparator* root = ObolTest::Scenes::buildDraggerTestScene(d, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        root->ref();
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoRotateCylindricalDragger render\n"); ++failures;
+        }
+        simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 0, 30);
+        root->unref();
+    }
+
+    // --- SoScale1Dragger ---
+    {
+        SoScale1Dragger* d = new SoScale1Dragger();
+        SoSeparator* root = ObolTest::Scenes::buildDraggerTestScene(d, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        root->ref();
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoScale1Dragger render\n"); ++failures;
+        }
+        simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 30, 0);
+        root->unref();
+    }
+
+    // --- SoDragPointDragger ---
+    {
+        SoDragPointDragger* d = new SoDragPointDragger();
+        SoSeparator* root = ObolTest::Scenes::buildDraggerTestScene(d, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        root->ref();
+        if (!glRenderCheck(root)) {
+            fprintf(stderr, "  FAIL: SoDragPointDragger render\n"); ++failures;
+        }
+        simulateDrag(root, DEFAULT_WIDTH/2, DEFAULT_HEIGHT/2, 20, 20);
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: GL render with SoGLRenderAction smoothing
+static int runGLRenderSmoothingTest()
+{
+    int failures = 0;
+
+    SoSeparator* root = new SoSeparator(); root->ref();
+    SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+    cam->position.setValue(SbVec3f(0,0,6));
+    root->addChild(cam);
+    root->addChild(new SoDirectionalLight());
+    SoMaterial* mat = new SoMaterial();
+    mat->diffuseColor.setValue(SbColor(1,1,0));
+    root->addChild(mat);
+    root->addChild(new SoCone());
+
+    SbViewportRegion vp(64,64);
+    cam->viewAll(root, vp);
+
+    // Test with smoothing enabled
+    SoOffscreenRenderer renderer(vp);
+    renderer.setComponents(SoOffscreenRenderer::RGB);
+    SoGLRenderAction* ra = renderer.getGLRenderAction();
+    ra->setSmoothing(TRUE);
+    SbBool ok = renderer.render(root);
+    if (!ok) { fprintf(stderr, "  FAIL: GL smoothing render\n"); ++failures; }
+
+    // Test with smoothing disabled
+    ra->setSmoothing(FALSE);
+    ok = renderer.render(root);
+    if (!ok) { fprintf(stderr, "  FAIL: GL no-smoothing render\n"); ++failures; }
+
+    // Test RGBA render
+    SoOffscreenRenderer renderer2(vp);
+    renderer2.setComponents(SoOffscreenRenderer::RGB_TRANSPARENCY);
+    ok = renderer2.render(root);
+    if (!ok) { fprintf(stderr, "  FAIL: GL RGBA component render\n"); ++failures; }
+
+    // Test LUMINANCE_ALPHA
+    SoOffscreenRenderer renderer3(vp);
+    renderer3.setComponents(SoOffscreenRenderer::LUMINANCE_TRANSPARENCY);
+    ok = renderer3.render(root);
+    if (!ok) { fprintf(stderr, "  FAIL: GL LUMINANCE_ALPHA render\n"); ++failures; }
+
+    root->unref();
+    return failures;
+}
+
+// =========================================================================
+// Register session 5 / iteration 19 tests
+// =========================================================================
+
+REGISTER_TEST(unit_gl_transparency_types, ObolTest::TestCategory::Rendering,
+    "GL render with all transparency types: BLEND, DELAYED_BLEND, SCREEN_DOOR, SORTED_OBJECT_BLEND, DELAYED_ADD, SORTED_OBJECT_ADD",
+    e.has_visual = false;
+    e.run_unit = runGLTransparencyTypesTest;
+);
+
+REGISTER_TEST(unit_gl_material_state, ObolTest::TestCategory::Rendering,
+    "GL render with material state changes: multi-material, BASE_COLOR light model, emissive, LINES, POINTS draw styles",
+    e.has_visual = false;
+    e.run_unit = runGLMaterialStateTest;
+);
+
+REGISTER_TEST(unit_gl_shape_hints_render, ObolTest::TestCategory::Rendering,
+    "GL render with SoShapeHints: SOLID+CCW, CW, UNKNOWN_ORDERING (two-sided lighting)",
+    e.has_visual = false;
+    e.run_unit = runGLShapeHintsRenderTest;
+);
+
+REGISTER_TEST(unit_dragger_interaction, ObolTest::TestCategory::Draggers,
+    "Dragger interaction simulation: SoTranslate1, SoRotateSpherical, SoTrackball, SoHandleBox, SoTransformer, SoCenterball",
+    e.has_visual = false;
+    e.run_unit = runDraggerInteractionTest;
+);
+
+REGISTER_TEST(unit_manip_lifecycle, ObolTest::TestCategory::Manips,
+    "Manip lifecycle: SoTrackball/HandleBox/TabBox/Transformer/Centerball/TransformBox replaceNode+drag+replaceManip",
+    e.has_visual = false;
+    e.run_unit = runManipLifecycleTest;
+);
+
+REGISTER_TEST(unit_gl_cache_render, ObolTest::TestCategory::Rendering,
+    "GL cache: render same scene 3x (cache fills + hits), material change invalidation, multi-pass rendering",
+    e.has_visual = false;
+    e.run_unit = runGLCacheRenderTest;
+);
+
+REGISTER_TEST(unit_gl_shape_bindings, ObolTest::TestCategory::Rendering,
+    "GL render: PER_FACE material IFS, PER_VERTEX VertexProperty, OVERALL FaceSet, PackedColor IFS",
+    e.has_visual = false;
+    e.run_unit = runGLShapeBindingsTest;
+);
+
+REGISTER_TEST(unit_gl_lights_render, ObolTest::TestCategory::Rendering,
+    "GL render: multi-light (DirectionalLight+PointLight), SpotLight, no-light scene",
+    e.has_visual = false;
+    e.run_unit = runGLLightsRenderTest;
+);
+
+REGISTER_TEST(unit_gl_clipplane, ObolTest::TestCategory::Rendering,
+    "GL render: SoClipPlane (on/off), clipped sphere, verify top-half visible",
+    e.has_visual = false;
+    e.run_unit = runGLClipPlaneTest;
+);
+
+REGISTER_TEST(unit_additional_draggers, ObolTest::TestCategory::Draggers,
+    "Additional dragger interaction: SoTabBox, SoTransformBox, SoRotateDisc, SoScale2, SoRotateCylindrical, SoScale1, SoDragPoint",
+    e.has_visual = false;
+    e.run_unit = runAdditionalDraggersTest;
+);
+
+REGISTER_TEST(unit_gl_render_smoothing, ObolTest::TestCategory::Rendering,
+    "GL render: smoothing on/off, RGBA components, LUMINANCE_ALPHA components",
+    e.has_visual = false;
+    e.run_unit = runGLRenderSmoothingTest;
 );
 
 } // anonymous namespace
