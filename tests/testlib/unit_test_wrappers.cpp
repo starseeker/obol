@@ -123,6 +123,54 @@
 #include <Inventor/nodes/SoNormalBinding.h>
 #include <Inventor/nodes/SoFaceSet.h>
 
+// Iteration-2 headers
+#include <Inventor/SbDict.h>
+#include <Inventor/SbImage.h>
+#include <Inventor/SbString.h>
+#include <Inventor/SbName.h>
+#include <Inventor/SbDPLine.h>
+#include <Inventor/SbDPPlane.h>
+#include <Inventor/SbDPRotation.h>
+#include <Inventor/SbVec2f.h>
+#include <Inventor/SbVec4f.h>
+#include <Inventor/SbVec3d.h>
+#include <Inventor/SbXfBox3f.h>
+#include <Inventor/SoInput.h>
+#include <Inventor/SoOutput.h>
+#include <Inventor/SoDB.h>
+#include <Inventor/actions/SoWriteAction.h>
+#include <Inventor/actions/SoHandleEventAction.h>
+#include <Inventor/actions/SoGetPrimitiveCountAction.h>
+#include <Inventor/actions/SoGetMatrixAction.h>
+#include <Inventor/nodes/SoText2.h>
+#include <Inventor/nodes/SoTransform.h>
+#include <Inventor/nodes/SoCone.h>
+#include <Inventor/nodes/SoCube.h>
+#include <Inventor/nodes/SoCylinder.h>
+#include <Inventor/nodes/SoCoordinate3.h>
+#include <Inventor/nodes/SoPointSet.h>
+#include <Inventor/nodes/SoLineSet.h>
+#include <Inventor/nodes/SoIndexedLineSet.h>
+#include <Inventor/nodes/SoSwitch.h>
+#include <Inventor/nodes/SoLOD.h>
+#include <Inventor/nodes/SoDrawStyle.h>
+#include <Inventor/nodes/SoLightModel.h>
+#include <Inventor/nodes/SoFont.h>
+#include <Inventor/nodes/SoBaseColor.h>
+#include <Inventor/fields/SoSFString.h>
+#include <Inventor/fields/SoSFEnum.h>
+#include <Inventor/fields/SoSFColor.h>
+#include <Inventor/fields/SoMFString.h>
+#include <Inventor/fields/SoMFColor.h>
+#include <Inventor/fields/SoSFMatrix.h>
+#include <Inventor/fields/SoSFVec2f.h>
+#include <Inventor/fields/SoSFNode.h>
+#include <Inventor/fields/SoSFPath.h>
+#include <Inventor/fields/SoMFInt32.h>
+#include <Inventor/events/SoMouseButtonEvent.h>
+#include <Inventor/events/SoKeyboardEvent.h>
+#include <Inventor/events/SoLocation2Event.h>
+
 #include <cmath>
 #include <cstdio>
 #include <utility>
@@ -2106,8 +2154,1606 @@ REGISTER_TEST(nanort_shadow, ObolTest::TestCategory::Rendering,
 );
 
 // =========================================================================
-// Unit test: SbMatrix comprehensive
+// Unit test: SbVec2f, SbVec4f, SbVec3d (vector variants)
 // =========================================================================
+static int runVecVariantsTests()
+{
+    int failures = 0;
+
+    // --- SbVec2f ---
+    {
+        SbVec2f a(3.0f, 4.0f);
+        if (!approxEqual(a.length(), 5.0f)) {
+            fprintf(stderr, "  FAIL: SbVec2f length (got %f)\n", a.length()); ++failures;
+        }
+        SbVec2f b(1.0f, 2.0f);
+        float dot = a.dot(b);
+        if (!approxEqual(dot, 11.0f)) {
+            fprintf(stderr, "  FAIL: SbVec2f dot (got %f)\n", dot); ++failures;
+        }
+        SbVec2f sum = a + b;
+        if (!approxEqual(sum[0], 4.0f) || !approxEqual(sum[1], 6.0f)) {
+            fprintf(stderr, "  FAIL: SbVec2f add (got %f %f)\n", sum[0], sum[1]); ++failures;
+        }
+        SbVec2f diff = a - b;
+        if (!approxEqual(diff[0], 2.0f) || !approxEqual(diff[1], 2.0f)) {
+            fprintf(stderr, "  FAIL: SbVec2f sub (got %f %f)\n", diff[0], diff[1]); ++failures;
+        }
+        SbVec2f scaled = a * 2.0f;
+        if (!approxEqual(scaled[0], 6.0f) || !approxEqual(scaled[1], 8.0f)) {
+            fprintf(stderr, "  FAIL: SbVec2f scale (got %f %f)\n", scaled[0], scaled[1]); ++failures;
+        }
+        SbVec2f n = a;
+        n.normalize();
+        if (!approxEqual(n.length(), 1.0f)) {
+            fprintf(stderr, "  FAIL: SbVec2f normalize length\n"); ++failures;
+        }
+        n.negate();
+        if (!approxEqual(n[0], -0.6f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbVec2f negate\n"); ++failures;
+        }
+        SbVec2f c;
+        c.setValue(5.0f, 6.0f);
+        if (!approxEqual(c[0], 5.0f)) {
+            fprintf(stderr, "  FAIL: SbVec2f setValue\n"); ++failures;
+        }
+        if (!c.equals(SbVec2f(5.0f, 6.0f), 1e-5f)) {
+            fprintf(stderr, "  FAIL: SbVec2f equals\n"); ++failures;
+        }
+    }
+
+    // --- SbVec4f ---
+    {
+        SbVec4f a(1.0f, 2.0f, 3.0f, 4.0f);
+        if (!approxEqual(a[0], 1.0f) || !approxEqual(a[3], 4.0f)) {
+            fprintf(stderr, "  FAIL: SbVec4f indexing\n"); ++failures;
+        }
+        float dot = a.dot(a);
+        if (!approxEqual(dot, 30.0f)) {
+            fprintf(stderr, "  FAIL: SbVec4f dot self (got %f)\n", dot); ++failures;
+        }
+        if (!approxEqual(a.sqrLength(), 30.0f)) {
+            fprintf(stderr, "  FAIL: SbVec4f sqrLength\n"); ++failures;
+        }
+        SbVec4f b(1.0f, 1.0f, 1.0f, 1.0f);
+        SbVec4f sum = a + b;
+        if (!approxEqual(sum[0], 2.0f) || !approxEqual(sum[3], 5.0f)) {
+            fprintf(stderr, "  FAIL: SbVec4f add\n"); ++failures;
+        }
+        SbVec3f r3;
+        a.getReal(r3);
+        // homogeneous divide: (1/4, 2/4, 3/4)
+        if (!approxEqual(r3[0], 0.25f, 1e-3f) || !approxEqual(r3[1], 0.5f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbVec4f getReal (got %f %f %f)\n", r3[0], r3[1], r3[2]); ++failures;
+        }
+        SbVec4f n = a;
+        n.negate();
+        if (!approxEqual(n[0], -1.0f)) {
+            fprintf(stderr, "  FAIL: SbVec4f negate\n"); ++failures;
+        }
+        if (!a.equals(SbVec4f(1.0f, 2.0f, 3.0f, 4.0f), 1e-5f)) {
+            fprintf(stderr, "  FAIL: SbVec4f equals\n"); ++failures;
+        }
+    }
+
+    // --- SbVec3d ---
+    {
+        SbVec3d a(3.0, 4.0, 0.0);
+        if (std::fabs(a.length() - 5.0) > 1e-9) {
+            fprintf(stderr, "  FAIL: SbVec3d length (got %f)\n", a.length()); ++failures;
+        }
+        SbVec3d b(1.0, 0.0, 0.0);
+        double dot = a.dot(b);
+        if (std::fabs(dot - 3.0) > 1e-9) {
+            fprintf(stderr, "  FAIL: SbVec3d dot (got %f)\n", dot); ++failures;
+        }
+        SbVec3d cross = a.cross(SbVec3d(0.0, 0.0, 1.0));
+        if (std::fabs(cross[0] - 4.0) > 1e-9 || std::fabs(cross[1] - (-3.0)) > 1e-9) {
+            fprintf(stderr, "  FAIL: SbVec3d cross (got %f %f %f)\n", cross[0], cross[1], cross[2]); ++failures;
+        }
+        SbVec3d n = a;
+        n.normalize();
+        if (std::fabs(n.length() - 1.0) > 1e-9) {
+            fprintf(stderr, "  FAIL: SbVec3d normalize\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbString, SbName, SbTime extended
+// =========================================================================
+static int runStringNameTimeTests()
+{
+    int failures = 0;
+
+    // --- SbString ---
+    {
+        SbString s("hello");
+        if (s.getLength() != 5) {
+            fprintf(stderr, "  FAIL: SbString getLength (got %d)\n", s.getLength()); ++failures;
+        }
+        if (strcmp(s.getString(), "hello") != 0) {
+            fprintf(stderr, "  FAIL: SbString getString\n"); ++failures;
+        }
+        SbString s2 = s + " world";
+        if (s2.getLength() != 11) {
+            fprintf(stderr, "  FAIL: SbString concat length (got %d)\n", s2.getLength()); ++failures;
+        }
+        if (!(s == SbString("hello"))) {
+            fprintf(stderr, "  FAIL: SbString operator==\n"); ++failures;
+        }
+        if (s == SbString("bye")) {
+            fprintf(stderr, "  FAIL: SbString operator== false positive\n"); ++failures;
+        }
+        SbString sub = s2.getSubString(6, 10);
+        if (strcmp(sub.getString(), "world") != 0) {
+            fprintf(stderr, "  FAIL: SbString getSubString (got '%s')\n", sub.getString()); ++failures;
+        }
+        SbString empty;
+        empty.makeEmpty();
+        if (empty.getLength() != 0) {
+            fprintf(stderr, "  FAIL: SbString makeEmpty\n"); ++failures;
+        }
+        SbString digits(42);
+        if (strcmp(digits.getString(), "42") != 0) {
+            fprintf(stderr, "  FAIL: SbString from int (got '%s')\n", digits.getString()); ++failures;
+        }
+    }
+
+    // --- SbName ---
+    {
+        SbName n("myNode");
+        if (strcmp(n.getString(), "myNode") != 0) {
+            fprintf(stderr, "  FAIL: SbName getString\n"); ++failures;
+        }
+        if (n.getLength() != 6) {
+            fprintf(stderr, "  FAIL: SbName getLength (got %d)\n", n.getLength()); ++failures;
+        }
+        SbName n2("myNode");
+        if (!(n == n2)) {
+            fprintf(stderr, "  FAIL: SbName operator==\n"); ++failures;
+        }
+        if (n == SbName("other")) {
+            fprintf(stderr, "  FAIL: SbName operator== false\n"); ++failures;
+        }
+        SbName empty = SbName::empty();
+        if (!(!empty)) {
+            fprintf(stderr, "  FAIL: SbName::empty operator!\n"); ++failures;
+        }
+        if (!SbName::isIdentStartChar('A')) {
+            fprintf(stderr, "  FAIL: SbName::isIdentStartChar 'A'\n"); ++failures;
+        }
+        if (!SbName::isIdentChar('_')) {
+            fprintf(stderr, "  FAIL: SbName::isIdentChar '_'\n"); ++failures;
+        }
+        if (SbName::isIdentStartChar('5')) {
+            fprintf(stderr, "  FAIL: SbName::isIdentStartChar '5' should be false\n"); ++failures;
+        }
+    }
+
+    // --- SbTime ---
+    {
+        SbTime t(1.5);
+        if (std::fabs(t.getValue() - 1.5) > 1e-9) {
+            fprintf(stderr, "  FAIL: SbTime getValue (got %f)\n", t.getValue()); ++failures;
+        }
+        SbTime t2(0.5);
+        SbTime sum = t + t2;
+        if (std::fabs(sum.getValue() - 2.0) > 1e-9) {
+            fprintf(stderr, "  FAIL: SbTime add (got %f)\n", sum.getValue()); ++failures;
+        }
+        SbTime diff = t - t2;
+        if (std::fabs(diff.getValue() - 1.0) > 1e-9) {
+            fprintf(stderr, "  FAIL: SbTime sub (got %f)\n", diff.getValue()); ++failures;
+        }
+        SbTime scaled = t * 2.0;
+        if (std::fabs(scaled.getValue() - 3.0) > 1e-9) {
+            fprintf(stderr, "  FAIL: SbTime multiply (got %f)\n", scaled.getValue()); ++failures;
+        }
+        SbTime divided = t / 3.0;
+        if (std::fabs(divided.getValue() - 0.5) > 1e-6) {
+            fprintf(stderr, "  FAIL: SbTime divide (got %f)\n", divided.getValue()); ++failures;
+        }
+        if (!(t > t2)) {
+            fprintf(stderr, "  FAIL: SbTime operator>\n"); ++failures;
+        }
+        if (!(t2 < t)) {
+            fprintf(stderr, "  FAIL: SbTime operator<\n"); ++failures;
+        }
+        SbTime zero = SbTime::zero();
+        if (std::fabs(zero.getValue()) > 1e-9) {
+            fprintf(stderr, "  FAIL: SbTime::zero (got %f)\n", zero.getValue()); ++failures;
+        }
+        unsigned long ms = t.getMsecValue();
+        if (ms != 1500) {
+            fprintf(stderr, "  FAIL: SbTime getMsecValue (got %lu)\n", ms); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbDict hash dictionary
+// =========================================================================
+static int runDictTests()
+{
+    int failures = 0;
+
+    {
+        SbDict dict;
+        // enter and find
+        int data1 = 42, data2 = 99;
+        SbBool ok = dict.enter(1, &data1);
+        if (!ok) { fprintf(stderr, "  FAIL: SbDict enter\n"); ++failures; }
+        ok = dict.enter(2, &data2);
+        if (!ok) { fprintf(stderr, "  FAIL: SbDict enter 2\n"); ++failures; }
+
+        void* found = nullptr;
+        ok = dict.find(1, found);
+        if (!ok || static_cast<int*>(found) != &data1) {
+            fprintf(stderr, "  FAIL: SbDict find\n"); ++failures;
+        }
+        ok = dict.find(2, found);
+        if (!ok || static_cast<int*>(found) != &data2) {
+            fprintf(stderr, "  FAIL: SbDict find 2\n"); ++failures;
+        }
+
+        // find absent key
+        ok = dict.find(999, found);
+        if (ok) { fprintf(stderr, "  FAIL: SbDict find absent should fail\n"); ++failures; }
+
+        // remove
+        ok = dict.remove(1);
+        if (!ok) { fprintf(stderr, "  FAIL: SbDict remove\n"); ++failures; }
+        ok = dict.find(1, found);
+        if (ok) { fprintf(stderr, "  FAIL: SbDict find after remove should fail\n"); ++failures; }
+
+        // clear
+        dict.clear();
+        ok = dict.find(2, found);
+        if (ok) { fprintf(stderr, "  FAIL: SbDict find after clear\n"); ++failures; }
+    }
+
+    // applyToAll callback
+    {
+        SbDict dict;
+        static int count = 0;
+        count = 0;
+        int a = 1, b = 2, c = 3;
+        dict.enter(10, &a); dict.enter(20, &b); dict.enter(30, &c);
+        dict.applyToAll([](SbDictKeyType, void*) { ++count; });
+        if (count != 3) {
+            fprintf(stderr, "  FAIL: SbDict applyToAll count (got %d)\n", count); ++failures;
+        }
+    }
+
+    // makePList
+    {
+        SbDict dict;
+        int v1=1, v2=2;
+        dict.enter(100, &v1); dict.enter(200, &v2);
+        SbPList keys, values;
+        dict.makePList(keys, values);
+        if (keys.getLength() != 2 || values.getLength() != 2) {
+            fprintf(stderr, "  FAIL: SbDict makePList count (got %d)\n", keys.getLength()); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbColor extended (HSV, packed)
+// =========================================================================
+static int runColorTests()
+{
+    int failures = 0;
+
+    // --- setHSVValue / getHSVValue ---
+    {
+        SbColor c;
+        c.setHSVValue(0.0f, 1.0f, 1.0f); // pure red in HSV
+        if (!approxEqual(c[0], 1.0f, 1e-3f) || !approxEqual(c[1], 0.0f, 1e-3f) || !approxEqual(c[2], 0.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: setHSVValue red (got %f %f %f)\n", c[0], c[1], c[2]); ++failures;
+        }
+        float h, s, v;
+        c.getHSVValue(h, s, v);
+        if (!approxEqual(h, 0.0f, 1e-3f) || !approxEqual(s, 1.0f, 1e-3f) || !approxEqual(v, 1.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: getHSVValue (got %f %f %f)\n", h, s, v); ++failures;
+        }
+    }
+
+    // --- getPackedValue / setPackedValue ---
+    {
+        SbColor c(1.0f, 0.0f, 0.0f);
+        float transparency = 0.0f;
+        uint32_t packed = c.getPackedValue(transparency);
+        SbColor c2;
+        float trans2;
+        c2.setPackedValue(packed, trans2);
+        if (!approxEqual(c2[0], 1.0f, 0.01f)) {
+            fprintf(stderr, "  FAIL: packed round-trip R (got %f)\n", c2[0]); ++failures;
+        }
+    }
+
+    // --- HSV array form ---
+    {
+        SbColor c;
+        float hsv[3] = {0.333f, 1.0f, 1.0f}; // green
+        c.setHSVValue(hsv);
+        float out[3];
+        c.getHSVValue(out);
+        if (!approxEqual(out[0], 0.333f, 1e-2f)) {
+            fprintf(stderr, "  FAIL: HSV array round-trip (got %f)\n", out[0]); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbImage
+// =========================================================================
+static int runImageTests()
+{
+    int failures = 0;
+
+    // setValue / getValue
+    {
+        SbImage img;
+        SbVec2s size(4, 4);
+        unsigned char data[4*4*3];
+        for (int i = 0; i < 4*4*3; ++i) data[i] = static_cast<unsigned char>(i % 256);
+        img.setValue(size, 3, data);
+
+        SbVec2s gotSize;
+        int bpp;
+        unsigned char* buf = img.getValue(gotSize, bpp);
+        if (gotSize[0] != 4 || gotSize[1] != 4) {
+            fprintf(stderr, "  FAIL: SbImage getValue size\n"); ++failures;
+        }
+        if (bpp != 3) {
+            fprintf(stderr, "  FAIL: SbImage getValue bpp (got %d)\n", bpp); ++failures;
+        }
+        if (buf && buf[5] != data[5]) {
+            fprintf(stderr, "  FAIL: SbImage getValue data[5] mismatch\n"); ++failures;
+        }
+        if (!img.hasData()) {
+            fprintf(stderr, "  FAIL: SbImage hasData\n"); ++failures;
+        }
+    }
+
+    // 3D setValue
+    {
+        SbImage img;
+        SbVec3s size(2, 2, 2);
+        unsigned char data[2*2*2*1];
+        for (int i = 0; i < 8; ++i) data[i] = static_cast<unsigned char>(i * 32);
+        img.setValue(size, 1, data);
+        SbVec3s s3 = img.getSize();
+        if (s3[0] != 2 || s3[1] != 2 || s3[2] != 2) {
+            fprintf(stderr, "  FAIL: SbImage 3D getSize (got %d %d %d)\n", s3[0], s3[1], s3[2]); ++failures;
+        }
+    }
+
+    // equality
+    {
+        SbImage a, b;
+        SbVec2s sz(2,2);
+        unsigned char d[4] = {0,1,2,3};
+        a.setValue(sz, 1, d);
+        b.setValue(sz, 1, d);
+        if (!(a == b)) {
+            fprintf(stderr, "  FAIL: SbImage equality\n"); ++failures;
+        }
+        unsigned char d2[4] = {0,1,2,4};
+        b.setValue(sz, 1, d2);
+        if (a == b) {
+            fprintf(stderr, "  FAIL: SbImage inequality\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoGroup / SoSeparator hierarchy manipulation
+// =========================================================================
+static int runGroupHierarchyTests()
+{
+    int failures = 0;
+
+    // --- addChild, getChild, getNumChildren, findChild ---
+    {
+        SoGroup* g = new SoGroup();
+        g->ref();
+        SoCube* c1 = new SoCube(); c1->ref();
+        SoCube* c2 = new SoCube(); c2->ref();
+        SoSphere* s = new SoSphere(); s->ref();
+
+        g->addChild(c1);
+        g->addChild(c2);
+        g->addChild(s);
+        if (g->getNumChildren() != 3) {
+            fprintf(stderr, "  FAIL: SoGroup addChild count (got %d)\n", g->getNumChildren()); ++failures;
+        }
+        if (g->getChild(0) != c1) {
+            fprintf(stderr, "  FAIL: SoGroup getChild(0)\n"); ++failures;
+        }
+        if (g->findChild(s) != 2) {
+            fprintf(stderr, "  FAIL: SoGroup findChild (got %d)\n", g->findChild(s)); ++failures;
+        }
+
+        // insertChild
+        SoCone* cone = new SoCone(); cone->ref();
+        g->insertChild(cone, 1);
+        if (g->getNumChildren() != 4) {
+            fprintf(stderr, "  FAIL: SoGroup insertChild count\n"); ++failures;
+        }
+        if (g->getChild(1) != cone) {
+            fprintf(stderr, "  FAIL: SoGroup insertChild at 1\n"); ++failures;
+        }
+
+        // replaceChild
+        SoCylinder* cyl = new SoCylinder(); cyl->ref();
+        g->replaceChild(cone, cyl);
+        if (g->getChild(1) != cyl) {
+            fprintf(stderr, "  FAIL: SoGroup replaceChild\n"); ++failures;
+        }
+
+        // removeChild
+        g->removeChild(0);
+        if (g->getNumChildren() != 3) {
+            fprintf(stderr, "  FAIL: SoGroup removeChild count\n"); ++failures;
+        }
+
+        // removeAllChildren
+        g->removeAllChildren();
+        if (g->getNumChildren() != 0) {
+            fprintf(stderr, "  FAIL: SoGroup removeAllChildren\n"); ++failures;
+        }
+
+        c1->unref(); c2->unref(); s->unref(); cone->unref(); cyl->unref();
+        g->unref();
+    }
+
+    // --- SoSeparator: basic hierarchy and getBoundingBox ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCube* cube = new SoCube();
+        cube->width = 2.0f; cube->height = 2.0f; cube->depth = 2.0f;
+        root->addChild(cube);
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        SbBox3f box = bba.getBoundingBox();
+
+        if (box.isEmpty()) {
+            fprintf(stderr, "  FAIL: SoSeparator getBBox is empty\n"); ++failures;
+        } else {
+            SbVec3f c = box.getCenter();
+            if (!approxEqual(c[0], 0.0f, 0.1f) || !approxEqual(c[1], 0.0f, 0.1f)) {
+                fprintf(stderr, "  FAIL: SoSeparator cube bbox center (got %f %f %f)\n", c[0], c[1], c[2]); ++failures;
+            }
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoCamera (PerspectiveCamera)
+// =========================================================================
+static int runCameraTests()
+{
+    int failures = 0;
+
+    // --- SoPerspectiveCamera: construction and field defaults ---
+    {
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->ref();
+        // Default position at origin
+        SbVec3f pos = cam->position.getValue();
+        if (!approxEqual(pos[0], 0.0f) || !approxEqual(pos[1], 0.0f) || !approxEqual(pos[2], 1.0f)) {
+            fprintf(stderr, "  FAIL: camera default position (got %f %f %f)\n", pos[0], pos[1], pos[2]); ++failures;
+        }
+        // nearDistance and farDistance
+        if (cam->nearDistance.getValue() <= 0.0f) {
+            fprintf(stderr, "  FAIL: camera nearDistance <= 0\n"); ++failures;
+        }
+        cam->unref();
+    }
+
+    // --- getViewVolume ---
+    {
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->ref();
+        cam->position.setValue(0.0f, 0.0f, 5.0f);
+        cam->heightAngle.setValue(float(M_PI / 2.0f)); // 90°
+        cam->nearDistance.setValue(0.1f);
+        cam->farDistance.setValue(100.0f);
+        SbViewVolume vv = cam->getViewVolume(1.0f);
+        // Should produce a valid view volume
+        SbVec3f sight = vv.getSightPoint(5.0f);
+        // Sight point at 5 units in front
+        if (!approxEqual(sight[0], 0.0f, 0.1f) || !approxEqual(sight[1], 0.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: camera getViewVolume sight (got %f %f %f)\n", sight[0], sight[1], sight[2]); ++failures;
+        }
+        cam->unref();
+    }
+
+    // --- viewAll on a simple scene ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCube* cube = new SoCube();
+        cube->width = 2.0f; cube->height = 2.0f; cube->depth = 2.0f;
+        root->addChild(cube);
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->ref();
+        SbViewportRegion vp(512, 512);
+        cam->viewAll(root, vp);
+        // After viewAll, camera should have moved to see the cube
+        SbVec3f pos = cam->position.getValue();
+        if (pos.length() < 0.1f) {
+            fprintf(stderr, "  FAIL: viewAll should move camera (got %f %f %f)\n", pos[0], pos[1], pos[2]); ++failures;
+        }
+        cam->unref();
+        root->unref();
+    }
+
+    // --- pointAt ---
+    {
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->ref();
+        cam->position.setValue(0.0f, 0.0f, 5.0f);
+        cam->pointAt(SbVec3f(0.0f, 0.0f, 0.0f));
+        // Camera should now look towards -Z
+        SbVec3f axis; float angle;
+        cam->orientation.getValue().getValue(axis, angle);
+        // Any valid rotation is acceptable, just check it doesn't blow up
+        if (cam->orientation.getValue().getValue()[0] != cam->orientation.getValue().getValue()[0]) {
+            fprintf(stderr, "  FAIL: pointAt NaN in orientation\n"); ++failures;
+        }
+        cam->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoMaterial field access
+// =========================================================================
+static int runMaterialTests()
+{
+    int failures = 0;
+
+    {
+        SoMaterial* m = new SoMaterial();
+        m->ref();
+
+        // diffuseColor default
+        if (m->diffuseColor.getNum() < 1) {
+            fprintf(stderr, "  FAIL: SoMaterial diffuseColor count\n"); ++failures;
+        }
+
+        // Set and get diffuseColor
+        m->diffuseColor.set1Value(0, SbColor(1.0f, 0.0f, 0.0f));
+        SbColor dc = m->diffuseColor[0];
+        if (!approxEqual(dc[0], 1.0f) || !approxEqual(dc[1], 0.0f)) {
+            fprintf(stderr, "  FAIL: SoMaterial diffuseColor set/get (got %f %f)\n", dc[0], dc[1]); ++failures;
+        }
+
+        // Set specular and shininess
+        m->specularColor.set1Value(0, SbColor(0.5f, 0.5f, 0.5f));
+        m->shininess.set1Value(0, 0.8f);
+        if (!approxEqual(m->shininess[0], 0.8f)) {
+            fprintf(stderr, "  FAIL: SoMaterial shininess (got %f)\n", m->shininess[0]); ++failures;
+        }
+
+        // Transparency
+        m->transparency.set1Value(0, 0.5f);
+        if (!approxEqual(m->transparency[0], 0.5f)) {
+            fprintf(stderr, "  FAIL: SoMaterial transparency (got %f)\n", m->transparency[0]); ++failures;
+        }
+
+        // getMaterialType is private; skip
+        // int mtype = m->getMaterialType();
+
+        m->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoTransform field access and matrices
+// =========================================================================
+static int runTransformTests()
+{
+    int failures = 0;
+
+    {
+        SoTransform* xf = new SoTransform();
+        xf->ref();
+
+        // Set translation
+        xf->translation.setValue(SbVec3f(1.0f, 2.0f, 3.0f));
+        SbVec3f t = xf->translation.getValue();
+        if (!approxEqual(t[0], 1.0f) || !approxEqual(t[1], 2.0f) || !approxEqual(t[2], 3.0f)) {
+            fprintf(stderr, "  FAIL: SoTransform translation\n"); ++failures;
+        }
+
+        // Set rotation
+        SbRotation rot(SbVec3f(0,1,0), float(M_PI/4));
+        xf->rotation.setValue(rot);
+
+        // Set scale
+        xf->scaleFactor.setValue(SbVec3f(2.0f, 2.0f, 2.0f));
+        SbVec3f s = xf->scaleFactor.getValue();
+        if (!approxEqual(s[0], 2.0f)) {
+            fprintf(stderr, "  FAIL: SoTransform scaleFactor\n"); ++failures;
+        }
+
+        // getMatrix via SoGetMatrixAction
+        SbViewportRegion vp(512, 512);
+        SoGetMatrixAction gma(vp);
+        gma.apply(xf);  // apply directly to the transform node
+        SbMatrix mat = gma.getMatrix();
+        // With translation (1,2,3), the matrix should transform (0,0,0) → (1,2,3)
+        SbVec3f origin(0.0f, 0.0f, 0.0f), result;
+        mat.multVecMatrix(origin, result);
+        if (!approxEqual(result[0], 1.0f, 0.1f) || !approxEqual(result[1], 2.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: SoTransform matrix translation (got %f %f %f)\n", result[0], result[1], result[2]); ++failures;
+        }
+        xf->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoSearchAction (deeper)
+// =========================================================================
+static int runSearchTests()
+{
+    int failures = 0;
+
+    // --- search by type ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCube* c1 = new SoCube();
+        SoCone* c2 = new SoCone();
+        SoSphere* s = new SoSphere();
+        root->addChild(c1); root->addChild(c2); root->addChild(s);
+
+        SoSearchAction sa;
+        sa.setType(SoCube::getClassTypeId());
+        sa.setFind(SoSearchAction::TYPE);
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        if (!sa.getPath()) {
+            fprintf(stderr, "  FAIL: search by type (SoCube not found)\n"); ++failures;
+        } else if (sa.getPath()->getTail() != c1) {
+            fprintf(stderr, "  FAIL: search by type wrong node\n"); ++failures;
+        }
+
+        root->unref();
+    }
+
+    // --- search by name ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCube* cube = new SoCube();
+        cube->setName("myCube");
+        root->addChild(cube);
+
+        SoSearchAction sa;
+        sa.setName("myCube");
+        sa.setFind(SoSearchAction::NAME);
+        sa.apply(root);
+        if (!sa.getPath()) {
+            fprintf(stderr, "  FAIL: search by name (myCube not found)\n"); ++failures;
+        }
+
+        root->unref();
+    }
+
+    // --- search ALL (multiple) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube());
+        root->addChild(new SoCube());
+        root->addChild(new SoCone());
+
+        SoSearchAction sa;
+        sa.setType(SoCube::getClassTypeId());
+        sa.setFind(SoSearchAction::TYPE);
+        sa.setInterest(SoSearchAction::ALL);
+        sa.apply(root);
+        if (sa.getPaths().getLength() != 2) {
+            fprintf(stderr, "  FAIL: search ALL count (got %d)\n", sa.getPaths().getLength()); ++failures;
+        }
+
+        root->unref();
+    }
+
+    // --- search derived types ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube());
+        root->addChild(new SoSphere());
+
+        SoSearchAction sa;
+        sa.setType(SoShape::getClassTypeId(), TRUE); // check derived
+        sa.setFind(SoSearchAction::TYPE);
+        sa.setInterest(SoSearchAction::ALL);
+        sa.apply(root);
+        if (sa.getPaths().getLength() != 2) {
+            fprintf(stderr, "  FAIL: search derived count (got %d)\n", sa.getPaths().getLength()); ++failures;
+        }
+
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoCallbackAction paths
+// =========================================================================
+static int runCallbackActionTests()
+{
+    int failures = 0;
+
+    // --- pre/post node callbacks ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube());
+        root->addChild(new SoSphere());
+
+        static int preCount = 0, postCount = 0;
+        preCount = postCount = 0;
+
+        SoCallbackAction ca;
+        ca.addPreCallback(SoNode::getClassTypeId(),
+            [](void*, SoCallbackAction*, const SoNode*) -> SoCallbackAction::Response {
+                ++preCount;
+                return SoCallbackAction::CONTINUE;
+            }, nullptr);
+        ca.addPostCallback(SoNode::getClassTypeId(),
+            [](void*, SoCallbackAction*, const SoNode*) -> SoCallbackAction::Response {
+                ++postCount;
+                return SoCallbackAction::CONTINUE;
+            }, nullptr);
+        ca.apply(root);
+
+        if (preCount == 0) {
+            fprintf(stderr, "  FAIL: pre callback not called (count=%d)\n", preCount); ++failures;
+        }
+        if (postCount == 0) {
+            fprintf(stderr, "  FAIL: post callback not called (count=%d)\n", postCount); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- triangle callback ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube());
+
+        static int triCount = 0;
+        triCount = 0;
+        SoCallbackAction ca;
+        ca.addTriangleCallback(SoShape::getClassTypeId(),
+            [](void*, SoCallbackAction*, const SoPrimitiveVertex*,
+               const SoPrimitiveVertex*, const SoPrimitiveVertex*) {
+                ++triCount;
+            }, nullptr);
+        ca.apply(root);
+
+        if (triCount == 0) {
+            fprintf(stderr, "  FAIL: triangle callback not fired\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoGetBoundingBoxAction (deeper)
+// =========================================================================
+static int runBBoxActionTests()
+{
+    int failures = 0;
+
+    // --- sphere bounding box ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoSphere* sphere = new SoSphere();
+        sphere->radius = 2.0f;
+        root->addChild(sphere);
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        SbBox3f box = bba.getBoundingBox();
+        SbVec3f min, max;
+        box.getBounds(min, max);
+        if (!approxEqual(min[0], -2.0f, 0.1f) || !approxEqual(max[0], 2.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: sphere bbox (min=%f max=%f)\n", min[0], max[0]); ++failures;
+        }
+        SbVec3f center = bba.getCenter();
+        if (!approxEqual(center[0], 0.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: BBox center (got %f %f %f)\n", center[0], center[1], center[2]); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- translated object ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoTranslation* t = new SoTranslation();
+        t->translation.setValue(10.0f, 0.0f, 0.0f);
+        root->addChild(t);
+        SoCube* cube = new SoCube();
+        cube->width = 2.0f; cube->height = 2.0f; cube->depth = 2.0f;
+        root->addChild(cube);
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        SbBox3f box = bba.getBoundingBox();
+        SbVec3f c = box.getCenter();
+        if (!approxEqual(c[0], 10.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: translated cube bbox center x (got %f)\n", c[0]); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- inCameraSpace flag ---
+    {
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.setInCameraSpace(TRUE);
+        if (!bba.isInCameraSpace()) {
+            fprintf(stderr, "  FAIL: setInCameraSpace\n"); ++failures;
+        }
+    }
+
+    // --- isCenterSet ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube());
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        if (!bba.isCenterSet()) {
+            fprintf(stderr, "  FAIL: isCenterSet after apply\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoGetPrimitiveCountAction
+// =========================================================================
+static int runPrimitiveCountTests()
+{
+    int failures = 0;
+
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        // A cube has 12 triangles (6 faces * 2)
+        root->addChild(new SoCube());
+        root->addChild(new SoSphere());
+
+        SoGetPrimitiveCountAction pca;
+        pca.apply(root);
+        int triCount = pca.getTriangleCount();
+        if (triCount <= 0) {
+            fprintf(stderr, "  FAIL: primitive count triangle (got %d)\n", triCount); ++failures;
+        }
+        root->unref();
+    }
+
+    {
+        // Add a line set
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(0,0,0));
+        coords->point.set1Value(1, SbVec3f(1,0,0));
+        root->addChild(coords);
+        SoLineSet* ls = new SoLineSet();
+        ls->numVertices.set1Value(0, 2);
+        root->addChild(ls);
+
+        SoGetPrimitiveCountAction pca;
+        pca.apply(root);
+        int lineCount = pca.getLineCount();
+        if (lineCount <= 0) {
+            fprintf(stderr, "  FAIL: primitive count lines (got %d)\n", lineCount); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoSwitch and SoLOD
+// =========================================================================
+static int runSwitchLODTests()
+{
+    int failures = 0;
+
+    // --- SoSwitch whichChild ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoSwitch* sw = new SoSwitch();
+        SoCube* visible = new SoCube();
+        SoCone* hidden = new SoCone();
+        sw->addChild(visible);
+        sw->addChild(hidden);
+        sw->whichChild.setValue(0); // show first child
+        root->addChild(sw);
+
+        // BBox should include only the visible child (cube)
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        SbBox3f box = bba.getBoundingBox();
+        if (box.isEmpty()) {
+            fprintf(stderr, "  FAIL: SoSwitch bbox should not be empty\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- SoSwitch SO_SWITCH_NONE ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoSwitch* sw = new SoSwitch();
+        sw->addChild(new SoCube());
+        sw->whichChild.setValue(SO_SWITCH_NONE);
+        root->addChild(sw);
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        SbBox3f box = bba.getBoundingBox();
+        if (!box.isEmpty()) {
+            fprintf(stderr, "  FAIL: SoSwitch NONE should produce empty bbox\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- SoLOD range ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(0.0f, 0.0f, 10.0f);
+        root->addChild(cam);
+        SoLOD* lod = new SoLOD();
+        lod->range.set1Value(0, 5.0f); // switch below 5 units
+        SoCube* highDetail = new SoCube();
+        SoCone* lowDetail = new SoCone();
+        lod->addChild(highDetail);
+        lod->addChild(lowDetail);
+        root->addChild(lod);
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        SbBox3f box = bba.getBoundingBox();
+        if (box.isEmpty()) {
+            fprintf(stderr, "  FAIL: SoLOD bbox should not be empty\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoWriteAction / SoDB::readAll (round-trip)
+// =========================================================================
+static int runWriteReadTests()
+{
+    int failures = 0;
+
+    // --- write a scene to buffer, read it back ---
+    {
+        // Build simple scene
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCube* cube = new SoCube();
+        cube->width = 3.0f;
+        cube->setName("testCube");
+        root->addChild(cube);
+
+        // Write to in-memory buffer
+        static char* g_wrbuf = nullptr;
+        static size_t g_wrbuf_size = 0;
+        SoOutput out;
+        out.setBuffer(nullptr, 1,
+            [](void* p, size_t s) -> void* {
+                g_wrbuf = static_cast<char*>(::realloc(p, s));
+                g_wrbuf_size = s;
+                return g_wrbuf;
+            });
+        SoWriteAction wa(&out);
+        wa.apply(root);
+        void* bufPtr = g_wrbuf;
+        size_t bufSize = g_wrbuf_size;
+        {
+            void* tmp; size_t n;
+            out.getBuffer(tmp, n);
+            bufPtr = tmp; bufSize = n;
+        }
+
+        if (bufSize == 0 || bufPtr == nullptr) {
+            fprintf(stderr, "  FAIL: SoWriteAction produced empty buffer\n"); ++failures;
+        } else {
+            // Read back
+            SoInput inp;
+            inp.setBuffer(bufPtr, bufSize);
+            SoSeparator* loaded = SoDB::readAll(&inp);
+            if (!loaded) {
+                fprintf(stderr, "  FAIL: SoDB::readAll returned null\n"); ++failures;
+            } else {
+                loaded->ref();
+                // Should have 1 child (the cube)
+                if (loaded->getNumChildren() != 1) {
+                    fprintf(stderr, "  FAIL: round-trip child count (got %d)\n", loaded->getNumChildren()); ++failures;
+                }
+                // Check the cube width was preserved
+                SoSearchAction sa;
+                sa.setName("testCube");
+                sa.setFind(SoSearchAction::NAME);
+                sa.apply(loaded);
+                if (sa.getPath()) {
+                    SoCube* c = static_cast<SoCube*>(sa.getPath()->getTail());
+                    if (!approxEqual(c->width.getValue(), 3.0f)) {
+                        fprintf(stderr, "  FAIL: round-trip cube width (got %f)\n", c->width.getValue()); ++failures;
+                    }
+                } else {
+                    fprintf(stderr, "  FAIL: round-trip search for testCube failed\n"); ++failures;
+                }
+                loaded->unref();
+            }
+        }
+        // g_wrbuf is managed by the realloc callback; no free needed here
+        root->unref();
+    }
+
+    // --- SoDB::isValidHeader ---
+    {
+        if (!SoDB::isValidHeader("#Inventor V2.1 ascii")) {
+            fprintf(stderr, "  FAIL: isValidHeader Inventor V2.1 ascii\n"); ++failures;
+        }
+        if (SoDB::isValidHeader("not a valid header")) {
+            fprintf(stderr, "  FAIL: isValidHeader should reject garbage\n"); ++failures;
+        }
+    }
+
+    // --- SoDB::getVersion ---
+    {
+        const char* ver = SoDB::getVersion();
+        if (!ver || ver[0] == '\0') {
+            fprintf(stderr, "  FAIL: SoDB::getVersion empty\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbXfBox3f
+// =========================================================================
+static int runXfBoxTests()
+{
+    int failures = 0;
+
+    // --- basic transformed box ---
+    {
+        SbBox3f inner(-1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f);
+        SbXfBox3f xf(inner);
+
+        // getTransform should be identity initially
+        SbMatrix xform = xf.getTransform();
+        if (!approxEqual(xform[0][0], 1.0f)) {
+            fprintf(stderr, "  FAIL: SbXfBox3f identity transform\n"); ++failures;
+        }
+
+        // project to world space
+        SbBox3f projected = xf.project();
+        if (!approxEqual(projected.getCenter()[0], 0.0f)) {
+            fprintf(stderr, "  FAIL: SbXfBox3f project center\n"); ++failures;
+        }
+
+        // Apply a translation transform
+        SbMatrix t;
+        t.setTranslate(SbVec3f(5.0f, 0.0f, 0.0f));
+        xf.transform(t);
+        SbBox3f proj2 = xf.project();
+        if (!approxEqual(proj2.getCenter()[0], 5.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: SbXfBox3f translate center (got %f)\n", proj2.getCenter()[0]); ++failures;
+        }
+    }
+
+    // --- extendBy with point ---
+    {
+        SbXfBox3f xf;
+        xf.extendBy(SbVec3f(2.0f, 3.0f, 4.0f));
+        xf.extendBy(SbVec3f(-2.0f, -3.0f, -4.0f));
+        SbBox3f proj = xf.project();
+        if (!approxEqual(proj.getCenter()[0], 0.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: SbXfBox3f extendBy center\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoPath operations
+// =========================================================================
+static int runPathTests()
+{
+    int failures = 0;
+
+    // --- build path manually ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoGroup* g = new SoGroup();
+        SoCube* cube = new SoCube();
+        root->addChild(g);
+        g->addChild(cube);
+
+        SoPath* path = new SoPath(root);
+        path->ref();
+        path->append(0);  // index of g in root
+        path->append(0);  // index of cube in g
+        if (path->getLength() != 3) {
+            fprintf(stderr, "  FAIL: SoPath length (got %d)\n", path->getLength()); ++failures;
+        }
+        if (path->getTail() != cube) {
+            fprintf(stderr, "  FAIL: SoPath getTail\n"); ++failures;
+        }
+        if (path->getHead() != root) {
+            fprintf(stderr, "  FAIL: SoPath getHead\n"); ++failures;
+        }
+        if (path->getNode(1) != g) {
+            fprintf(stderr, "  FAIL: SoPath getNode(1)\n"); ++failures;
+        }
+
+        // truncate
+        path->truncate(2);
+        if (path->getLength() != 2) {
+            fprintf(stderr, "  FAIL: SoPath truncate length (got %d)\n", path->getLength()); ++failures;
+        }
+
+        path->unref();
+        root->unref();
+    }
+
+    // --- SoSearchAction returns a path ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoGroup* g = new SoGroup();
+        SoCube* cube = new SoCube();
+        cube->setName("targetCube");
+        root->addChild(g);
+        g->addChild(cube);
+
+        SoSearchAction sa;
+        sa.setName("targetCube");
+        sa.setFind(SoSearchAction::NAME);
+        sa.apply(root);
+        SoPath* found = sa.getPath();
+        if (!found) {
+            fprintf(stderr, "  FAIL: SoSearchAction path for targetCube\n"); ++failures;
+        } else {
+            if (found->getLength() < 2) {
+                fprintf(stderr, "  FAIL: path length (got %d)\n", found->getLength()); ++failures;
+            }
+            // getNodeFromTail(0) should be cube
+            if (found->getNodeFromTail(0) != cube) {
+                fprintf(stderr, "  FAIL: getNodeFromTail(0)\n"); ++failures;
+            }
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbDPLine, SbDPPlane, SbDPRotation (double-precision)
+// =========================================================================
+static int runDoublePrecisionTests()
+{
+    int failures = 0;
+
+    // --- SbDPLine ---
+    {
+        SbDPLine line(SbVec3d(0.0, 0.0, 0.0), SbVec3d(1.0, 0.0, 0.0));
+        SbVec3d closest = line.getClosestPoint(SbVec3d(3.0, 5.0, 0.0));
+        if (std::fabs(closest[0] - 3.0) > 1e-9 || std::fabs(closest[1]) > 1e-9) {
+            fprintf(stderr, "  FAIL: SbDPLine getClosestPoint (got %f %f)\n", closest[0], closest[1]); ++failures;
+        }
+    }
+
+    // --- SbDPPlane ---
+    {
+        SbDPPlane p(SbVec3d(0.0, 1.0, 0.0), 0.0); // XZ plane
+        double d = p.getDistance(SbVec3d(0.0, 5.0, 0.0));
+        if (std::fabs(d - 5.0) > 1e-9) {
+            fprintf(stderr, "  FAIL: SbDPPlane getDistance (got %f)\n", d); ++failures;
+        }
+        if (!p.isInHalfSpace(SbVec3d(0.0, 1.0, 0.0))) {
+            fprintf(stderr, "  FAIL: SbDPPlane isInHalfSpace positive\n"); ++failures;
+        }
+    }
+
+    // --- SbDPRotation ---
+    {
+        SbDPRotation r(SbVec3d(0.0, 1.0, 0.0), M_PI / 2.0);
+        SbVec3d v(1.0, 0.0, 0.0);
+        SbVec3d result;
+        r.multVec(v, result);
+        if (std::fabs(result[0]) > 1e-6 || std::fabs(result[2] + 1.0) > 1e-6) {
+            fprintf(stderr, "  FAIL: SbDPRotation 90-Y (got %f %f %f)\n", result[0], result[1], result[2]); ++failures;
+        }
+        SbVec3d axis; double angle;
+        r.getValue(axis, angle);
+        if (std::fabs(angle - M_PI / 2.0) > 1e-9) {
+            fprintf(stderr, "  FAIL: SbDPRotation getValue angle (got %f)\n", angle); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: Field type extensions (SoSFString, SoSFColor, SoSFMatrix, etc.)
+// =========================================================================
+static int runFieldExtensionTests()
+{
+    int failures = 0;
+
+    // --- SoSFString ---
+    {
+        SoSFString f;
+        f.setValue("hello");
+        if (f.getValue() != SbString("hello")) {
+            fprintf(stderr, "  FAIL: SoSFString set/get\n"); ++failures;
+        }
+    }
+
+    // --- SoSFColor ---
+    {
+        SoSFColor f;
+        f.setValue(SbColor(1.0f, 0.0f, 0.5f));
+        SbColor c = f.getValue();
+        if (!approxEqual(c[0], 1.0f) || !approxEqual(c[2], 0.5f)) {
+            fprintf(stderr, "  FAIL: SoSFColor set/get\n"); ++failures;
+        }
+    }
+
+    // --- SoSFMatrix ---
+    {
+        SoSFMatrix f;
+        SbMatrix m = SbMatrix::identity();
+        m.setTranslate(SbVec3f(1.0f, 2.0f, 3.0f));
+        f.setValue(m);
+        SbMatrix got = f.getValue();
+        if (!approxEqual(got[3][0], 1.0f)) {
+            fprintf(stderr, "  FAIL: SoSFMatrix set/get\n"); ++failures;
+        }
+    }
+
+    // --- SoSFVec2f ---
+    {
+        SoSFVec2f f;
+        f.setValue(SbVec2f(3.0f, 4.0f));
+        SbVec2f v = f.getValue();
+        if (!approxEqual(v[0], 3.0f) || !approxEqual(v[1], 4.0f)) {
+            fprintf(stderr, "  FAIL: SoSFVec2f set/get\n"); ++failures;
+        }
+    }
+
+    // --- SoSFNode ---
+    {
+        SoSFNode f;
+        SoCube* cube = new SoCube();
+        cube->ref();
+        f.setValue(cube);
+        if (f.getValue() != cube) {
+            fprintf(stderr, "  FAIL: SoSFNode set/get\n"); ++failures;
+        }
+        f.setValue(nullptr);
+        cube->unref();
+    }
+
+    // --- SoMFString ---
+    {
+        SoMFString f;
+        f.set1Value(0, "hello");
+        f.set1Value(1, "world");
+        if (f.getNum() != 2) {
+            fprintf(stderr, "  FAIL: SoMFString count\n"); ++failures;
+        }
+        if (f[0] != SbString("hello")) {
+            fprintf(stderr, "  FAIL: SoMFString [0]\n"); ++failures;
+        }
+    }
+
+    // --- SoMFColor ---
+    {
+        SoMFColor f;
+        f.set1Value(0, SbColor(1.0f, 0.0f, 0.0f));
+        f.set1Value(1, SbColor(0.0f, 1.0f, 0.0f));
+        if (f.getNum() != 2) {
+            fprintf(stderr, "  FAIL: SoMFColor count\n"); ++failures;
+        }
+    }
+
+    // --- SoMFInt32 ---
+    {
+        SoMFInt32 f;
+        int32_t vals[] = {10, 20, 30};
+        f.setValues(0, 3, vals);
+        if (f.getNum() != 3 || f[1] != 20) {
+            fprintf(stderr, "  FAIL: SoMFInt32 set/get\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: Event types
+// =========================================================================
+static int runEventTests()
+{
+    int failures = 0;
+
+    // --- SoMouseButtonEvent ---
+    {
+        SoMouseButtonEvent ev;
+        ev.setButton(SoMouseButtonEvent::BUTTON1);
+        ev.setState(SoButtonEvent::DOWN);
+        if (!SoMouseButtonEvent::isButtonPressEvent(&ev, SoMouseButtonEvent::BUTTON1)) {
+            fprintf(stderr, "  FAIL: isButtonPressEvent\n"); ++failures;
+        }
+        if (SoMouseButtonEvent::isButtonReleaseEvent(&ev, SoMouseButtonEvent::BUTTON1)) {
+            fprintf(stderr, "  FAIL: isButtonReleaseEvent should be false\n"); ++failures;
+        }
+        SbVec2s pos(100, 200);
+        ev.setPosition(pos);
+        if (ev.getPosition() != pos) {
+            fprintf(stderr, "  FAIL: SoMouseButtonEvent position\n"); ++failures;
+        }
+    }
+
+    // --- SoKeyboardEvent ---
+    {
+        SoKeyboardEvent ev;
+        ev.setKey(SoKeyboardEvent::A);
+        ev.setState(SoButtonEvent::DOWN);
+        if (!SoKeyboardEvent::isKeyPressEvent(&ev, SoKeyboardEvent::A)) {
+            fprintf(stderr, "  FAIL: isKeyPressEvent\n"); ++failures;
+        }
+        if (ev.getKey() != SoKeyboardEvent::A) {
+            fprintf(stderr, "  FAIL: SoKeyboardEvent getKey\n"); ++failures;
+        }
+    }
+
+    // --- SoLocation2Event ---
+    {
+        SoLocation2Event ev;
+        SbVec2s pos(320, 240);
+        ev.setPosition(pos);
+        if (ev.getPosition() != pos) {
+            fprintf(stderr, "  FAIL: SoLocation2Event position\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoOffscreenRenderer (API, no actual rendering needed)
+// =========================================================================
+static int runOffscreenRendererTests()
+{
+    int failures = 0;
+
+    // --- construction and basic API ---
+    {
+        SbViewportRegion vp(64, 64);
+        SoOffscreenRenderer renderer(vp);
+
+        if (renderer.getViewportRegion().getWindowSize()[0] != 64) {
+            fprintf(stderr, "  FAIL: SoOffscreenRenderer getViewportRegion\n"); ++failures;
+        }
+
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        if (renderer.getComponents() != SoOffscreenRenderer::RGB) {
+            fprintf(stderr, "  FAIL: SoOffscreenRenderer getComponents\n"); ++failures;
+        }
+
+        renderer.setBackgroundColor(SbColor(0.0f, 0.0f, 1.0f));
+        SbColor bg = renderer.getBackgroundColor();
+        if (!approxEqual(bg[2], 1.0f)) {
+            fprintf(stderr, "  FAIL: SoOffscreenRenderer background (got %f)\n", bg[2]); ++failures;
+        }
+
+        // getMaximumResolution
+        SbVec2s maxRes = SoOffscreenRenderer::getMaximumResolution();
+        if (maxRes[0] <= 0 || maxRes[1] <= 0) {
+            fprintf(stderr, "  FAIL: getMaximumResolution (got %d %d)\n", maxRes[0], maxRes[1]); ++failures;
+        }
+
+        // setViewportRegion
+        renderer.setViewportRegion(SbViewportRegion(128, 128));
+        if (renderer.getViewportRegion().getWindowSize()[0] != 128) {
+            fprintf(stderr, "  FAIL: SoOffscreenRenderer setViewportRegion\n"); ++failures;
+        }
+    }
+
+    // --- actual render a simple scene ---
+    {
+        SbViewportRegion vp(64, 64);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        SoCube* cube = new SoCube();
+        root->addChild(cube);
+        cam->viewAll(root, vp);
+
+        SbBool ok = renderer.render(root);
+        if (!ok) {
+            fprintf(stderr, "  FAIL: SoOffscreenRenderer render returned false\n"); ++failures;
+        }
+        unsigned char* buf = renderer.getBuffer();
+        if (!buf) {
+            fprintf(stderr, "  FAIL: SoOffscreenRenderer getBuffer null\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+REGISTER_TEST(unit_vec_variants, ObolTest::TestCategory::Base,
+    "SbVec2f, SbVec4f, SbVec3d: arithmetic, length, normalize, dot, negate",
+    e.has_visual = false;
+    e.run_unit = runVecVariantsTests;
+);
+
+REGISTER_TEST(unit_string_name_time, ObolTest::TestCategory::Base,
+    "SbString operations, SbName identity/char checks, SbTime arithmetic",
+    e.has_visual = false;
+    e.run_unit = runStringNameTimeTests;
+);
+
+REGISTER_TEST(unit_dict, ObolTest::TestCategory::Base,
+    "SbDict: enter, find, remove, clear, applyToAll, makePList",
+    e.has_visual = false;
+    e.run_unit = runDictTests;
+);
+
+REGISTER_TEST(unit_color, ObolTest::TestCategory::Base,
+    "SbColor: HSV conversion, packed value round-trip",
+    e.has_visual = false;
+    e.run_unit = runColorTests;
+);
+
+REGISTER_TEST(unit_image, ObolTest::TestCategory::Base,
+    "SbImage: setValue, getValue, getSize, hasData, equality",
+    e.has_visual = false;
+    e.run_unit = runImageTests;
+);
+
+REGISTER_TEST(unit_group_hierarchy, ObolTest::TestCategory::Nodes,
+    "SoGroup/SoSeparator: addChild, removeChild, replaceChild, findChild, bbox",
+    e.has_visual = false;
+    e.run_unit = runGroupHierarchyTests;
+);
+
+REGISTER_TEST(unit_camera, ObolTest::TestCategory::Nodes,
+    "SoPerspectiveCamera: getViewVolume, viewAll, pointAt, field defaults",
+    e.has_visual = false;
+    e.run_unit = runCameraTests;
+);
+
+REGISTER_TEST(unit_material, ObolTest::TestCategory::Nodes,
+    "SoMaterial: diffuseColor, specularColor, shininess, transparency",
+    e.has_visual = false;
+    e.run_unit = runMaterialTests;
+);
+
+REGISTER_TEST(unit_transform, ObolTest::TestCategory::Nodes,
+    "SoTransform: translation, rotation, scale, getMatrix",
+    e.has_visual = false;
+    e.run_unit = runTransformTests;
+);
+
+REGISTER_TEST(unit_search, ObolTest::TestCategory::Actions,
+    "SoSearchAction: by type, by name, ALL, derived types",
+    e.has_visual = false;
+    e.run_unit = runSearchTests;
+);
+
+REGISTER_TEST(unit_callback_action, ObolTest::TestCategory::Actions,
+    "SoCallbackAction: pre/post node callbacks, triangle callback",
+    e.has_visual = false;
+    e.run_unit = runCallbackActionTests;
+);
+
+REGISTER_TEST(unit_bbox_action, ObolTest::TestCategory::Actions,
+    "SoGetBoundingBoxAction: sphere, translated cube, inCameraSpace, isCenterSet",
+    e.has_visual = false;
+    e.run_unit = runBBoxActionTests;
+);
+
+REGISTER_TEST(unit_primitive_count, ObolTest::TestCategory::Actions,
+    "SoGetPrimitiveCountAction: cube triangles, line segment count",
+    e.has_visual = false;
+    e.run_unit = runPrimitiveCountTests;
+);
+
+REGISTER_TEST(unit_switch_lod, ObolTest::TestCategory::Nodes,
+    "SoSwitch (whichChild, NONE), SoLOD range bboxing",
+    e.has_visual = false;
+    e.run_unit = runSwitchLODTests;
+);
+
+REGISTER_TEST(unit_write_read, ObolTest::TestCategory::IO,
+    "SoWriteAction / SoDB::readAll round-trip, isValidHeader, getVersion",
+    e.has_visual = false;
+    e.run_unit = runWriteReadTests;
+);
+
+REGISTER_TEST(unit_xfbox, ObolTest::TestCategory::Base,
+    "SbXfBox3f: construction, project, transform, extendBy",
+    e.has_visual = false;
+    e.run_unit = runXfBoxTests;
+);
+
+REGISTER_TEST(unit_path, ObolTest::TestCategory::Misc,
+    "SoPath: manual construction, append, truncate, getTail, getNodeFromTail",
+    e.has_visual = false;
+    e.run_unit = runPathTests;
+);
+
+REGISTER_TEST(unit_double_precision, ObolTest::TestCategory::Base,
+    "SbDPLine, SbDPPlane, SbDPRotation: closest point, distance, multVec",
+    e.has_visual = false;
+    e.run_unit = runDoublePrecisionTests;
+);
+
+REGISTER_TEST(unit_field_extensions, ObolTest::TestCategory::Fields,
+    "SoSFString, SoSFColor, SoSFMatrix, SoSFVec2f, SoSFNode, SoMFString, SoMFColor, SoMFInt32",
+    e.has_visual = false;
+    e.run_unit = runFieldExtensionTests;
+);
+
+REGISTER_TEST(unit_events, ObolTest::TestCategory::Events,
+    "SoMouseButtonEvent, SoKeyboardEvent, SoLocation2Event",
+    e.has_visual = false;
+    e.run_unit = runEventTests;
+);
+
+REGISTER_TEST(unit_offscreen_renderer, ObolTest::TestCategory::Rendering,
+    "SoOffscreenRenderer: construction, setComponents, background, render",
+    e.has_visual = false;
+    e.run_unit = runOffscreenRendererTests;
+);
 static int runMatrixTests()
 {
     int failures = 0;
