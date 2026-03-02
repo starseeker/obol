@@ -13204,7 +13204,7 @@ REGISTER_TEST(unit_raypick_scene, ObolTest::TestCategory::Actions,
 );
 
 REGISTER_TEST(unit_io_deep, ObolTest::TestCategory::IO,
-    "SoInput/SoOutput deeper: isAscii, isBinary, setHeaderString, setBinary, write binary file, read back",
+    "SoInput/SoOutput deeper: isBinary, setHeaderString, resetHeaderString, setBinary, write binary file, read back",
     e.has_visual = false;
     e.run_unit = runIODeepTests;
 );
@@ -13727,7 +13727,7 @@ REGISTER_TEST(unit_node_type_system, ObolTest::TestCategory::Base,
 );
 
 REGISTER_TEST(unit_sodb, ObolTest::TestCategory::Base,
-    "SoDB: getVersion, isValidName, getGlobalField realTime, createGlobalField",
+    "SoDB: getVersion, isValidHeader, getGlobalField realTime, createGlobalField, getSensorManager",
     e.has_visual = false;
     e.run_unit = runSoDBTests;
 );
