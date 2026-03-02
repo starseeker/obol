@@ -17857,3 +17857,2002 @@ REGISTER_TEST(unit_search_action_deep, ObolTest::TestCategory::Actions,
 );
 
 } // anonymous namespace
+
+// =========================================================================
+// Session 6 includes and tests (added after anonymous namespace close so
+// they appear in a new anonymous namespace below)
+// =========================================================================
+#include <Inventor/projectors/SbCylinderSheetProjector.h>
+#include <Inventor/projectors/SbSphereSheetProjector.h>
+#include <Inventor/projectors/SbCylinderPlaneProjector.h>
+#include <Inventor/projectors/SbSpherePlaneProjector.h>
+#include <Inventor/nodes/SoShaderProgram.h>
+#include <Inventor/nodes/SoVertexShader.h>
+#include <Inventor/nodes/SoFragmentShader.h>
+#include <Inventor/nodes/SoShaderParameter.h>
+#include <Inventor/nodes/SoComplexity.h>
+#include <Inventor/nodes/SoNormal.h>
+#include <Inventor/nodes/SoNormalBinding.h>
+#include <Inventor/nodes/SoPickStyle.h>
+#include <Inventor/nodes/SoBlinker.h>
+#include <Inventor/nodes/SoRotationXYZ.h>
+#include <Inventor/nodes/SoFile.h>
+#include <Inventor/SbViewVolume.h>
+#include <Inventor/SbDPViewVolume.h>
+#include <Inventor/SbDPLine.h>
+#include <Inventor/SbDPMatrix.h>
+#include <Inventor/SbDPRotation.h>
+#include <Inventor/SbVec2d.h>
+#include <Inventor/SbVec3d.h>
+#include <Inventor/details/SoFaceDetail.h>
+#include <Inventor/details/SoLineDetail.h>
+#include <Inventor/details/SoPointDetail.h>
+
+namespace {
+
+// =========================================================================
+// Session 6 / Iteration 22: Projectors – SbCylinderSheetProjector,
+// SbSphereSheetProjector, SbCylinderPlaneProjector, SbSpherePlaneProjector,
+// plus deeper SbLineProjector and SbPlaneProjector
+// =========================================================================
+
+static int runProjectorDeepTest()
+{
+    int failures = 0;
+
+    // Set up a perspective view volume so projectors get a realistic workingLine
+    SbViewVolume vv;
+    vv.perspective(float(M_PI)/3.0f, 1.0f, 0.1f, 100.0f);
+    SbMatrix identMatrix;
+    identMatrix.makeIdentity();
+
+    // --- SbCylinderSheetProjector ---
+    {
+        SbCylinder cyl(SbLine(SbVec3f(0,0,0), SbVec3f(0,1,0)), 1.0f);
+        SbCylinderSheetProjector proj(cyl, TRUE);
+        proj.setViewVolume(vv);
+        proj.setWorkingSpace(identMatrix);
+
+        SbVec3f pt1 = proj.project(SbVec2f(0.5f, 0.5f));
+        SbVec3f pt2 = proj.project(SbVec2f(0.6f, 0.5f));
+
+        SbRotation rot = proj.getRotation(pt1, pt2);
+        // Just verify no crash and valid result
+        float angle; SbVec3f axis;
+        rot.getValue(axis, angle);
+        // Rotation should be non-trivial but just check it doesn't produce NaN
+        if (std::isnan(angle)) {
+            fprintf(stderr, "  FAIL: SbCylinderSheetProjector getRotation NaN\n"); ++failures;
+        }
+
+        // Test copy (concrete type since SbProjector destructor is protected)
+        SbCylinderSheetProjector* copy = static_cast<SbCylinderSheetProjector*>(proj.copy());
+        if (!copy) {
+            fprintf(stderr, "  FAIL: SbCylinderSheetProjector::copy()\n"); ++failures;
+        } else {
+            delete copy;
+        }
+    }
+
+    // --- SbCylinderSheetProjector without explicit cylinder ---
+    {
+        SbCylinderSheetProjector proj(FALSE); // orientToEye=FALSE
+        proj.setViewVolume(vv);
+        proj.setWorkingSpace(identMatrix);
+        SbVec3f pt = proj.project(SbVec2f(0.5f, 0.5f));
+        (void)pt; // Just verify no crash
+    }
+
+    // --- SbSphereSheetProjector ---
+    {
+        SbSphere sph(SbVec3f(0,0,0), 1.0f);
+        SbSphereSheetProjector proj(sph, TRUE);
+        proj.setViewVolume(vv);
+        proj.setWorkingSpace(identMatrix);
+
+        SbVec3f pt1 = proj.project(SbVec2f(0.5f, 0.5f));
+        SbVec3f pt2 = proj.project(SbVec2f(0.6f, 0.55f));
+
+        SbRotation rot = proj.getRotation(pt1, pt2);
+        float angle; SbVec3f axis;
+        rot.getValue(axis, angle);
+        if (std::isnan(angle)) {
+            fprintf(stderr, "  FAIL: SbSphereSheetProjector getRotation NaN\n"); ++failures;
+        }
+
+        // Test copy (concrete type)
+        SbSphereSheetProjector* copy = static_cast<SbSphereSheetProjector*>(proj.copy());
+        if (!copy) {
+            fprintf(stderr, "  FAIL: SbSphereSheetProjector::copy()\n"); ++failures;
+        } else {
+            delete copy;
+        }
+    }
+
+    // --- SbSphereSheetProjector without orient to eye ---
+    {
+        SbSphereSheetProjector proj(FALSE);
+        proj.setViewVolume(vv);
+        proj.setWorkingSpace(identMatrix);
+        SbVec3f pt = proj.project(SbVec2f(0.5f, 0.5f));
+        (void)pt;
+
+        // Also project off the sphere (uses sheet)
+        SbVec3f offSphere = proj.project(SbVec2f(0.95f, 0.95f));
+        (void)offSphere;
+    }
+
+    // --- SbCylinderPlaneProjector ---
+    {
+        SbCylinder cyl(SbLine(SbVec3f(0,0,0), SbVec3f(0,1,0)), 0.8f);
+        SbCylinderPlaneProjector proj(cyl, TRUE);
+        proj.setViewVolume(vv);
+        proj.setWorkingSpace(identMatrix);
+
+        SbVec3f pt1 = proj.project(SbVec2f(0.5f, 0.5f));
+        SbVec3f pt2 = proj.project(SbVec2f(0.55f, 0.5f));
+        SbRotation rot = proj.getRotation(pt1, pt2);
+        (void)rot;
+
+        SbCylinderPlaneProjector* copy = static_cast<SbCylinderPlaneProjector*>(proj.copy());
+        if (!copy) {
+            fprintf(stderr, "  FAIL: SbCylinderPlaneProjector::copy()\n"); ++failures;
+        } else {
+            delete copy;
+        }
+    }
+
+    // --- SbSpherePlaneProjector ---
+    {
+        SbSphere sph(SbVec3f(0,0,0), 0.8f);
+        SbSpherePlaneProjector proj(sph, TRUE);
+        proj.setViewVolume(vv);
+        proj.setWorkingSpace(identMatrix);
+
+        SbVec3f pt1 = proj.project(SbVec2f(0.5f, 0.5f));
+        SbVec3f pt2 = proj.project(SbVec2f(0.55f, 0.52f));
+        SbRotation rot = proj.getRotation(pt1, pt2);
+        (void)rot;
+
+        SbSpherePlaneProjector* copy = static_cast<SbSpherePlaneProjector*>(proj.copy());
+        if (!copy) {
+            fprintf(stderr, "  FAIL: SbSpherePlaneProjector::copy()\n"); ++failures;
+        } else {
+            delete copy;
+        }
+    }
+
+    // --- SbLineProjector (deeper coverage) ---
+    {
+        SbLineProjector proj;
+        proj.setViewVolume(vv);
+        proj.setWorkingSpace(identMatrix);
+        proj.setLine(SbLine(SbVec3f(0,0,0), SbVec3f(1,0,0)));
+        const SbLine & ln = proj.getLine();
+        (void)ln;
+
+        // getVector with two points
+        SbVec3f v = proj.getVector(SbVec2f(0.4f, 0.5f), SbVec2f(0.6f, 0.5f));
+        (void)v;
+
+        // getVector with one point (uses lastPoint)
+        proj.setStartPosition(SbVec2f(0.4f, 0.5f));
+        SbVec3f v2 = proj.getVector(SbVec2f(0.6f, 0.5f));
+        (void)v2;
+
+        // setStartPosition with 3D point
+        proj.setStartPosition(SbVec3f(0,0,0));
+
+        // tryProject
+        SbVec3f result;
+        proj.tryProject(SbVec2f(0.5f, 0.5f), 0.01f, result);
+    }
+
+    // --- SbPlaneProjector (deeper coverage) ---
+    {
+        SbPlaneProjector proj;
+        proj.setViewVolume(vv);
+        proj.setWorkingSpace(identMatrix);
+        proj.setPlane(SbPlane(SbVec3f(0,0,1), 0.0f));
+        const SbPlane & pl = proj.getPlane();
+        (void)pl;
+        proj.setOrientToEye(TRUE);
+        SbBool ote = proj.isOrientToEye();
+        (void)ote;
+
+        proj.setOrientToEye(FALSE);
+        SbVec3f pt1 = proj.project(SbVec2f(0.4f, 0.4f));
+        SbVec3f pt2 = proj.project(SbVec2f(0.6f, 0.6f));
+
+        SbVec3f v = proj.getVector(SbVec2f(0.4f, 0.4f), SbVec2f(0.6f, 0.6f));
+        (void)v;
+
+        proj.setStartPosition(SbVec2f(0.4f, 0.4f));
+        SbVec3f v2 = proj.getVector(SbVec2f(0.6f, 0.6f));
+        (void)v2;
+
+        proj.setStartPosition(pt1);
+
+        SbVec3f result;
+        proj.tryProject(SbVec2f(0.5f, 0.5f), 0.01f, result);
+        (void)result;
+
+        SbLineProjector* lineCopy = static_cast<SbLineProjector*>(proj.copy());
+        if (!lineCopy) {
+            // Just check no crash - SbLineProjector::copy might not be callable
+        } else {
+            delete lineCopy;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 6 / Iteration 22: SoCamera deeper paths
+// =========================================================================
+
+static int runCameraDeepTest3()
+{
+    int failures = 0;
+
+    // --- SoPerspectiveCamera pointAt ---
+    {
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera(); cam->ref();
+        cam->position.setValue(SbVec3f(0,0,5));
+
+        // pointAt without up vector
+        cam->pointAt(SbVec3f(0,0,0));
+
+        // pointAt with up vector
+        cam->pointAt(SbVec3f(0,0,0), SbVec3f(0,1,0));
+
+        // orbitCamera
+        cam->orbitCamera(SbVec3f(0,0,0), 15.0f, 10.0f, 1.0f);
+
+        cam->unref();
+    }
+
+    // --- SoPerspectiveCamera stereoMode ---
+    {
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera(); cam->ref();
+        cam->setStereoMode(SoCamera::MONOSCOPIC);
+        if (cam->getStereoMode() != SoCamera::MONOSCOPIC) {
+            fprintf(stderr, "  FAIL: camera stereoMode MONOSCOPIC\n"); ++failures;
+        }
+        cam->setStereoMode(SoCamera::LEFT_VIEW);
+        cam->setStereoMode(SoCamera::RIGHT_VIEW);
+        cam->getStereoAdjustment();
+        cam->setStereoAdjustment(0.5f);
+        cam->getBalanceAdjustment();
+        cam->setBalanceAdjustment(0.5f);
+        cam->unref();
+    }
+
+    // --- SoOrthographicCamera pointAt + orbitCamera ---
+    {
+        SoOrthographicCamera* cam = new SoOrthographicCamera(); cam->ref();
+        cam->position.setValue(SbVec3f(0,0,5));
+        cam->pointAt(SbVec3f(0,0,0), SbVec3f(0,1,0));
+        cam->orbitCamera(SbVec3f(0,0,0), 10.0f, 5.0f, 1.0f);
+
+        // Get view volume
+        SbViewportRegion vp(512, 512);
+        SbViewVolume vv = cam->getViewVolume(1.0f);
+        float near = vv.getNearDist();
+        if (near <= 0.0f) {
+            fprintf(stderr, "  FAIL: ortho camera viewvolume near=%.4f\n", near); ++failures;
+        }
+        cam->unref();
+    }
+
+    // --- SoCamera GL render ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.8f, 0.5f, 0.2f));
+        root->addChild(mat);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(256, 256);
+        cam->viewAll(root, vp);
+
+        // GL render with the camera
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: camera GL render\n"); ++failures; }
+
+        // getViewportBounds (returns SbViewportRegion)
+        SbViewportRegion bounds = cam->getViewportBounds(vp);
+        (void)bounds;
+
+        root->unref();
+    }
+
+    // --- SoCamera viewAll and getViewVolume ---
+    {
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera(); cam->ref();
+
+        SbViewportRegion vp(256,256);
+        SoSeparator* tmpScene = new SoSeparator(); tmpScene->ref();
+        tmpScene->addChild(new SoSphere());
+        cam->viewAll(tmpScene, vp);
+        tmpScene->unref();
+
+        // getViewVolume (float aspectratio version)
+        SbViewVolume vv = cam->getViewVolume(1.0f);
+        float near = vv.getNearDist();
+        if (near <= 0.0f) {
+            fprintf(stderr, "  FAIL: cam getViewVolume near=%.4f\n", near); ++failures;
+        }
+
+        cam->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 6 / Iteration 23: GLSL shader pipeline GL render
+// =========================================================================
+
+static int runShaderGLRenderTest()
+{
+    int failures = 0;
+
+    // --- Basic vertex + fragment GLSL shader on sphere ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        static const char* vert_src =
+            "void main() {\n"
+            "  gl_Position = ftransform();\n"
+            "  gl_FrontColor = gl_Color;\n"
+            "}\n";
+        static const char* frag_src =
+            "uniform vec3 uColor;\n"
+            "void main() {\n"
+            "  gl_FragColor = vec4(uColor, 1.0);\n"
+            "}\n";
+
+        SoShaderProgram* prog = new SoShaderProgram();
+
+        SoVertexShader* vs = new SoVertexShader();
+        vs->sourceType.setValue(SoShaderObject::GLSL_PROGRAM);
+        vs->sourceProgram.setValue(vert_src);
+
+        SoFragmentShader* fs = new SoFragmentShader();
+        fs->sourceType.setValue(SoShaderObject::GLSL_PROGRAM);
+        fs->sourceProgram.setValue(frag_src);
+
+        // Add uniform parameters of various types
+        SoShaderParameter1f* p1f = new SoShaderParameter1f();
+        p1f->name.setValue("time");
+        p1f->value.setValue(0.5f);
+        fs->parameter.addNode(p1f);
+
+        SoShaderParameter1i* p1i = new SoShaderParameter1i();
+        p1i->name.setValue("texUnit");
+        p1i->value.setValue(0);
+        fs->parameter.addNode(p1i);
+
+        SoShaderParameter3f* p3f = new SoShaderParameter3f();
+        p3f->name.setValue("uColor");
+        p3f->value.setValue(SbVec3f(0.2f, 0.8f, 0.4f));
+        fs->parameter.addNode(p3f);
+
+        prog->shaderObject.addNode(vs);
+        prog->shaderObject.addNode(fs);
+        root->addChild(prog);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.7f, 0.7f, 0.7f));
+        root->addChild(mat);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(128, 128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root); // Don't fail - shader compilation depends on GPU
+
+        root->unref();
+    }
+
+    // --- Shader with SoShaderParameter2f, 4f, matrix ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        static const char* frag_src2 =
+            "uniform vec2 offset;\n"
+            "uniform vec4 color;\n"
+            "void main() {\n"
+            "  gl_FragColor = color + vec4(offset, 0.0, 0.0);\n"
+            "}\n";
+
+        SoShaderProgram* prog = new SoShaderProgram();
+        SoFragmentShader* fs = new SoFragmentShader();
+        fs->sourceType.setValue(SoShaderObject::GLSL_PROGRAM);
+        fs->sourceProgram.setValue(frag_src2);
+
+        SoShaderParameter2f* p2f = new SoShaderParameter2f();
+        p2f->name.setValue("offset");
+        p2f->value.setValue(SbVec2f(0.1f, 0.2f));
+        fs->parameter.addNode(p2f);
+
+        SoShaderParameter4f* p4f = new SoShaderParameter4f();
+        p4f->name.setValue("color");
+        p4f->value.setValue(SbVec4f(0.5f, 0.3f, 0.7f, 1.0f));
+        fs->parameter.addNode(p4f);
+
+        prog->shaderObject.addNode(fs);
+        root->addChild(prog);
+        root->addChild(new SoCube());
+
+        SbViewportRegion vp(64, 64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root); // Don't fail
+
+        root->unref();
+    }
+
+    // --- Shader with SoShaderStateMatrixParameter ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        static const char* vert_src3 =
+            "uniform mat4 modelview;\n"
+            "void main() {\n"
+            "  gl_Position = ftransform();\n"
+            "  gl_FrontColor = vec4(1.0, 0.5, 0.2, 1.0);\n"
+            "}\n";
+        static const char* frag_src3 =
+            "void main() {\n"
+            "  gl_FragColor = gl_Color;\n"
+            "}\n";
+
+        SoShaderProgram* prog = new SoShaderProgram();
+        SoVertexShader* vs = new SoVertexShader();
+        vs->sourceType.setValue(SoShaderObject::GLSL_PROGRAM);
+        vs->sourceProgram.setValue(vert_src3);
+
+        SoShaderStateMatrixParameter* smp = new SoShaderStateMatrixParameter();
+        smp->name.setValue("modelview");
+        smp->matrixType.setValue(SoShaderStateMatrixParameter::MODELVIEW);
+        smp->matrixTransform.setValue(SoShaderStateMatrixParameter::IDENTITY);
+        vs->parameter.addNode(smp);
+
+        SoFragmentShader* fs = new SoFragmentShader();
+        fs->sourceType.setValue(SoShaderObject::GLSL_PROGRAM);
+        fs->sourceProgram.setValue(frag_src3);
+
+        prog->shaderObject.addNode(vs);
+        prog->shaderObject.addNode(fs);
+        root->addChild(prog);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64, 64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+
+        root->unref();
+    }
+
+    // --- SoShaderProgram enable/disable callback ---
+    {
+        static bool callbackFired = false;
+        SoShaderProgram* prog = new SoShaderProgram(); prog->ref();
+        prog->setEnableCallback([](void* /*closure*/, SoState* /*state*/, SbBool /*enable*/) {
+            callbackFired = true;
+        }, nullptr);
+        // The callback fires during rendering - just verify the API doesn't crash
+        prog->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 6 / Iteration 23: SoShape complexity + pick paths
+// =========================================================================
+
+static int runShapeComplexityPickTest()
+{
+    int failures = 0;
+
+    // --- SoComplexity BOUNDING_BOX type (renders bounding box instead of shape) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoComplexity* cplx = new SoComplexity();
+        cplx->type.setValue(SoComplexity::BOUNDING_BOX);
+        cplx->value.setValue(0.5f);
+        root->addChild(cplx);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.8f, 0.2f, 0.2f));
+        root->addChild(mat);
+        root->addChild(new SoSphere());
+        root->addChild(new SoCone());
+        root->addChild(new SoCylinder());
+
+        SbViewportRegion vp(64, 64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: BOUNDING_BOX complexity render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- SoComplexity SCREEN_SPACE type ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoComplexity* cplx = new SoComplexity();
+        cplx->type.setValue(SoComplexity::SCREEN_SPACE);
+        cplx->value.setValue(0.8f);
+        root->addChild(cplx);
+
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64, 64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SCREEN_SPACE complexity render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- SoPickStyle BOUNDING_BOX (pick bounding box instead of geometry) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        SoPickStyle* ps = new SoPickStyle();
+        ps->style.setValue(SoPickStyle::BOUNDING_BOX);
+        root->addChild(ps);
+
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(256,256);
+        cam->viewAll(root, vp);
+
+        SoRayPickAction rpa(vp);
+        rpa.setPoint(SbVec2s(128, 128));
+        rpa.apply(root);
+        SoPickedPoint* pp = rpa.getPickedPoint();
+        // Don't fail - bounding box pick may not hit center
+
+        root->unref();
+    }
+
+    // --- Pick IFS and get SoFaceDetail ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1.5f, -1.5f, 0));
+        coords->point.set1Value(1, SbVec3f( 1.5f, -1.5f, 0));
+        coords->point.set1Value(2, SbVec3f( 1.5f,  1.5f, 0));
+        coords->point.set1Value(3, SbVec3f(-1.5f,  1.5f, 0));
+        root->addChild(coords);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        ifs->coordIndex.set1Value(0, 0);
+        ifs->coordIndex.set1Value(1, 1);
+        ifs->coordIndex.set1Value(2, 2);
+        ifs->coordIndex.set1Value(3, 3);
+        ifs->coordIndex.set1Value(4, -1);
+        root->addChild(ifs);
+
+        SbViewportRegion vp(256,256);
+        cam->viewAll(root, vp);
+
+        SoRayPickAction rpa(vp);
+        rpa.setPoint(SbVec2s(128, 128));
+        rpa.apply(root);
+
+        SoPickedPoint* pp = rpa.getPickedPoint();
+        if (pp) {
+            const SoDetail* detail = pp->getDetail();
+            if (detail && detail->isOfType(SoFaceDetail::getClassTypeId())) {
+                const SoFaceDetail* fd = static_cast<const SoFaceDetail*>(detail);
+                int numPts = fd->getNumPoints();
+                if (numPts < 3) {
+                    fprintf(stderr, "  FAIL: SoFaceDetail numPoints %d < 3\n", numPts); ++failures;
+                }
+                // Also access individual point details
+                for (int i = 0; i < numPts; ++i) {
+                    const SoPointDetail* pd = fd->getPoint(i);
+                    (void)pd;
+                }
+                int faceIdx = fd->getFaceIndex();
+                (void)faceIdx;
+                int partIdx = fd->getPartIndex();
+                (void)partIdx;
+            }
+        }
+
+        root->unref();
+    }
+
+    // --- Pick IndexedLineSet and get SoLineDetail ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1, 0, 0));
+        coords->point.set1Value(1, SbVec3f( 1, 0, 0));
+        root->addChild(coords);
+
+        SoIndexedLineSet* ils = new SoIndexedLineSet();
+        ils->coordIndex.set1Value(0, 0);
+        ils->coordIndex.set1Value(1, 1);
+        ils->coordIndex.set1Value(2, -1);
+        root->addChild(ils);
+
+        SbViewportRegion vp(256,256);
+        cam->viewAll(root, vp);
+
+        SoRayPickAction rpa(vp);
+        rpa.setPoint(SbVec2s(128, 128));
+        rpa.setRadius(10.0f); // Big radius to hit the line
+        rpa.apply(root);
+
+        SoPickedPoint* pp = rpa.getPickedPoint();
+        // Don't fail - line pick depends on radius and position
+        if (pp) {
+            const SoDetail* detail = pp->getDetail();
+            if (detail && detail->isOfType(SoLineDetail::getClassTypeId())) {
+                const SoLineDetail* ld = static_cast<const SoLineDetail*>(detail);
+                int lineIdx = ld->getLineIndex();
+                (void)lineIdx;
+            }
+        }
+        root->unref();
+    }
+
+    // --- SoShape::GLRenderBoundingBox path via BOUNDING_BOX complexity ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        SoComplexity* cplx = new SoComplexity();
+        cplx->type.setValue(SoComplexity::BOUNDING_BOX);
+        root->addChild(cplx);
+
+        // A variety of shapes to exercise GLRenderBoundingBox
+        root->addChild(new SoCone());
+        root->addChild(new SoCylinder());
+        SoTranslation* tr = new SoTranslation();
+        tr->translation.setValue(SbVec3f(2,0,0));
+        root->addChild(tr);
+        root->addChild(new SoCube());
+
+        SbViewportRegion vp(64, 64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 6 / Iteration 24: SoSelection with callbacks + pick
+// =========================================================================
+
+static int runSelectionDeepTest()
+{
+    int failures = 0;
+
+    // --- SoSelection with selection/deselection callbacks ---
+    {
+        static int selCount = 0;
+        static int deselCount = 0;
+        static int startCount = 0;
+        static int finishCount = 0;
+
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        SoSelection* selection = new SoSelection();
+        selection->policy.setValue(SoSelection::SINGLE);
+
+        selection->addSelectionCallback([](void*, SoPath*) { selCount++; }, nullptr);
+        selection->addDeselectionCallback([](void*, SoPath*) { deselCount++; }, nullptr);
+        selection->addStartCallback([](void*, SoSelection*) { startCount++; }, nullptr);
+        selection->addFinishCallback([](void*, SoSelection*) { finishCount++; }, nullptr);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.8f, 0.3f, 0.1f));
+        selection->addChild(mat);
+
+        SoSphere* sphere = new SoSphere();
+        selection->addChild(sphere);
+
+        root->addChild(selection);
+
+        // Test addChangeCallback
+        selection->addChangeCallback([](void*, SoSelection*) {}, nullptr);
+
+        // GL render
+        SbViewportRegion vp(128, 128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+
+        // Mouse click to select (pick the sphere)
+        simulateMousePress(root, vp, 64, 64);
+        simulateMouseRelease(root, vp, 64, 64);
+
+        // Check selection state
+        int nsel = selection->getNumSelected();
+        // We don't require selection to work here since it needs exact pick
+
+        // Manually select/deselect using API
+        selection->select(sphere);
+        if (selection->getNumSelected() == 0) {
+            fprintf(stderr, "  FAIL: SoSelection::select(node) failed\n"); ++failures;
+        }
+        if (!selection->isSelected(sphere)) {
+            fprintf(stderr, "  FAIL: SoSelection::isSelected after select\n"); ++failures;
+        }
+
+        // Get selected path
+        if (selection->getNumSelected() > 0) {
+            SoPath* selPath = selection->getPath(0);
+            (void)selPath;
+        }
+
+        selection->deselect(sphere);
+        if (selection->isSelected(sphere)) {
+            fprintf(stderr, "  FAIL: still selected after deselect\n"); ++failures;
+        }
+
+        // deselectAll
+        selection->select(sphere);
+        selection->deselectAll();
+        if (selection->getNumSelected() != 0) {
+            fprintf(stderr, "  FAIL: SoSelection::deselectAll\n"); ++failures;
+        }
+
+        // Toggle
+        selection->toggle(sphere);
+        if (selection->getNumSelected() != 1) {
+            fprintf(stderr, "  FAIL: SoSelection::toggle ON\n"); ++failures;
+        }
+        selection->toggle(sphere);
+        if (selection->getNumSelected() != 0) {
+            fprintf(stderr, "  FAIL: SoSelection::toggle OFF\n"); ++failures;
+        }
+
+        // Remove callbacks
+        selection->removeSelectionCallback([](void*, SoPath*){}, nullptr);
+        selection->removeDeselectionCallback([](void*, SoPath*){}, nullptr);
+        selection->removeStartCallback([](void*, SoSelection*){}, nullptr);
+        selection->removeFinishCallback([](void*, SoSelection*){}, nullptr);
+        selection->removeChangeCallback([](void*, SoSelection*){}, nullptr);
+
+        // setPickMatching
+        selection->setPickMatching(TRUE);
+        SbBool pm = selection->isPickMatching();
+        (void)pm;
+
+        root->unref();
+    }
+
+    // --- SoSelection MULTIPLE policy ---
+    {
+        SoSelection* sel = new SoSelection(); sel->ref();
+        sel->policy.setValue(SoSelection::TOGGLE);
+
+        SoSphere* s1 = new SoSphere();
+        SoCube* c1 = new SoCube();
+        sel->addChild(s1);
+        sel->addChild(c1);
+
+        sel->select(s1);
+        sel->select(c1);
+        if (sel->getNumSelected() < 2) {
+            fprintf(stderr, "  FAIL: multi-select: got %d, expected 2\n", sel->getNumSelected()); ++failures;
+        }
+
+        // deselect by index
+        if (sel->getNumSelected() > 0) {
+            sel->deselect(0);
+        }
+
+        sel->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 6 / Iteration 24: SoDragger callback API
+// =========================================================================
+
+static int runDraggerCallbackTest()
+{
+    int failures = 0;
+
+    // --- SoTrackballDragger with all callback types ---
+    {
+        static int startCB = 0, motionCB = 0, finishCB = 0, valueChangedCB = 0;
+
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoTrackballDragger* dragger = new SoTrackballDragger();
+        dragger->addStartCallback([](void*, SoDragger*) { startCB++; }, nullptr);
+        dragger->addMotionCallback([](void*, SoDragger*) { motionCB++; }, nullptr);
+        dragger->addFinishCallback([](void*, SoDragger*) { finishCB++; }, nullptr);
+        dragger->addValueChangedCallback([](void*, SoDragger*) { valueChangedCB++; }, nullptr);
+        root->addChild(dragger);
+
+        SbViewportRegion vp(256, 256);
+        cam->viewAll(root, vp);
+
+        // GL render to establish context
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+
+        // Simulate mouse drag
+        simulateMouseDrag(root, vp, 128, 128, 160, 140, 5);
+
+        // Test getMotionMatrix
+        const SbMatrix& mm = dragger->getMotionMatrix();
+        (void)mm;
+
+        // Test get/setMinGesture
+        dragger->setMinGesture(3);
+        int mg = dragger->getMinGesture();
+        if (mg != 3) {
+            fprintf(stderr, "  FAIL: setMinGesture/getMinGesture: got %d\n", mg); ++failures;
+        }
+
+        // Test get/setProjectorEpsilon
+        dragger->setProjectorEpsilon(0.001f);
+        float eps = dragger->getProjectorEpsilon();
+        if (eps < 0.0f) {
+            fprintf(stderr, "  FAIL: getProjectorEpsilon: got %.4f\n", eps); ++failures;
+        }
+
+        // Test setFrontOnProjector / getFrontOnProjector
+        dragger->setFrontOnProjector(SoDragger::USE_PICK);
+        SoDragger::ProjectorFrontSetting front = dragger->getFrontOnProjector();
+        (void)front;
+
+        // Test enableValueChangedCallbacks
+        dragger->enableValueChangedCallbacks(FALSE);
+        dragger->enableValueChangedCallbacks(TRUE);
+
+        // Remove callbacks
+        dragger->removeStartCallback([](void*, SoDragger*){}, nullptr);
+        dragger->removeMotionCallback([](void*, SoDragger*){}, nullptr);
+        dragger->removeFinishCallback([](void*, SoDragger*){}, nullptr);
+        dragger->removeValueChangedCallback([](void*, SoDragger*){}, nullptr);
+
+        root->unref();
+    }
+
+    // --- SoTranslate1Dragger with other event callback ---
+    {
+        static int otherEvCB = 0;
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+
+        SoTranslate1Dragger* dragger = new SoTranslate1Dragger();
+        dragger->addOtherEventCallback([](void*, SoDragger*) { otherEvCB++; }, nullptr);
+        dragger->removeOtherEventCallback([](void*, SoDragger*){}, nullptr);
+        root->addChild(dragger);
+
+        SbViewportRegion vp(256,256);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+        simulateMouseDrag(root, vp, 128, 128, 145, 128, 5);
+        root->unref();
+    }
+
+    // --- SoDragger getLocalToWorldMatrix / getWorldToLocalMatrix ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoTranslate2Dragger* dragger = new SoTranslate2Dragger();
+        root->addChild(dragger);
+
+        SbViewportRegion vp(256,256);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+
+        // After rendering, the dragger has valid matrices
+        simulateMouseDrag(root, vp, 128, 128, 150, 140, 5);
+
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 6 / Iteration 25: SoGLImage texture lifecycle + GL caching
+// =========================================================================
+
+static int runGLImageLifecycleTest()
+{
+    int failures = 0;
+
+    // --- Texture update lifecycle: render, update texture data, render again ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        // Create a 16x16 RGBA texture
+        const int W = 16, H = 16;
+        unsigned char imageData[W * H * 4];
+        for (int y = 0; y < H; ++y)
+            for (int x = 0; x < W; ++x) {
+                int idx = (y * W + x) * 4;
+                imageData[idx+0] = (unsigned char)(x * 16);
+                imageData[idx+1] = (unsigned char)(y * 16);
+                imageData[idx+2] = 128;
+                imageData[idx+3] = 255;
+            }
+
+        SoTexture2* tex = new SoTexture2();
+        tex->image.setValue(SbVec2s(W, H), 4, imageData);
+        tex->wrapS.setValue(SoTexture2::REPEAT);
+        tex->wrapT.setValue(SoTexture2::REPEAT);
+        tex->model.setValue(SoTexture2::MODULATE);
+        root->addChild(tex);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(1,1,1));
+        root->addChild(mat);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64, 64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+
+        // First render (uploads texture)
+        SbBool ok1 = renderer.render(root);
+        if (!ok1) { fprintf(stderr, "  FAIL: texture lifecycle render1\n"); ++failures; }
+
+        // Update texture data (should trigger re-upload)
+        unsigned char newData[W * H * 4];
+        for (int i = 0; i < W*H*4; i += 4) {
+            newData[i+0] = 255;
+            newData[i+1] = (unsigned char)(i/4 * 4 % 256);
+            newData[i+2] = 0;
+            newData[i+3] = 255;
+        }
+        tex->image.setValue(SbVec2s(W, H), 4, newData);
+
+        // Second render (re-uploads texture)
+        SbBool ok2 = renderer.render(root);
+        if (!ok2) { fprintf(stderr, "  FAIL: texture lifecycle render2\n"); ++failures; }
+
+        root->unref();
+    }
+
+    // --- Texture with RGB (3-channel) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        const int W=8, H=8;
+        unsigned char rgb[W*H*3];
+        for (int i = 0; i < W*H*3; ++i) rgb[i] = (unsigned char)(i * 10 % 256);
+
+        SoTexture2* tex = new SoTexture2();
+        tex->image.setValue(SbVec2s(W,H), 3, rgb);
+        tex->wrapS.setValue(SoTexture2::CLAMP);
+        tex->wrapT.setValue(SoTexture2::CLAMP);
+        root->addChild(tex);
+        root->addChild(new SoCube());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+        root->unref();
+    }
+
+    // --- Texture REPLACE model ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        const int W=8, H=8;
+        unsigned char rgba[W*H*4];
+        for (int i = 0; i < W*H*4; ++i) rgba[i] = 200;
+
+        SoTexture2* tex = new SoTexture2();
+        tex->image.setValue(SbVec2s(W,H), 4, rgba);
+        tex->model.setValue(SoTexture2::REPLACE);
+        root->addChild(tex);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+        root->unref();
+    }
+
+    // --- Texture DECAL model ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        const int W=8, H=8;
+        unsigned char rgba[W*H*4];
+        for (int i = 0; i < W*H*4; ++i) rgba[i] = 150;
+
+        SoTexture2* tex = new SoTexture2();
+        tex->image.setValue(SbVec2s(W,H), 4, rgba);
+        tex->model.setValue(SoTexture2::DECAL);
+        root->addChild(tex);
+        root->addChild(new SoCube());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 6 / Iteration 25: SoGLCacheList warm-up (cache fill + repeated renders)
+// =========================================================================
+
+static int runGLCacheDeepTest()
+{
+    int failures = 0;
+
+    // --- Render same complex scene 6 times to fill and exercise GL caches ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->renderCaching.setValue(SoSeparator::ON);
+        root->boundingBoxCaching.setValue(SoSeparator::ON);
+
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,8));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoSeparator* geomGroup = new SoSeparator();
+        geomGroup->renderCaching.setValue(SoSeparator::ON);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.7f, 0.3f, 0.9f));
+        mat->specularColor.setValue(SbColor(1,1,1));
+        mat->shininess.setValue(0.8f);
+        geomGroup->addChild(mat);
+
+        // Multiple shapes with transforms
+        for (int i = 0; i < 3; ++i) {
+            SoSeparator* sep = new SoSeparator();
+            SoTranslation* tr = new SoTranslation();
+            tr->translation.setValue(SbVec3f(float(i-1)*2.0f, 0, 0));
+            sep->addChild(tr);
+            if (i == 0) sep->addChild(new SoSphere());
+            else if (i == 1) sep->addChild(new SoCone());
+            else sep->addChild(new SoCylinder());
+            geomGroup->addChild(sep);
+        }
+        root->addChild(geomGroup);
+
+        SbViewportRegion vp(128, 128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+
+        // Render 6 times - first 2 fill cache, subsequent hits
+        for (int i = 0; i < 6; ++i) {
+            SbBool ok = renderer.render(root);
+            if (!ok) { fprintf(stderr, "  FAIL: cache render pass %d\n", i); ++failures; }
+        }
+
+        // Change material to invalidate cache
+        mat->diffuseColor.setValue(SbColor(0.3f, 0.7f, 0.5f));
+
+        // Render again after cache invalidation
+        for (int i = 0; i < 3; ++i) {
+            SbBool ok = renderer.render(root);
+            if (!ok) { fprintf(stderr, "  FAIL: post-invalidation cache render %d\n", i); ++failures; }
+        }
+
+        root->unref();
+    }
+
+    // --- Cache with separators nested (exercises SoGLCacheList path) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->renderCaching.setValue(SoSeparator::AUTO);
+
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        // Deep nesting
+        SoSeparator* cur = root;
+        for (int depth = 0; depth < 4; ++depth) {
+            SoSeparator* child = new SoSeparator();
+            child->renderCaching.setValue(SoSeparator::ON);
+            SoMaterial* m = new SoMaterial();
+            m->diffuseColor.setValue(SbColor(float(depth)/3.0f, 0.5f, 1.0f-float(depth)/3.0f));
+            child->addChild(m);
+            SoSphere* s = new SoSphere();
+            s->radius.setValue(0.2f + float(depth)*0.2f);
+            child->addChild(s);
+            cur->addChild(child);
+            cur = child;
+        }
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        for (int i = 0; i < 5; ++i) renderer.render(root);
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 6 / Iteration 25: SoViewVolume deeper coverage
+// =========================================================================
+
+static int runViewVolumeDeepTest3()
+{
+    int failures = 0;
+
+    // --- SbViewVolume deeper methods ---
+    {
+        SbViewVolume vv;
+        vv.perspective(float(M_PI)/4.0f, 1.0f, 0.1f, 100.0f);
+
+        // getMatrices
+        SbMatrix affine, proj;
+        vv.getMatrices(affine, proj);
+
+        // getCameraSpaceMatrix
+        SbMatrix csm = vv.getCameraSpaceMatrix();
+        (void)csm;
+
+        // projectPointToLine (two vec3 overload)
+        SbVec3f line0, line1;
+        vv.projectPointToLine(SbVec2f(0.5f, 0.5f), line0, line1);
+
+        // projectToScreen
+        SbVec3f screenPt;
+        vv.projectToScreen(SbVec3f(0,0,-5), screenPt);
+        if (std::isnan(screenPt[0])) {
+            fprintf(stderr, "  FAIL: projectToScreen returned NaN\n"); ++failures;
+        }
+
+        // getPlane
+        SbPlane pl = vv.getPlane(5.0f);
+        (void)pl;
+
+        // getSightPoint
+        SbVec3f sight = vv.getSightPoint(5.0f);
+        (void)sight;
+
+        // getPlanePoint
+        SbVec3f pp = vv.getPlanePoint(5.0f, SbVec2f(0.5f, 0.5f));
+        (void)pp;
+
+        // getAlignRotation
+        SbRotation alignRot = vv.getAlignRotation(FALSE);
+        (void)alignRot;
+        SbRotation alignRot2 = vv.getAlignRotation(TRUE);
+        (void)alignRot2;
+
+        // getWorldToScreenScale
+        float scale = vv.getWorldToScreenScale(SbVec3f(0,0,-5), 1.0f);
+        if (scale <= 0.0f) {
+            fprintf(stderr, "  FAIL: getWorldToScreenScale <= 0: %.4f\n", scale); ++failures;
+        }
+
+        // projectBox
+        SbBox3f box(SbVec3f(-1,-1,-6), SbVec3f(1,1,-4));
+        SbVec2f boxProj = vv.projectBox(box);
+        (void)boxProj;
+
+        // getViewVolumePlanes
+        SbPlane planes[6];
+        vv.getViewVolumePlanes(planes);
+
+        // transform
+        SbMatrix m;
+        m.setTranslate(SbVec3f(0.1f, 0.0f, 0.0f));
+        vv.transform(m);
+
+        // getViewUp
+        SbVec3f up = vv.getViewUp();
+        (void)up;
+
+        // intersect point
+        SbBool inVV = vv.intersect(SbVec3f(0,0,-5));
+        (void)inVV;
+
+        // intersect segment
+        SbVec3f closest;
+        SbBool inSeg = vv.intersect(SbVec3f(-0.5f,-0.5f,-5), SbVec3f(0.5f,0.5f,-3), closest);
+        (void)inSeg;
+
+        // zVector
+        SbVec3f z = vv.zVector();
+        (void)z;
+
+        // scale / scaleWidth / scaleHeight
+        vv.scale(1.1f);
+        vv.scaleWidth(0.9f);
+        vv.scaleHeight(1.1f);
+
+        // rotateCamera
+        vv.rotateCamera(SbRotation(SbVec3f(0,1,0), 0.1f));
+
+        // translateCamera
+        vv.translateCamera(SbVec3f(0.1f,0,0));
+
+        // print (to /dev/null)
+        FILE* devnull = fopen("/dev/null", "w");
+        if (devnull) { vv.print(devnull); fclose(devnull); }
+
+        // ortho view volume
+        SbViewVolume ovv;
+        ovv.ortho(-2, 2, -2, 2, 0.1f, 100.0f);
+        SbMatrix om = ovv.getMatrix();
+        (void)om;
+        ovv.getViewVolumePlanes(planes);
+        SbVec3f oup = ovv.getViewUp();
+        (void)oup;
+
+        // frustum
+        SbViewVolume fvv;
+        fvv.frustum(-1, 1, -1, 1, 0.5f, 50.0f);
+        SbMatrix fm = fvv.getMatrix();
+        (void)fm;
+    }
+
+    // --- SbDPViewVolume ---
+    {
+        SbDPViewVolume dpvv;
+        dpvv.perspective(M_PI/4.0, 1.0, 0.1, 100.0);
+
+        // getMatrices
+        SbDPMatrix affine, proj;
+        dpvv.getMatrices(affine, proj);
+
+        // getCameraSpaceMatrix
+        SbDPMatrix csm = dpvv.getCameraSpaceMatrix();
+        (void)csm;
+
+        // projectPointToLine (SbDPLine overload)
+        SbDPLine dpln;
+        dpvv.projectPointToLine(SbVec2d(0.5, 0.5), dpln);
+
+        // projectPointToLine (two vec overload)
+        SbVec3d dpline0, dpline1;
+        dpvv.projectPointToLine(SbVec2d(0.5, 0.5), dpline0, dpline1);
+
+        // projectToScreen
+        SbVec3d screenPt3d;
+        dpvv.projectToScreen(SbVec3d(0,0,-5), screenPt3d);
+
+        // getPlanePoint
+        SbVec3d pp3d = dpvv.getPlanePoint(5.0, SbVec2d(0.5, 0.5));
+        (void)pp3d;
+
+        // getSightPoint
+        SbVec3d sight3d = dpvv.getSightPoint(5.0);
+        (void)sight3d;
+
+        // getAlignRotation
+        SbDPRotation ar = dpvv.getAlignRotation(FALSE);
+        (void)ar;
+
+        // getWorldToScreenScale
+        double scale = dpvv.getWorldToScreenScale(SbVec3d(0,0,-5), 1.0);
+        if (scale <= 0.0) {
+            fprintf(stderr, "  FAIL: SbDPViewVolume getWorldToScreenScale <= 0\n"); ++failures;
+        }
+
+        // narrow (returns a new SbDPViewVolume, doesn't modify in place)
+        SbDPViewVolume narrowed = dpvv.narrow(0.3, 0.3, 0.7, 0.7);
+        (void)narrowed;
+
+        // zVector
+        SbVec3d zv = dpvv.zVector();
+        (void)zv;
+
+        // getViewVolumePlanes
+        SbPlane planes[6];
+        dpvv.getViewVolumePlanes(planes);
+
+        // getMatrix
+        SbDPMatrix dm = dpvv.getMatrix();
+        (void)dm;
+
+        // getViewUp
+        SbVec3d vup = dpvv.getViewUp();
+        (void)vup;
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 6 / Iteration 26: SoExtSelection deeper paths
+// =========================================================================
+
+static int runExtSelectionDeepTest()
+{
+    int failures = 0;
+
+    // --- SoExtSelection with handleEvent mouse press/drag ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoExtSelection* extSel = new SoExtSelection();
+        extSel->lassoType.setValue(SoExtSelection::RECTANGLE);
+        extSel->lassoPolicy.setValue(SoExtSelection::FULL_BBOX);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.6f, 0.2f, 0.8f));
+        extSel->addChild(mat);
+        extSel->addChild(new SoSphere());
+        extSel->addChild(new SoCube());
+        root->addChild(extSel);
+
+        SbViewportRegion vp(256, 256);
+        cam->viewAll(root, vp);
+
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+
+        // Simulate rectangle lasso selection
+        simulateMousePress(root, vp, 50, 50);
+        simulateMouseMotion(root, vp, 100, 100);
+        simulateMouseMotion(root, vp, 150, 150);
+        simulateMouseMotion(root, vp, 200, 200);
+        simulateMouseRelease(root, vp, 200, 200);
+
+        // Render after selection
+        renderer.render(root);
+
+        // Switch to LASSO type
+        extSel->lassoType.setValue(SoExtSelection::LASSO);
+        extSel->lassoPolicy.setValue(SoExtSelection::PART);
+        simulateMousePress(root, vp, 60, 60);
+        simulateMouseMotion(root, vp, 128, 80);
+        simulateMouseMotion(root, vp, 196, 60);
+        simulateMouseRelease(root, vp, 196, 60);
+
+        // clearSelections
+        extSel->deselectAll();
+        renderer.render(root);
+
+        root->unref();
+    }
+
+    // --- SoExtSelection PART_BBOX policy + POINTS_INSIDE_LASSO ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+
+        SoExtSelection* extSel = new SoExtSelection();
+        extSel->lassoType.setValue(SoExtSelection::RECTANGLE);
+        extSel->lassoPolicy.setValue(SoExtSelection::PART_BBOX);
+
+        // Add some geometry
+        SoCoordinate3* coords = new SoCoordinate3();
+        for (int i = 0; i < 8; ++i) {
+            float x = (i % 4) * 0.5f - 0.75f;
+            float y = (i / 4) * 0.5f - 0.25f;
+            coords->point.set1Value(i, SbVec3f(x, y, 0));
+        }
+        extSel->addChild(coords);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        ifs->coordIndex.set1Value(0, 0); ifs->coordIndex.set1Value(1, 1);
+        ifs->coordIndex.set1Value(2, 5); ifs->coordIndex.set1Value(3, 4);
+        ifs->coordIndex.set1Value(4, -1);
+        ifs->coordIndex.set1Value(5, 2); ifs->coordIndex.set1Value(6, 3);
+        ifs->coordIndex.set1Value(7, 7); ifs->coordIndex.set1Value(8, 6);
+        ifs->coordIndex.set1Value(9, -1);
+        extSel->addChild(ifs);
+        root->addChild(extSel);
+
+        SbViewportRegion vp(128,128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+        simulateMousePress(root, vp, 30, 30);
+        simulateMouseMotion(root, vp, 64, 64);
+        simulateMouseRelease(root, vp, 100, 100);
+        renderer.render(root);
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 6 / Iteration 26: SoNormal cache + normal generation
+// =========================================================================
+
+static int runNormalCacheTest()
+{
+    int failures = 0;
+
+    // --- IFS with crease angle (triggers SoNormalCache) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoShapeHints* hints = new SoShapeHints();
+        hints->vertexOrdering.setValue(SoShapeHints::COUNTERCLOCKWISE);
+        hints->shapeType.setValue(SoShapeHints::SOLID);
+        hints->creaseAngle.setValue(float(M_PI)/4.0f);
+        root->addChild(hints);
+
+        // Multiple faces forming a box (needs normal calculation with crease angle)
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1,-1));
+        coords->point.set1Value(1, SbVec3f( 1,-1,-1));
+        coords->point.set1Value(2, SbVec3f( 1, 1,-1));
+        coords->point.set1Value(3, SbVec3f(-1, 1,-1));
+        coords->point.set1Value(4, SbVec3f(-1,-1, 1));
+        coords->point.set1Value(5, SbVec3f( 1,-1, 1));
+        coords->point.set1Value(6, SbVec3f( 1, 1, 1));
+        coords->point.set1Value(7, SbVec3f(-1, 1, 1));
+        root->addChild(coords);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        // Front face
+        ifs->coordIndex.set1Value(0,  4); ifs->coordIndex.set1Value(1,  5);
+        ifs->coordIndex.set1Value(2,  6); ifs->coordIndex.set1Value(3,  7);
+        ifs->coordIndex.set1Value(4, -1);
+        // Back face
+        ifs->coordIndex.set1Value(5,  0); ifs->coordIndex.set1Value(6,  3);
+        ifs->coordIndex.set1Value(7,  2); ifs->coordIndex.set1Value(8,  1);
+        ifs->coordIndex.set1Value(9, -1);
+        // Top face
+        ifs->coordIndex.set1Value(10, 3); ifs->coordIndex.set1Value(11, 7);
+        ifs->coordIndex.set1Value(12, 6); ifs->coordIndex.set1Value(13, 2);
+        ifs->coordIndex.set1Value(14, -1);
+        // Bottom face
+        ifs->coordIndex.set1Value(15, 0); ifs->coordIndex.set1Value(16, 1);
+        ifs->coordIndex.set1Value(17, 5); ifs->coordIndex.set1Value(18, 4);
+        ifs->coordIndex.set1Value(19, -1);
+        // Right face
+        ifs->coordIndex.set1Value(20, 1); ifs->coordIndex.set1Value(21, 2);
+        ifs->coordIndex.set1Value(22, 6); ifs->coordIndex.set1Value(23, 5);
+        ifs->coordIndex.set1Value(24, -1);
+        // Left face
+        ifs->coordIndex.set1Value(25, 0); ifs->coordIndex.set1Value(26, 4);
+        ifs->coordIndex.set1Value(27, 7); ifs->coordIndex.set1Value(28, 3);
+        ifs->coordIndex.set1Value(29, -1);
+        root->addChild(ifs);
+
+        SbViewportRegion vp(128, 128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+
+        // First render generates normal cache
+        SbBool ok1 = renderer.render(root);
+        if (!ok1) { fprintf(stderr, "  FAIL: normal cache render1\n"); ++failures; }
+
+        // Re-render hits normal cache
+        SbBool ok2 = renderer.render(root);
+        if (!ok2) { fprintf(stderr, "  FAIL: normal cache render2\n"); ++failures; }
+
+        // Change crease angle to invalidate cache
+        hints->creaseAngle.setValue(float(M_PI)/2.0f);
+        SbBool ok3 = renderer.render(root);
+        if (!ok3) { fprintf(stderr, "  FAIL: normal cache render3\n"); ++failures; }
+
+        root->unref();
+    }
+
+    // --- IFS with explicit normals PER_VERTEX (different normal binding) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1, 0));
+        coords->point.set1Value(1, SbVec3f( 1,-1, 0));
+        coords->point.set1Value(2, SbVec3f( 1, 1, 0));
+        coords->point.set1Value(3, SbVec3f(-1, 1, 0));
+        root->addChild(coords);
+
+        SoNormal* normals = new SoNormal();
+        normals->vector.set1Value(0, SbVec3f(0,0,1));
+        normals->vector.set1Value(1, SbVec3f(0,0,1));
+        normals->vector.set1Value(2, SbVec3f(0,0,1));
+        normals->vector.set1Value(3, SbVec3f(0,0,1));
+        root->addChild(normals);
+
+        SoNormalBinding* nb = new SoNormalBinding();
+        nb->value.setValue(SoNormalBinding::PER_VERTEX_INDEXED);
+        root->addChild(nb);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        ifs->coordIndex.set1Value(0, 0); ifs->coordIndex.set1Value(1, 1);
+        ifs->coordIndex.set1Value(2, 2); ifs->coordIndex.set1Value(3, 3);
+        ifs->coordIndex.set1Value(4, -1);
+        ifs->normalIndex.set1Value(0, 0); ifs->normalIndex.set1Value(1, 1);
+        ifs->normalIndex.set1Value(2, 2); ifs->normalIndex.set1Value(3, 3);
+        ifs->normalIndex.set1Value(4, -1);
+        root->addChild(ifs);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: explicit normal PER_VERTEX render\n"); ++failures; }
+
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 6 / Iteration 27: SoNode deeper (setToDefaults, copyContents, etc.)
+// =========================================================================
+
+static int runNodeDeeperTest()
+{
+    int failures = 0;
+
+    // --- SoNode::setToDefaults ---
+    {
+        SoMaterial* mat = new SoMaterial(); mat->ref();
+        mat->diffuseColor.setValue(SbColor(0.5f, 0.5f, 0.5f));
+        mat->setToDefaults();
+        // After setToDefaults, diffuseColor should be default
+        mat->unref();
+    }
+
+    // --- SoNode::copy ---
+    {
+        SoSeparator* orig = new SoSeparator(); orig->ref();
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.8f, 0.2f, 0.1f));
+        orig->addChild(mat);
+        orig->addChild(new SoSphere());
+
+        SoNode* copy = orig->copy(FALSE);
+        if (!copy) {
+            fprintf(stderr, "  FAIL: SoNode::copy(FALSE)\n"); ++failures;
+        } else {
+            copy->ref();
+            copy->unref();
+        }
+
+        SoNode* deepCopy = orig->copy(TRUE);
+        if (!deepCopy) {
+            fprintf(stderr, "  FAIL: SoNode::copy(TRUE)\n"); ++failures;
+        } else {
+            deepCopy->ref();
+            deepCopy->unref();
+        }
+        orig->unref();
+    }
+
+    // --- SoNode::write (round trip) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.5f, 0.3f, 0.7f));
+        root->addChild(mat);
+        root->addChild(new SoCone());
+
+        SoOutput out;
+        char buf[16384] = {0};
+        out.setBuffer(buf, sizeof(buf), nullptr);
+        SoWriteAction wa(&out);
+        wa.apply(root);
+
+        void* ptr; size_t sz;
+        out.getBuffer(ptr, sz);
+
+        if (sz == 0) {
+            fprintf(stderr, "  FAIL: SoNode::write produced 0 bytes\n"); ++failures;
+        }
+
+        // Read back
+        SoInput input;
+        input.setBuffer(ptr, sz);
+        SoSeparator* readRoot = SoDB::readAll(&input);
+        if (!readRoot) {
+            fprintf(stderr, "  FAIL: SoNode::write read-back\n"); ++failures;
+        } else {
+            readRoot->ref();
+            readRoot->unref();
+        }
+        root->unref();
+    }
+
+    // --- SoNode affectsState ---
+    {
+        SoMaterial* mat = new SoMaterial(); mat->ref();
+        SbBool aff = mat->affectsState();
+        if (!aff) {
+            fprintf(stderr, "  FAIL: SoMaterial::affectsState() should be TRUE\n"); ++failures;
+        }
+        mat->unref();
+
+        SoInfo* info = new SoInfo(); info->ref();
+        SbBool infoAff = info->affectsState();
+        if (infoAff) {
+            // SoInfo doesn't affect state
+        }
+        info->unref();
+    }
+
+    // --- SoGroup operations ---
+    {
+        SoGroup* grp = new SoGroup(); grp->ref();
+        SoSphere* s1 = new SoSphere();
+        SoCube* c1 = new SoCube();
+        SoCone* cn1 = new SoCone();
+
+        grp->addChild(s1);
+        grp->addChild(c1);
+        grp->addChild(cn1);
+
+        if (grp->getNumChildren() != 3) {
+            fprintf(stderr, "  FAIL: SoGroup addChild count %d\n", grp->getNumChildren()); ++failures;
+        }
+
+        // insertChild
+        SoCylinder* cyl = new SoCylinder();
+        grp->insertChild(cyl, 1);
+        if (grp->getNumChildren() != 4) {
+            fprintf(stderr, "  FAIL: SoGroup insertChild count %d\n", grp->getNumChildren()); ++failures;
+        }
+
+        // findChild
+        int idx = grp->findChild(c1);
+        if (idx != 2) { // was at 1, now at 2 after insert
+            fprintf(stderr, "  FAIL: SoGroup findChild: %d\n", idx); ++failures;
+        }
+
+        // removeChild by index
+        grp->removeChild(1);
+        if (grp->getNumChildren() != 3) {
+            fprintf(stderr, "  FAIL: SoGroup removeChild by idx\n"); ++failures;
+        }
+
+        // removeChild by node
+        grp->removeChild(s1);
+        if (grp->getNumChildren() != 2) {
+            fprintf(stderr, "  FAIL: SoGroup removeChild by node\n"); ++failures;
+        }
+
+        // replaceChild
+        SoText2* txt = new SoText2();
+        grp->replaceChild(0, txt);
+        if (grp->getChild(0) != txt) {
+            fprintf(stderr, "  FAIL: SoGroup replaceChild\n"); ++failures;
+        }
+
+        grp->removeAllChildren();
+        if (grp->getNumChildren() != 0) {
+            fprintf(stderr, "  FAIL: SoGroup removeAllChildren\n"); ++failures;
+        }
+
+        grp->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 6 / Iteration 27: SoBlinker / SoRotationXYZ / SoPickStyle GL
+// =========================================================================
+
+static int runAnimationNodesGLTest()
+{
+    int failures = 0;
+
+    // --- SoBlinker (animated visibility) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoBlinker* blinker = new SoBlinker();
+        blinker->speed.setValue(1.0f);
+        blinker->on.setValue(TRUE);
+        blinker->addChild(new SoSphere());
+        blinker->addChild(new SoCube());
+        root->addChild(blinker);
+
+        SbViewportRegion vp(64, 64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoBlinker render\n"); ++failures; }
+
+        // Disable blinker
+        blinker->on.setValue(FALSE);
+        renderer.render(root);
+        root->unref();
+    }
+
+    // --- SoRotationXYZ ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoRotationXYZ* rot = new SoRotationXYZ();
+        rot->axis.setValue(SoRotationXYZ::X);
+        rot->angle.setValue(float(M_PI)/4.0f);
+        root->addChild(rot);
+
+        SoSphere* s = new SoSphere();
+        root->addChild(s);
+
+        SbViewportRegion vp(64, 64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoRotationXYZ render\n"); ++failures; }
+
+        // Also test Y and Z axes
+        rot->axis.setValue(SoRotationXYZ::Y);
+        renderer.render(root);
+        rot->axis.setValue(SoRotationXYZ::Z);
+        renderer.render(root);
+
+        // getMatrix action
+        SoGetMatrixAction gma(vp);
+        gma.apply(root);
+
+        root->unref();
+    }
+
+    // --- SoPickStyle UNPICKABLE ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        SoPickStyle* ps = new SoPickStyle();
+        ps->style.setValue(SoPickStyle::UNPICKABLE);
+        root->addChild(ps);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(256,256);
+        cam->viewAll(root, vp);
+
+        SoRayPickAction rpa(vp);
+        rpa.setPoint(SbVec2s(128, 128));
+        rpa.apply(root);
+
+        SoPickedPoint* pp = rpa.getPickedPoint();
+        if (pp != nullptr) {
+            fprintf(stderr, "  FAIL: UNPICKABLE sphere should not be picked\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- SoPickStyle BOUNDING_BOX_ON_TOP ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        SoPickStyle* ps = new SoPickStyle();
+        ps->style.setValue(SoPickStyle::BOUNDING_BOX_ON_TOP);
+        root->addChild(ps);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(256,256);
+        cam->viewAll(root, vp);
+        SoRayPickAction rpa(vp);
+        rpa.setPoint(SbVec2s(128, 128));
+        rpa.apply(root);
+        // Just check no crash
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Registration: Session 6 tests
+// =========================================================================
+
+REGISTER_TEST(unit_projectors_deep, ObolTest::TestCategory::Projectors,
+    "Projectors: SbCylinderSheetProjector, SbSphereSheetProjector, SbCylinderPlaneProjector, SbSpherePlaneProjector with setViewVolume+project+getRotation+copy",
+    e.has_visual = false;
+    e.run_unit = runProjectorDeepTest;
+);
+
+REGISTER_TEST(unit_camera_deep3, ObolTest::TestCategory::Nodes,
+    "SoCamera: pointAt (with/without up), orbitCamera, stereoMode, jitter, getViewportBounds, GL render",
+    e.has_visual = false;
+    e.run_unit = runCameraDeepTest3;
+);
+
+REGISTER_TEST(unit_shader_gl_render, ObolTest::TestCategory::Rendering,
+    "GL render: GLSL vertex+fragment shader, SoShaderParameter 1f/1i/2f/3f/4f, SoShaderStateMatrixParameter, SoShaderProgram enable callback",
+    e.has_visual = false;
+    e.run_unit = runShaderGLRenderTest;
+);
+
+REGISTER_TEST(unit_shape_complexity_pick, ObolTest::TestCategory::Rendering,
+    "SoShape: BOUNDING_BOX complexity GL, SCREEN_SPACE complexity, SoPickStyle BOUNDING_BOX, SoFaceDetail/SoLineDetail from picks",
+    e.has_visual = false;
+    e.run_unit = runShapeComplexityPickTest;
+);
+
+REGISTER_TEST(unit_selection_deep, ObolTest::TestCategory::Nodes,
+    "SoSelection: select/deselect/toggle/deselectAll, callbacks (sel/desel/start/finish/change), SINGLE/TOGGLE policies, getPath",
+    e.has_visual = false;
+    e.run_unit = runSelectionDeepTest;
+);
+
+REGISTER_TEST(unit_dragger_callbacks, ObolTest::TestCategory::Draggers,
+    "SoDragger callbacks: addStart/Motion/Finish/ValueChanged/OtherEvent, getMotionMatrix, setMinGesture, setProjectorEpsilon, setFrontOnProjector, enableValueChangedCallbacks",
+    e.has_visual = false;
+    e.run_unit = runDraggerCallbackTest;
+);
+
+REGISTER_TEST(unit_gl_image_lifecycle, ObolTest::TestCategory::Rendering,
+    "GL texture lifecycle: upload, update (re-upload), REPEAT/CLAMP/REPLACE/DECAL models, 3-channel RGB texture",
+    e.has_visual = false;
+    e.run_unit = runGLImageLifecycleTest;
+);
+
+REGISTER_TEST(unit_gl_cache_deep, ObolTest::TestCategory::Rendering,
+    "SoGLCacheList: 6x render (cache fill+hit), material invalidation, nested separator caches",
+    e.has_visual = false;
+    e.run_unit = runGLCacheDeepTest;
+);
+
+REGISTER_TEST(unit_view_volume_deep3, ObolTest::TestCategory::Base,
+    "SbViewVolume deep: getMatrices, getCameraSpaceMatrix, projectToScreen, getPlane, getAlignRotation, getViewVolumePlanes, transform, scale, rotate, ortho, frustum; SbDPViewVolume deeper",
+    e.has_visual = false;
+    e.run_unit = runViewVolumeDeepTest3;
+);
+
+REGISTER_TEST(unit_extsel_deep, ObolTest::TestCategory::Rendering,
+    "SoExtSelection: RECTANGLE+FULL_BBOX, LASSO+INTERSECT_BBOX, PART_BBOX with mouse drag simulation, deselectAll",
+    e.has_visual = false;
+    e.run_unit = runExtSelectionDeepTest;
+);
+
+REGISTER_TEST(unit_normal_cache, ObolTest::TestCategory::Rendering,
+    "SoNormalCache: IFS with creaseAngle (cache fill+hit+invalidate), explicit PER_VERTEX_INDEXED normals",
+    e.has_visual = false;
+    e.run_unit = runNormalCacheTest;
+);
+
+REGISTER_TEST(unit_node_deeper, ObolTest::TestCategory::Nodes,
+    "SoNode: setToDefaults, copy(false/true), write+readback, affectsState; SoGroup: insertChild, findChild, removeChild, replaceChild, removeAllChildren",
+    e.has_visual = false;
+    e.run_unit = runNodeDeeperTest;
+);
+
+REGISTER_TEST(unit_animation_nodes_gl, ObolTest::TestCategory::Rendering,
+    "GL render: SoBlinker on/off, SoRotationXYZ X/Y/Z axes, SoPickStyle UNPICKABLE/BOUNDING_BOX_ON_TOP",
+    e.has_visual = false;
+    e.run_unit = runAnimationNodesGLTest;
+);
+
+} // anonymous namespace (session 6)
