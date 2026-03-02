@@ -17638,7 +17638,7 @@ static int runSoInputTest()
             "}\n";
 
         SoInput input;
-        input.setBuffer(const_cast<char*>(ivdata), strlen(ivdata));
+        input.setBuffer(ivdata, strlen(ivdata));
 
         SoNode* root = nullptr;
         SbBool ok = SoDB::read(&input, root);
@@ -17693,7 +17693,7 @@ static int runSoInputTest()
             "}\n";
 
         SoInput input;
-        input.setBuffer(const_cast<char*>(ivdata), strlen(ivdata));
+        input.setBuffer(ivdata, strlen(ivdata));
         SoSeparator* root = SoDB::readAll(&input);
         if (!root) {
             fprintf(stderr, "  FAIL: SoDB::readAll from buffer\n"); ++failures;
