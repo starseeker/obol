@@ -20986,3 +20986,985 @@ REGISTER_TEST(unit_misc_gl, ObolTest::TestCategory::Rendering,
 );
 
 } // anonymous namespace (session 7)
+
+// =========================================================================
+// Session 8: callback action primitives, IFS material bindings,
+// SbTesselator, complex dragger interactions, text rendering
+// =========================================================================
+#include <Inventor/actions/SoCallbackAction.h>
+#include <Inventor/SbTesselator.h>
+#include <Inventor/SoPrimitiveVertex.h>
+#include <Inventor/draggers/SoHandleBoxDragger.h>
+#include <Inventor/draggers/SoTabPlaneDragger.h>
+#include <Inventor/draggers/SoRotateCylindricalDragger.h>
+#include <Inventor/draggers/SoRotateDiscDragger.h>
+#include <Inventor/draggers/SoRotateSphericalDragger.h>
+#include <Inventor/draggers/SoScale1Dragger.h>
+#include <Inventor/draggers/SoScale2Dragger.h>
+#include <Inventor/draggers/SoScaleUniformDragger.h>
+#include <Inventor/nodes/SoPackedColor.h>
+#include <Inventor/nodes/SoTextureCoordinate2.h>
+
+namespace {
+
+// =========================================================================
+// Session 8 / Iter 33: SoCallbackAction triangle/line/point callbacks
+// =========================================================================
+static int runCallbackActionPrimTest()
+{
+    int failures = 0;
+
+    // --- addTriangleCallback on sphere ---
+    {
+        static int triCount = 0;
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        root->addChild(new SoSphere());
+
+        SoCallbackAction ca;
+        ca.addTriangleCallback(SoShape::getClassTypeId(),
+            [](void* ud, SoCallbackAction*, const SoPrimitiveVertex*,
+               const SoPrimitiveVertex*, const SoPrimitiveVertex*) {
+                (*(int*)ud)++;
+            }, &triCount);
+        ca.apply(root);
+        if (triCount == 0) {
+            fprintf(stderr, "  FAIL: no triangles from sphere\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- addTriangleCallback on cone + cylinder + cube ---
+    {
+        static int triCount2 = 0;
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoCone());
+        root->addChild(new SoCylinder());
+        root->addChild(new SoCube());
+
+        SoCallbackAction ca;
+        ca.addTriangleCallback(SoShape::getClassTypeId(),
+            [](void* ud, SoCallbackAction*, const SoPrimitiveVertex*,
+               const SoPrimitiveVertex*, const SoPrimitiveVertex*) {
+                (*(int*)ud)++;
+            }, &triCount2);
+        ca.apply(root);
+        if (triCount2 == 0) {
+            fprintf(stderr, "  FAIL: no triangles from cone/cylinder/cube\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- addTriangleCallback on IndexedFaceSet ---
+    {
+        static int triCount3 = 0;
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-2,-2,0));
+        coords->point.set1Value(1, SbVec3f( 2,-2,0));
+        coords->point.set1Value(2, SbVec3f( 2, 2,0));
+        coords->point.set1Value(3, SbVec3f(-2, 2,0));
+        root->addChild(coords);
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        ifs->coordIndex.set1Value(0, 0); ifs->coordIndex.set1Value(1, 1);
+        ifs->coordIndex.set1Value(2, 2); ifs->coordIndex.set1Value(3, 3);
+        ifs->coordIndex.set1Value(4, -1);
+        root->addChild(ifs);
+
+        SoCallbackAction ca;
+        ca.addTriangleCallback(SoShape::getClassTypeId(),
+            [](void* ud, SoCallbackAction*, const SoPrimitiveVertex*,
+               const SoPrimitiveVertex*, const SoPrimitiveVertex*) {
+                (*(int*)ud)++;
+            }, &triCount3);
+        ca.apply(root);
+        if (triCount3 < 2) { // quad -> 2 triangles
+            fprintf(stderr, "  FAIL: IFS triangle count %d < 2\n", triCount3); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- addLineSegmentCallback on IndexedLineSet ---
+    {
+        static int lineCount = 0;
+        SoSeparator* root = new SoSeparator(); root->ref();
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        for (int i=0; i<5; ++i)
+            coords->point.set1Value(i, SbVec3f(float(i)*0.5f, 0, 0));
+        root->addChild(coords);
+
+        SoIndexedLineSet* ils = new SoIndexedLineSet();
+        for (int i=0; i<4; ++i) ils->coordIndex.set1Value(i, i);
+        ils->coordIndex.set1Value(4, -1);
+        root->addChild(ils);
+
+        SoCallbackAction ca;
+        ca.addLineSegmentCallback(SoShape::getClassTypeId(),
+            [](void* ud, SoCallbackAction*,
+               const SoPrimitiveVertex*, const SoPrimitiveVertex*) {
+                (*(int*)ud)++;
+            }, &lineCount);
+        ca.apply(root);
+        if (lineCount == 0) {
+            fprintf(stderr, "  FAIL: no line segments from ILS\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- addPointCallback on PointSet ---
+    {
+        static int ptCount = 0;
+        SoSeparator* root = new SoSeparator(); root->ref();
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        for (int i=0; i<10; ++i)
+            coords->point.set1Value(i, SbVec3f(float(i)*0.3f, 0, 0));
+        root->addChild(coords);
+        SoPointSet* ps = new SoPointSet();
+        ps->numPoints.setValue(10);
+        root->addChild(ps);
+
+        SoCallbackAction ca;
+        ca.addPointCallback(SoShape::getClassTypeId(),
+            [](void* ud, SoCallbackAction*, const SoPrimitiveVertex*) {
+                (*(int*)ud)++;
+            }, &ptCount);
+        ca.apply(root);
+        if (ptCount == 0) {
+            fprintf(stderr, "  FAIL: no points from PointSet\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- addPreCallback / addPostCallback ---
+    {
+        static int preCB = 0, postCB = 0;
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoMaterial());
+        root->addChild(new SoSphere());
+
+        SoCallbackAction ca;
+        ca.addPreCallback(SoSphere::getClassTypeId(),
+            [](void* ud, SoCallbackAction*, const SoNode*) -> SoCallbackAction::Response {
+                (*(int*)ud)++;
+                return SoCallbackAction::CONTINUE;
+            }, &preCB);
+        ca.addPostCallback(SoSphere::getClassTypeId(),
+            [](void* ud, SoCallbackAction*, const SoNode*) -> SoCallbackAction::Response {
+                (*(int*)ud)++;
+                return SoCallbackAction::CONTINUE;
+            }, &postCB);
+        ca.apply(root);
+        if (preCB == 0) {
+            fprintf(stderr, "  FAIL: pre callback not called\n"); ++failures;
+        }
+        if (postCB == 0) {
+            fprintf(stderr, "  FAIL: post callback not called\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- addPreTailCallback / addPostTailCallback ---
+    {
+        static int preTailCB = 0, postTailCB = 0;
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCone());
+
+        SoCallbackAction ca;
+        ca.addPreTailCallback(
+            [](void* ud, SoCallbackAction*, const SoNode*) -> SoCallbackAction::Response {
+                (*(int*)ud)++;
+                return SoCallbackAction::CONTINUE;
+            }, &preTailCB);
+        ca.addPostTailCallback(
+            [](void* ud, SoCallbackAction*, const SoNode*) -> SoCallbackAction::Response {
+                (*(int*)ud)++;
+                return SoCallbackAction::CONTINUE;
+            }, &postTailCB);
+        ca.apply(root);
+        root->unref();
+    }
+
+    // --- SoCallbackAction state queries during callback ---
+    {
+        static SbBool gotMatrix = FALSE;
+        static int triCount4 = 0;
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoTranslation* tr = new SoTranslation();
+        tr->translation.setValue(SbVec3f(1,0,0));
+        root->addChild(tr);
+        root->addChild(new SoCube());
+
+        SoCallbackAction ca;
+        ca.addTriangleCallback(SoShape::getClassTypeId(),
+            [](void* ud, SoCallbackAction* action,
+               const SoPrimitiveVertex* v1,
+               const SoPrimitiveVertex* v2,
+               const SoPrimitiveVertex* v3) {
+                // Access state during callback
+                (*(int*)ud)++;
+                SbMatrix m = action->getModelMatrix();
+                SbVec3f t,s; SbRotation r, so;
+                m.getTransform(t, r, s, so);
+                // Check vertex data
+                (void)v1->getPoint();
+                (void)v1->getNormal();
+                (void)v1->getMaterialIndex();
+            }, &triCount4);
+        ca.apply(root);
+        if (triCount4 == 0) {
+            fprintf(stderr, "  FAIL: no triangles with state query\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 8 / Iter 33: SbTesselator API
+// =========================================================================
+static int runTesselatorTest()
+{
+    int failures = 0;
+
+    // --- Simple convex polygon (should triangulate to n-2 triangles) ---
+    {
+        static int triCount = 0;
+        static std::vector<SbVec3f> tris;
+
+        SbTesselator tess([](void* v0, void* v1, void* v2, void* data) {
+            (*(int*)data)++;
+            // No crash is sufficient
+        }, &triCount);
+
+        // Pentagon
+        const int N = 5;
+        SbVec3f verts[N];
+        for (int i=0; i<N; ++i) {
+            float angle = 2.0f * float(M_PI) * i / N;
+            verts[i].setValue(cosf(angle), sinf(angle), 0);
+        }
+
+        tess.beginPolygon();
+        for (int i=0; i<N; ++i)
+            tess.addVertex(verts[i], &verts[i]);
+        tess.endPolygon();
+
+        if (triCount < N-2) {
+            fprintf(stderr, "  FAIL: pentagon triangulation: %d < %d\n", triCount, N-2); ++failures;
+        }
+    }
+
+    // --- Concave polygon ---
+    {
+        static int triCount2 = 0;
+        SbTesselator tess([](void*, void*, void*, void* data) {
+            (*(int*)data)++;
+        }, &triCount2);
+
+        // L-shaped polygon (concave)
+        SbVec3f verts[] = {
+            SbVec3f(0,0,0), SbVec3f(2,0,0), SbVec3f(2,1,0),
+            SbVec3f(1,1,0), SbVec3f(1,2,0), SbVec3f(0,2,0)
+        };
+        tess.beginPolygon();
+        for (auto& v : verts)
+            tess.addVertex(v, &v);
+        tess.endPolygon();
+
+        if (triCount2 < 4) {
+            fprintf(stderr, "  FAIL: L-shape triangulation: %d < 4\n", triCount2); ++failures;
+        }
+    }
+
+    // --- Multiple polygons ---
+    {
+        static int triCount3 = 0;
+        SbTesselator tess([](void*, void*, void*, void* data) {
+            (*(int*)data)++;
+        }, &triCount3);
+
+        // First polygon (triangle)
+        SbVec3f tri[] = { SbVec3f(0,0,0), SbVec3f(1,0,0), SbVec3f(0.5f,1,0) };
+        tess.beginPolygon();
+        for (auto& v : tri) tess.addVertex(v, &v);
+        tess.endPolygon();
+        int count1 = triCount3;
+
+        // Second polygon (quad)
+        SbVec3f quad[] = { SbVec3f(0,0,0), SbVec3f(1,0,0), SbVec3f(1,1,0), SbVec3f(0,1,0) };
+        tess.beginPolygon();
+        for (auto& v : quad) tess.addVertex(v, &v);
+        tess.endPolygon();
+
+        if (count1 < 1) {
+            fprintf(stderr, "  FAIL: triangle not tessellated (got %d)\n", count1); ++failures;
+        }
+
+        // keepVertices = TRUE
+        SbTesselator tess2([](void*, void*, void*, void* data) {
+            (*(int*)data)++;
+        }, &triCount3);
+        SbVec3f hex[6];
+        for (int i=0; i<6; ++i) {
+            float a = 2.0f * float(M_PI) * i / 6;
+            hex[i].setValue(cosf(a), sinf(a), 0);
+        }
+        tess2.beginPolygon(TRUE); // keepVertices = TRUE
+        for (auto& v : hex) tess2.addVertex(v, &v);
+        tess2.endPolygon();
+    }
+
+    // --- setCallback API ---
+    {
+        static int triCount4 = 0;
+        SbTesselator tess;
+        tess.setCallback([](void*, void*, void*, void* data) {
+            (*(int*)data)++;
+        }, &triCount4);
+
+        SbVec3f pts[] = {
+            SbVec3f(0,0,0), SbVec3f(1,0,0), SbVec3f(1,1,0), SbVec3f(0,1,0)
+        };
+        tess.beginPolygon();
+        for (auto& p : pts) tess.addVertex(p, &p);
+        tess.endPolygon();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 8 / Iter 34: SoHandleBoxDragger + SoTabPlaneDragger interaction
+// =========================================================================
+static int runComplexDragTest()
+{
+    int failures = 0;
+
+    // --- SoHandleBoxDragger ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,8));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoHandleBoxDragger* dragger = new SoHandleBoxDragger();
+        root->addChild(dragger);
+
+        SbViewportRegion vp(256,256);
+        cam->viewAll(root, vp);
+
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoHandleBoxDragger render\n"); ++failures; }
+
+        // Simulate dragging from different sides
+        simulateMouseDrag(root, vp, 128, 128, 150, 128, 5);
+        simulateMouseDrag(root, vp, 200, 128, 220, 128, 5);
+        simulateMouseDrag(root, vp, 128, 200, 128, 220, 5);
+
+        // Re-render after drag
+        renderer.render(root);
+
+        root->unref();
+    }
+
+    // --- SoTabPlaneDragger ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,8));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoTabPlaneDragger* dragger = new SoTabPlaneDragger();
+        root->addChild(dragger);
+
+        SbViewportRegion vp(256,256);
+        cam->viewAll(root, vp);
+
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoTabPlaneDragger render\n"); ++failures; }
+
+        // Simulate dragging
+        simulateMouseDrag(root, vp, 128, 128, 150, 140, 5);
+        simulateMouseDrag(root, vp, 100, 128, 128, 100, 5);
+
+        renderer.render(root);
+        root->unref();
+    }
+
+    // --- SoRotateCylindricalDragger ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoRotateCylindricalDragger* dragger = new SoRotateCylindricalDragger();
+        root->addChild(dragger);
+
+        SbViewportRegion vp(256,256);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+        simulateMouseDrag(root, vp, 128, 128, 155, 135, 5);
+        renderer.render(root);
+        root->unref();
+    }
+
+    // --- SoRotateDiscDragger ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+
+        SoRotateDiscDragger* dragger = new SoRotateDiscDragger();
+        root->addChild(dragger);
+
+        SbViewportRegion vp(256,256);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+        simulateMouseDrag(root, vp, 128, 128, 150, 128, 5);
+        renderer.render(root);
+        root->unref();
+    }
+
+    // --- SoRotateSphericalDragger ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+
+        SoRotateSphericalDragger* dragger = new SoRotateSphericalDragger();
+        root->addChild(dragger);
+
+        SbViewportRegion vp(256,256);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+        simulateMouseDrag(root, vp, 128, 128, 148, 138, 5);
+        renderer.render(root);
+        root->unref();
+    }
+
+    // --- SoScale1Dragger + SoScale2Dragger + SoScaleUniformDragger ---
+    {
+        for (int dtype = 0; dtype < 3; ++dtype) {
+            SoSeparator* root = new SoSeparator(); root->ref();
+            SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+            cam->position.setValue(SbVec3f(0,0,6));
+            root->addChild(cam);
+            root->addChild(new SoDirectionalLight());
+
+            SoDragger* dragger = nullptr;
+            if (dtype == 0) dragger = new SoScale1Dragger();
+            else if (dtype == 1) dragger = new SoScale2Dragger();
+            else dragger = new SoScaleUniformDragger();
+            root->addChild(dragger);
+
+            SbViewportRegion vp(256,256);
+            cam->viewAll(root, vp);
+            SoOffscreenRenderer renderer(vp);
+            renderer.setComponents(SoOffscreenRenderer::RGB);
+            renderer.render(root);
+            simulateMouseDrag(root, vp, 128, 128, 145, 128, 5);
+            renderer.render(root);
+            root->unref();
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 8 / Iter 35: SoIndexedFaceSet with various material bindings
+// =========================================================================
+static int runIFSMaterialBindingTest()
+{
+    int failures = 0;
+
+    auto buildIFS = [](int nFaces) -> SoSeparator* {
+        SoSeparator* sep = new SoSeparator();
+        SoCoordinate3* coords = new SoCoordinate3();
+        for (int i=0; i<nFaces*4; ++i) {
+            float x = float(i/4) * 1.5f;
+            float dy = (i%4 >= 2) ? 0.6f : 0.0f;
+            float dx = (i%2) ? 0.6f : 0.0f;
+            coords->point.set1Value(i, SbVec3f(x+dx, dy, 0));
+        }
+        sep->addChild(coords);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        for (int f=0; f<nFaces; ++f) {
+            int base = f*5;
+            ifs->coordIndex.set1Value(base+0, f*4+0);
+            ifs->coordIndex.set1Value(base+1, f*4+1);
+            ifs->coordIndex.set1Value(base+2, f*4+3);
+            ifs->coordIndex.set1Value(base+3, f*4+2);
+            ifs->coordIndex.set1Value(base+4, -1);
+        }
+        sep->addChild(ifs);
+        return sep;
+    };
+
+    const int nFaces = 4;
+
+    // --- PER_FACE material binding ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(3,0.5f,8));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoMaterial* mat = new SoMaterial();
+        for (int i=0; i<nFaces; ++i) {
+            mat->diffuseColor.set1Value(i, SbColor(float(i)/nFaces, 0.5f, 1.0f-float(i)/nFaces));
+        }
+        root->addChild(mat);
+
+        SoMaterialBinding* mb = new SoMaterialBinding();
+        mb->value.setValue(SoMaterialBinding::PER_FACE);
+        root->addChild(mb);
+
+        SoSeparator* ifsNode = buildIFS(nFaces);
+        root->addChild(ifsNode);
+
+        SbViewportRegion vp(128,128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: IFS PER_FACE material\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- PER_VERTEX material binding ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(3,0.5f,8));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoMaterial* mat = new SoMaterial();
+        for (int i=0; i<nFaces*4; ++i) {
+            mat->diffuseColor.set1Value(i, SbColor(float(i%3)*0.3f+0.2f, 0.3f, 0.7f));
+        }
+        root->addChild(mat);
+
+        SoMaterialBinding* mb = new SoMaterialBinding();
+        mb->value.setValue(SoMaterialBinding::PER_VERTEX);
+        root->addChild(mb);
+
+        SoSeparator* ifsNode = buildIFS(nFaces);
+        root->addChild(ifsNode);
+
+        SbViewportRegion vp(128,128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: IFS PER_VERTEX material\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- SoPackedColor per-vertex ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1,0));
+        coords->point.set1Value(1, SbVec3f( 1,-1,0));
+        coords->point.set1Value(2, SbVec3f( 1, 1,0));
+        coords->point.set1Value(3, SbVec3f(-1, 1,0));
+        root->addChild(coords);
+
+        SoPackedColor* pc = new SoPackedColor();
+        pc->orderedRGBA.set1Value(0, 0xFF0000FF); // Red
+        pc->orderedRGBA.set1Value(1, 0x00FF00FF); // Green
+        pc->orderedRGBA.set1Value(2, 0x0000FFFF); // Blue
+        pc->orderedRGBA.set1Value(3, 0xFFFF00FF); // Yellow
+        root->addChild(pc);
+
+        SoMaterialBinding* mb = new SoMaterialBinding();
+        mb->value.setValue(SoMaterialBinding::PER_VERTEX);
+        root->addChild(mb);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        ifs->coordIndex.set1Value(0, 0); ifs->coordIndex.set1Value(1, 1);
+        ifs->coordIndex.set1Value(2, 2); ifs->coordIndex.set1Value(3, 3);
+        ifs->coordIndex.set1Value(4, -1);
+        root->addChild(ifs);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoPackedColor render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- PER_FACE_INDEXED material binding ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(3,0.5f,8));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoMaterial* mat = new SoMaterial();
+        for (int i=0; i<nFaces; ++i)
+            mat->diffuseColor.set1Value(i, SbColor(float(i)/nFaces, 0.7f, 0.5f));
+        root->addChild(mat);
+
+        SoMaterialBinding* mb = new SoMaterialBinding();
+        mb->value.setValue(SoMaterialBinding::PER_FACE_INDEXED);
+        root->addChild(mb);
+
+        SoSeparator* ifsNode2 = buildIFS(nFaces);
+        // Add material indices
+        SoNode* ifsChild = ifsNode2->getChild(1); // the IFS
+        if (ifsChild && ifsChild->isOfType(SoIndexedFaceSet::getClassTypeId())) {
+            SoIndexedFaceSet* ifs = static_cast<SoIndexedFaceSet*>(ifsChild);
+            for (int f=0; f<nFaces; ++f) {
+                ifs->materialIndex.set1Value(f, f);
+            }
+        }
+        root->addChild(ifsNode2);
+
+        SbViewportRegion vp(128,128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+        root->unref();
+    }
+
+    // --- TextureCoordinate2 with IFS ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        const int W=8, H=8;
+        unsigned char rgb[W*H*3];
+        for (int i=0; i<W*H*3; ++i) rgb[i] = (unsigned char)(i*30%256);
+        SoTexture2* tex = new SoTexture2();
+        tex->image.setValue(SbVec2s(W,H), 3, rgb);
+        root->addChild(tex);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1,0));
+        coords->point.set1Value(1, SbVec3f( 1,-1,0));
+        coords->point.set1Value(2, SbVec3f( 1, 1,0));
+        coords->point.set1Value(3, SbVec3f(-1, 1,0));
+        root->addChild(coords);
+
+        SoTextureCoordinate2* tc = new SoTextureCoordinate2();
+        tc->point.set1Value(0, SbVec2f(0,0));
+        tc->point.set1Value(1, SbVec2f(1,0));
+        tc->point.set1Value(2, SbVec2f(1,1));
+        tc->point.set1Value(3, SbVec2f(0,1));
+        root->addChild(tc);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        ifs->coordIndex.set1Value(0, 0); ifs->coordIndex.set1Value(1, 1);
+        ifs->coordIndex.set1Value(2, 2); ifs->coordIndex.set1Value(3, 3);
+        ifs->coordIndex.set1Value(4, -1);
+        ifs->textureCoordIndex.set1Value(0, 0); ifs->textureCoordIndex.set1Value(1, 1);
+        ifs->textureCoordIndex.set1Value(2, 2); ifs->textureCoordIndex.set1Value(3, 3);
+        ifs->textureCoordIndex.set1Value(4, -1);
+        root->addChild(ifs);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: IFS with texture coords\n"); ++failures; }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 8 / Iter 36: SoText2/SoText3/SoAsciiText deeper GL
+// =========================================================================
+static int runTextDeepGLTest()
+{
+    int failures = 0;
+
+    // --- SoText2 with multiple strings and justification ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoOrthographicCamera* cam = new SoOrthographicCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(1,1,1));
+        root->addChild(mat);
+
+        SoText2* text2 = new SoText2();
+        text2->string.set1Value(0, SbString("Hello World"));
+        text2->string.set1Value(1, SbString("Line Two"));
+        text2->string.set1Value(2, SbString("Third Line!"));
+        text2->spacing.setValue(1.5f);
+        text2->justification.setValue(SoText2::LEFT);
+        root->addChild(text2);
+
+        SbViewportRegion vp(256,256);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root); // Font may not load but should not crash
+
+        // RIGHT justification
+        text2->justification.setValue(SoText2::RIGHT);
+        renderer.render(root);
+
+        // CENTER justification
+        text2->justification.setValue(SoText2::CENTER);
+        renderer.render(root);
+
+        root->unref();
+    }
+
+    // --- SoText3 with various shapes ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,10));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.9f, 0.6f, 0.2f));
+        root->addChild(mat);
+
+        SoText3* text3 = new SoText3();
+        text3->string.set1Value(0, SbString("TEST"));
+        text3->parts.setValue(SoText3::FRONT | SoText3::BACK | SoText3::SIDES);
+        text3->justification.setValue(SoText3::LEFT);
+        root->addChild(text3);
+
+        SbViewportRegion vp(128,128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+
+        // FRONT only
+        text3->parts.setValue(SoText3::FRONT);
+        renderer.render(root);
+
+        // Different justification
+        text3->justification.setValue(SoText3::CENTER);
+        renderer.render(root);
+
+        root->unref();
+    }
+
+    // --- SoAsciiText with various justification modes ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,10));
+        root->addChild(cam);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.8f, 0.8f, 0.8f));
+        root->addChild(mat);
+
+        SoAsciiText* ascii = new SoAsciiText();
+        ascii->string.set1Value(0, SbString("Line 1"));
+        ascii->string.set1Value(1, SbString("Line 2"));
+        ascii->justification.setValue(SoAsciiText::LEFT);
+        ascii->spacing.setValue(1.5f);
+        ascii->width.set1Value(0, 10.0f);
+        ascii->width.set1Value(1, 10.0f);
+        root->addChild(ascii);
+
+        SbViewportRegion vp(128,128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+
+        ascii->justification.setValue(SoAsciiText::RIGHT);
+        renderer.render(root);
+
+        ascii->justification.setValue(SoAsciiText::CENTER);
+        renderer.render(root);
+
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 8 / Iter 37: SoGetPrimitiveCountAction deeper
+// =========================================================================
+static int runPrimitiveCountDeepTest()
+{
+    int failures = 0;
+
+    // --- Count primitives in various shapes ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoTranslation* tr0 = new SoTranslation();
+        tr0->translation.setValue(SbVec3f(0,0,0));
+        root->addChild(tr0);
+        root->addChild(new SoSphere());
+
+        SoTranslation* tr1 = new SoTranslation();
+        tr1->translation.setValue(SbVec3f(2,0,0));
+        root->addChild(tr1);
+        root->addChild(new SoCone());
+
+        SoTranslation* tr2 = new SoTranslation();
+        tr2->translation.setValue(SbVec3f(2,0,0));
+        root->addChild(tr2);
+        root->addChild(new SoCylinder());
+
+        SbViewportRegion vp(256,256);
+        SoGetPrimitiveCountAction gpca(vp);
+        gpca.apply(root);
+
+        int triCount = gpca.getTriangleCount();
+        if (triCount <= 0) {
+            fprintf(stderr, "  FAIL: getTriangleCount <= 0: %d\n", triCount); ++failures;
+        }
+
+        int lineCount = gpca.getLineCount();
+        (void)lineCount;
+
+        int ptCount = gpca.getPointCount();
+        (void)ptCount;
+
+        int textCount = gpca.getTextCount();
+        (void)textCount;
+
+        int imgCount = gpca.getImageCount();
+        (void)imgCount;
+
+        // isWithinBBox
+        gpca.setDecimationValue(SoDecimationTypeElement::AUTOMATIC, 0.5f);
+        gpca.apply(root);
+
+        root->unref();
+    }
+
+    // --- Get count from complex IFS ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCoordinate3* coords = new SoCoordinate3();
+        // Build a complex mesh
+        for (int y=0; y<5; ++y)
+            for (int x=0; x<5; ++x)
+                coords->point.set1Value(y*5+x, SbVec3f(float(x), float(y), 0));
+        root->addChild(coords);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        int idx = 0;
+        for (int y=0; y<4; ++y)
+            for (int x=0; x<4; ++x) {
+                ifs->coordIndex.set1Value(idx++, y*5+x);
+                ifs->coordIndex.set1Value(idx++, y*5+x+1);
+                ifs->coordIndex.set1Value(idx++, (y+1)*5+x+1);
+                ifs->coordIndex.set1Value(idx++, (y+1)*5+x);
+                ifs->coordIndex.set1Value(idx++, -1);
+            }
+        root->addChild(ifs);
+
+        SbViewportRegion vp(64,64);
+        SoGetPrimitiveCountAction gpca(vp);
+        gpca.apply(root);
+        int triCount = gpca.getTriangleCount();
+        if (triCount < 16) { // 16 quads = 32 triangles
+            fprintf(stderr, "  FAIL: complex IFS triangleCount %d < 32\n", triCount); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Registration: Session 8 tests
+// =========================================================================
+
+REGISTER_TEST(unit_callback_action_prim, ObolTest::TestCategory::Actions,
+    "SoCallbackAction: addTriangleCallback (sphere/cone/cylinder/cube/IFS), addLineSegmentCallback (ILS), addPointCallback (PointSet), addPreCallback, addPostCallback, addPreTailCallback, state queries in callback",
+    e.has_visual = false;
+    e.run_unit = runCallbackActionPrimTest;
+);
+
+REGISTER_TEST(unit_tesselator2, ObolTest::TestCategory::Base,
+    "SbTesselator: convex polygon (pentagon), concave polygon (L-shape), multiple polygons, keepVertices=TRUE, setCallback API",
+    e.has_visual = false;
+    e.run_unit = runTesselatorTest;
+);
+
+REGISTER_TEST(unit_complex_drag, ObolTest::TestCategory::Draggers,
+    "GL render + drag: SoHandleBoxDragger, SoTabPlaneDragger, SoRotateCylindricalDragger, SoRotateDiscDragger, SoRotateSphericalDragger, SoScale1/Scale2/ScaleUniform draggers",
+    e.has_visual = false;
+    e.run_unit = runComplexDragTest;
+);
+
+REGISTER_TEST(unit_ifs_material_binding, ObolTest::TestCategory::Rendering,
+    "IFS with PER_FACE/PER_VERTEX/PER_FACE_INDEXED material binding, SoPackedColor per-vertex, TextureCoordinate2 with IFS",
+    e.has_visual = false;
+    e.run_unit = runIFSMaterialBindingTest;
+);
+
+REGISTER_TEST(unit_text_deep_gl, ObolTest::TestCategory::Rendering,
+    "GL render: SoText2 (multi-string, LEFT/RIGHT/CENTER), SoText3 (FRONT+BACK+SIDES, FRONT only), SoAsciiText (justification modes)",
+    e.has_visual = false;
+    e.run_unit = runTextDeepGLTest;
+);
+
+REGISTER_TEST(unit_primitive_count_deep, ObolTest::TestCategory::Actions,
+    "SoGetPrimitiveCountAction: getTriangleCount/getLineCount/getPointCount on sphere/cone/cylinder, complex IFS, setDecimationValue",
+    e.has_visual = false;
+    e.run_unit = runPrimitiveCountDeepTest;
+);
+
+} // anonymous namespace (session 8)
