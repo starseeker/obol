@@ -1,7 +1,7 @@
 # Obol Code Coverage Report
 
 Generated from an lcov coverage build (`OBOL_COVERAGE=ON`, `OBOL_USE_OSMESA=ON`,
-`CMAKE_BUILD_TYPE=Debug`) with the full CTest suite (190 tests).
+`CMAKE_BUILD_TYPE=Debug`) with the full CTest suite (190 tests) plus 62 unit tests.
 
 **Toolchain:** GCC + lcov 2.0, OSMesa headless rendering
 
@@ -11,9 +11,300 @@ Generated from an lcov coverage build (`OBOL_COVERAGE=ON`, `OBOL_USE_OSMESA=ON`,
 
 | Metric    | Covered | Total  | Percentage |
 |-----------|---------|--------|------------|
-| Lines     | 52,050  | 104,084| **50.0%**  |
-| Functions | 8,777   | 18,634 | **47.1%**  |
+| Lines     | 40,377  | 85,652 | **47.1%**  |
+| Functions | 7,599   | 15,937 | **47.7%**  |
 | Branches  | —       | —      | no data    |
+
+*(Previous baseline: 50.0% lines / 47.1% functions on 104,084 total lines including test
+harness code; after filtering to `src/` only the normalized figure is 47.1%.)*
+
+---
+
+## Per-Subsystem Coverage
+
+### Well-Covered Subsystems (≥ 60%)
+
+| Subsystem | Representative Coverage |
+|-----------|------------------------|
+| `src/details` | ~61–82% (SoConeDetail 82%, SoCubeDetail 75%, SoDetail 32%) |
+| `src/elements` (non-GL) | ~85% overall; most element push/pop paths exercised |
+| `src/errors` | ~83% (SoDebugError well covered) |
+| `src/manips` | ~86% average (SoTransformerManip 93%, most kit-manips 71%) |
+| `src/fields/SoFieldContainer` | 82% |
+| `src/sensors/SoOneShotSensor` | 80% |
+| `src/rendering/SoRenderManager` | 63% |
+| `src/actions/SoGetMatrixAction` | 70% |
+| `src/actions/SoGetPrimitiveCountAction` | 91% |
+| `src/actions/SoWriteAction` | 59% |
+| `src/base/SbColor4f` | 81% |
+| `src/base/SbBox3d` | 93% |
+| `src/base/SbVec2f` | 83% |
+
+---
+
+### Moderate Coverage (30–60%)
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/actions/SoCallbackAction.cpp` | 50% | Exercised by callback tests |
+| `src/actions/SoSearchAction.cpp` | 35% | Deeper search exercised |
+| `src/actions/SoHandleEventAction.cpp` | 32% | Event routing partially tested |
+| `src/actions/SoGetBoundingBoxAction.cpp` | 31% | BBox traversal partial |
+| `src/base/SbMatrix.cpp` | 15% | **489 lines** – major gap; factor/LU/transpose untested |
+| `src/base/SbRotation.cpp` | 16% | **192 lines** – slerp/many paths untested |
+| `src/base/SbViewVolume.cpp` | 26% | More paths added in unit tests |
+| `src/base/SbDPMatrix.cpp` | 53% | Double-precision matrix |
+| `src/base/SbDPRotation.cpp` | 28% | Double-precision rotation |
+| `src/base/SbDPViewVolume.cpp` | 11% | **402 lines** – major gap |
+| `src/base/SbPlane.cpp` | 18% | intersect/offset/transform added |
+| `src/base/SbLine.cpp` | 26% | getClosestPoint/setPosDir added |
+| `src/base/SbDict.cpp` | 46% | enter/find/remove tested |
+| `src/base/SbOctTree.cpp` | 45% | add/find/remove tested |
+| `src/base/SbBSPTree.cpp` | 37% | addPoint/findClosest tested |
+| `src/rendering/SoGL.cpp` | 49% | **606 lines** – GL dispatch |
+| `src/rendering/SoOffscreenRenderer.cpp` | 16% | Off-screen render API |
+| `src/sensors/SoSensorManager.cpp` | 19% | Sensor queue management |
+| `src/nodes/SoCamera.cpp` | 17% | **203 lines** – orbitCamera/stereo added |
+| `src/nodes/SoMaterial.cpp` | 16% | **127 lines** |
+| `src/nodes/SoGroup.cpp` | 24% | **164 lines** |
+
+---
+
+### Low / No Coverage (< 30% or zero lines hit)
+
+#### Math & Geometry Primitives (HIGH PRIORITY)
+
+| File | Coverage | Status |
+|------|----------|--------|
+| `src/base/SbMatrix.cpp` | **15%** | factor/LU/transpose still untested |
+| `src/base/SbRotation.cpp` | **16%** | slerp, many quaternion paths untested |
+| `src/base/SbDPViewVolume.cpp` | **11%** | 402 lines – only ortho/persp basics covered |
+| `src/base/SbTesselator.cpp` | **10%** | beginPolygon/addVertex/endPolygon added |
+| `src/base/SbHeap.cpp` | **26%** | add/extractMin/emptyHeap added |
+| `src/base/SbClip.cpp` | **13%** | addVertex/clip/getVertex added |
+| `src/base/SbFont.cpp` | **17%** | **198 lines** – font API untested |
+| `src/base/SbImage.cpp` | **25%** | Image manipulation |
+| `src/base/SbCylinder.cpp` | **24%** | intersect added |
+| `src/base/SbSphere.cpp` | **27%** | intersect/circumscribe/pointInside added |
+| `src/base/SbBox2d.cpp` | **0%** | No tests yet |
+| `src/base/SbBox2i32.cpp` | **0%** | No tests yet |
+| `src/base/SbBox3i32.cpp` | **0%** | No tests yet |
+| `src/base/SbBox3s.cpp` | **0%** | No tests yet |
+| `src/base/SbVec2s.cpp` | **0%** | Logic covered via SbVec2s unit tests |
+| `src/base/SbVec2i32.cpp` | **0%** | SbVec2i32 unit tests added (header-inline) |
+| `src/base/SbVec3b.cpp` | **0%** | Unit tests added (header-inline) |
+| `src/base/SbVec3i32.cpp` | **0%** | Unit tests added (header-inline) |
+| `src/base/SbVec3s.cpp` | **0%** | Unit tests added (header-inline) |
+| `src/base/SbVec4i32.cpp` | **0%** | Unit tests added (header-inline) |
+
+#### Rendering Pipeline (HIGH PRIORITY)
+
+| File | Coverage | Missing |
+|------|----------|---------|
+| `src/rendering/SoGLRenderAction.cpp` | **21%** | Multi-pass, transparency, depth sorting |
+| `src/rendering/SoGLImage.cpp` | **13%** | Texture upload, mipmap, format conversion |
+| `src/rendering/SoGLBigImage.cpp` | **12%** | Large texture tiling |
+| `src/rendering/SoGLCubeMapImage.cpp` | **19%** | Cube-map textures |
+| `src/rendering/SoOffscreenRenderer.cpp` | **16%** | Offscreen render API |
+| `src/rendering/SoVBO.cpp` | **16%** | VBO allocation/update |
+
+#### Shape Nodes (HIGH PRIORITY)
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/shapenodes/SoShape.cpp` | **12%** | Base shape class; bbox/prim-count added |
+| `src/shapenodes/SoFaceSet.cpp` | **15%** | bbox+primitive count tests added |
+| `src/shapenodes/SoIndexedFaceSet.cpp` | **10%** | bbox+primitive count tests added |
+| `src/shapenodes/SoAsciiText.cpp` | **12%** | Annotation text |
+| `src/shapenodes/SoImage.cpp` | **11%** | Image billboard node |
+| `src/shapenodes/SoIndexedLineSet.cpp` | **10%** | Line set |
+| `src/shapenodes/SoIndexedTriangleStripSet.cpp` | **12%** | Triangle strip set |
+| `src/shapenodes/SoText2.cpp` | **0%** | 2D raster text – entirely untested |
+| `src/shapenodes/SoText3.cpp` | **0%** | 3D extruded text – entirely untested |
+| `src/shapenodes/SoProceduralShape.cpp` | **14%** | Procedural shape API |
+
+#### Actions (HIGH PRIORITY)
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/actions/SoAction.cpp` | **17%** | Base action traversal |
+| `src/actions/SoGLRenderAction.cpp` | **21%** | Core rendering traversal |
+| `src/actions/SoRayPickAction.cpp` | **12%** | **400 lines** – ray picking |
+
+#### Scene Management (HIGH PRIORITY)
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/misc/SoSceneManager.cpp` | **0%** | Scene lifecycle management |
+| `src/misc/SoEventManager.cpp` | **0%** | Event dispatch |
+| `src/misc/SoLightPath.cpp` | **0%** | Lighting traversal path |
+
+#### Engines (MEDIUM PRIORITY)
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/engines/SoBoolOperation.cpp` | **26%** | A_AND_B / A_OR_B added |
+| `src/engines/SoCalculator.cpp` | **12%** | expression eval partially tested |
+| `src/engines/SoEngine.cpp` | **28%** | getOutputs/getOutput added |
+| `src/engines/SoInterpolateFloat.cpp` | **~13%** | alpha 0.5 test added |
+
+#### Sensors (MEDIUM PRIORITY)
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/sensors/SoSensorManager.cpp` | **19%** | processTimerQueue/processDelayQueue exercised |
+| `src/sensors/SoTimerSensor.cpp` | **30%** | Timer callbacks |
+| `src/sensors/SoPathSensor.cpp` | **0%** | Path-attachment sensor |
+| `src/sensors/SoIdleSensor.cpp` | **0%** | Idle callback |
+
+#### Shaders (MEDIUM PRIORITY)
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/shaders/SoShader.cpp` | **6%** | Shader init |
+| `src/shaders/SoShaderObject.cpp` | **20%** | Shader object |
+| `src/shaders/SoGLSLShaderObject.cpp` | **18%** | GLSL object |
+| `src/shaders/SoGLARBShaderObject.cpp` | **0%** | Legacy ARB shaders |
+
+#### Profiler Subsystem (LOW – may be kept for dev use only)
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/profiler/SbProfilingData.cpp` | **0%** | Profiling data |
+| `src/profiler/SoProfilerOverlayKit.cpp` | **0%** | Visual overlay |
+
+#### HUD Subsystem (LOW)
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/hud/SoHUD.cpp` | **25%** | HUD root node |
+| `src/hud/SoHUDKit.cpp` | **31%** | |
+
+---
+
+## Progress Summary (Test Additions This Session)
+
+| Iteration | New Tests | Total | Coverage (src/) |
+|-----------|-----------|-------|-----------------|
+| Baseline  | 0         | 25    | ~50.0% (mixed) |
+| Iter 1    | +21       | 36    | — |
+| Iter 2    | +11       | 47    | — |
+| Iter 3    | +7        | 54    | 47.0% |
+| Iter 4    | +8        | 62    | 47.1% |
+
+**62 unit tests now pass (0 failures).** The unit tests cover:
+- All SbVec2/3/4 integer/byte variants (SbVec2s, SbVec2i32, SbVec3s, SbVec3i32, SbVec4i32, SbVec3b)
+- SbMatrix (multMatrixVec, multDirMatrix, multLeft, setScale, equals)
+- SbRotation (invert, getValue(4f), getValue(matrix), setValue(matrix), operator[], *=, ==)
+- SbViewVolume (projectToScreen, getWorldToScreenScale, narrow, getPlane, getMatrices)
+- SbDPViewVolume (ortho, perspective, getSightPoint, projectToScreen, getMatrices)
+- SbLine (getClosestPoint, getClosestPoints, setPosDir)
+- SbPlane (3-point, intersect, offset, transform, plane-plane intersect, ==)
+- SbSphere (circumscribe, pointInside, intersect 1/2 arg)
+- SbCylinder (intersect)
+- SbHeap (add, extractMin, getMin, emptyHeap)
+- SbTesselator (quad/triangle tessellation)
+- SbOctTree (addItem, findItems by point/box, removeItem)
+- SbBSPTree (addPoint, findPoint, findClosest, dedup)
+- SbClip (addVertex, clip by plane, getVertex)
+- SbDict (enter, find, remove, applyToAll)
+- SbImage (2D/3D set/getValue, equality)
+- SbColor (HSV, packed), SbColor4f
+- SoGroup/SoSeparator (hierarchy, caching modes, bbox)
+- SoPerspectiveCamera / SoOrthographicCamera (viewAll, getViewVolume, orbitCamera, stereo)
+- SoFaceSet / SoIndexedFaceSet (bbox, primitive count)
+- SoSearchAction (type/name/ALL/derived, searchingAll)
+- SoCallbackAction (pre/post callbacks, triangle callback)
+- SoGetBoundingBoxAction (sphere/cube/faceSet)
+- SoGetPrimitiveCountAction (triangles/lines)
+- SoGetMatrixAction (translation node, path-based)
+- SoHandleEventAction (viewport, event, handled, pickRadius, apply)
+- SoRayPickAction (sphere/cube picks)
+- SoWriteAction + SoDB::readAll (round-trip)
+- SoPath (copy, findFork, containsNode, truncate)
+- SoField connection (engine→field, field→field, disconnect)
+- SoComposeVec3f, SoInterpolateFloat, SoBoolOperation (A_AND_B, A_OR_B)
+- SoFieldSensor, SoNodeSensor
+- SoInfo, SoAnnotation, SoFont, SoDrawStyle, SoComplexity
+- SoNode (setName/getByName, isOfType, copy)
+- SbViewportRegion (aspect, setViewportPixels, setPixelsPerInch)
+- SbString, SbName, SbTime
+- SbXfBox3f, SbBox3d, SbBox2f, SbBox2s
+
+---
+
+## Priority Queue for Adding Tests (Updated)
+
+### Tier 1 — Critical (highest ROI remaining)
+
+1. **`SbMatrix` deeper** — 15% of 489 lines. Still missing: `factor()`,
+   `LUDecompose()`, `LUBackSub()`, `det()`, `transpose()`.
+2. **`SoRayPickAction`** — 12% of 400 lines. Add more picking tests with
+   different shapes, pick radius, sorted picks.
+3. **`SoGLRenderAction`** — 21% of 347 lines. Needs transparency sort modes,
+   render passes.
+4. **`SbDPViewVolume`** — 11% of 402 lines. Add narrow/getAlignRotation/projectPointToLine.
+
+### Tier 2 — Important (next pass)
+
+5. **`SbRotation`** — 16% of 192 lines. Add slerp, more quaternion ops.
+6. **`SoCamera`** — 17% of 203 lines. Add viewBoundingBox, project/unproject.
+7. **`SoFaceSet` / `SoIndexedFaceSet`** — Only bbox tested; add normal binding, GLRender.
+8. **`SoText2` / `SoText3`** — 0%. Add minimal construction + bbox tests.
+
+### Tier 3 — Worthwhile (as time allows)
+
+9. **Projectors** — SbCylinderSheetProjector 0%, SbSphereSheetProjector 0%.
+10. **`SoSensorManager`** — 19%; processIdleQueue, reschedule paths.
+11. **Shader subsystem** — SoShaderObject 20%, SoGLSLShaderObject 18%.
+12. **`SoSceneManager`** — 0%; lifecycle tests (setSceneGraph, render, event).
+
+### Tier 4 — Deferred
+
+13. **Profiler** — 8 files at 0%. Consider whether profiling is a supported feature.
+14. **HUD** — 23–31%; needs visual + layout unit tests.
+15. **Shadows** — visual regression test exists but unit tests missing.
+
+---
+
+## Cleanup Done Before This Run
+
+Before the lcov run, the following fully-stubbed / never-implemented APIs were
+removed from the build to eliminate false "uncovered" noise:
+
+| Removed | Reason |
+|---------|--------|
+| `SoByteStream` (src + header) | Every method was `OBOL_STUB()` – never implemented |
+| `SoTranSender` (src + header) | Every method was `OBOL_STUB()` – never implemented |
+| `SoTranReceiver` (src + header) | Every method was `OBOL_STUB()` – never implemented |
+| `SoTranscribe.h` | Header that only forwarded to the two removed classes |
+| `SoNormalGenerator::setNumNormals()` | Called `OBOL_OBSOLETED()` only |
+| `SoNormalGenerator::setNormal()` | Called `OBOL_OBSOLETED()` only |
+
+---
+
+## How to Reproduce
+
+```bash
+# Install lcov (if not present)
+sudo apt-get install lcov
+
+# Configure
+cmake /path/to/obol \
+  -DOBOL_USE_OSMESA=ON \
+  -DOBOL_BUILD_TESTS=ON \
+  -DOBOL_COVERAGE=ON \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -B build_coverage
+
+# Build and run coverage
+cmake --build build_coverage -- -j4
+cmake --build build_coverage --target coverage
+
+# Open report
+xdg-open build_coverage/coverage_report/index.html
+```
+
 
 ---
 
