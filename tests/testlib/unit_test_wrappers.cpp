@@ -279,6 +279,7 @@
 #include <Inventor/nodes/SoPackedColor.h>
 #include <Inventor/nodes/SoTexture2.h>
 #include <Inventor/nodes/SoTextureCoordinate2.h>
+#include <Inventor/nodes/SoSceneTexture2.h>
 
 #include <cmath>
 #include <cstdio>
@@ -17114,6 +17115,745 @@ REGISTER_TEST(unit_all_shapes_gl, ObolTest::TestCategory::Rendering,
     "GL render: all shape types with specular lighting, creaseAngle variations",
     e.has_visual = false;
     e.run_unit = runAllShapesGLTest;
+);
+
+// =========================================================================
+// Session 5 / Iteration 21: LineSet bindings, AsciiText GL, SoRayPickAction
+// intersect paths, keyboard events, SoInput deeper reading
+// =========================================================================
+
+// Unit test: SoLineSet with PER_LINE and PER_SEGMENT material bindings
+static int runLineSetBindingsGLTest()
+{
+    int failures = 0;
+
+    // --- SoLineSet with PER_LINE material binding ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.set1Value(0, SbColor(1,0,0));
+        mat->diffuseColor.set1Value(1, SbColor(0,1,0));
+        mat->diffuseColor.set1Value(2, SbColor(0,0,1));
+        root->addChild(mat);
+
+        SoMaterialBinding* mb = new SoMaterialBinding();
+        mb->value.setValue(SoMaterialBinding::PER_PART); // PER_LINE for LineSet
+        root->addChild(mb);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-0.5f,0));
+        coords->point.set1Value(1, SbVec3f( 1,-0.5f,0));
+        coords->point.set1Value(2, SbVec3f(-1, 0.0f,0));
+        coords->point.set1Value(3, SbVec3f( 1, 0.0f,0));
+        coords->point.set1Value(4, SbVec3f(-1, 0.5f,0));
+        coords->point.set1Value(5, SbVec3f( 1, 0.5f,0));
+        root->addChild(coords);
+
+        SoLineSet* ls = new SoLineSet();
+        ls->numVertices.set1Value(0, 2); // line 1 (red)
+        ls->numVertices.set1Value(1, 2); // line 2 (green)
+        ls->numVertices.set1Value(2, 2); // line 3 (blue)
+        root->addChild(ls);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: LineSet PER_LINE render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- SoLineSet with PER_VERTEX material binding ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+
+        SoMaterial* mat = new SoMaterial();
+        for (int i = 0; i < 6; ++i) {
+            mat->diffuseColor.set1Value(i, SbColor(float(i%2), float((i/2)%2), float((i/4)%2)));
+        }
+        root->addChild(mat);
+
+        SoMaterialBinding* mb = new SoMaterialBinding();
+        mb->value.setValue(SoMaterialBinding::PER_VERTEX);
+        root->addChild(mb);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        for (int i = 0; i < 6; ++i) {
+            float t = float(i) / 5.0f;
+            coords->point.set1Value(i, SbVec3f(t*2-1, sinf(t*float(M_PI))*0.5f, 0));
+        }
+        root->addChild(coords);
+
+        SoLineSet* ls = new SoLineSet();
+        ls->numVertices.set1Value(0, 6);
+        root->addChild(ls);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: LineSet PER_VERTEX render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- SoLineSet with VertexProperty (exercises VBO path) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+
+        SoVertexProperty* vp_node = new SoVertexProperty();
+        for (int i = 0; i < 4; ++i) {
+            float t = float(i) / 3.0f;
+            vp_node->vertex.set1Value(i, SbVec3f(t*2-1, 0, 0));
+        }
+        vp_node->orderedRGBA.set1Value(0, 0xFF0000FF);
+        vp_node->orderedRGBA.set1Value(1, 0x00FF00FF);
+        vp_node->orderedRGBA.set1Value(2, 0x0000FFFF);
+        vp_node->orderedRGBA.set1Value(3, 0xFFFF00FF);
+        vp_node->materialBinding.setValue(SoVertexProperty::PER_VERTEX);
+
+        SoLineSet* ls = new SoLineSet();
+        ls->numVertices.set1Value(0, 4);
+        ls->vertexProperty.setValue(vp_node);
+        root->addChild(ls);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: LineSet VertexProperty render\n"); ++failures; }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: SoAsciiText GL render with different parameters
+static int runAsciiTextGLTest()
+{
+    int failures = 0;
+
+    // --- SoAsciiText with LEFT justification ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,10));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(1,1,0));
+        root->addChild(mat);
+
+        SoAsciiText* text = new SoAsciiText();
+        text->string.set1Value(0, "Hello World");
+        text->justification.setValue(SoAsciiText::LEFT);
+        text->width.set1Value(0, 0); // auto
+        root->addChild(text);
+
+        SbViewportRegion vp(256, 64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root); // Don't fail - font may not be available
+        root->unref();
+    }
+
+    // --- SoAsciiText with RIGHT justification ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,10));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoAsciiText* text = new SoAsciiText();
+        text->string.set1Value(0, "Right");
+        text->string.set1Value(1, "Aligned");
+        text->justification.setValue(SoAsciiText::RIGHT);
+        root->addChild(text);
+
+        SbViewportRegion vp(256, 128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root); // Don't fail
+        root->unref();
+    }
+
+    // --- SoAsciiText with CENTER justification + width ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,10));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoAsciiText* text = new SoAsciiText();
+        text->string.set1Value(0, "Center");
+        text->justification.setValue(SoAsciiText::CENTER);
+        text->width.set1Value(0, 5.0f); // fixed width
+        text->spacing.setValue(1.5f);
+        root->addChild(text);
+
+        SbViewportRegion vp(256, 64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root); // Don't fail
+        root->unref();
+    }
+
+    // --- SoAsciiText BBox action ---
+    {
+        SoAsciiText* text = new SoAsciiText(); text->ref();
+        text->string.set1Value(0, "BBoxTest");
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(text);
+        // Just verify no crash
+
+        SoGetPrimitiveCountAction pca(SbViewportRegion(512, 512));
+        pca.apply(text);
+        // Just verify no crash
+
+        text->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: SoRayPickAction intersect variants (exercises the intersect overloads)
+static int runRayPickIntersectTest()
+{
+    int failures = 0;
+
+    // --- setRay directly and apply ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        // Add a sphere to pick
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(1,0,0));
+        root->addChild(mat);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(512, 512);
+        cam->viewAll(root, vp);
+
+        // Pick via setRay
+        SoRayPickAction rpa(vp);
+        SbVec3f origin(0, 0, 10);
+        SbVec3f direction(0, 0, -1);
+        rpa.setRay(origin, direction, 0.1f, 100.0f);
+        rpa.setPickAll(TRUE);
+        rpa.apply(root);
+
+        const SoPickedPointList& pts = rpa.getPickedPointList();
+        if (pts.getLength() == 0) {
+            fprintf(stderr, "  FAIL: RayPickAction setRay missed sphere\n"); ++failures;
+        }
+
+        root->unref();
+    }
+
+    // --- setNormalizedPoint center hit ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(512, 512);
+        cam->viewAll(root, vp);
+
+        SoRayPickAction rpa(vp);
+        rpa.setNormalizedPoint(SbVec2f(0.5f, 0.5f));
+        rpa.setPickAll(FALSE);
+        rpa.apply(root);
+
+        SoPickedPoint* pp = rpa.getPickedPoint();
+        if (!pp) {
+            fprintf(stderr, "  FAIL: RayPickAction normalized center missed sphere\n"); ++failures;
+        }
+
+        root->unref();
+    }
+
+    // --- Pick a cylinder ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoCylinder());
+
+        SbViewportRegion vp(512, 512);
+        cam->viewAll(root, vp);
+
+        SoRayPickAction rpa(vp);
+        rpa.setPoint(SbVec2s(256, 256));
+        rpa.apply(root);
+
+        // Don't fail - just verify no crash
+        root->unref();
+    }
+
+    // --- Pick a cube ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+        root->addChild(new SoCube());
+
+        SbViewportRegion vp(512, 512);
+        cam->viewAll(root, vp);
+
+        SoRayPickAction rpa(vp);
+        rpa.setPoint(SbVec2s(256, 256));
+        rpa.setRadius(2.0f);
+        rpa.apply(root);
+
+        SoPickedPoint* pp = rpa.getPickedPoint();
+        if (!pp) {
+            fprintf(stderr, "  FAIL: RayPickAction cube pick\n"); ++failures;
+        }
+
+        root->unref();
+    }
+
+    // --- Pick IFS ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,6));
+        root->addChild(cam);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1, 0));
+        coords->point.set1Value(1, SbVec3f( 1,-1, 0));
+        coords->point.set1Value(2, SbVec3f( 0, 1, 0));
+        root->addChild(coords);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        ifs->coordIndex.set1Value(0, 0);
+        ifs->coordIndex.set1Value(1, 1);
+        ifs->coordIndex.set1Value(2, 2);
+        ifs->coordIndex.set1Value(3, -1);
+        root->addChild(ifs);
+
+        SbViewportRegion vp(512, 512);
+        cam->viewAll(root, vp);
+
+        SoRayPickAction rpa(vp);
+        rpa.setPoint(SbVec2s(256, 256));
+        rpa.apply(root);
+        // Don't fail - IFS pick may miss if face doesn't quite cover center
+
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: Keyboard and more event types via SoHandleEventAction
+static int runKeyboardEventTest()
+{
+    int failures = 0;
+
+    SoSeparator* root = new SoSeparator(); root->ref();
+    SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+    cam->position.setValue(SbVec3f(0,0,6));
+    root->addChild(cam);
+    root->addChild(new SoSphere());
+
+    SbViewportRegion vp(512, 512);
+
+    // Key press event
+    {
+        SoKeyboardEvent ev;
+        ev.setKey(SoKeyboardEvent::SPACE);
+        ev.setState(SoButtonEvent::DOWN);
+        ev.setTime(SbTime::getTimeOfDay());
+        SoHandleEventAction action(vp);
+        action.setEvent(&ev);
+        action.apply(root);
+        // No crash expected
+    }
+
+    // Key release event
+    {
+        SoKeyboardEvent ev;
+        ev.setKey(SoKeyboardEvent::RETURN);
+        ev.setState(SoButtonEvent::UP);
+        ev.setTime(SbTime::getTimeOfDay());
+        SoHandleEventAction action(vp);
+        action.setEvent(&ev);
+        action.apply(root);
+    }
+
+    // Right mouse button press
+    {
+        SoMouseButtonEvent ev;
+        ev.setButton(SoMouseButtonEvent::BUTTON2);
+        ev.setState(SoButtonEvent::DOWN);
+        ev.setPosition(SbVec2s(256, 256));
+        ev.setTime(SbTime::getTimeOfDay());
+        SoHandleEventAction action(vp);
+        action.setEvent(&ev);
+        action.apply(root);
+    }
+
+    // Middle mouse button
+    {
+        SoMouseButtonEvent ev;
+        ev.setButton(SoMouseButtonEvent::BUTTON3);
+        ev.setState(SoButtonEvent::DOWN);
+        ev.setPosition(SbVec2s(256, 256));
+        ev.setTime(SbTime::getTimeOfDay());
+        SoHandleEventAction action(vp);
+        action.setEvent(&ev);
+        action.apply(root);
+    }
+
+    // Check viewport getter
+    {
+        SoHandleEventAction hea(vp);
+        SbVec2s sz = hea.getViewportRegion().getWindowSize();
+        if (sz[0] != 512) {
+            fprintf(stderr, "  FAIL: keyboard test viewport size %d\n", sz[0]); ++failures;
+        }
+    }
+
+    root->unref();
+    return failures;
+}
+
+// Unit test: GL render with SoSceneTexture2 (render-to-texture)
+static int runSceneTexture2Test()
+{
+    int failures = 0;
+
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+
+        SoOrthographicCamera* cam = new SoOrthographicCamera();
+        cam->position.setValue(SbVec3f(0,0,2));
+        cam->nearDistance.setValue(0.1f);
+        cam->farDistance.setValue(10.0f);
+        cam->height.setValue(2.2f);
+        root->addChild(cam);
+
+        SoDirectionalLight* light = new SoDirectionalLight();
+        light->direction.setValue(SbVec3f(0,0,-1));
+        root->addChild(light);
+
+        // Scene to render into texture: a colored cone
+        SoSeparator* subScene = new SoSeparator();
+        SoPerspectiveCamera* subCam = new SoPerspectiveCamera();
+        subCam->position.setValue(SbVec3f(0,0,4));
+        subScene->addChild(subCam);
+        subScene->addChild(new SoDirectionalLight());
+        SoMaterial* subMat = new SoMaterial();
+        subMat->diffuseColor.setValue(SbColor(1,0.5f,0));
+        subScene->addChild(subMat);
+        subScene->addChild(new SoCone());
+        SbViewportRegion subVP(64,64);
+        subCam->viewAll(subScene, subVP);
+
+        SoSceneTexture2* stex = new SoSceneTexture2();
+        stex->size.setValue(SbVec2s(64, 64));
+        stex->backgroundColor.setValue(0.1f, 0.1f, 0.3f, 1.0f);
+        stex->type.setValue(SoSceneTexture2::RGBA8);
+        stex->wrapS.setValue(SoSceneTexture2::CLAMP);
+        stex->wrapT.setValue(SoSceneTexture2::CLAMP);
+        stex->scene.setValue(subScene);
+        root->addChild(stex);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(1,1,1));
+        root->addChild(mat);
+
+        SoTextureCoordinate2* tc = new SoTextureCoordinate2();
+        tc->point.set1Value(0, SbVec2f(0,0));
+        tc->point.set1Value(1, SbVec2f(1,0));
+        tc->point.set1Value(2, SbVec2f(1,1));
+        tc->point.set1Value(3, SbVec2f(0,1));
+        root->addChild(tc);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1,0));
+        coords->point.set1Value(1, SbVec3f( 1,-1,0));
+        coords->point.set1Value(2, SbVec3f( 1, 1,0));
+        coords->point.set1Value(3, SbVec3f(-1, 1,0));
+        root->addChild(coords);
+
+        SoFaceSet* fs = new SoFaceSet();
+        fs->numVertices.setValue(4);
+        root->addChild(fs);
+
+        SbViewportRegion vp(128, 128);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoSceneTexture2 render\n"); ++failures; }
+
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: SoInput reading from buffer/file  
+static int runSoInputTest()
+{
+    int failures = 0;
+
+    // --- Read from buffer ---
+    {
+        // A simple Inventor 2.1 scene in ASCII format
+        const char* ivdata =
+            "#Inventor V2.1 ascii\n\n"
+            "Separator {\n"
+            "  Cube {}\n"
+            "  Sphere { radius 2.0 }\n"
+            "}\n";
+
+        SoInput input;
+        input.setBuffer(const_cast<char*>(ivdata), strlen(ivdata));
+
+        SoNode* root = nullptr;
+        SbBool ok = SoDB::read(&input, root);
+        if (!ok || !root) {
+            fprintf(stderr, "  FAIL: SoInput buffer read\n"); ++failures;
+        } else {
+            root->ref();
+            // Verify structure
+            if (!root->isOfType(SoSeparator::getClassTypeId())) {
+                fprintf(stderr, "  FAIL: SoInput root not Separator\n"); ++failures;
+            }
+            root->unref();
+        }
+    }
+
+    // --- SoInput openFile/closeFile ---
+    {
+        // Write a simple .iv file to /tmp and read it back
+        const char* fname = "/tmp/test_soinput.iv";
+        FILE* f = fopen(fname, "w");
+        if (f) {
+            fprintf(f, "#Inventor V2.1 ascii\n\nSeparator {\n  Cone {}\n}\n");
+            fclose(f);
+
+            SoInput input;
+            SbBool opened = input.openFile(fname);
+            if (!opened) {
+                fprintf(stderr, "  FAIL: SoInput openFile\n"); ++failures;
+            } else {
+                if (!input.isValidFile()) {
+                    fprintf(stderr, "  FAIL: SoInput isValidFile\n"); ++failures;
+                }
+                SoNode* root = nullptr;
+                SbBool ok = SoDB::read(&input, root);
+                if (ok && root) {
+                    root->ref();
+                    root->unref();
+                }
+                input.closeFile();
+            }
+        }
+    }
+
+    // --- SoDB::readAll from buffer ---
+    {
+        const char* ivdata =
+            "#Inventor V2.1 ascii\n\n"
+            "Separator {\n"
+            "  DirectionalLight {}\n"
+            "  Material { diffuseColor 1 0 0 }\n"
+            "  Cylinder {}\n"
+            "}\n";
+
+        SoInput input;
+        input.setBuffer(const_cast<char*>(ivdata), strlen(ivdata));
+        SoSeparator* root = SoDB::readAll(&input);
+        if (!root) {
+            fprintf(stderr, "  FAIL: SoDB::readAll from buffer\n"); ++failures;
+        } else {
+            root->ref();
+            root->unref();
+        }
+    }
+
+    // --- Binary format read ---
+    {
+        // First write binary, then read it back
+        SoSeparator* orig = new SoSeparator(); orig->ref();
+        orig->addChild(new SoCube());
+        orig->addChild(new SoSphere());
+
+        SoOutput outB;
+        char buf[8192] = {0};
+        outB.setBuffer(buf, sizeof(buf), nullptr);
+        outB.setBinary(TRUE);
+        SoWriteAction wa(&outB);
+        wa.apply(orig);
+
+        void* ptr; size_t sz;
+        outB.getBuffer(ptr, sz);
+
+        if (sz > 0) {
+            SoInput inputB;
+            inputB.setBuffer(ptr, sz);
+            SoNode* readRoot = nullptr;
+            SbBool ok = SoDB::read(&inputB, readRoot);
+            if (ok && readRoot) { readRoot->ref(); readRoot->unref(); }
+        }
+        orig->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: SoSearchAction with more search types
+static int runSearchActionDeepTest()
+{
+    int failures = 0;
+
+    // Build a complex scene
+    SoSeparator* root = new SoSeparator(); root->ref();
+    SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+    root->addChild(cam);
+    SoDirectionalLight* light = new SoDirectionalLight();
+    root->addChild(light);
+
+    SoSeparator* subA = new SoSeparator();
+    SoMaterial* mat1 = new SoMaterial();
+    mat1->diffuseColor.setValue(SbColor(1,0,0));
+    subA->addChild(mat1);
+    SoSphere* sphere = new SoSphere();
+    subA->addChild(sphere);
+    root->addChild(subA);
+
+    SoSeparator* subB = new SoSeparator();
+    SoMaterial* mat2 = new SoMaterial();
+    mat2->diffuseColor.setValue(SbColor(0,0,1));
+    subB->addChild(mat2);
+    SoCube* cube = new SoCube();
+    subB->addChild(cube);
+    root->addChild(subB);
+
+    // Search for ALL materials
+    {
+        SoSearchAction sa;
+        sa.setType(SoMaterial::getClassTypeId());
+        sa.setInterest(SoSearchAction::ALL);
+        sa.apply(root);
+        SoPathList& paths = sa.getPaths();
+        if (paths.getLength() < 2) {
+            fprintf(stderr, "  FAIL: SearchAction ALL materials (got %d)\n", paths.getLength()); ++failures;
+        }
+    }
+
+    // Search for LAST sphere
+    {
+        SoSearchAction sa;
+        sa.setType(SoSphere::getClassTypeId());
+        sa.setInterest(SoSearchAction::LAST);
+        sa.apply(root);
+        if (!sa.getPath()) {
+            fprintf(stderr, "  FAIL: SearchAction LAST sphere\n"); ++failures;
+        }
+    }
+
+    // Search by name
+    {
+        cube->setName("myCube42");
+        SoSearchAction sa;
+        sa.setName("myCube42");
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        if (!sa.getPath()) {
+            fprintf(stderr, "  FAIL: SearchAction by name\n"); ++failures;
+        }
+    }
+
+    // Search for node pointer
+    {
+        SoSearchAction sa;
+        sa.setNode(sphere);
+        sa.apply(root);
+        if (!sa.getPath()) {
+            fprintf(stderr, "  FAIL: SearchAction by node pointer\n"); ++failures;
+        }
+    }
+
+    root->unref();
+    return failures;
+}
+
+// =========================================================================
+// Register session 5 / iteration 21 tests
+// =========================================================================
+
+REGISTER_TEST(unit_lineset_bindings_gl, ObolTest::TestCategory::Rendering,
+    "GL render: SoLineSet PER_LINE, PER_VERTEX, VertexProperty material bindings",
+    e.has_visual = false;
+    e.run_unit = runLineSetBindingsGLTest;
+);
+
+REGISTER_TEST(unit_ascii_text_gl, ObolTest::TestCategory::Rendering,
+    "GL render: SoAsciiText LEFT/RIGHT/CENTER justification, multi-string, BBox/PrimCount",
+    e.has_visual = false;
+    e.run_unit = runAsciiTextGLTest;
+);
+
+REGISTER_TEST(unit_raypick_intersect, ObolTest::TestCategory::Actions,
+    "SoRayPickAction: setRay, setNormalizedPoint center, sphere/cylinder/cube/IFS picks, setRadius",
+    e.has_visual = false;
+    e.run_unit = runRayPickIntersectTest;
+);
+
+REGISTER_TEST(unit_keyboard_events, ObolTest::TestCategory::Actions,
+    "SoHandleEventAction: SPACE/RETURN keys, right/middle mouse buttons, viewport getter",
+    e.has_visual = false;
+    e.run_unit = runKeyboardEventTest;
+);
+
+REGISTER_TEST(unit_scene_texture2, ObolTest::TestCategory::Rendering,
+    "GL render: SoSceneTexture2 render-to-texture with RGBA8, CLAMP, cone subscene",
+    e.has_visual = false;
+    e.run_unit = runSceneTexture2Test;
+);
+
+REGISTER_TEST(unit_soinput_deeper, ObolTest::TestCategory::IO,
+    "SoInput: buffer read, openFile/isValidFile/closeFile, SoDB::readAll, binary read",
+    e.has_visual = false;
+    e.run_unit = runSoInputTest;
+);
+
+REGISTER_TEST(unit_search_action_deep, ObolTest::TestCategory::Actions,
+    "SoSearchAction: ALL materials, LAST sphere, by name, by node pointer",
+    e.has_visual = false;
+    e.run_unit = runSearchActionDeepTest;
 );
 
 } // anonymous namespace
