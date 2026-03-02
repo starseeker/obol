@@ -6582,7 +6582,13 @@ SoGLContext_glPopAttrib(const SoGLContext * glue)
  * These wrap every core OpenGL function that external/osmesa provides,
  * so Inventor/gl.h can redirect any OSMesa-supported call through the
  * correct backend without falling back to a raw system-GL symbol.
+ *
+ * These dispatch through function pointers in the SoGLContext struct and
+ * therefore work correctly for both system-GL and OSMesa contexts.  Only
+ * one definition is needed, so exclude this block from the OSMesa
+ * compilation unit (gl_osmesa.cpp) where SOGL_PREFIX_SET is defined.
  * --------------------------------------------------------------------- */
+#ifndef SOGL_PREFIX_SET
 
 GLboolean
 SoGLContext_glAreTexturesResident(const SoGLContext * glue, GLsizei n, const GLuint * textures, GLboolean * residences)
@@ -8501,3 +8507,5 @@ SoGLContext_glVertex4sv(const SoGLContext * glue, const GLshort * v)
   assert(glue->glVertex4sv);
   glue->glVertex4sv(v);
 }
+
+#endif /* !SOGL_PREFIX_SET */
