@@ -125,6 +125,7 @@
 #include <Inventor/nodes/SoVertexShape.h>
 #include <Inventor/sensors/SoTimerSensor.h>
 #include <Inventor/misc/SoGLDriverDatabase.h>
+#include <Inventor/elements/SoContextManagerElement.h>
 
 #include "nodes/SoSubNodeP.h"
 #include "../misc/SoEnvironment.h"
@@ -1248,6 +1249,16 @@ SoExtSelection::GLRenderBelowPath(SoGLRenderAction * action)
 
   inherited::GLRenderBelowPath(action);
   SoState * state = action->getState();
+
+  // Automatically populate the context manager from the state element
+  // pushed by SoOffscreenRenderer, matching the pattern in SoSceneTexture2
+  // and SoShadowGroup so that lasso/rectangle selection works without
+  // requiring a manual setContextManager() call.
+  SoDB::ContextManager * stateMgr = SoContextManagerElement::get(state);
+  if (stateMgr && !PRIVATE(this)->contextManager) {
+    PRIVATE(this)->contextManager = stateMgr;
+  }
+
   state->push();
 
   if (action->isRenderingDelayedPaths()) {

@@ -1,0 +1,114 @@
+        -:    0:Source:/home/runner/work/obol/obol/include/Inventor/fields/SoMField.h
+        -:    0:Graph:/tmp/obol_cov5/src/CMakeFiles/Obol.dir/Unity/unity_73_cxx.cxx.gcno
+        -:    0:Data:/tmp/obol_cov5/src/CMakeFiles/Obol.dir/Unity/unity_73_cxx.cxx.gcda
+        -:    0:Runs:510
+        -:    1:#ifndef OBOL_SOMFIELD_H
+        -:    2:#define OBOL_SOMFIELD_H
+        -:    3:
+        -:    4:/**************************************************************************\
+        -:    5: * Copyright (c) Kongsberg Oil & Gas Technologies AS
+        -:    6: * All rights reserved.
+        -:    7: * 
+        -:    8: * Redistribution and use in source and binary forms, with or without
+        -:    9: * modification, are permitted provided that the following conditions are
+        -:   10: * met:
+        -:   11: * 
+        -:   12: * Redistributions of source code must retain the above copyright notice,
+        -:   13: * this list of conditions and the following disclaimer.
+        -:   14: * 
+        -:   15: * Redistributions in binary form must reproduce the above copyright
+        -:   16: * notice, this list of conditions and the following disclaimer in the
+        -:   17: * documentation and/or other materials provided with the distribution.
+        -:   18: * 
+        -:   19: * Neither the name of the copyright holder nor the names of its
+        -:   20: * contributors may be used to endorse or promote products derived from
+        -:   21: * this software without specific prior written permission.
+        -:   22: * 
+        -:   23: * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+        -:   24: * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+        -:   25: * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+        -:   26: * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+        -:   27: * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+        -:   28: * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+        -:   29: * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   30: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   31: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   32: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+        -:   33: * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   34:\**************************************************************************/
+        -:   35:
+        -:   36:#include <Inventor/fields/SoField.h>
+        -:   37:
+        -:   38:class SoInput;
+        -:   39:class SoOutput;
+        -:   40:
+        -:   41:class OBOL_DLL_API SoMField : public SoField {
+        -:   42:  typedef SoField inherited;
+        -:   43:
+        -:   44:public:
+        -:   45:  virtual ~SoMField();
+        -:   46:
+        -:   47:  static SoType getClassTypeId(void);
+        -:   48:  static void atexit_cleanup(void);
+        -:   49:
+        -:   50:  int getNum(void) const;
+        -:   51:  void setNum(const int num);
+        -:   52:
+        -:   53:  virtual void deleteValues(int start, int num = -1);
+        -:   54:  virtual void insertSpace(int start, int num);
+        -:   55:
+        -:   56:  SbBool set1(const int index, const char * const valuestring);
+        -:   57:  void get1(const int index, SbString & valuestring);
+        -:   58:
+        -:   59:  static void initClass(void);
+        -:   60:
+        -:   61:  virtual void enableDeleteValues(void);
+        -:   62:  virtual SbBool isDeleteValuesEnabled(void) const;
+        -:   63:
+        -:   64:protected:
+        -:   65:  SoMField(void);
+        -:   66:  virtual void makeRoom(int newnum);
+        -:   67:
+        -:   68:#ifndef DOXYGEN_SKIP_THIS // Internal methods.
+        -:   69:  virtual int fieldSizeof(void) const = 0;
+        -:   70:  virtual void * valuesPtr(void) = 0;
+        -:   71:  virtual void setValuesPtr(void * ptr) = 0;
+        -:   72:  virtual void allocValues(int num);
+        -:   73:#endif // DOXYGEN_SKIP_THIS
+        -:   74:
+        -:   75:  virtual SoNotRec createNotRec(SoBase * container);
+        -:   76:
+        -:   77:  void setChangedIndex(const int chgidx);
+        -:   78:  void setChangedIndices(const int chgidx = -1, const int numchgind = 0);
+        -:   79:
+        -:   80:  int num;
+        -:   81:  int maxNum;
+        -:   82:  SbBool userDataIsUsed;
+        -:   83:
+        -:   84:private:
+        -:   85:  virtual void deleteAllValues(void) = 0;
+        -:   86:  virtual void copyValue(int to, int from) = 0;
+        -:   87:  virtual SbBool readValue(SoInput * in);
+        -:   88:  virtual SbBool read1Value(SoInput * in, int idx) = 0;
+        -:   89:  virtual void writeValue(SoOutput * out) const;
+        -:   90:  virtual void write1Value(SoOutput * out, int idx) const = 0;
+        -:   91:  virtual SbBool readBinaryValues(SoInput * in, int num);
+        -:   92:  virtual void writeBinaryValues(SoOutput * out) const;
+        -:   93:  virtual int getNumValuesPerLine(void) const;
+        -:   94:
+        -:   95:  static SoType classTypeId;
+        -:   96:  int changedIndex, numChangedIndices;
+        -:   97:};
+        -:   98:
+        -:   99:// inline methods
+        -:  100:
+        -:  101:inline int
+function _ZNK8SoMField6getNumEv called 0 returned 0% blocks executed 0%
+    #####:  102:SoMField::getNum(void) const
+        -:  103:{
+    #####:  104:  this->evaluate();
+call    0 never executed
+    #####:  105:  return this->num;
+        -:  106:}
+        -:  107:
+        -:  108:#endif // !OBOL_SOMFIELD_H

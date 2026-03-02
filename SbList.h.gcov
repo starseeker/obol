@@ -1,0 +1,336 @@
+        -:    0:Source:/home/runner/work/obol/obol/include/Inventor/lists/SbList.h
+        -:    0:Graph:/tmp/obol_cov5/src/CMakeFiles/Obol.dir/Unity/unity_73_cxx.cxx.gcno
+        -:    0:Data:/tmp/obol_cov5/src/CMakeFiles/Obol.dir/Unity/unity_73_cxx.cxx.gcda
+        -:    0:Runs:510
+        -:    1:#ifndef OBOL_SBLIST_H
+        -:    2:#define OBOL_SBLIST_H
+        -:    3:
+        -:    4:/**************************************************************************\
+        -:    5: * Copyright (c) Kongsberg Oil & Gas Technologies AS
+        -:    6: * All rights reserved.
+        -:    7: * 
+        -:    8: * Redistribution and use in source and binary forms, with or without
+        -:    9: * modification, are permitted provided that the following conditions are
+        -:   10: * met:
+        -:   11: * 
+        -:   12: * Redistributions of source code must retain the above copyright notice,
+        -:   13: * this list of conditions and the following disclaimer.
+        -:   14: * 
+        -:   15: * Redistributions in binary form must reproduce the above copyright
+        -:   16: * notice, this list of conditions and the following disclaimer in the
+        -:   17: * documentation and/or other materials provided with the distribution.
+        -:   18: * 
+        -:   19: * Neither the name of the copyright holder nor the names of its
+        -:   20: * contributors may be used to endorse or promote products derived from
+        -:   21: * this software without specific prior written permission.
+        -:   22: * 
+        -:   23: * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+        -:   24: * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+        -:   25: * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+        -:   26: * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+        -:   27: * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+        -:   28: * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+        -:   29: * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   30: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   31: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   32: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+        -:   33: * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   34:\**************************************************************************/
+        -:   35:
+        -:   36:#include <cassert>
+        -:   37:#include <cstddef> // NULL definition
+        -:   38:#include <Inventor/SbBasic.h> // TRUE/FALSE
+        -:   39:
+        -:   40:// We usually implement inline functions below the class definition,
+        -:   41:// since we think that makes the file more readable. However, this is
+        -:   42:// not done for this class, since Microsoft Visual C++ is not too
+        -:   43:// happy about having functions declared as inline for a template
+        -:   44:// class.
+        -:   45:
+        -:   46:// FIXME: the #pragmas below is just a quick hack to avoid heaps of
+        -:   47:// irritating warning messages from the compiler for client code
+        -:   48:// compiled under MSVC++. Should try to find the real reason for the
+        -:   49:// warnings and fix the cause of the problem instead. 20020730 mortene.
+        -:   50://
+        -:   51:// UPDATE 20030617 mortene: there is a Microsoft Knowledge Base
+        -:   52:// article at <URL:http://support.microsoft.com> which is related to
+        -:   53:// this problem. It's article number KB168958.
+        -:   54://
+        -:   55:// In short, the general solution is that classes that exposes usage
+        -:   56:// of SbList<type> needs to declare the specific template instance
+        -:   57:// with "extern" and __declspec(dllimport/export).
+        -:   58://
+        -:   59:// That is a lot of work to change, tho'. Another possibility which
+        -:   60:// might be better is to simply avoid using (exposing) SbList from any
+        -:   61:// of the other public classes. Judging from a quick look, this seems
+        -:   62:// feasible, and just a couple of hours or so of work.
+        -:   63://
+        -:   64:#ifdef _MSC_VER // Microsoft Visual C++
+        -:   65:#pragma warning(disable:4251)
+        -:   66:#pragma warning(disable:4275)
+        -:   67:#endif // _MSC_VER
+        -:   68:
+        -:   69:template <typename Type>
+        -:   70:class SbList {
+        -:   71:  // Older compilers aren't too happy about const declarations in the
+        -:   72:  // class definitions, so use the enum trick described by Scott
+        -:   73:  // Meyers in "Effective C++".
+        -:   74:  enum { DEFAULTSIZE = 4 };
+        -:   75:
+        -:   76:public:
+        -:   77:
+    #####:   78:  SbList(const int sizehint = DEFAULTSIZE)
+    #####:   79:    : itembuffersize(DEFAULTSIZE), numitems(0), itembuffer(builtinbuffer) {
+    #####:   80:    if (sizehint > DEFAULTSIZE) this->grow(sizehint);
+    #####:   81:  }
+------------------
+_ZN6SbListIbEC2Ei:
+function _ZN6SbListIbEC2Ei called 0 returned 0% blocks executed 0%
+    #####:   78:  SbList(const int sizehint = DEFAULTSIZE)
+    #####:   79:    : itembuffersize(DEFAULTSIZE), numitems(0), itembuffer(builtinbuffer) {
+    #####:   80:    if (sizehint > DEFAULTSIZE) this->grow(sizehint);
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+    #####:   81:  }
+------------------
+_ZN6SbListIiEC2Ei:
+function _ZN6SbListIiEC2Ei called 0 returned 0% blocks executed 0%
+    #####:   78:  SbList(const int sizehint = DEFAULTSIZE)
+    #####:   79:    : itembuffersize(DEFAULTSIZE), numitems(0), itembuffer(builtinbuffer) {
+    #####:   80:    if (sizehint > DEFAULTSIZE) this->grow(sizehint);
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+    #####:   81:  }
+------------------
+        -:   82:
+        -:   83:  SbList(const SbList<Type> & l)
+        -:   84:    : itembuffersize(DEFAULTSIZE), numitems(0), itembuffer(builtinbuffer) {
+        -:   85:    this->copy(l);
+        -:   86:  }
+        -:   87:
+    #####:   88:  ~SbList() {
+    #####:   89:    if (this->itembuffer != builtinbuffer) delete[] this->itembuffer;
+    #####:   90:  }
+------------------
+_ZN6SbListIbED2Ev:
+function _ZN6SbListIbED2Ev called 0 returned 0% blocks executed 0%
+    #####:   88:  ~SbList() {
+    #####:   89:    if (this->itembuffer != builtinbuffer) delete[] this->itembuffer;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+branch  2 never executed (fallthrough)
+branch  3 never executed
+call    4 never executed
+    #####:   90:  }
+------------------
+_ZN6SbListIiED2Ev:
+function _ZN6SbListIiED2Ev called 0 returned 0% blocks executed 0%
+    #####:   88:  ~SbList() {
+    #####:   89:    if (this->itembuffer != builtinbuffer) delete[] this->itembuffer;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+branch  2 never executed (fallthrough)
+branch  3 never executed
+call    4 never executed
+    #####:   90:  }
+------------------
+        -:   91:
+        -:   92:  void copy(const SbList<Type> & l) {
+        -:   93:    if (this == &l) return;
+        -:   94:    const int n = l.numitems;
+        -:   95:    this->expand(n);
+        -:   96:    for (int i = 0; i < n; i++) this->itembuffer[i] = l.itembuffer[i];
+        -:   97:  }
+        -:   98:
+        -:   99:  SbList <Type> & operator=(const SbList<Type> & l) {
+        -:  100:    this->copy(l);
+        -:  101:    return *this;
+        -:  102:  }
+        -:  103:
+        -:  104:  void fit(void) {
+        -:  105:    const int items = this->numitems;
+        -:  106:
+        -:  107:    if (items < this->itembuffersize) {
+        -:  108:      Type * newitembuffer = this->builtinbuffer;
+        -:  109:      if (items > DEFAULTSIZE) newitembuffer = new Type[items];
+        -:  110:
+        -:  111:      if (newitembuffer != this->itembuffer) {
+        -:  112:        for (int i = 0; i < items; i++) newitembuffer[i] = this->itembuffer[i];
+        -:  113:      }
+        -:  114:
+        -:  115:      if (this->itembuffer != this->builtinbuffer) delete[] this->itembuffer;
+        -:  116:      this->itembuffer = newitembuffer;
+        -:  117:      this->itembuffersize = items > DEFAULTSIZE ? items : DEFAULTSIZE;
+        -:  118:    }
+        -:  119:  }
+        -:  120:
+    #####:  121:  void append(const Type item) {
+    #####:  122:    if (this->numitems == this->itembuffersize) this->grow();
+    #####:  123:    this->itembuffer[this->numitems++] = item;
+    #####:  124:  }
+------------------
+_ZN6SbListIbE6appendEb:
+function _ZN6SbListIbE6appendEb called 0 returned 0% blocks executed 0%
+    #####:  121:  void append(const Type item) {
+    #####:  122:    if (this->numitems == this->itembuffersize) this->grow();
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+    #####:  123:    this->itembuffer[this->numitems++] = item;
+    #####:  124:  }
+------------------
+_ZN6SbListIiE6appendEi:
+function _ZN6SbListIiE6appendEi called 0 returned 0% blocks executed 0%
+    #####:  121:  void append(const Type item) {
+    #####:  122:    if (this->numitems == this->itembuffersize) this->grow();
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+    #####:  123:    this->itembuffer[this->numitems++] = item;
+    #####:  124:  }
+------------------
+        -:  125:
+        -:  126:  int find(const Type item) const {
+        -:  127:    for (int i = 0; i < this->numitems; i++)
+        -:  128:      if (this->itembuffer[i] == item) return i;
+        -:  129:    return -1;
+        -:  130:  }
+        -:  131:
+        -:  132:  void insert(const Type item, const int insertbefore) {
+        -:  133:#ifdef OBOL_EXTRA_DEBUG
+        -:  134:    assert(insertbefore >= 0 && insertbefore <= this->numitems);
+        -:  135:#endif // OBOL_EXTRA_DEBUG
+        -:  136:    if (this->numitems == this->itembuffersize) this->grow();
+        -:  137:
+        -:  138:    for (int i = this->numitems; i > insertbefore; i--)
+        -:  139:      this->itembuffer[i] = this->itembuffer[i-1];
+        -:  140:    this->itembuffer[insertbefore] = item;
+        -:  141:    this->numitems++;
+        -:  142:  }
+        -:  143:
+        -:  144:  void removeItem(const Type item) {
+        -:  145:    int idx = this->find(item);
+        -:  146:#ifdef OBOL_EXTRA_DEBUG
+        -:  147:    assert(idx != -1);
+        -:  148:#endif // OBOL_EXTRA_DEBUG
+        -:  149:    this->remove(idx);
+        -:  150:  }
+        -:  151:
+        -:  152:  void remove(const int index) {
+        -:  153:#ifdef OBOL_EXTRA_DEBUG
+        -:  154:    assert(index >= 0 && index < this->numitems);
+        -:  155:#endif // OBOL_EXTRA_DEBUG
+        -:  156:    this->numitems--;
+        -:  157:    for (int i = index; i < this->numitems; i++)
+        -:  158:      this->itembuffer[i] = this->itembuffer[i + 1];
+        -:  159:  }
+        -:  160:
+        -:  161:  void removeFast(const int index) {
+        -:  162:#ifdef OBOL_EXTRA_DEBUG
+        -:  163:    assert(index >= 0 && index < this->numitems);
+        -:  164:#endif // OBOL_EXTRA_DEBUG
+        -:  165:    this->itembuffer[index] = this->itembuffer[--this->numitems];
+        -:  166:  }
+        -:  167:
+function _ZNK6SbListIiE9getLengthEv called 0 returned 0% blocks executed 0%
+    #####:  168:  int getLength(void) const {
+    #####:  169:    return this->numitems;
+        -:  170:  }
+        -:  171:
+        -:  172:  void truncate(const int length, const int dofit = 0) {
+        -:  173:#ifdef OBOL_EXTRA_DEBUG
+        -:  174:    assert(length <= this->numitems);
+        -:  175:#endif // OBOL_EXTRA_DEBUG
+        -:  176:    this->numitems = length;
+        -:  177:    if (dofit) this->fit();
+        -:  178:  }
+        -:  179:
+        -:  180:  void push(const Type item) {
+        -:  181:    this->append(item);
+        -:  182:  }
+        -:  183:
+        -:  184:  Type pop(void) {
+        -:  185:#ifdef OBOL_EXTRA_DEBUG
+        -:  186:    assert(this->numitems > 0);
+        -:  187:#endif // OBOL_EXTRA_DEBUG
+        -:  188:    return this->itembuffer[--this->numitems];
+        -:  189:  }
+        -:  190:
+function _ZNK6SbListIiE11getArrayPtrEi called 2218282 returned 100% blocks executed 100%
+  2218282:  191:  const Type * getArrayPtr(const int start = 0) const {
+  2218282:  192:    return &this->itembuffer[start];
+        -:  193:  }
+        -:  194:
+        -:  195:  Type operator[](const int index) const {
+        -:  196:#ifdef OBOL_EXTRA_DEBUG
+        -:  197:    assert(index >= 0 && index < this->numitems);
+        -:  198:#endif // OBOL_EXTRA_DEBUG
+        -:  199:    return this->itembuffer[index];
+        -:  200:  }
+        -:  201:
+function _ZN6SbListIbEixEi called 0 returned 0% blocks executed 0%
+    #####:  202:  Type & operator[](const int index) {
+        -:  203:#ifdef OBOL_EXTRA_DEBUG
+        -:  204:    assert(index >= 0 && index < this->numitems);
+        -:  205:#endif // OBOL_EXTRA_DEBUG
+    #####:  206:    return this->itembuffer[index];
+        -:  207:  }
+        -:  208:
+        -:  209:  int operator==(const SbList<Type> & l) const {
+        -:  210:    if (this == &l) return TRUE;
+        -:  211:    if (this->numitems != l.numitems) return FALSE;
+        -:  212:    for (int i = 0; i < this->numitems; i++)
+        -:  213:      if (this->itembuffer[i] != l.itembuffer[i]) return FALSE;
+        -:  214:    return TRUE;
+        -:  215:  }
+        -:  216:
+        -:  217:  int operator!=(const SbList<Type> & l) const {
+        -:  218:    return !(*this == l);
+        -:  219:  }
+        -:  220:
+        -:  221:  void ensureCapacity(const int size) {
+        -:  222:    if ((size > itembuffersize) &&
+        -:  223:        (size > DEFAULTSIZE)) {
+        -:  224:      this->grow(size);
+        -:  225:    }
+        -:  226:  }
+        -:  227:
+        -:  228:protected:
+        -:  229:
+        -:  230:  void expand(const int size) {
+        -:  231:    this->grow(size);
+        -:  232:    this->numitems = size;
+        -:  233:  }
+        -:  234:
+        -:  235:  int getArraySize(void) const {
+        -:  236:    return this->itembuffersize;
+        -:  237:  }
+        -:  238:
+        -:  239:private:
+    #####:  240:  void grow(const int size = -1) {
+        -:  241:    // Default behavior is to double array size.
+    #####:  242:    if (size == -1) this->itembuffersize <<= 1;
+    #####:  243:    else if (size <= this->itembuffersize) return;
+    #####:  244:    else { this->itembuffersize = size; }
+        -:  245:
+    #####:  246:    Type * newbuffer = new Type[this->itembuffersize];
+    #####:  247:    const int n = this->numitems;
+    #####:  248:    if (n > 0) {
+        -:  249:#pragma GCC diagnostic push
+        -:  250:#pragma GCC diagnostic ignored "-Warray-bounds"
+    #####:  251:      for (int i = 0; i < n; i++) newbuffer[i] = this->itembuffer[i];
+        -:  252:#pragma GCC diagnostic pop
+        -:  253:    }
+    #####:  254:    if (this->itembuffer != this->builtinbuffer) delete[] this->itembuffer;
+    #####:  255:    this->itembuffer = newbuffer;
+        -:  256:  }
+        -:  257:
+        -:  258:  int itembuffersize;
+        -:  259:  int numitems;
+        -:  260:  Type * itembuffer;
+        -:  261:  Type builtinbuffer[DEFAULTSIZE];
+        -:  262:};
+        -:  263:
+        -:  264:#endif // !OBOL_SBLIST_H

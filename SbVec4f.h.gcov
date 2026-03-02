@@ -1,0 +1,127 @@
+        -:    0:Source:/home/runner/work/obol/obol/include/Inventor/SbVec4f.h
+        -:    0:Graph:/tmp/obol_cov5/src/CMakeFiles/Obol.dir/Unity/unity_73_cxx.cxx.gcno
+        -:    0:Data:/tmp/obol_cov5/src/CMakeFiles/Obol.dir/Unity/unity_73_cxx.cxx.gcda
+        -:    0:Runs:510
+        -:    1:#ifndef OBOL_SBVEC4F_H
+        -:    2:#define OBOL_SBVEC4F_H
+        -:    3:
+        -:    4:/**************************************************************************\
+        -:    5: * Copyright (c) Kongsberg Oil & Gas Technologies AS
+        -:    6: * All rights reserved.
+        -:    7: * 
+        -:    8: * Redistribution and use in source and binary forms, with or without
+        -:    9: * modification, are permitted provided that the following conditions are
+        -:   10: * met:
+        -:   11: * 
+        -:   12: * Redistributions of source code must retain the above copyright notice,
+        -:   13: * this list of conditions and the following disclaimer.
+        -:   14: * 
+        -:   15: * Redistributions in binary form must reproduce the above copyright
+        -:   16: * notice, this list of conditions and the following disclaimer in the
+        -:   17: * documentation and/or other materials provided with the distribution.
+        -:   18: * 
+        -:   19: * Neither the name of the copyright holder nor the names of its
+        -:   20: * contributors may be used to endorse or promote products derived from
+        -:   21: * this software without specific prior written permission.
+        -:   22: * 
+        -:   23: * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+        -:   24: * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+        -:   25: * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+        -:   26: * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+        -:   27: * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+        -:   28: * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+        -:   29: * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   30: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   31: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   32: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+        -:   33: * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   34:\**************************************************************************/
+        -:   35:
+        -:   36:#include <cstdio>
+        -:   37:
+        -:   38:#include <Inventor/SbBasic.h>
+        -:   39:#ifndef NDEBUG
+        -:   40:#include <Inventor/errors/SoDebugError.h>
+        -:   41:#endif // !NDEBUG
+        -:   42:
+        -:   43:class SbVec4d;
+        -:   44:class SbVec4b;
+        -:   45:class SbVec4s;
+        -:   46:class SbVec4i32;
+        -:   47:class SbVec3f;
+        -:   48:
+        -:   49:class OBOL_DLL_API SbVec4f {
+        -:   50:public:
+        -:   51:  SbVec4f(void) { }
+        -:   52:  SbVec4f(const float v[4]) { vec[0] = v[0]; vec[1] = v[1]; vec[2] = v[2]; vec[3] = v[3]; }
+        -:   53:  SbVec4f(float x, float y, float z, float w) { vec[0] = x; vec[1] = y; vec[2] = z; vec[3] = w; }
+        -:   54:  explicit SbVec4f(const SbVec4d & v) { setValue(v); }
+        -:   55:  explicit SbVec4f(const SbVec4b & v) { setValue(v); }
+        -:   56:  explicit SbVec4f(const SbVec4s & v) { setValue(v); }
+        -:   57:  explicit SbVec4f(const SbVec4i32 & v) { setValue(v); }
+        -:   58:
+        -:   59:  SbVec4f & setValue(const float v[4]) { vec[0] = v[0]; vec[1] = v[1]; vec[2] = v[2]; vec[3] = v[3]; return *this; }
+function _ZN7SbVec4f8setValueEffff called 0 returned 0% blocks executed 0%
+    #####:   60:  SbVec4f & setValue(float x, float y, float z, float w) { vec[0] = x; vec[1] = y; vec[2] = z; vec[3] = w; return *this; }
+        -:   61:  SbVec4f & setValue(const SbVec4d & v);
+        -:   62:  SbVec4f & setValue(const SbVec4b & v);
+        -:   63:  SbVec4f & setValue(const SbVec4s & v);
+        -:   64:  SbVec4f & setValue(const SbVec4i32 & v);
+        -:   65:
+        -:   66:  const float * getValue(void) const { return vec; }
+        -:   67:  void getValue(float & x, float & y, float & z, float & w) const { x = vec[0]; y = vec[1]; z = vec[2]; w = vec[3]; }
+        -:   68:
+        -:   69:  float & operator [] (int i) { return vec[i]; }
+        -:   70:  const float & operator [] (int i) const { return vec[i]; }
+        -:   71:
+        -:   72:  SbBool equals(const SbVec4f & v, float tolerance) const;
+        -:   73:  float dot(const SbVec4f & v) const { return vec[0] * v[0] + vec[1] * v[1] + vec[2] * v[2] + vec[3] * v[3]; }
+        -:   74:  void getReal(SbVec3f & v) const;
+        -:   75:  float length(void) const;
+        -:   76:  float sqrLength(void) const { return vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2] + vec[3] * vec[3]; }
+        -:   77:  void negate(void) { vec[0] = -vec[0]; vec[1] = -vec[1]; vec[2] = -vec[2]; vec[3] = -vec[3]; }
+        -:   78:  float normalize(void);
+        -:   79:
+        -:   80:  SbVec4f & operator *= (float d) { vec[0] *= d; vec[1] *= d; vec[2] *= d; vec[3] *= d; return *this; }
+        -:   81:  SbVec4f & operator /= (float d) { SbDividerChk("SbVec4f::operator/=(float)", d); return operator *= (1.0f / d); }
+        -:   82:  SbVec4f & operator += (const SbVec4f & v) { vec[0] += v[0]; vec[1] += v[1]; vec[2] += v[2]; vec[3] += v[3]; return *this; }
+        -:   83:  SbVec4f & operator -= (const SbVec4f & v) { vec[0] -= v[0]; vec[1] -= v[1]; vec[2] -= v[2]; vec[3] -= v[3]; return *this; }
+        -:   84:  SbVec4f operator - (void) const { return SbVec4f(-vec[0], -vec[1], -vec[2], -vec[3]); }
+        -:   85:
+        -:   86:  void print(FILE * fp) const;
+        -:   87:
+        -:   88:protected:
+        -:   89:  float vec[4];
+        -:   90:
+        -:   91:}; // SbVec4f
+        -:   92:
+        -:   93:OBOL_DLL_API inline SbVec4f operator * (const SbVec4f & v, float d) {
+        -:   94:  SbVec4f val(v); val *= d; return val;
+        -:   95:}
+        -:   96:
+        -:   97:OBOL_DLL_API inline SbVec4f operator * (float d, const SbVec4f & v) {
+        -:   98:  SbVec4f val(v); val *= d; return val;
+        -:   99:}
+        -:  100:
+        -:  101:OBOL_DLL_API inline SbVec4f operator / (const SbVec4f & v, float d) {
+        -:  102:  SbDividerChk("operator/(SbVec4f,float)", d);
+        -:  103:  SbVec4f val(v); val /= d; return val;
+        -:  104:}
+        -:  105:
+        -:  106:OBOL_DLL_API inline SbVec4f operator + (const SbVec4f & v1, const SbVec4f & v2) {
+        -:  107:  SbVec4f v(v1); v += v2; return v;
+        -:  108:}
+        -:  109:
+        -:  110:OBOL_DLL_API inline SbVec4f operator - (const SbVec4f & v1, const SbVec4f & v2) {
+        -:  111:  SbVec4f v(v1); v -= v2; return v;
+        -:  112:}
+        -:  113:
+        -:  114:OBOL_DLL_API inline int operator == (const SbVec4f & v1, const SbVec4f & v2) {
+        -:  115:  return ((v1[0] == v2[0]) && (v1[1] == v2[1]) && (v1[2] == v2[2]) && (v1[3] == v2[3]));
+        -:  116:}
+        -:  117:
+        -:  118:OBOL_DLL_API inline int operator != (const SbVec4f & v1, const SbVec4f & v2) {
+        -:  119:  return !(v1 == v2);
+        -:  120:}
+        -:  121:
+        -:  122:#endif // !OBOL_SBVEC4F_H

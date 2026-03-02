@@ -1,0 +1,776 @@
+        -:    0:Source:/home/runner/work/obol/obol/src/shapenodes/SoIndexedMarkerSet.cpp
+        -:    0:Graph:/tmp/obol_cov5/src/CMakeFiles/Obol.dir/Unity/unity_73_cxx.cxx.gcno
+        -:    0:Data:/tmp/obol_cov5/src/CMakeFiles/Obol.dir/Unity/unity_73_cxx.cxx.gcda
+        -:    0:Runs:510
+        -:    1:/**************************************************************************\
+        -:    2: * Copyright (c) Kongsberg Oil & Gas Technologies AS
+        -:    3: * All rights reserved.
+        -:    4: * 
+        -:    5: * Redistribution and use in source and binary forms, with or without
+        -:    6: * modification, are permitted provided that the following conditions are
+        -:    7: * met:
+        -:    8: * 
+        -:    9: * Redistributions of source code must retain the above copyright notice,
+        -:   10: * this list of conditions and the following disclaimer.
+        -:   11: * 
+        -:   12: * Redistributions in binary form must reproduce the above copyright
+        -:   13: * notice, this list of conditions and the following disclaimer in the
+        -:   14: * documentation and/or other materials provided with the distribution.
+        -:   15: * 
+        -:   16: * Neither the name of the copyright holder nor the names of its
+        -:   17: * contributors may be used to endorse or promote products derived from
+        -:   18: * this software without specific prior written permission.
+        -:   19: * 
+        -:   20: * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+        -:   21: * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+        -:   22: * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+        -:   23: * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+        -:   24: * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+        -:   25: * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+        -:   26: * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   27: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   28: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   29: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+        -:   30: * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   31:\**************************************************************************/
+        -:   32:
+        -:   33:/*!
+        -:   34:  \class SoIndexedMarkerSet SoIndexedMarkerSet.h Inventor/nodes/SoIndexedMarkerSet.h
+        -:   35:  \brief The SoIndexedMarkerSet class is used to display a set of bitmap markers at 3D positions.
+        -:   36:
+        -:   37:  \ingroup coin_nodes
+        -:   38:
+        -:   39:  This node either uses the coordinates currently on the state
+        -:   40:  (typically set up by a leading SoCoordinate3 node in the scene graph)
+        -:   41:  or from a SoVertexProperty node attached to this node to render a
+        -:   42:  set of 3D points.
+        -:   43:
+        -:   44:  To add new markers, use the static functions in SoMarkerSet.
+        -:   45:
+        -:   46:  Here's a simple usage example of SoIndexedMarkerSet in a scene graph:
+        -:   47:
+        -:   48:  \verbatim
+        -:   49:  #Inventor V2.1 ascii
+        -:   50:
+        -:   51:  Separator {
+        -:   52:     Material {
+        -:   53:        diffuseColor [
+        -:   54:         1 0 0, 0 1 0, 0 0 1, 1 1 0, 1 0 1, 1 1 1, 1 0.8 0.6, 0.6 0.8 1
+        -:   55:        ]
+        -:   56:     }
+        -:   57:     MaterialBinding { value PER_VERTEX_INDEXED }
+        -:   58:
+        -:   59:     Coordinate3 {
+        -:   60:        point [
+        -:   61:         -1 1 0, -1 -1 0, 1 -1 0, 1 1 0, 0 2 -1, -2 0 -1, 0 -2 -1, 2 0 -1
+        -:   62:        ]
+        -:   63:     }
+        -:   64:
+        -:   65:     IndexedMarkerSet {
+        -:   66:        coordIndex [0, 1, 2, 3, 4, 5, 6, 7]
+        -:   67:        markerIndex [0, 1, 0, 1, 0, 1, 0, 1]
+        -:   68:     }
+        -:   69:  }
+        -:   70:
+        -:   71:  \endverbatim
+        -:   72:
+        -:   73:  <b>FILE FORMAT/DEFAULTS:</b>
+        -:   74:  \code
+        -:   75:  IndexedMarkerSet {
+        -:   76:    vertexProperty        NULL
+        -:   77:    coordIndex        0
+        -:   78:    materialIndex        -1
+        -:   79:    normalIndex        -1
+        -:   80:    textureCoordIndex        -1
+        -:   81:    markerIndex   -1
+        -:   82:  }
+        -:   83:  \endcode
+        -:   84:
+        -:   85:  \since TGS Inventor 6.0, Coin 3.1
+        -:   86:*/
+        -:   87:
+        -:   88:#include <Inventor/nodes/SoIndexedMarkerSet.h>
+        -:   89:
+        -:   90:#include "config.h"
+        -:   91:
+        -:   92:#include <Inventor/misc/SoState.h>
+        -:   93:#include <Inventor/actions/SoGLRenderAction.h>
+        -:   94:#include <Inventor/system/gl.h>
+        -:   95:#include <Inventor/nodes/SoVertexProperty.h>
+        -:   96:#include <Inventor/nodes/SoMarkerSet.h>
+        -:   97:#include <Inventor/elements/SoGLCoordinateElement.h>
+        -:   98:#include <Inventor/elements/SoMaterialBindingElement.h>
+        -:   99:#include <Inventor/elements/SoMultiTextureEnabledElement.h>
+        -:  100:#include <Inventor/elements/SoModelMatrixElement.h>
+        -:  101:#include <Inventor/elements/SoViewVolumeElement.h>
+        -:  102:#include <Inventor/elements/SoViewportRegionElement.h>
+        -:  103:#include <Inventor/elements/SoViewingMatrixElement.h>
+        -:  104:#include <Inventor/elements/SoProjectionMatrixElement.h>
+        -:  105:#include <Inventor/elements/SoGLLazyElement.h>
+        -:  106:#include <Inventor/elements/SoGLVBOElement.h>
+        -:  107:#include <Inventor/elements/SoCullElement.h>
+        -:  108:#include <Inventor/elements/SoGLCacheContextElement.h>
+        -:  109:
+        -:  110:#include <Inventor/bundles/SoMaterialBundle.h>
+        -:  111:#include <Inventor/SbViewVolume.h>
+        -:  112:
+        -:  113:#if OBOL_DEBUG
+        -:  114:#include <Inventor/errors/SoDebugError.h>
+        -:  115:#endif // OBOL_DEBUG
+        -:  116:
+        -:  117:#include "nodes/SoSubNodeP.h"
+        -:  118:#include "rendering/SoGL.h"
+        -:  119:
+     510*:  120:SO_NODE_SOURCE(SoIndexedMarkerSet);
+------------------
+_ZN18SoIndexedMarkerSet14createInstanceEPv:
+function _ZN18SoIndexedMarkerSet14createInstanceEPv called 0 returned 0% blocks executed 0%
+    #####:  120:SO_NODE_SOURCE(SoIndexedMarkerSet);
+call    0 never executed
+call    1 never executed
+branch  2 never executed (fallthrough)
+branch  3 never executed (throw)
+branch  4 never executed (fallthrough)
+branch  5 never executed
+call    6 never executed
+------------------
+_ZN18SoIndexedMarkerSet14atexit_cleanupEv:
+function _ZN18SoIndexedMarkerSet14atexit_cleanupEv called 0 returned 0% blocks executed 0%
+    #####:  120:SO_NODE_SOURCE(SoIndexedMarkerSet);
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+call    3 never executed
+call    4 never executed
+branch  5 never executed (fallthrough)
+branch  6 never executed (throw)
+call    7 never executed
+branch  8 never executed (fallthrough)
+branch  9 never executed (throw)
+call   10 never executed
+call   11 never executed
+call   12 never executed
+------------------
+_ZNK18SoIndexedMarkerSet12getFieldDataEv:
+function _ZNK18SoIndexedMarkerSet12getFieldDataEv called 0 returned 0% blocks executed 0%
+    #####:  120:SO_NODE_SOURCE(SoIndexedMarkerSet);
+------------------
+_ZN18SoIndexedMarkerSet15getFieldDataPtrEv:
+function _ZN18SoIndexedMarkerSet15getFieldDataPtrEv called 0 returned 0% blocks executed 0%
+    #####:  120:SO_NODE_SOURCE(SoIndexedMarkerSet);
+------------------
+_ZNK18SoIndexedMarkerSet9getTypeIdEv:
+function _ZNK18SoIndexedMarkerSet9getTypeIdEv called 0 returned 0% blocks executed 0%
+    #####:  120:SO_NODE_SOURCE(SoIndexedMarkerSet);
+------------------
+_ZN18SoIndexedMarkerSet14getClassTypeIdEv:
+function _ZN18SoIndexedMarkerSet14getClassTypeIdEv called 510 returned 100% blocks executed 100%
+      510:  120:SO_NODE_SOURCE(SoIndexedMarkerSet);
+------------------
+        -:  121:
+        -:  122:/*!
+        -:  123:  Constructor.
+        -:  124:*/
+function _ZN18SoIndexedMarkerSetC2Ev called 0 returned 0% blocks executed 0%
+    #####:  125:SoIndexedMarkerSet::SoIndexedMarkerSet() : SoIndexedPointSet()
+call    0 never executed
+call    1 never executed
+branch  2 never executed (fallthrough)
+branch  3 never executed (throw)
+        -:  126:{
+    #####:  127:  SO_NODE_INTERNAL_CONSTRUCTOR(SoIndexedMarkerSet);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+call    6 never executed
+branch  7 never executed (fallthrough)
+branch  8 never executed (throw)
+branch  9 never executed (fallthrough)
+branch 10 never executed
+call   11 never executed
+branch 12 never executed (fallthrough)
+branch 13 never executed
+call   14 never executed
+branch 15 never executed (fallthrough)
+branch 16 never executed (throw)
+branch 17 never executed (fallthrough)
+branch 18 never executed
+call   19 never executed
+branch 20 never executed (fallthrough)
+branch 21 never executed (throw)
+call   22 never executed
+branch 23 never executed (fallthrough)
+branch 24 never executed (throw)
+branch 25 never executed (fallthrough)
+branch 26 never executed
+call   27 never executed
+    #####:  128:  SO_NODE_ADD_FIELD(markerIndex, (0));
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+call    6 never executed
+branch  7 never executed (fallthrough)
+branch  8 never executed (throw)
+    #####:  129:}
+call    0 never executed
+call    1 never executed
+        -:  130:
+        -:  131:/*!
+        -:  132:  Destructor.
+        -:  133:*/
+    #####:  134:SoIndexedMarkerSet::~SoIndexedMarkerSet()
+        -:  135:{
+    #####:  136:}
+------------------
+_ZN18SoIndexedMarkerSetD0Ev:
+function _ZN18SoIndexedMarkerSetD0Ev called 0 returned 0% blocks executed 0%
+    #####:  134:SoIndexedMarkerSet::~SoIndexedMarkerSet()
+        -:  135:{
+    #####:  136:}
+call    0 never executed
+call    1 never executed
+------------------
+_ZN18SoIndexedMarkerSetD2Ev:
+function _ZN18SoIndexedMarkerSetD2Ev called 0 returned 0% blocks executed 0%
+    #####:  134:SoIndexedMarkerSet::~SoIndexedMarkerSet()
+        -:  135:{
+    #####:  136:}
+call    0 never executed
+call    1 never executed
+------------------
+        -:  137:
+        -:  138:/*!
+        -:  139:  \copydetails SoNode::initClass(void)
+        -:  140:*/
+        -:  141:void
+function _ZN18SoIndexedMarkerSet9initClassEv called 510 returned 100% blocks executed 78%
+      510:  142:SoIndexedMarkerSet::initClass(void)
+        -:  143:{
+     510*:  144:  SO_NODE_INTERNAL_INIT_CLASS(SoIndexedMarkerSet, SO_FROM_INVENTOR_6_0);
+call    0 returned 510
+call    1 returned 510
+branch  2 taken 510 (fallthrough)
+branch  3 taken 0
+call    4 never executed
+call    5 returned 510
+branch  6 taken 510 (fallthrough)
+branch  7 taken 0 (throw)
+call    8 returned 510
+branch  9 taken 510 (fallthrough)
+branch 10 taken 0 (throw)
+call   11 returned 510
+branch 12 taken 510 (fallthrough)
+branch 13 taken 0 (throw)
+branch 14 taken 510 (fallthrough)
+branch 15 taken 0
+call   16 never executed
+call   17 returned 510
+call   18 returned 510
+branch 19 taken 510 (fallthrough)
+branch 20 taken 0 (throw)
+call   21 returned 510
+branch 22 taken 510 (fallthrough)
+branch 23 taken 0 (throw)
+call   24 returned 510
+branch 25 taken 510 (fallthrough)
+branch 26 taken 0 (throw)
+call   27 returned 510
+call   28 returned 510
+call   29 returned 510
+call   30 returned 510
+call   31 returned 510
+branch 32 taken 510 (fallthrough)
+branch 33 taken 0 (throw)
+call   34 returned 510
+branch 35 taken 510 (fallthrough)
+branch 36 taken 0 (throw)
+call   37 never executed
+call   38 never executed
+call   39 never executed
+      510:  145:}
+        -:  146:
+        -:  147:// doc from parent
+        -:  148:void
+function _ZN18SoIndexedMarkerSet8GLRenderEP16SoGLRenderAction called 0 returned 0% blocks executed 0%
+    #####:  149:SoIndexedMarkerSet::GLRender(SoGLRenderAction * action)
+        -:  150:{
+    #####:  151:  int32_t numpts = this->coordIndex.getNum();
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+    #####:  152:  if (numpts == 0) return;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+        -:  153:
+    #####:  154:  SoState * state = action->getState();
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+    #####:  155:  state->push();
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+        -:  156:
+    #####:  157:  if (this->vertexProperty.getValue()) {
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+branch  3 never executed (fallthrough)
+branch  4 never executed
+    #####:  158:    this->vertexProperty.getValue()->GLRender(action);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+        -:  159:  }
+        -:  160:
+    #####:  161:  if (!this->shouldGLRender(action)){
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+branch  3 never executed (fallthrough)
+branch  4 never executed
+    #####:  162:    state->pop();
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+    #####:  163:    return;
+        -:  164:  }
+        -:  165:
+    #####:  166:  SoGLCacheContextElement::shouldAutoCache(state, SoGLCacheContextElement::DONT_AUTO_CACHE);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+        -:  167:
+        -:  168:  // We just disable lighting and texturing for markers, since we
+        -:  169:  // can't see any reason this should ever be enabled.  send an angry
+        -:  170:  // email to <pederb@coin3d.org> if you disagree.
+        -:  171:  
+    #####:  172:  SoLazyElement::setLightModel(state, SoLazyElement::BASE_COLOR);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+    #####:  173:  SoMultiTextureEnabledElement::disableAll(state);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+        -:  174:
+    #####:  175:  SoMaterialBundle mb(action);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+        -:  176:
+        -:  177:  const SbVec3f * normals;
+        -:  178:  int numindices;
+        -:  179:  const int32_t * cindices;
+        -:  180:  const int32_t * nindices;
+        -:  181:  const int32_t * tindices;
+        -:  182:  const int32_t * mindices;
+        -:  183:  const SoCoordinateElement * coords;
+        -:  184:  Binding mbind;
+        -:  185:
+        -:  186:  SbBool normalCacheUsed;
+        -:  187:
+    #####:  188:  this->getVertexData(state, coords, normals, cindices,
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+        -:  189:                      nindices, tindices, mindices, numindices,
+        -:  190:                      false, normalCacheUsed);
+        -:  191:
+    #####:  192:  if (numindices == 0){//nothing to render
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  193:    state->pop();
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+    #####:  194:    return;
+        -:  195:  }
+        -:  196:
+    #####:  197:  mbind = this->findMaterialBinding(state);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+        -:  198:  //if we don't have explicit material indices, use coord indices:
+    #####:  199:  if (mbind == PER_VERTEX_INDEXED && mindices == NULL) mindices = cindices;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+branch  2 never executed (fallthrough)
+branch  3 never executed
+        -:  200:
+    #####:  201:  const SoGLCoordinateElement * glcoords = dynamic_cast<const SoGLCoordinateElement *>(coords);
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  202:  assert(glcoords && "could not cast to SoGLCoordinateElement");
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+        -:  203:
+    #####:  204:  mb.sendFirst(); // always do this, even if mbind != OVERALL
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+        -:  205:
+    #####:  206:  const SbMatrix & mat = SoModelMatrixElement::get(state);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+        -:  207:  //const SbViewVolume & vv = SoViewVolumeElement::get(state);
+    #####:  208:  const SbViewportRegion & vp = SoViewportRegionElement::get(state);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+    #####:  209:  const SbMatrix & projmatrix = (mat * SoViewingMatrixElement::get(state) *
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+    #####:  210:                                 SoProjectionMatrixElement::get(state));
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+call    6 never executed
+branch  7 never executed (fallthrough)
+branch  8 never executed (throw)
+call    9 never executed
+    #####:  211:  SbVec2s vpsize = vp.getViewportSizePixels();
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+        -:  212:
+        -:  213:  // Symptom treatment against the complete marker set vanishing for certain
+        -:  214:  // view angles. We'll disable the clipping planes temporarily. Individual
+        -:  215:  // markers are still clipped using SoCullElement::cullTest() below.
+        -:  216:  // See https://github.com/coin3d/coin/pull-requests/52 for a test case.
+    #####:  217:  GLint numPlanes = 0;
+    #####:  218:  SoGLContext_glGetIntegerv(sogl_glue_from_state(state), GL_MAX_CLIP_PLANES, &numPlanes);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+    #####:  219:  SbList<SbBool> planesEnabled;
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+    #####:  220:  for (GLint i = 0; i < numPlanes; ++i) {
+branch  0 never executed
+branch  1 never executed (fallthrough)
+    #####:  221:    planesEnabled.append(glIsEnabled(GL_CLIP_PLANE0 + i));
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+    #####:  222:    SoGLContext_glDisable(sogl_glue_from_state(state), GL_CLIP_PLANE0 + i);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+        -:  223:  }
+        -:  224:
+    #####:  225:  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+    #####:  226:  SoGLContext_glPushMatrix(sogl_glue_from_state(state));
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+    #####:  227:  SoGLContext_glLoadIdentity(sogl_glue_from_state(state));
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+    #####:  228:  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_PROJECTION);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+    #####:  229:  SoGLContext_glPushMatrix(sogl_glue_from_state(state));
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+    #####:  230:  SoGLContext_glLoadIdentity(sogl_glue_from_state(state));
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+    #####:  231:  SoGLContext_glOrtho(sogl_glue_from_state(state), 0, vpsize[0], 0, vpsize[1], -1.0f, 1.0f);
+call    0 never executed
+call    1 never executed
+call    2 never executed
+branch  3 never executed (fallthrough)
+branch  4 never executed (throw)
+call    5 never executed
+branch  6 never executed (fallthrough)
+branch  7 never executed (throw)
+        -:  232:
+    #####:  233:  for (int i = 0; i < numindices; i++) {
+branch  0 never executed
+branch  1 never executed (fallthrough)
+    #####:  234:    int32_t idx = cindices[i];
+        -:  235:
+    #####:  236:    int midx = i;
+        -:  237:#if OBOL_DEBUG
+    #####:  238:      if (midx < 0 || midx > this->markerIndex.getNum() - 1) {
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+branch  3 never executed (fallthrough)
+branch  4 never executed (throw)
+branch  5 never executed (fallthrough)
+branch  6 never executed
+branch  7 never executed (fallthrough)
+branch  8 never executed
+        -:  239:        static SbBool firsterror = TRUE;
+    #####:  240:        if (firsterror) {
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  241:          SoDebugError::postWarning("SoMarkerSet::GLRender",
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+        -:  242:                                    "no markerIndex for coordinate %d",
+        -:  243:                                    i);
+    #####:  244:          firsterror = FALSE;
+        -:  245:        }
+        -:  246:        // Don't render, jump back to top of for-loop and continue with
+        -:  247:        // next index.
+    #####:  248:        midx = this->markerIndex.getNum() - 1;
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+        -:  249:      }
+        -:  250:#endif // OBOL_DEBUG
+        -:  251:
+    #####:  252:    int marker = this->markerIndex[midx];
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+    #####:  253:    if (marker == SoMarkerSet::NONE) { continue; }//no marker to render
+branch  0 never executed (fallthrough)
+branch  1 never executed
+        -:  254:
+    #####:  255:    SbVec2s size;
+call    0 never executed
+        -:  256:    const unsigned char * bytes;
+        -:  257:    SbBool isLSBFirst;
+        -:  258:
+    #####:  259:    if (marker >= SoMarkerSet::getNumDefinedMarkers()) continue;
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+branch  3 never executed (fallthrough)
+branch  4 never executed
+        -:  260:
+    #####:  261:    SbBool validMarker = SoMarkerSet::getMarker(marker, size, bytes, isLSBFirst);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+    #####:  262:    if (!validMarker) continue;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+        -:  263:
+    #####:  264:    if (mbind == PER_VERTEX_INDEXED) mb.send(mindices[i], TRUE);
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+branch  3 never executed (fallthrough)
+branch  4 never executed (throw)
+    #####:  265:    else if (mbind == PER_VERTEX) mb.send(i, TRUE);
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+branch  3 never executed (fallthrough)
+branch  4 never executed (throw)
+        -:  266:
+    #####:  267:    SbVec3f point = glcoords->get3(idx);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+        -:  268:
+        -:  269:    // OpenGL's SoGLContext_glBitmap(sogl_glue_from_state(state)) will not be clipped against anything but
+        -:  270:    // the near and far planes. We want markers to also be clipped
+        -:  271:    // against other clipping planes, to behave like the SoPointSet
+        -:  272:    // superclass.
+    #####:  273:    const SbBox3f bbox(point, point);
+call    0 never executed
+        -:  274:    // FIXME: if there are *heaps* of markers, this next line will
+        -:  275:    // probably become a bottleneck. Should really partition marker
+        -:  276:    // positions in a oct-tree data structure and cull several at
+        -:  277:    // the same time.  20031219 mortene.
+    #####:  278:    if (SoCullElement::cullTest(state, bbox, TRUE)) { continue; }
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+branch  3 never executed (fallthrough)
+branch  4 never executed
+        -:  279:
+    #####:  280:    projmatrix.multVecMatrix(point, point);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+    #####:  281:    point[0] = (point[0] + 1.0f) * 0.5f * vpsize[0];
+call    0 never executed
+call    1 never executed
+call    2 never executed
+    #####:  282:    point[1] = (point[1] + 1.0f) * 0.5f * vpsize[1];
+call    0 never executed
+call    1 never executed
+call    2 never executed
+        -:  283:
+        -:  284:    // To have the exact center point of the marker drawn at the
+        -:  285:    // projected 3D position.  (FIXME: I haven't actually checked that
+        -:  286:    // this is what TGS' implementation of the SoMarkerSet node does
+        -:  287:    // when rendering, but it seems likely. 20010823 mortene.)
+        -:  288:
+    #####:  289:    point[0] = point[0] - (size[0] - 1) / 2;
+call    0 never executed
+call    1 never executed
+call    2 never executed
+    #####:  290:    point[1] = point[1] - (size[1] - 1) / 2;
+call    0 never executed
+call    1 never executed
+call    2 never executed
+        -:  291:
+        -:  292:    //FIXME: this will probably fail if someone has overwritten one of the
+        -:  293:    //built-in markers. Currently there is no way of fetching a marker's
+        -:  294:    //alignment from outside the SoMarkerSet class though. 20090424 wiesener
+    #####:  295:    int align = (marker >= SoMarkerSet::NUM_MARKERS) ? 1 : 4;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  296:    SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_ALIGNMENT, align);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+    #####:  297:    SoGLContext_glRasterPos3f(sogl_glue_from_state(state), point[0], point[1], -point[2]);
+call    0 never executed
+call    1 never executed
+call    2 never executed
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+call    6 never executed
+branch  7 never executed (fallthrough)
+branch  8 never executed (throw)
+    #####:  298:    SoGLContext_glBitmap(sogl_glue_from_state(state), size[0], size[1], 0, 0, 0, 0, bytes);
+call    0 never executed
+call    1 never executed
+call    2 never executed
+branch  3 never executed (fallthrough)
+branch  4 never executed (throw)
+call    5 never executed
+branch  6 never executed (fallthrough)
+branch  7 never executed (throw)
+        -:  299:  }
+        -:  300:
+    #####:  301:  for (GLint i = 0; i < numPlanes; ++i) {
+branch  0 never executed
+branch  1 never executed (fallthrough)
+    #####:  302:    if (planesEnabled[i]) {
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed
+    #####:  303:      SoGLContext_glEnable(sogl_glue_from_state(state), GL_CLIP_PLANE0 + i);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+        -:  304:    }
+        -:  305:  }
+        -:  306:
+        -:  307:  // FIXME: this looks wrong, shouldn't we rather reset the alignment
+        -:  308:  // value to what it was previously?  20010824 mortene.
+    #####:  309:  SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_ALIGNMENT, 4); // restore default value
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+    #####:  310:  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_PROJECTION);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+    #####:  311:  SoGLContext_glPopMatrix(sogl_glue_from_state(state));
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+    #####:  312:  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+    #####:  313:  SoGLContext_glPopMatrix(sogl_glue_from_state(state));
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+call    3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed (throw)
+        -:  314:
+    #####:  315:  state->pop();
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+        -:  316:
+        -:  317:  // send approx number of points for autocache handling. Divide
+        -:  318:  // by three so that three points is the same as one triangle.
+    #####:  319:  sogl_autocache_update(state, numindices/3, FALSE);
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+    #####:  320:}
+call    0 never executed
+call    1 never executed
+call    2 never executed
+branch  3 never executed (fallthrough)
+branch  4 never executed
+call    5 never executed
+call    6 never executed
+call    7 never executed

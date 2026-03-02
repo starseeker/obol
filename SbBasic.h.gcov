@@ -1,0 +1,131 @@
+        -:    0:Source:/home/runner/work/obol/obol/include/Inventor/SbBasic.h
+        -:    0:Graph:/tmp/obol_cov5/src/CMakeFiles/Obol.dir/Unity/unity_73_cxx.cxx.gcno
+        -:    0:Data:/tmp/obol_cov5/src/CMakeFiles/Obol.dir/Unity/unity_73_cxx.cxx.gcda
+        -:    0:Runs:510
+        -:    1:#ifndef OBOL_SBBASIC_H
+        -:    2:#define OBOL_SBBASIC_H
+        -:    3:
+        -:    4:/**************************************************************************\
+        -:    5: * Copyright (c) Kongsberg Oil & Gas Technologies AS
+        -:    6: * All rights reserved.
+        -:    7: * 
+        -:    8: * Redistribution and use in source and binary forms, with or without
+        -:    9: * modification, are permitted provided that the following conditions are
+        -:   10: * met:
+        -:   11: * 
+        -:   12: * Redistributions of source code must retain the above copyright notice,
+        -:   13: * this list of conditions and the following disclaimer.
+        -:   14: * 
+        -:   15: * Redistributions in binary form must reproduce the above copyright
+        -:   16: * notice, this list of conditions and the following disclaimer in the
+        -:   17: * documentation and/or other materials provided with the distribution.
+        -:   18: * 
+        -:   19: * Neither the name of the copyright holder nor the names of its
+        -:   20: * contributors may be used to endorse or promote products derived from
+        -:   21: * this software without specific prior written permission.
+        -:   22: * 
+        -:   23: * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+        -:   24: * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+        -:   25: * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+        -:   26: * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+        -:   27: * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+        -:   28: * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+        -:   29: * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   30: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   31: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   32: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+        -:   33: * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   34:\**************************************************************************/
+        -:   35:
+        -:   36:#include <Inventor/basic.h>
+        -:   37:
+        -:   38:// Debug error posting - Inventor-style API for debug builds
+        -:   39:#ifndef NDEBUG
+        -:   40:OBOL_DLL_API void SbDebugError_post(const char * source, const char * format, ...);
+        -:   41:#endif // !NDEBUG
+        -:   42:
+        -:   43:/* ********************************************************************** */
+        -:   44:/* Trap people trying to use Inventor headers while compiling C source code.
+        -:   45: * (we get support mail about this from time to time)
+        -:   46: */
+        -:   47:#ifndef __cplusplus
+        -:   48:#error You are not compiling C++ - maybe your source file is named <file>.c
+        -:   49:#endif
+        -:   50:
+        -:   51:/* ********************************************************************** */
+        -:   52:
+        -:   53:/* Some useful inline template functions:
+        -:   54: *   SbAbs(Val)              - returns absolute value
+        -:   55: *   SbMin(Val1, Val2)       - returns minimum value
+        -:   56: *   SbMax(Val1, Val2)       - returns maximum value
+        -:   57: *   SbClamp(Val, Min, Max)  - returns clamped value
+        -:   58: *   SbSwap(Val1, Val2)      - swaps the two values (no return value)
+        -:   59: *   SbSqr(val)              - returns squared value
+        -:   60: */
+        -:   61:
+        -:   62:template <typename Type>
+        -:   63:constexpr Type SbAbs( Type Val ) noexcept {
+        -:   64:  return (Val < 0) ? 0 - Val : Val;
+        -:   65:}
+        -:   66:
+        -:   67:template <typename Type>
+        -:   68:constexpr Type SbMax( const Type A, const Type B ) noexcept {
+        -:   69:  return (A < B) ? B : A;
+        -:   70:}
+        -:   71:
+        -:   72:template <typename Type>
+        -:   73:constexpr Type SbMin( const Type A, const Type B ) noexcept {
+        -:   74:  return (A < B) ? A : B;
+        -:   75:}
+        -:   76:
+        -:   77:template <typename Type>
+        -:   78:constexpr Type SbClamp( const Type Val, const Type Min, const Type Max ) noexcept {
+        -:   79:  return (Val < Min) ? Min : (Val > Max) ? Max : Val;
+        -:   80:}
+        -:   81:
+        -:   82:template <typename Type>
+        -:   83:constexpr void SbSwap( Type & A, Type & B ) noexcept {
+        -:   84:  Type T = A; A = B; B = T;
+        -:   85:}
+        -:   86:
+        -:   87:template <typename Type>
+        -:   88:constexpr Type SbSqr(const Type val) noexcept {
+        -:   89:  return val * val;
+        -:   90:}
+        -:   91:
+        -:   92:/* *********************************************************************** */
+        -:   93:
+        -:   94:// SbDividerChk() - checks if divide-by-zero is attempted, and emits a
+        -:   95:// warning if so for debug builds.  inlined like this to not take much
+        -:   96:// screenspace in inline functions.
+        -:   97:
+        -:   98:#ifndef NDEBUG
+        -:   99:template <typename Type>
+function _Z12SbDividerChkIfEvPKcT_ called 0 returned 0% blocks executed 0%
+    #####:  100:constexpr void SbDividerChk(const char * funcname, Type divider) noexcept {
+    #####:  101:  if (!(divider != static_cast<Type>(0)))
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  102:    SbDebugError_post(funcname, "divide by zero error.", divider);
+call    0 never executed
+    #####:  103:}
+        -:  104:#else
+        -:  105:template <typename Type>
+        -:  106:constexpr void SbDividerChk(const char *, Type) noexcept {}
+        -:  107:#endif // !NDEBUG
+        -:  108:
+        -:  109:/* ********************************************************************** */
+        -:  110:
+        -:  111:// C++17 modernization: Remove legacy compiler workarounds
+        -:  112:// Since we target modern C++17 development, legacy compiler 
+        -:  113:// compatibility is no longer needed.
+        -:  114:
+        -:  115:// Modern STATIC_SOTYPE_INIT - always use proper initialization  
+        -:  116:#define STATIC_SOTYPE_INIT = SoType::badType()
+        -:  117:
+        -:  118:/* ********************************************************************** */
+        -:  119:
+        -:  120:// Modern do-while wrapper - C++17 compilers handle this correctly
+        -:  121:#define WHILE_0 while (0)
+        -:  122:
+        -:  123:#endif /* !OBOL_SBBASIC_H */

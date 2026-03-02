@@ -1,0 +1,707 @@
+        -:    0:Source:/home/runner/work/obol/obol/src/shapenodes/SoCone.cpp
+        -:    0:Graph:/tmp/obol_cov5/src/CMakeFiles/Obol.dir/Unity/unity_73_cxx.cxx.gcno
+        -:    0:Data:/tmp/obol_cov5/src/CMakeFiles/Obol.dir/Unity/unity_73_cxx.cxx.gcda
+        -:    0:Runs:510
+        -:    1:/**************************************************************************\
+        -:    2: * Copyright (c) Kongsberg Oil & Gas Technologies AS
+        -:    3: * All rights reserved.
+        -:    4: * 
+        -:    5: * Redistribution and use in source and binary forms, with or without
+        -:    6: * modification, are permitted provided that the following conditions are
+        -:    7: * met:
+        -:    8: * 
+        -:    9: * Redistributions of source code must retain the above copyright notice,
+        -:   10: * this list of conditions and the following disclaimer.
+        -:   11: * 
+        -:   12: * Redistributions in binary form must reproduce the above copyright
+        -:   13: * notice, this list of conditions and the following disclaimer in the
+        -:   14: * documentation and/or other materials provided with the distribution.
+        -:   15: * 
+        -:   16: * Neither the name of the copyright holder nor the names of its
+        -:   17: * contributors may be used to endorse or promote products derived from
+        -:   18: * this software without specific prior written permission.
+        -:   19: * 
+        -:   20: * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+        -:   21: * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+        -:   22: * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+        -:   23: * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+        -:   24: * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+        -:   25: * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+        -:   26: * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+        -:   27: * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+        -:   28: * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   29: * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+        -:   30: * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   31:\**************************************************************************/
+        -:   32:
+        -:   33:// Note: the class documentation for the basic primitive shapes
+        -:   34:// SoSphere, SoCylinder, SoCone and SoCube have many common, or at
+        -:   35:// least close to common, paragraphs. If you make any changes, check
+        -:   36:// those other shapes too, to see if your updates / fixes should be
+        -:   37:// migrated. <mortene@sim.no>.
+        -:   38:/*!
+        -:   39:  \class SoCone SoCone.h Inventor/nodes/SoCone.h
+        -:   40:  \brief The SoCone class is for rendering cone shapes.
+        -:   41:
+        -:   42:  \ingroup coin_nodes
+        -:   43:
+        -:   44:  Insert a cone shape into the scene graph. The cone is rendered with
+        -:   45:  the current material, texture and draw style settings (if any,
+        -:   46:  otherwise the default settings are used).
+        -:   47:
+        -:   48:  The SoCone node class is provided as a convenient abstraction for
+        -:   49:  the application programmer to use "complex" shapes of this type
+        -:   50:  without having to do the tessellation to polygons and other
+        -:   51:  low level programming herself.
+        -:   52:
+        -:   53:  A cone is visualized by the underlying rendering system by first
+        -:   54:  tessellating the conceptual cone into a set of polygons. To control
+        -:   55:  the trade-off between an as much as possible correct visual
+        -:   56:  appearance of the cone versus fast rendering, use an SoComplexity
+        -:   57:  node to influence the number of polygons generated from the
+        -:   58:  tessellation process. (The higher the complexity value, the more
+        -:   59:  polygons will be generated, the more \e rounded the sides of the
+        -:   60:  cone will look.) Set the SoComplexity::value field to what you
+        -:   61:  believe would be a good trade-off between correctness and speed for
+        -:   62:  your particular application.
+        -:   63:
+        -:   64:  <b>FILE FORMAT/DEFAULTS:</b>
+        -:   65:  \code
+        -:   66:    Cone {
+        -:   67:        bottomRadius 1
+        -:   68:        height 2
+        -:   69:        parts (SIDES | BOTTOM)
+        -:   70:    }
+        -:   71:  \endcode
+        -:   72:
+        -:   73:  \sa SoCylinder, SoSphere, SoCube
+        -:   74:*/
+        -:   75:
+        -:   76:#include <Inventor/nodes/SoCone.h>
+        -:   77:#include "config.h"
+        -:   78:
+        -:   79:#include <cassert>
+        -:   80:#include <cmath>
+        -:   81:
+        -:   82:#include <Inventor/SbLine.h>
+        -:   83:#include <Inventor/SbPlane.h>
+        -:   84:#include <Inventor/SoPickedPoint.h>
+        -:   85:#include <Inventor/actions/SoGLRenderAction.h>
+        -:   86:#include <Inventor/actions/SoGetPrimitiveCountAction.h>
+        -:   87:#include <Inventor/actions/SoRayPickAction.h>
+        -:   88:#include <Inventor/bundles/SoMaterialBundle.h>
+        -:   89:#include <Inventor/details/SoConeDetail.h>
+        -:   90:#include <Inventor/elements/SoMaterialBindingElement.h>
+        -:   91:#include <Inventor/elements/SoGLMultiTextureEnabledElement.h>
+        -:   92:#include <Inventor/elements/SoMultiTextureCoordinateElement.h>
+        -:   93:#include <Inventor/misc/SoState.h>
+        -:   94:
+        -:   95:#if OBOL_DEBUG
+        -:   96:#include <Inventor/errors/SoDebugError.h>
+        -:   97:#endif // OBOL_DEBUG
+        -:   98:
+        -:   99:#include "nodes/SoSubNodeP.h"
+        -:  100:#include "rendering/SoGL.h"
+        -:  101:#include "misc/SoPick.h"
+        -:  102:#include "misc/SoGenerate.h"
+        -:  103:
+        -:  104:/*!
+        -:  105:  \enum SoCone::Part
+        -:  106:  Enumerates the various parts of the cone, for setting inclusion or
+        -:  107:  exclusion from the shape.
+        -:  108:*/
+        -:  109:/*!
+        -:  110:  \var SoCone::Part SoCone::SIDES
+        -:  111:  Sides of cone.
+        -:  112:*/
+        -:  113:/*!
+        -:  114:  \var SoCone::Part SoCone::BOTTOM
+        -:  115:  Bottom of cone.
+        -:  116:*/
+        -:  117:/*!
+        -:  118:  \var SoCone::Part SoCone::ALL
+        -:  119:  All parts.
+        -:  120:*/
+        -:  121:
+        -:  122:/*!
+        -:  123:  \var SoSFBitMask SoCone::parts
+        -:  124:  The parts to use for the cone shape. Defaults to SoCone::ALL.
+        -:  125:*/
+        -:  126:/*!
+        -:  127:  \var SoSFFloat SoCone::bottomRadius
+        -:  128:  Radius of the cone's bottom disc. Default value is 1.0.
+        -:  129:*/
+        -:  130:/*!
+        -:  131:  \var SoSFFloat SoCone::height
+        -:  132:  Height of cone. Default value is 2.0.
+        -:  133:*/
+        -:  134:
+        -:  135:#define CONE_SIDE_NUMTRIS 40.0f
+        -:  136:
+        -:  137:// *************************************************************************
+        -:  138:
+   21299*:  139:SO_NODE_SOURCE(SoCone);
+------------------
+_ZN6SoCone14createInstanceEPv:
+function _ZN6SoCone14createInstanceEPv called 192 returned 100% blocks executed 71%
+      192:  139:SO_NODE_SOURCE(SoCone);
+call    0 returned 192
+call    1 returned 192
+branch  2 taken 192 (fallthrough)
+branch  3 taken 0 (throw)
+branch  4 never executed (fallthrough)
+branch  5 never executed
+call    6 never executed
+------------------
+_ZN6SoCone14atexit_cleanupEv:
+function _ZN6SoCone14atexit_cleanupEv called 0 returned 0% blocks executed 0%
+    #####:  139:SO_NODE_SOURCE(SoCone);
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+call    3 never executed
+call    4 never executed
+branch  5 never executed (fallthrough)
+branch  6 never executed (throw)
+call    7 never executed
+branch  8 never executed (fallthrough)
+branch  9 never executed (throw)
+call   10 never executed
+call   11 never executed
+call   12 never executed
+------------------
+_ZNK6SoCone12getFieldDataEv:
+function _ZNK6SoCone12getFieldDataEv called 228 returned 100% blocks executed 100%
+      228:  139:SO_NODE_SOURCE(SoCone);
+------------------
+_ZN6SoCone15getFieldDataPtrEv:
+function _ZN6SoCone15getFieldDataPtrEv called 0 returned 0% blocks executed 0%
+    #####:  139:SO_NODE_SOURCE(SoCone);
+------------------
+_ZNK6SoCone9getTypeIdEv:
+function _ZNK6SoCone9getTypeIdEv called 20339 returned 100% blocks executed 100%
+    20339:  139:SO_NODE_SOURCE(SoCone);
+------------------
+_ZN6SoCone14getClassTypeIdEv:
+function _ZN6SoCone14getClassTypeIdEv called 540 returned 100% blocks executed 100%
+      540:  139:SO_NODE_SOURCE(SoCone);
+------------------
+        -:  140:
+        -:  141:/*!
+        -:  142:  Constructor.
+        -:  143:*/
+function _ZN6SoConeC2Ev called 447 returned 100% blocks executed 71%
+      447:  144:SoCone::SoCone(void)
+call    0 returned 447
+call    1 returned 447
+branch  2 taken 447 (fallthrough)
+branch  3 taken 0 (throw)
+call    4 returned 447
+branch  5 taken 447 (fallthrough)
+branch  6 taken 0 (throw)
+call    7 returned 447
+branch  8 taken 447 (fallthrough)
+branch  9 taken 0 (throw)
+        -:  145:{
+     447*:  146:  SO_NODE_INTERNAL_CONSTRUCTOR(SoCone);
+call    0 returned 447
+branch  1 taken 447 (fallthrough)
+branch  2 taken 0 (throw)
+call    3 returned 447
+branch  4 taken 447 (fallthrough)
+branch  5 taken 0 (throw)
+call    6 returned 447
+branch  7 taken 447 (fallthrough)
+branch  8 taken 0 (throw)
+branch  9 taken 447 (fallthrough)
+branch 10 taken 0
+call   11 never executed
+branch 12 taken 105 (fallthrough)
+branch 13 taken 342
+call   14 returned 105
+branch 15 taken 105 (fallthrough)
+branch 16 taken 0 (throw)
+branch 17 taken 105 (fallthrough)
+branch 18 taken 0
+call   19 returned 105
+branch 20 taken 105 (fallthrough)
+branch 21 taken 0 (throw)
+call   22 returned 447
+branch 23 taken 447 (fallthrough)
+branch 24 taken 0 (throw)
+branch 25 never executed (fallthrough)
+branch 26 never executed
+call   27 never executed
+        -:  147:
+      447:  148:  SO_NODE_ADD_FIELD(bottomRadius, (1.0f));
+call    0 returned 447
+branch  1 taken 447 (fallthrough)
+branch  2 taken 0 (throw)
+call    3 returned 447
+branch  4 taken 447 (fallthrough)
+branch  5 taken 0 (throw)
+call    6 returned 447
+branch  7 taken 447 (fallthrough)
+branch  8 taken 0 (throw)
+      447:  149:  SO_NODE_ADD_FIELD(height, (2.0f));
+call    0 returned 447
+branch  1 taken 447 (fallthrough)
+branch  2 taken 0 (throw)
+call    3 returned 447
+branch  4 taken 447 (fallthrough)
+branch  5 taken 0 (throw)
+call    6 returned 447
+branch  7 taken 447 (fallthrough)
+branch  8 taken 0 (throw)
+      447:  150:  SO_NODE_ADD_FIELD(parts, (ALL));
+call    0 returned 447
+branch  1 taken 447 (fallthrough)
+branch  2 taken 0 (throw)
+call    3 returned 447
+branch  4 taken 447 (fallthrough)
+branch  5 taken 0 (throw)
+call    6 returned 447
+branch  7 taken 447 (fallthrough)
+branch  8 taken 0 (throw)
+        -:  151:
+      447:  152:  SO_NODE_DEFINE_ENUM_VALUE(Part, SIDES);
+call    0 returned 447
+branch  1 taken 447 (fallthrough)
+branch  2 taken 0 (throw)
+      447:  153:  SO_NODE_DEFINE_ENUM_VALUE(Part, BOTTOM);
+call    0 returned 447
+branch  1 taken 447 (fallthrough)
+branch  2 taken 0 (throw)
+      447:  154:  SO_NODE_DEFINE_ENUM_VALUE(Part, ALL);
+call    0 returned 447
+branch  1 taken 447 (fallthrough)
+branch  2 taken 0 (throw)
+      447:  155:  SO_NODE_SET_SF_ENUM_TYPE(parts, Part);
+call    0 returned 447
+branch  1 taken 447 (fallthrough)
+branch  2 taken 0 (throw)
+call    3 returned 447
+branch  4 taken 447 (fallthrough)
+branch  5 taken 0 (throw)
+      447:  156:}
+call    0 never executed
+call    1 never executed
+call    2 never executed
+call    3 never executed
+        -:  157:
+        -:  158:/*!
+        -:  159:  Destructor.
+        -:  160:*/
+      506:  161:SoCone::~SoCone()
+        -:  162:{
+      506:  163:}
+------------------
+_ZN6SoConeD0Ev:
+function _ZN6SoConeD0Ev called 253 returned 100% blocks executed 100%
+      253:  161:SoCone::~SoCone()
+        -:  162:{
+      253:  163:}
+call    0 returned 253
+call    1 returned 253
+------------------
+_ZN6SoConeD2Ev:
+function _ZN6SoConeD2Ev called 253 returned 100% blocks executed 100%
+      253:  161:SoCone::~SoCone()
+        -:  162:{
+      253:  163:}
+call    0 returned 253
+call    1 returned 253
+call    2 returned 253
+call    3 returned 253
+------------------
+        -:  164:
+        -:  165:
+        -:  166:/*!
+        -:  167:  \copydetails SoNode::initClass(void)
+        -:  168:*/
+        -:  169:void
+function _ZN6SoCone9initClassEv called 510 returned 100% blocks executed 78%
+      510:  170:SoCone::initClass(void)
+        -:  171:{
+     510*:  172:  SO_NODE_INTERNAL_INIT_CLASS(SoCone, SO_FROM_INVENTOR_1);
+call    0 returned 510
+call    1 returned 510
+branch  2 taken 510 (fallthrough)
+branch  3 taken 0
+call    4 never executed
+call    5 returned 510
+branch  6 taken 510 (fallthrough)
+branch  7 taken 0 (throw)
+call    8 returned 510
+branch  9 taken 510 (fallthrough)
+branch 10 taken 0 (throw)
+call   11 returned 510
+branch 12 taken 510 (fallthrough)
+branch 13 taken 0 (throw)
+branch 14 taken 510 (fallthrough)
+branch 15 taken 0
+call   16 never executed
+call   17 returned 510
+call   18 returned 510
+branch 19 taken 510 (fallthrough)
+branch 20 taken 0 (throw)
+call   21 returned 510
+branch 22 taken 510 (fallthrough)
+branch 23 taken 0 (throw)
+call   24 returned 510
+branch 25 taken 510 (fallthrough)
+branch 26 taken 0 (throw)
+call   27 returned 510
+call   28 returned 510
+call   29 returned 510
+call   30 returned 510
+call   31 returned 510
+branch 32 taken 510 (fallthrough)
+branch 33 taken 0 (throw)
+call   34 returned 510
+branch 35 taken 510 (fallthrough)
+branch 36 taken 0 (throw)
+call   37 never executed
+call   38 never executed
+call   39 never executed
+      510:  173:}
+        -:  174:
+        -:  175:// Doc from parent.
+        -:  176:void
+function _ZN6SoCone11computeBBoxEP8SoActionR7SbBox3fR7SbVec3f called 1806 returned 100% blocks executed 46%
+     1806:  177:SoCone::computeBBox(SoAction * OBOL_UNUSED_ARG(action), SbBox3f & box, SbVec3f & center)
+        -:  178:{
+     1806:  179:  float r = this->bottomRadius.getValue();
+call    0 returned 1806
+     1806:  180:  float h = this->height.getValue();
+call    0 returned 1806
+        -:  181:
+        -:  182:  // Allow negative values.
+    1806*:  183:  if (h < 0.0f) h = -h;
+branch  0 taken 0 (fallthrough)
+branch  1 taken 1806
+    1806*:  184:  if (r < 0.0f) r = -r;
+branch  0 taken 0 (fallthrough)
+branch  1 taken 1806
+        -:  185:
+     1806:  186:  float half_height = h/2.0f;
+        -:  187:
+        -:  188:  // The SIDES are present, so just find the middle point and enclose
+        -:  189:  // everything.
+     1806:  190:  if (this->parts.getValue() & SoCone::SIDES) {
+call    0 returned 1806
+branch  1 taken 1806 (fallthrough)
+branch  2 taken 0
+     1806:  191:    center.setValue(0.0f, 0.0f, 0.0f);
+call    0 returned 1806
+     1806:  192:    box.setBounds(SbVec3f(-r, -half_height, -r), SbVec3f(r, half_height, r));
+call    0 returned 1806
+call    1 returned 1806
+call    2 returned 1806
+        -:  193:  }
+        -:  194:  // ..no SIDES, but we've still got the bottom (NB: OIV misses this case).
+    #####:  195:  else if (this->parts.getValue() & SoCone::BOTTOM) {
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed
+    #####:  196:    center.setValue(0.0f, -half_height, 0.0f);
+call    0 never executed
+    #####:  197:    box.setBounds(SbVec3f(-r, -half_height, -r), SbVec3f(r, -half_height, r));
+call    0 never executed
+call    1 never executed
+call    2 never executed
+        -:  198:  }
+        -:  199:  // ..no parts present. My confidence is shot -- I feel very small.
+        -:  200:  else {
+    #####:  201:    center.setValue(0.0f, 0.0f, 0.0f);
+call    0 never executed
+    #####:  202:    box.setBounds(SbVec3f(0.0f, 0.0f, 0.0f), SbVec3f(0.0f, 0.0f, 0.0f));
+call    0 never executed
+call    1 never executed
+call    2 never executed
+        -:  203:  }
+     1806:  204:}
+        -:  205:
+        -:  206:// Doc from parent.
+        -:  207:void
+function _ZN6SoCone8GLRenderEP16SoGLRenderAction called 883 returned 100% blocks executed 77%
+      883:  208:SoCone::GLRender(SoGLRenderAction * action)
+        -:  209:{
+      883:  210:  if (!shouldGLRender(action)) return;
+call    0 returned 883
+branch  1 taken 883 (fallthrough)
+branch  2 taken 0 (throw)
+branch  3 taken 1 (fallthrough)
+branch  4 taken 882
+        -:  211:
+      882:  212:  SoState * state = action->getState();
+call    0 returned 882
+branch  1 taken 882 (fallthrough)
+branch  2 taken 0 (throw)
+        -:  213:
+      882:  214:  SbBool doTextures = FALSE;
+      882:  215:  SbBool do3DTextures = FALSE;
+      882:  216:  if (SoGLMultiTextureEnabledElement::get(state, 0)) {
+call    0 returned 882
+branch  1 taken 882 (fallthrough)
+branch  2 taken 0 (throw)
+branch  3 taken 0 (fallthrough)
+branch  4 taken 882
+    #####:  217:    doTextures = TRUE;
+    #####:  218:    if (SoGLMultiTextureEnabledElement::getMode(state,0) ==
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed (throw)
+branch  3 never executed (fallthrough)
+branch  4 never executed
+        -:  219:        SoMultiTextureEnabledElement::TEXTURE3D) {
+    #####:  220:      do3DTextures = TRUE;
+        -:  221:    }
+        -:  222:  }
+      882:  223:  SoCone::Part p = (SoCone::Part) this->parts.getValue();
+call    0 returned 882
+branch  1 taken 882 (fallthrough)
+branch  2 taken 0 (throw)
+        -:  224:
+      882:  225:  SoMaterialBundle mb(action);
+call    0 returned 882
+branch  1 taken 882 (fallthrough)
+branch  2 taken 0 (throw)
+        -:  226:
+      882:  227:  unsigned int flags = SOGL_NEED_NORMALS;
+     882*:  228:  if (doTextures) flags |= SOGL_NEED_TEXCOORDS;
+branch  0 taken 0 (fallthrough)
+branch  1 taken 882
+     882*:  229:  else if (do3DTextures) flags |= SOGL_NEED_3DTEXCOORDS;
+branch  0 taken 0 (fallthrough)
+branch  1 taken 882
+      882:  230:  if (p & SoCone::SIDES) flags |= SOGL_RENDER_SIDE;
+branch  0 taken 882 (fallthrough)
+branch  1 taken 0
+      882:  231:  if (p & SoCone::BOTTOM) flags |= SOGL_RENDER_BOTTOM;
+branch  0 taken 872 (fallthrough)
+branch  1 taken 10
+        -:  232:
+        -:  233:  SoMaterialBindingElement::Binding bind =
+      882:  234:    SoMaterialBindingElement::get(state);
+call    0 returned 882
+branch  1 taken 882 (fallthrough)
+branch  2 taken 0 (throw)
+      882:  235:  if (bind == SoMaterialBindingElement::PER_PART ||
+branch  0 taken 882 (fallthrough)
+branch  1 taken 0
+branch  2 taken 0 (fallthrough)
+branch  3 taken 882
+        -:  236:      bind == SoMaterialBindingElement::PER_PART_INDEXED)
+    #####:  237:    flags |= SOGL_MATERIAL_PER_PART;
+        -:  238:
+      882:  239:  mb.sendFirst();
+call    0 returned 882
+branch  1 taken 882 (fallthrough)
+branch  2 taken 0 (throw)
+        -:  240:
+      882:  241:  float complexity = this->getComplexityValue(action);
+call    0 returned 882
+branch  1 taken 882 (fallthrough)
+branch  2 taken 0 (throw)
+        -:  242:
+      882:  243:  sogl_render_cone(this->bottomRadius.getValue(),
+call    0 returned 882
+branch  1 taken 882 (fallthrough)
+branch  2 taken 0 (throw)
+call    3 returned 882
+branch  4 taken 882 (fallthrough)
+branch  5 taken 0 (throw)
+        -:  244:                   this->height.getValue(),
+      882:  245:                   (int)(CONE_SIDE_NUMTRIS * complexity),
+call    0 returned 882
+branch  1 taken 882 (fallthrough)
+branch  2 taken 0 (throw)
+        -:  246:                   &mb,
+        -:  247:                   flags, state);
+        -:  248:
+        -:  249:#if OBOL_DEBUG && 0 // debug
+        -:  250:  SoDebugError::postInfo("SoCone::GLRender", "end");
+        -:  251:#endif // debug
+      882:  252:}
+call    0 returned 882
+call    1 never executed
+        -:  253:
+        -:  254:/*!
+        -:  255:  Add a \a part to the cone.
+        -:  256:
+        -:  257:  \sa removePart(), hasPart()
+        -:  258:*/
+        -:  259:void
+function _ZN6SoCone7addPartENS_4PartE called 0 returned 0% blocks executed 0%
+    #####:  260:SoCone::addPart(SoCone::Part part)
+        -:  261:{
+    #####:  262:  if (this->hasPart(part)) {
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed
+        -:  263:#if OBOL_DEBUG
+    #####:  264:    SoDebugError::postWarning("SoCone::addPart", "part already set");
+call    0 never executed
+        -:  265:#endif // OBOL_DEBUG
+    #####:  266:    return;
+        -:  267:  }
+        -:  268:
+    #####:  269:  this->parts.setValue(this->parts.getValue() | part);
+call    0 never executed
+call    1 never executed
+        -:  270:}
+        -:  271:
+        -:  272:/*!
+        -:  273:  Remove a \a part from the cone.
+        -:  274:
+        -:  275:  \sa addPart(), hasPart()
+        -:  276:*/
+        -:  277:void
+function _ZN6SoCone10removePartENS_4PartE called 0 returned 0% blocks executed 0%
+    #####:  278:SoCone::removePart(SoCone::Part part)
+        -:  279:{
+    #####:  280:  if (!this->hasPart(part)) {
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed
+        -:  281:#if OBOL_DEBUG
+    #####:  282:    SoDebugError::postWarning("SoCone::removePart", "part was not set");
+call    0 never executed
+        -:  283:#endif // OBOL_DEBUG
+    #####:  284:    return;
+        -:  285:  }
+        -:  286:
+    #####:  287:  this->parts.setValue(this->parts.getValue() & ~part);
+call    0 never executed
+call    1 never executed
+        -:  288:}
+        -:  289:
+        -:  290:/*!
+        -:  291:  Returns \c TRUE if rendering of the given \a part is currently
+        -:  292:  turned on.
+        -:  293:
+        -:  294:  \sa addPart(), removePart()
+        -:  295:*/
+        -:  296:SbBool
+function _ZNK6SoCone7hasPartENS_4PartE called 0 returned 0% blocks executed 0%
+    #####:  297:SoCone::hasPart(SoCone::Part part) const
+        -:  298:{
+    #####:  299:  return (this->parts.getValue() & part) ? TRUE : FALSE;
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed
+        -:  300:}
+        -:  301:
+        -:  302:// Doc from parent.
+        -:  303:void
+function _ZN6SoCone7rayPickEP15SoRayPickAction called 312 returned 100% blocks executed 88%
+      312:  304:SoCone::rayPick(SoRayPickAction * action)
+        -:  305:{
+     312*:  306:  if (!this->shouldRayPick(action)) return;
+call    0 returned 312
+branch  1 taken 0 (fallthrough)
+branch  2 taken 312
+        -:  307:
+      312:  308:  SoCone::Part p = (SoCone::Part) this->parts.getValue();
+call    0 returned 312
+      312:  309:  unsigned int flags = 0;
+      312:  310:  if (p & SoCone::SIDES) flags |= SOPICK_SIDES;
+branch  0 taken 312 (fallthrough)
+branch  1 taken 0
+      312:  311:  if (p & SoCone::BOTTOM) flags |= SOPICK_BOTTOM;
+branch  0 taken 307 (fallthrough)
+branch  1 taken 5
+        -:  312:
+        -:  313:  SoMaterialBindingElement::Binding bind =
+      312:  314:    SoMaterialBindingElement::get(action->getState());
+call    0 returned 312
+call    1 returned 312
+      312:  315:  if (bind == SoMaterialBindingElement::PER_PART ||
+branch  0 taken 312 (fallthrough)
+branch  1 taken 0
+branch  2 taken 0 (fallthrough)
+branch  3 taken 312
+        -:  316:      bind == SoMaterialBindingElement::PER_PART_INDEXED)
+    #####:  317:    flags |= SOPICK_MATERIAL_PER_PART;
+        -:  318:  
+      312:  319:  sopick_pick_cone(this->bottomRadius.getValue(),
+call    0 returned 312
+call    1 returned 312
+call    2 returned 312
+        -:  320:                   this->height.getValue(),
+        -:  321:                   flags, this, action);
+        -:  322:}
+        -:  323:
+        -:  324:// Doc from parent.
+        -:  325:void
+function _ZN6SoCone17getPrimitiveCountEP25SoGetPrimitiveCountAction called 6 returned 100% blocks executed 91%
+        6:  326:SoCone::getPrimitiveCount(SoGetPrimitiveCountAction * action)
+        -:  327:{
+       6*:  328:  if (!this->shouldPrimitiveCount(action)) return;
+call    0 returned 6
+branch  1 taken 0 (fallthrough)
+branch  2 taken 6
+        -:  329:
+        6:  330:  float complexity = this->getComplexityValue(action);
+call    0 returned 6
+        6:  331:  int numtris = (int)(complexity * CONE_SIDE_NUMTRIS);
+        -:  332:
+        6:  333:  if (this->parts.getValue() & SoCone::BOTTOM) {
+call    0 returned 6
+branch  1 taken 6 (fallthrough)
+branch  2 taken 0
+        6:  334:    action->addNumTriangles(numtris-2);
+call    0 returned 6
+        -:  335:  }
+        6:  336:  if (this->parts.getValue() & SoCone::SIDES) {
+call    0 returned 6
+branch  1 taken 6 (fallthrough)
+branch  2 taken 0
+        6:  337:    action->addNumTriangles(numtris);
+call    0 returned 6
+        -:  338:  }
+        -:  339:}
+        -:  340:
+        -:  341:// Doc from parent.
+        -:  342:void
+function _ZN6SoCone18generatePrimitivesEP8SoAction called 19 returned 100% blocks executed 93%
+       19:  343:SoCone::generatePrimitives(SoAction * action)
+        -:  344:{
+       19:  345:  SoCone::Part p = (SoCone::Part) this->parts.getValue();
+call    0 returned 19
+       19:  346:  unsigned int flags = 0;
+       19:  347:  if (p & SoCone::SIDES) flags |= SOGEN_GENERATE_SIDE;
+branch  0 taken 19 (fallthrough)
+branch  1 taken 0
+       19:  348:  if (p & SoCone::BOTTOM) flags |= SOGEN_GENERATE_BOTTOM;
+branch  0 taken 19 (fallthrough)
+branch  1 taken 0
+        -:  349:
+        -:  350:  SoMaterialBindingElement::Binding bind =
+       19:  351:    SoMaterialBindingElement::get(action->getState());
+call    0 returned 19
+call    1 returned 19
+       19:  352:  if (bind == SoMaterialBindingElement::PER_PART ||
+branch  0 taken 19 (fallthrough)
+branch  1 taken 0
+branch  2 taken 0 (fallthrough)
+branch  3 taken 19
+        -:  353:      bind == SoMaterialBindingElement::PER_PART_INDEXED)
+    #####:  354:    flags |= SOGL_MATERIAL_PER_PART;
+        -:  355:
+       19:  356:  float complexity = this->getComplexityValue(action);
+call    0 returned 19
+        -:  357:
+       19:  358:  sogen_generate_cone(this->bottomRadius.getValue(),
+call    0 returned 19
+call    1 returned 19
+        -:  359:                      this->height.getValue(),
+       19:  360:                      (int)(CONE_SIDE_NUMTRIS * complexity),
+call    0 returned 19
+        -:  361:                      flags,
+        -:  362:                      this,
+        -:  363:                      action);
+       19:  364:}
+        -:  365:
+        -:  366:#undef CONE_SIDE_NUMTRIS
