@@ -148,6 +148,7 @@ gen_control render_indexed_line_set   render_indexed_line_set
 gen_control render_point_set          render_point_set
 gen_control render_lod                render_lod
 gen_control render_quad_viewport_lod  render_quad_viewport_lod
+gen_control render_viewport_scene     render_viewport_scene
 gen_control render_scene_texture      render_scene_texture
 gen_control render_array_multiple_copy render_array_multiple_copy
 
