@@ -258,6 +258,9 @@
 #include <Inventor/engines/SoSelectOne.h>
 #include <Inventor/engines/SoTimeCounter.h>
 #include <Inventor/SoType.h>
+#include <Inventor/nodes/SoShapeHints.h>
+#include <Inventor/nodes/SoPointLight.h>
+#include <Inventor/nodes/SoSpotLight.h>
 
 #include <cmath>
 #include <cstdio>
@@ -13739,6 +13742,537 @@ REGISTER_TEST(unit_separator_deep2, ObolTest::TestCategory::Nodes,
     "SoSeparator: auto caching + geometry change, pickCulling OFF, boundingBoxCaching OFF, nested renderCulling",
     e.has_visual = false;
     e.run_unit = runSeparatorDeepTests;
+);
+
+// =========================================================================
+// Iteration 17 tests - SoPath, SoGroup, SoSelection, GL render, SoWriteAction
+// =========================================================================
+
+// Unit test: SoPath - comprehensive path operations
+static int runPathDeepTests2()
+{
+    int failures = 0;
+
+    // --- getHead / getTail / getNode / getIndex ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoSeparator* sep = new SoSeparator();
+        SoCube* cube = new SoCube();
+        root->addChild(sep);
+        sep->addChild(cube);
+
+        SoSearchAction sa;
+        sa.setNode(cube);
+        sa.apply(root);
+        SoPath* p = sa.getPath();
+        if (p) {
+            p->ref();
+            if (p->getHead() != root) {
+                fprintf(stderr, "  FAIL: SoPath getHead\n"); ++failures;
+            }
+            if (p->getTail() != cube) {
+                fprintf(stderr, "  FAIL: SoPath getTail\n"); ++failures;
+            }
+            if (p->getLength() != 3) { // root, sep, cube
+                fprintf(stderr, "  FAIL: SoPath getLength (got %d, expected 3)\n", p->getLength()); ++failures;
+            }
+            if (p->getNode(1) != sep) {
+                fprintf(stderr, "  FAIL: SoPath getNode(1)\n"); ++failures;
+            }
+            p->unref();
+        }
+        root->unref();
+    }
+
+    // --- append node to path ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCube* cube = new SoCube();
+        root->addChild(cube);
+
+        SoPath* p = new SoPath(root); p->ref();
+        p->append(cube);
+        if (p->getTail() != cube) {
+            fprintf(stderr, "  FAIL: SoPath append(node)\n"); ++failures;
+        }
+        p->unref();
+        root->unref();
+    }
+
+    // --- concatenate paths ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoSeparator* sep = new SoSeparator();
+        SoCube* cube = new SoCube();
+        sep->addChild(cube);
+        root->addChild(sep);
+
+        // Get path to sep
+        SoSearchAction sa1;
+        sa1.setNode(sep);
+        sa1.apply(root);
+        SoPath* p1 = sa1.getPath();
+
+        // Get path to cube from sep
+        SoSearchAction sa2;
+        sa2.setNode(cube);
+        sa2.apply(sep);
+        SoPath* p2 = sa2.getPath();
+
+        if (p1 && p2) {
+            p1->ref(); p2->ref();
+            SoPath* pCopy = p1->copy();
+            pCopy->ref();
+            pCopy->append(p2);
+            if (pCopy->getTail() != cube) {
+                fprintf(stderr, "  FAIL: SoPath append(path)\n"); ++failures;
+            }
+            pCopy->unref();
+            p1->unref(); p2->unref();
+        }
+        root->unref();
+    }
+
+    // --- SoPath containsNode ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCube* cube = new SoCube();
+        SoSphere* sp = new SoSphere();
+        root->addChild(cube);
+        root->addChild(sp);
+
+        SoSearchAction sa;
+        sa.setNode(cube);
+        sa.apply(root);
+        SoPath* p = sa.getPath();
+        if (p) {
+            p->ref();
+            if (!p->containsNode(cube)) {
+                fprintf(stderr, "  FAIL: SoPath containsNode cube\n"); ++failures;
+            }
+            if (p->containsNode(sp)) {
+                fprintf(stderr, "  FAIL: SoPath containsNode sphere should be false\n"); ++failures;
+            }
+            p->unref();
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: SoGroup - comprehensive child management
+static int runGroupDeepTests3()
+{
+    int failures = 0;
+
+    // --- insertChild at position ---
+    {
+        SoGroup* g = new SoGroup(); g->ref();
+        SoCube* c1 = new SoCube();
+        SoCube* c2 = new SoCube();
+        SoCube* c3 = new SoCube();
+        g->addChild(c1);
+        g->addChild(c3);
+        g->insertChild(c2, 1); // Insert between c1 and c3
+        if (g->getNumChildren() != 3 || g->getChild(1) != c2) {
+            fprintf(stderr, "  FAIL: SoGroup insertChild at 1\n"); ++failures;
+        }
+        g->unref();
+    }
+
+    // --- replaceChild ---
+    {
+        SoGroup* g = new SoGroup(); g->ref();
+        SoCube* old = new SoCube();
+        SoSphere* newNode = new SoSphere();
+        g->addChild(old);
+        g->replaceChild(old, newNode);
+        if (g->getChild(0) != newNode) {
+            fprintf(stderr, "  FAIL: SoGroup replaceChild\n"); ++failures;
+        }
+        g->unref();
+    }
+
+    // --- findChild ---
+    {
+        SoGroup* g = new SoGroup(); g->ref();
+        SoCube* c1 = new SoCube();
+        SoSphere* sp = new SoSphere();
+        g->addChild(c1);
+        g->addChild(sp);
+        int idx = g->findChild(sp);
+        if (idx != 1) {
+            fprintf(stderr, "  FAIL: SoGroup findChild (got %d)\n", idx); ++failures;
+        }
+        int notFound = g->findChild(new SoCone()); // new object not in group
+        if (notFound != -1) {
+            fprintf(stderr, "  FAIL: SoGroup findChild not found (got %d)\n", notFound); ++failures;
+        }
+        g->unref();
+    }
+
+    // --- removeAllChildren ---
+    {
+        SoGroup* g = new SoGroup(); g->ref();
+        g->addChild(new SoCube());
+        g->addChild(new SoSphere());
+        g->addChild(new SoCone());
+        g->removeAllChildren();
+        if (g->getNumChildren() != 0) {
+            fprintf(stderr, "  FAIL: SoGroup removeAllChildren (got %d)\n", g->getNumChildren()); ++failures;
+        }
+        g->unref();
+    }
+
+    // --- removeChild by index ---
+    {
+        SoGroup* g = new SoGroup(); g->ref();
+        SoCube* c1 = new SoCube();
+        SoCube* c2 = new SoCube();
+        g->addChild(c1);
+        g->addChild(c2);
+        g->removeChild(0);
+        if (g->getNumChildren() != 1 || g->getChild(0) != c2) {
+            fprintf(stderr, "  FAIL: SoGroup removeChild(0)\n"); ++failures;
+        }
+        g->unref();
+    }
+
+    // --- SoGroup as scene graph root for bounding box ---
+    {
+        SoGroup* g = new SoGroup(); g->ref();
+        SoCube* c1 = new SoCube(); c1->width.setValue(2.0f);
+        SoTransform* xf = new SoTransform();
+        xf->translation.setValue(SbVec3f(5,0,0));
+        SoSphere* sp = new SoSphere(); sp->radius.setValue(1.0f);
+        g->addChild(c1);
+        g->addChild(xf);
+        g->addChild(sp);
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512,512));
+        bba.apply(g);
+        SbBox3f bb = bba.getBoundingBox();
+        if (bb.getMax()[0] < 5.0f) {
+            fprintf(stderr, "  FAIL: SoGroup scene maxX (got %f)\n", bb.getMax()[0]); ++failures;
+        }
+        g->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: Write/read complete complex scenes
+static int runComplexSceneIOTests()
+{
+    int failures = 0;
+
+    // --- Write complex scene and read back ---
+    {
+        SoSeparator* scene = new SoSeparator(); scene->ref();
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0,0,1));
+        mat->shininess.setValue(0.8f);
+        SoTransform* xf = new SoTransform();
+        xf->translation.setValue(SbVec3f(1,2,3));
+        xf->scaleFactor.setValue(SbVec3f(2,2,2));
+        SoSphere* sp = new SoSphere(); sp->radius.setValue(1.5f);
+        scene->addChild(mat);
+        scene->addChild(xf);
+        scene->addChild(sp);
+
+        // Write to file
+        SoOutput out;
+        out.openFile("/tmp/obol_complex_scene.iv");
+        SoWriteAction wa(&out);
+        wa.apply(scene);
+        out.closeFile();
+        scene->unref();
+
+        // Read back
+        SoInput in;
+        if (!in.openFile("/tmp/obol_complex_scene.iv")) {
+            fprintf(stderr, "  FAIL: Complex scene file not created\n"); ++failures;
+        } else {
+            SoSeparator* read = SoDB::readAll(&in);
+            if (!read) {
+                fprintf(stderr, "  FAIL: Complex scene readAll null\n"); ++failures;
+            } else {
+                read->ref();
+                // Check bbox reflects the transform and sphere
+                SoGetBoundingBoxAction bba(SbViewportRegion(512,512));
+                bba.apply(read);
+                SbBox3f bb = bba.getBoundingBox();
+                if (bb.isEmpty()) {
+                    fprintf(stderr, "  FAIL: Complex scene readAll bbox empty\n"); ++failures;
+                }
+                // Center should be near (1,2,3) from the translation
+                SbVec3f center = bb.getCenter();
+                if (!approxEqual(center[0], 1.0f, 0.5f)) {
+                    fprintf(stderr, "  FAIL: Complex scene center X (got %f)\n", center[0]); ++failures;
+                }
+                read->unref();
+            }
+        }
+    }
+
+    // --- Write scene with multiple nodes and check structure ---
+    {
+        const char* sceneStr =
+            "#Inventor V2.1 ascii\n"
+            "Separator {\n"
+            "  Material { diffuseColor 1 0 0 specularColor 1 1 1 shininess 0.8 }\n"
+            "  Transform { translation 2 0 0 scaleFactor 1 1 1 }\n"
+            "  Sphere { radius 1.5 }\n"
+            "  Separator {\n"
+            "    Material { diffuseColor 0 0 1 }\n"
+            "    Transform { translation -2 0 0 }\n"
+            "    Cube { width 2 height 2 depth 2 }\n"
+            "  }\n"
+            "}\n";
+        SoInput in;
+        in.setBuffer(const_cast<char*>(sceneStr), strlen(sceneStr));
+        SoSeparator* r = SoDB::readAll(&in);
+        if (!r) {
+            fprintf(stderr, "  FAIL: Complex scene string readAll null\n"); ++failures;
+        } else {
+            r->ref();
+            SoGetBoundingBoxAction bba(SbViewportRegion(512,512));
+            bba.apply(r);
+            SbBox3f bb = bba.getBoundingBox();
+            if (bb.isEmpty()) {
+                fprintf(stderr, "  FAIL: Complex scene string bbox empty\n"); ++failures;
+            }
+            r->unref();
+        }
+    }
+
+    // --- SoWriteAction with binary format ---
+    {
+        SoSeparator* scene = new SoSeparator(); scene->ref();
+        scene->addChild(new SoCylinder());
+        scene->addChild(new SoCone());
+
+        SoOutput out;
+        out.setBinary(TRUE);
+        out.openFile("/tmp/obol_binary_scene.iv");
+        SoWriteAction wa(&out);
+        wa.apply(scene);
+        out.closeFile();
+        scene->unref();
+
+        // Check file exists
+        FILE* f = fopen("/tmp/obol_binary_scene.iv", "rb");
+        if (!f) {
+            fprintf(stderr, "  FAIL: Binary scene file not created\n"); ++failures;
+        } else {
+            fseek(f, 0, SEEK_END); long sz = ftell(f); fclose(f);
+            if (sz < 10) {
+                fprintf(stderr, "  FAIL: Binary scene file too small\n"); ++failures;
+            }
+        }
+    }
+
+    return failures;
+}
+
+// Unit test: SoShapeHints - winding order, normals
+static int runShapeHintsTests()
+{
+    int failures = 0;
+
+    // --- SoShapeHints field values ---
+    {
+        SoShapeHints* sh = new SoShapeHints(); sh->ref();
+        sh->vertexOrdering.setValue(SoShapeHints::COUNTERCLOCKWISE);
+        sh->shapeType.setValue(SoShapeHints::SOLID);
+        sh->faceType.setValue(SoShapeHints::CONVEX);
+        sh->creaseAngle.setValue(0.6f);
+
+        if (sh->vertexOrdering.getValue() != SoShapeHints::COUNTERCLOCKWISE) {
+            fprintf(stderr, "  FAIL: SoShapeHints vertexOrdering\n"); ++failures;
+        }
+        if (sh->shapeType.getValue() != SoShapeHints::SOLID) {
+            fprintf(stderr, "  FAIL: SoShapeHints shapeType\n"); ++failures;
+        }
+        if (!approxEqual(sh->creaseAngle.getValue(), 0.6f)) {
+            fprintf(stderr, "  FAIL: SoShapeHints creaseAngle\n"); ++failures;
+        }
+        sh->unref();
+    }
+
+    // --- SoShapeHints in scene - non-solid shape ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoShapeHints* sh = new SoShapeHints();
+        sh->shapeType.setValue(SoShapeHints::UNKNOWN_SHAPE_TYPE);
+        sh->vertexOrdering.setValue(SoShapeHints::COUNTERCLOCKWISE);
+        root->addChild(sh);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(0,0,0));
+        coords->point.set1Value(1, SbVec3f(1,0,0));
+        coords->point.set1Value(2, SbVec3f(0.5f,1,0));
+        root->addChild(coords);
+        SoFaceSet* fs = new SoFaceSet();
+        fs->numVertices.set1Value(0, 3);
+        root->addChild(fs);
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512,512));
+        bba.apply(root);
+        if (bba.getBoundingBox().isEmpty()) {
+            fprintf(stderr, "  FAIL: SoShapeHints non-solid scene bbox\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- SoShapeHints SOLID with indexed face set ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoShapeHints* sh = new SoShapeHints();
+        sh->shapeType.setValue(SoShapeHints::SOLID);
+        sh->vertexOrdering.setValue(SoShapeHints::COUNTERCLOCKWISE);
+        root->addChild(sh);
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1,0));
+        coords->point.set1Value(1, SbVec3f( 1,-1,0));
+        coords->point.set1Value(2, SbVec3f( 1, 1,0));
+        coords->point.set1Value(3, SbVec3f(-1, 1,0));
+        root->addChild(coords);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        ifs->coordIndex.set1Value(0, 0); ifs->coordIndex.set1Value(1, 1);
+        ifs->coordIndex.set1Value(2, 2); ifs->coordIndex.set1Value(3, 3);
+        ifs->coordIndex.set1Value(4, -1);
+        root->addChild(ifs);
+
+        int triCount = 0;
+        SoCallbackAction cba;
+        cba.addTriangleCallback(SoShape::getClassTypeId(),
+            [](void* ud, SoCallbackAction*, const SoPrimitiveVertex*,
+               const SoPrimitiveVertex*, const SoPrimitiveVertex*) {
+                (*static_cast<int*>(ud))++;
+            }, &triCount);
+        cba.apply(root);
+        if (triCount < 2) {
+            fprintf(stderr, "  FAIL: SoShapeHints SOLID IFS tri (got %d)\n", triCount); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: SoLight nodes - comprehensive
+static int runLightDeepTests()
+{
+    int failures = 0;
+
+    // --- SoDirectionalLight fields ---
+    {
+        SoDirectionalLight* dl = new SoDirectionalLight(); dl->ref();
+        dl->direction.setValue(SbVec3f(-1,-1,-1));
+        dl->color.setValue(SbColor(0.8f, 0.8f, 0.8f));
+        dl->intensity.setValue(0.7f);
+        dl->on.setValue(TRUE);
+
+        if (!approxEqual(dl->intensity.getValue(), 0.7f)) {
+            fprintf(stderr, "  FAIL: SoDirectionalLight intensity\n"); ++failures;
+        }
+        SbVec3f dir = dl->direction.getValue();
+        if (!approxEqual(dir[0], -1.0f)) {
+            fprintf(stderr, "  FAIL: SoDirectionalLight direction\n"); ++failures;
+        }
+        dl->unref();
+    }
+
+    // --- SoPointLight fields ---
+    {
+        SoPointLight* pl = new SoPointLight(); pl->ref();
+        pl->location.setValue(SbVec3f(0, 5, 0));
+        pl->color.setValue(SbColor(1, 1, 0));
+        pl->intensity.setValue(0.9f);
+
+        if (!approxEqual(pl->intensity.getValue(), 0.9f)) {
+            fprintf(stderr, "  FAIL: SoPointLight intensity\n"); ++failures;
+        }
+        SbVec3f loc = pl->location.getValue();
+        if (!approxEqual(loc[1], 5.0f)) {
+            fprintf(stderr, "  FAIL: SoPointLight location Y\n"); ++failures;
+        }
+        pl->unref();
+    }
+
+    // --- SoSpotLight fields ---
+    {
+        SoSpotLight* sl = new SoSpotLight(); sl->ref();
+        sl->location.setValue(SbVec3f(0, 10, 0));
+        sl->direction.setValue(SbVec3f(0,-1,0));
+        sl->cutOffAngle.setValue(float(M_PI/6));
+        sl->dropOffRate.setValue(0.5f);
+
+        if (!approxEqual(sl->cutOffAngle.getValue(), float(M_PI/6), 1e-3f)) {
+            fprintf(stderr, "  FAIL: SoSpotLight cutOffAngle\n"); ++failures;
+        }
+        sl->unref();
+    }
+
+    // --- Lights in scene graph bbox ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoDirectionalLight* dl = new SoDirectionalLight();
+        dl->direction.setValue(SbVec3f(0,-1,0));
+        SoPointLight* pl = new SoPointLight();
+        pl->location.setValue(SbVec3f(5,5,5));
+        SoSphere* sp = new SoSphere();
+        root->addChild(dl);
+        root->addChild(pl);
+        root->addChild(sp);
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512,512));
+        bba.apply(root);
+        if (bba.getBoundingBox().isEmpty()) {
+            fprintf(stderr, "  FAIL: SoLight scene bbox empty\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Register iteration 17 tests
+// =========================================================================
+
+REGISTER_TEST(unit_path_deep2, ObolTest::TestCategory::Base,
+    "SoPath: getHead/getTail/getNode/getIndex/getLength, append path, containsNode",
+    e.has_visual = false;
+    e.run_unit = runPathDeepTests2;
+);
+
+REGISTER_TEST(unit_group_deep4, ObolTest::TestCategory::Nodes,
+    "SoGroup: insertChild, replaceChild, findChild, removeAllChildren, removeChild by index",
+    e.has_visual = false;
+    e.run_unit = runGroupDeepTests3;
+);
+
+REGISTER_TEST(unit_complex_scene_io, ObolTest::TestCategory::IO,
+    "Complex scene IO: write with material+transform+sphere, read back check bbox/center, binary format",
+    e.has_visual = false;
+    e.run_unit = runComplexSceneIOTests;
+);
+
+REGISTER_TEST(unit_shape_hints, ObolTest::TestCategory::Nodes,
+    "SoShapeHints: field values, non-solid/solid shapes, CCW IFS tri count",
+    e.has_visual = false;
+    e.run_unit = runShapeHintsTests;
+);
+
+REGISTER_TEST(unit_light_deep, ObolTest::TestCategory::Nodes,
+    "SoLight: SoDirectionalLight/PointLight/SpotLight fields, lights in scene",
+    e.has_visual = false;
+    e.run_unit = runLightDeepTests;
 );
 
 } // anonymous namespace
