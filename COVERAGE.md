@@ -12,14 +12,16 @@ via OSMesa, and most CTest image regression tests.
 
 | Metric    | Covered | Total  | Percentage |
 |-----------|---------|--------|------------|
-| Lines     | 39,448  | 85,652 | **46.1%**  |
-| Functions | 7,494   | 15,937 | **47.0%**  |
+| Lines     | 39,444  | 85,652 | **46.1%**  |
+| Functions | 7,502   | 15,937 | **47.1%**  |
 | Branches  | —       | —      | no data    |
 
 *(Session 1 baseline after cleanup: 47.1% lines / 47.7% functions on 85,652 total src lines.
-Session 2 added 30 new unit tests for a total of 92, with targeted coverage of previously
-uncovered subsystems: projectors, SoSceneManager, text nodes, sensors, SoSelection,
-engine decompose/compose, SoRenderManager, deeper field/node/action API.)*
+Session 2 added 23 new unit tests (92→115 total) targeting previously-uncovered subsystems:
+SbDPViewVolume remaining, SoCamera deep, SoGLRenderAction settings, SoOutput/SoInput IO,
+draggers (6 more), SoTransformManip, SoBase, SoSensorManager+one-shot/idle, SoField deeper,
+SbMatrix deeper, SbBox3f/Box2f, SoLight nodes, SoMaterial/property nodes, SbColor, SoTransform
+variants, SoSeparator caching, SbSphere/SbCylinder, SoExtSelection.)*
 
 ---
 
@@ -143,10 +145,11 @@ engine decompose/compose, SoRenderManager, deeper field/node/action API.)*
 | Session 2 iter 6 | +14 | 76 | — |
 | Session 2 iter 7 | +5 | 81 | — |
 | Session 2 iter 8 | +6 | 87 | — |
-| Session 2 iter 9 | +5 | **92** | **46.1% lines / 47.0% functions** |
+| Session 2 iter 9 | +5 | 92 | 46.1% lines / 47.0% functions |
+| Session 2 iter 10 | +14 | 106 | 46.0% lines / 47.0% functions |
+| Session 2 iter 11 | +9 | **115** | **46.1% lines / 47.1% functions** |
 
-**92 unit tests, 0 failures.** The tests cover all major subsystems; see Session 1
-COVERAGE.md sections for the complete API-level listing.
+**115 unit tests, 0 failures.** The tests cover all major subsystems.
 
 Visual scenes rendered during coverage: primitives, materials, lighting, transforms,
 cameras, texture, text, text2, colored_cube, coordinates, transparency, drawstyle,
