@@ -170,7 +170,6 @@
 #include <Inventor/sensors/SoNodeSensor.h>
 #include <Inventor/SbClip.h>
 #include <Inventor/nodes/SoBaseColor.h>
-#include <Inventor/SoSceneManager.h>
 #include <Inventor/projectors/SbPlaneProjector.h>
 #include <Inventor/projectors/SbLineProjector.h>
 #include <Inventor/projectors/SbCylinderSectionProjector.h>
@@ -8223,25 +8222,25 @@ static int runGroupDeepTests()
 }
 
 REGISTER_TEST(unit_matrix_remaining, ObolTest::TestCategory::Base,
-    "SbMatrix: setValue(float*), operator=(rotation), *=(float), /=(float), *=(matrix), multLineMatrix, print",
+    "SbMatrix: setValue(float*), operator=(rotation), *=(matrix), multLineMatrix, print",
     e.has_visual = false;
     e.run_unit = runMatrixRemainingTests;
 );
 
 REGISTER_TEST(unit_rotation_remaining, ObolTest::TestCategory::Base,
-    "SbRotation: multVec, scaleAngle, operator*, setValue(float[4]), operator!=",
+    "SbRotation: multVec, scaleAngle, operator*, setValue(q0,q1,q2,q3), operator!=",
     e.has_visual = false;
     e.run_unit = runRotationRemainingTests;
 );
 
 REGISTER_TEST(unit_viewvolume_remaining, ObolTest::TestCategory::Base,
-    "SbViewVolume: getPlaneRectangle, getCameraSpaceMatrix, projectBox, projectToScreen",
+    "SbViewVolume: getCameraSpaceMatrix, projectBox, projectToScreen(dst)",
     e.has_visual = false;
     e.run_unit = runViewVolumeRemainingTests;
 );
 
 REGISTER_TEST(unit_line_remaining, ObolTest::TestCategory::Base,
-    "SbLine: getClosestPoint, getClosestPoints, intersect(plane), setPosDir",
+    "SbLine: getClosestPoint, getClosestPoints(skew), getPosition/Direction via setValue",
     e.has_visual = false;
     e.run_unit = runLineRemainingTests;
 );

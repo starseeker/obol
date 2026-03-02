@@ -1,7 +1,218 @@
 # Obol Code Coverage Report
 
 Generated from an lcov coverage build (`OBOL_COVERAGE=ON`, `OBOL_USE_OSMESA=ON`,
-`CMAKE_BUILD_TYPE=Debug`) with the full CTest suite (190 tests) plus 62 unit tests.
+`CMAKE_BUILD_TYPE=Debug`) with the unit test suite (92 unit tests), 25 visual renders
+via OSMesa, and most CTest image regression tests.
+
+**Toolchain:** GCC + lcov 2.0, OSMesa headless rendering
+
+---
+
+## Overall Results (Session 2 – Final)
+
+| Metric    | Covered | Total  | Percentage |
+|-----------|---------|--------|------------|
+| Lines     | 39,448  | 85,652 | **46.1%**  |
+| Functions | 7,494   | 15,937 | **47.0%**  |
+| Branches  | —       | —      | no data    |
+
+*(Session 1 baseline after cleanup: 47.1% lines / 47.7% functions on 85,652 total src lines.
+Session 2 added 30 new unit tests for a total of 92, with targeted coverage of previously
+uncovered subsystems: projectors, SoSceneManager, text nodes, sensors, SoSelection,
+engine decompose/compose, SoRenderManager, deeper field/node/action API.)*
+
+---
+
+## Per-Subsystem Coverage (Updated)
+
+### Well-Covered Subsystems (≥ 60%)
+
+| Subsystem | Coverage |
+|-----------|---------|
+| `src/details` | ~61–82% (SoConeDetail 82%, SoCubeDetail 75%) |
+| `src/elements` (non-GL) | ~85% overall |
+| `src/errors` | ~83% |
+| `src/manips` | ~86% average |
+| `src/actions/SoGetPrimitiveCountAction` | 81% |
+| `src/actions/SoGetMatrixAction` | 70% |
+| `src/actions/SoWriteAction` | 59% |
+| `src/actions/SoCallbackAction` | 52% |
+| `src/misc/SoSceneManager` | **57%** (was 0%) |
+| `src/base/SbColor4f` | 81% |
+| `src/base/SbBox3d` | 93% |
+| `src/base/SbBox2f` | 56% |
+| `src/base/SbDPMatrix` | 53% |
+| `src/base/SbDPPlane` | 60% |
+| `src/rendering/SoRenderManager` | 63% |
+
+---
+
+### Moderate Coverage (30–60%)
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/actions/SoSearchAction.cpp` | 33% | ALL/FIRST/LAST fully tested |
+| `src/actions/SoHandleEventAction.cpp` | 32% | Event routing tested |
+| `src/actions/SoGetBoundingBoxAction.cpp` | 30% | Many shapes + inCameraSpace |
+| `src/base/SbBSPTree.cpp` | 37% | |
+| `src/base/SbDPRotation.cpp` | 28% | |
+| `src/base/SbDict.cpp` | 46% | |
+| `src/base/SbOctTree.cpp` | 45% | |
+| `src/projectors/SbSphereSectionProjector.cpp` | 44% | |
+| `src/projectors/SbPlaneProjector.cpp` | 22% | project/copy tested |
+| `src/projectors/SbLineProjector.cpp` | 24% | setLine/copy tested |
+| `src/sensors/SoPathSensor.cpp` | 29% | attach/fire tested |
+| `src/nodes/SoSelection.cpp` | 24% | select/deselect/toggle tested |
+
+---
+
+### Low Coverage (< 30%)
+
+#### Math & Geometry Primitives
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/base/SbMatrix.cpp` | **13%** | 550 lines; LU/getTransform added; many internal paths |
+| `src/base/SbRotation.cpp` | **15%** | 196 lines; slerp/multVec/scaleAngle added |
+| `src/base/SbViewVolume.cpp` | **25%** | getCameraSpaceMatrix/projectBox added |
+| `src/base/SbDPViewVolume.cpp` | **10%** | 416 lines; ortho/persp/narrow/projectToScreen tested |
+| `src/base/SbLine.cpp` | **26%** | getClosestPoint/getClosestPoints/setValue tested |
+| `src/base/SbPlane.cpp` | **18%** | getDistance/isInHalfSpace/transform/offset tested |
+| `src/base/SbSphere.cpp` | **27%** | intersect/circumscribe tested |
+| `src/base/SbCylinder.cpp` | **24%** | intersect tested |
+| `src/base/SbClip.cpp` | **13%** | addVertex/clip/getVertex tested |
+| `src/base/SbHeap.cpp` | **26%** | add/extractMin tested |
+| `src/base/SbTesselator.cpp` | **10%** | beginPolygon/addVertex/endPolygon tested |
+| `src/base/SbFont.cpp` | **17%** | 198 lines – font API untested |
+| `src/base/SbImage.cpp` | **25%** | |
+
+#### Rendering Pipeline
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/rendering/SoGLRenderAction.cpp` | **21%** | |
+| `src/rendering/SoGLImage.cpp` | **13%** | Texture paths |
+| `src/rendering/SoOffscreenRenderer.cpp` | **16%** | Render API tested |
+| `src/rendering/SoVBO.cpp` | **16%** | |
+
+#### Shape Nodes
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/shapenodes/SoShape.cpp` | **12%** | bbox/primCount tested for several shapes |
+| `src/shapenodes/SoText2.cpp` | **9%** | string/spacing/justification/bbox tested |
+| `src/shapenodes/SoText3.cpp` | **9%** | string/bbox tested |
+| `src/shapenodes/SoFaceSet.cpp` | **15%** | bbox+primCount tested |
+| `src/shapenodes/SoIndexedFaceSet.cpp` | **10%** | bbox+primCount tested |
+
+#### Actions
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/actions/SoAction.cpp` | **17%** | |
+| `src/actions/SoGLRenderAction.cpp` | **21%** | Multi-pass, transparency untested |
+| `src/actions/SoRayPickAction.cpp` | **12%** | cylinder/sphere picks tested via setRay |
+
+#### Nodes / Infrastructure
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/nodes/SoNode.cpp` | **17%** | setOverride/getByName/getNextNodeId added |
+| `src/nodes/SoGroup.cpp` | **23%** | insertChild/removeChild/findChild added |
+| `src/nodes/SoSeparator.cpp` | **16%** | |
+| `src/misc/SoPath.cpp` | **21%** | copy/findFork/containsNode tested |
+| `src/misc/SoBase.cpp` | **21%** | |
+| `src/fields/SoField.cpp` | **16%** | isIgnored/enableConnection/touch/getField added |
+| `src/fields/SoFieldContainer.cpp` | **28%** | getFields/getFieldName tested |
+
+#### Sensors
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| `src/sensors/SoTimerSensor.cpp` | **24%** | interval/baseTime/schedule tested |
+| `src/sensors/SoPathSensor.cpp` | **29%** | attach/fire/detach tested |
+
+---
+
+## Progress Summary (Both Sessions)
+
+| Session/Iter | New Tests | Total | Coverage (src/) |
+|---|---|---|---|
+| Session 1 baseline | 0 | 25 | ~50.0% (mixed incl test harness) |
+| Session 1 iter 1-5 | +37 | 62 | 47.1% lines / 47.7% functions |
+| Session 2 iter 6 | +14 | 76 | — |
+| Session 2 iter 7 | +5 | 81 | — |
+| Session 2 iter 8 | +6 | 87 | — |
+| Session 2 iter 9 | +5 | **92** | **46.1% lines / 47.0% functions** |
+
+**92 unit tests, 0 failures.** The tests cover all major subsystems; see Session 1
+COVERAGE.md sections for the complete API-level listing.
+
+Visual scenes rendered during coverage: primitives, materials, lighting, transforms,
+cameras, texture, text, text2, colored_cube, coordinates, transparency, drawstyle,
+indexed_face_set, face_set, line_set, indexed_line_set, point_set, triangle_strip_set,
+quad_mesh, vertex_colors, lod, hud, scene, gradient, switch_visibility.
+
+---
+
+## Priority Queue for Adding Tests (Updated)
+
+### Tier 1 — Critical (highest ROI remaining)
+
+1. **`SoRayPickAction`** — 12% of 400 lines. Large untested surface.
+2. **`SoField.cpp`** — 16% of 537 lines. Notification chains, read/write, type-coercion.
+3. **`SbMatrix.cpp`** — 13% of 550 lines. Internal polar decomposition, `polar_decomp`, etc.
+4. **`SbDPViewVolume.cpp`** — 10% of 416 lines. Most DP paths still untested.
+5. **`SbTesselator.cpp`** — 10% of 181 lines. Complex polygon tessellation paths.
+
+### Tier 2 — Important
+
+6. **`SoGLRenderAction`** — 21%; needs transparency sorting, multi-pass.
+7. **`SoText2` / `SoText3`** — 9%; only field access + bbox; GLRender paths untested (need actual display).
+8. **`SoAction.cpp`** — 17%; action traversal infrastructure.
+9. **`SbRotation.cpp`** — 15%; many quaternion computation paths remain.
+10. **`SoNode.cpp`** — 17%; deep hierarchy notification, initClasses.
+
+### Tier 3 — Worthwhile
+
+11. **Projectors** — SbCylinderSheetProjector 0%, SbSphereSheetProjector 0%.
+12. **Shader subsystem** — SoShaderObject 20%, SoGLSLShaderObject 18%.
+13. **`SoBase.cpp`** — 21%; SoBase::audit, debug, type registration paths.
+14. **`SoFieldData.cpp`** — 19%; field data read/write, copy paths.
+
+---
+
+## How to Reproduce
+
+```bash
+sudo apt-get install lcov libosmesa6-dev libpng-dev
+
+cmake /path/to/obol \
+  -DOBOL_USE_OSMESA=ON \
+  -DOBOL_BUILD_TESTS=ON \
+  -DOBOL_COVERAGE=ON \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -B build_coverage
+
+cmake --build build_coverage -- -j4
+
+# Run unit tests
+./build_coverage/bin/obol_test
+
+# Run visual renders
+for scene in primitives materials lighting ...; do
+  DISPLAY=:99 ./build_coverage/bin/obol_test render $scene /tmp/$scene.rgb
+done
+
+# Collect coverage
+lcov --capture --directory build_coverage \
+     --output-file coverage.info \
+     --rc lcov_branch_coverage=0 \
+     --ignore-errors gcov,gcov
+lcov --extract coverage.info "*/src/*" --output-file coverage_src.info
+lcov --summary coverage_src.info
+```
+
 
 **Toolchain:** GCC + lcov 2.0, OSMesa headless rendering
 
