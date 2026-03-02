@@ -1121,7 +1121,7 @@ struct SoGLContext {
   OBOL_PFNGLPOPATTRIBPROC glPopAttrib;
 
   /* Additional pointers for full OSMesa GL feature coverage. */
-OBOL_PFNGLARETEXTURESRESIDENTPROC glAreTexturesResident;
+  OBOL_PFNGLARETEXTURESRESIDENTPROC glAreTexturesResident;
   OBOL_PFNGLBLENDCOLORPROC glBlendColor;
   OBOL_PFNGLCALLLISTSPROC glCallLists;
   OBOL_PFNGLCLEARACCUMPROC glClearAccum;
