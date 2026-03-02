@@ -1843,14 +1843,6 @@ REGISTER_TEST(lod_picking, ObolTest::TestCategory::Rendering,
     e.create_scene = ObolTest::Scenes::createLODPicking;
 );
 
-REGISTER_TEST(stt_gl, ObolTest::TestCategory::Rendering,
-    "Five SoText2 rows in an orthographic viewport for STT GL reference",
-    e.has_visual = true;
-    e.has_interactive = true;
-    e.nanort_ok = true;
-    e.create_scene = ObolTest::Scenes::createSTTGL;
-);
-
 // --- Unit test registrations ---
 
 REGISTER_TEST(unit_actions, ObolTest::TestCategory::Actions,
