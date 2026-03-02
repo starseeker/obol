@@ -125,15 +125,7 @@
 
 #include <vector>
 
-#ifdef OBOL_OSMESA_BUILD
-#  include <OSMesa/gl.h>
-#else
-#  ifdef __unix__
-#    include <GL/gl.h>
-#  else
-#    include <OpenGL/gl.h>
-#  endif
-#endif
+#include <Inventor/gl.h>
 
 #include <cstring>
 
@@ -181,39 +173,6 @@ static void buildCheckerTexture(SoTexture2* tex, int tileSize = 8)
     delete[] buf;
 }
 
-// Gradient background rendered via a callback node.
-static void gradientCB(void* /*data*/, SoAction* action)
-{
-    if (!action->isOfType(SoGLRenderAction::getClassTypeId())) return;
-    SoGLRenderAction* ra = static_cast<SoGLRenderAction*>(action);
-    const SbViewportRegion& vp = ra->getViewportRegion();
-    int w = vp.getViewportSizePixels()[0];
-    int h = vp.getViewportSizePixels()[1];
-
-    glMatrixMode(GL_PROJECTION);
-    glPushMatrix(); glLoadIdentity();
-    glOrtho(0, w, 0, h, -1, 1);
-    glMatrixMode(GL_MODELVIEW);
-    glPushMatrix(); glLoadIdentity();
-
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_LIGHTING);
-
-    glBegin(GL_QUADS);
-        // bottom: dark blue
-        glColor3f(0.05f, 0.05f, 0.20f); glVertex2i(0, 0);
-        glColor3f(0.05f, 0.05f, 0.20f); glVertex2i(w, 0);
-        // top: lighter blue
-        glColor3f(0.20f, 0.35f, 0.60f); glVertex2i(w, h);
-        glColor3f(0.20f, 0.35f, 0.60f); glVertex2i(0, h);
-    glEnd();
-
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_LIGHTING);
-
-    glMatrixMode(GL_PROJECTION); glPopMatrix();
-    glMatrixMode(GL_MODELVIEW);  glPopMatrix();
-}
 
 // =========================================================================
 // 1. Primitives: 2×2 grid (sphere, cube, cone, cylinder)
@@ -645,12 +604,52 @@ SoSeparator* createText2(int width, int height)
 // =========================================================================
 // 8. Gradient background
 // =========================================================================
+
+// Background gradient drawn via a SoCallback node using Obol's dispatched
+// GL wrappers (via <Inventor/gl.h>).  The gl*() calls below are macros
+// that expand to SoGLContext_glXxx(sogl_current_render_glue(), ...) so
+// they route to the correct backend in both system-GL and OSMesa renders.
+static void gradientCB(void* /*data*/, SoAction* action)
+{
+    if (!action->isOfType(SoGLRenderAction::getClassTypeId())) return;
+    SoGLRenderAction* ra = static_cast<SoGLRenderAction*>(action);
+    const SbViewportRegion& vp = ra->getViewportRegion();
+    int w = vp.getViewportSizePixels()[0];
+    int h = vp.getViewportSizePixels()[1];
+
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix(); glLoadIdentity();
+    glOrtho(0, w, 0, h, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix(); glLoadIdentity();
+
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_LIGHTING);
+
+    glBegin(GL_QUADS);
+        // bottom: dark blue
+        glColor3f(0.05f, 0.05f, 0.20f); glVertex2f(0.0f, 0.0f);
+        glColor3f(0.05f, 0.05f, 0.20f); glVertex2f((float)w, 0.0f);
+        // top: lighter blue
+        glColor3f(0.20f, 0.35f, 0.60f); glVertex2f((float)w, (float)h);
+        glColor3f(0.20f, 0.35f, 0.60f); glVertex2f(0.0f, (float)h);
+    glEnd();
+
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_LIGHTING);
+
+    glMatrixMode(GL_PROJECTION); glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);  glPopMatrix();
+}
+
 SoSeparator* createGradient(int width, int height)
 {
     SoSeparator* root = new SoSeparator;
     root->ref();
 
-    // Gradient background drawn first (before depth-tested geometry)
+    // Gradient background drawn first (before depth-tested geometry).
+    // Uses SoCallback + dispatched gl*() calls via <Inventor/gl.h> so
+    // it works correctly with both System GL and OSMesa backends.
     SoCallback* bg = new SoCallback;
     bg->setCallback(gradientCB, nullptr);
     root->addChild(bg);

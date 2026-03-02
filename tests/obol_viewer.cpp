@@ -27,8 +27,7 @@
  * shown.  It uses SoNanoRTContextManager::renderScene() called directly.
  * Scenes that require GL-only features are flagged nanort_ok=false in the
  * scene catalogue and show "Not supported (NanoRT)".  SoText2 nodes are
- * rendered as coloured billboard quads (see SoNanoRTContextManager comments);
- * SoCallback gradient backgrounds are silently omitted but geometry renders.
+ * rendered as coloured billboard quads (see SoNanoRTContextManager comments).
  *
  * Layout (dual + nanort)                    Layout (dual only)
  * ──────────────────────────────────────    ─────────────────────────────────

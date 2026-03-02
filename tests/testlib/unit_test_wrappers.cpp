@@ -1278,7 +1278,7 @@ REGISTER_TEST(text2, ObolTest::TestCategory::Rendering,
 );
 
 REGISTER_TEST(gradient, ObolTest::TestCategory::Rendering,
-    "Background gradient via callback node",
+    "Background gradient via SoCallback using dispatched GL wrappers (<Inventor/gl.h>)",
     e.has_visual = true;
     e.has_interactive = true;
     e.nanort_ok = true;
