@@ -168,6 +168,25 @@
 #include <Inventor/sensors/SoNodeSensor.h>
 #include <Inventor/SbClip.h>
 #include <Inventor/nodes/SoBaseColor.h>
+#include <Inventor/SoSceneManager.h>
+#include <Inventor/projectors/SbPlaneProjector.h>
+#include <Inventor/projectors/SbLineProjector.h>
+#include <Inventor/projectors/SbCylinderSectionProjector.h>
+#include <Inventor/projectors/SbSphereSectionProjector.h>
+#include <Inventor/sensors/SoTimerSensor.h>
+#include <Inventor/sensors/SoPathSensor.h>
+#include <Inventor/nodes/SoSelection.h>
+#include <Inventor/nodes/SoText2.h>
+#include <Inventor/nodes/SoText3.h>
+#include <Inventor/nodes/SoAsciiText.h>
+#include <Inventor/nodes/SoPointSet.h>
+#include <Inventor/nodes/SoLineSet.h>
+#include <Inventor/nodes/SoIndexedLineSet.h>
+#include <Inventor/nodes/SoComplexity.h>
+#include <Inventor/engines/SoDecomposeVec3f.h>
+#include <Inventor/engines/SoComposeRotation.h>
+#include <Inventor/engines/SoGate.h>
+#include <Inventor/fields/SoSFRotation.h>
 #include <Inventor/fields/SoSFString.h>
 #include <Inventor/fields/SoSFEnum.h>
 #include <Inventor/fields/SoSFColor.h>
@@ -6408,6 +6427,1018 @@ REGISTER_TEST(unit_viewvolume_ortho, ObolTest::TestCategory::Base,
     "SbViewVolume: ortho getPlane/nearDist/farDist/Width/Height, perspective getMatrices",
     e.has_visual = false;
     e.run_unit = runViewVolumeOrthoTests;
+);
+
+// =========================================================================
+// Unit test: SbMatrix - det3/det4, transpose, LU, getTransform, factor
+// =========================================================================
+static int runMatrixAdvancedTests()
+{
+    int failures = 0;
+
+    // --- det3 and det4 ---
+    {
+        SbMatrix id = SbMatrix::identity();
+        float d4 = id.det4();
+        if (!approxEqual(d4, 1.0f, 1e-4f)) {
+            fprintf(stderr, "  FAIL: identity det4 (got %f)\n", d4); ++failures;
+        }
+        float d3 = id.det3();
+        if (!approxEqual(d3, 1.0f, 1e-4f)) {
+            fprintf(stderr, "  FAIL: identity det3 (got %f)\n", d3); ++failures;
+        }
+        // scale matrix det
+        SbMatrix s;
+        s.setScale(SbVec3f(2.0f, 3.0f, 4.0f));
+        float ds4 = s.det4();
+        if (!approxEqual(ds4, 24.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: scale det4 (got %f)\n", ds4); ++failures;
+        }
+    }
+
+    // --- transpose ---
+    {
+        SbMatrix m(1,2,3,4, 5,6,7,8, 9,10,11,12, 13,14,15,16);
+        SbMatrix t = m.transpose();
+        if (!approxEqual(t[0][1], 5.0f, 1e-4f) || !approxEqual(t[1][0], 2.0f, 1e-4f)) {
+            fprintf(stderr, "  FAIL: transpose (got [0][1]=%f [1][0]=%f)\n", t[0][1], t[1][0]); ++failures;
+        }
+    }
+
+    // --- LUDecomposition and LUBackSubstitution ---
+    {
+        // Solve Ax = b where A = identity, b = (1,2,3,4)
+        SbMatrix m = SbMatrix::identity();
+        int index[4];
+        float d;
+        SbBool ok = m.LUDecomposition(index, d);
+        if (!ok) {
+            fprintf(stderr, "  FAIL: LUDecomposition identity returned false\n"); ++failures;
+        } else {
+            float b[4] = {1.0f, 2.0f, 3.0f, 4.0f};
+            m.LUBackSubstitution(index, b);
+            if (!approxEqual(b[0], 1.0f, 1e-3f) || !approxEqual(b[1], 2.0f, 1e-3f)) {
+                fprintf(stderr, "  FAIL: LUBackSub identity (got %f %f)\n", b[0], b[1]); ++failures;
+            }
+        }
+    }
+
+    // --- getTransform (inverse of setTransform) ---
+    {
+        SbVec3f t(1.0f, 2.0f, 3.0f);
+        SbRotation r(SbVec3f(0,1,0), float(M_PI/4));
+        SbVec3f s(2.0f, 2.0f, 2.0f);
+        SbMatrix m;
+        m.setTransform(t, r, s);
+        SbVec3f outT, outS;
+        SbRotation outR, outSO;
+        m.getTransform(outT, outR, outS, outSO);
+        if (!approxEqual(outT[0], t[0], 1e-3f) || !approxEqual(outT[1], t[1], 1e-3f)) {
+            fprintf(stderr, "  FAIL: getTransform t (got %f %f %f)\n", outT[0], outT[1], outT[2]); ++failures;
+        }
+        if (!approxEqual(outS[0], s[0], 1e-3f)) {
+            fprintf(stderr, "  FAIL: getTransform s (got %f %f %f)\n", outS[0], outS[1], outS[2]); ++failures;
+        }
+    }
+
+    // --- getTransform 5-arg (with center) ---
+    {
+        SbVec3f t(0,0,0), s(1,1,1);
+        SbRotation r(SbVec3f(0,0,1), float(M_PI/2));
+        SbMatrix m;
+        m.setTransform(t, r, s, SbRotation::identity(), SbVec3f(0,0,0));
+        SbVec3f outT, outS, center;
+        SbRotation outR, outSO;
+        m.getTransform(outT, outR, outS, outSO, center);
+        // After setTransform with identity SO and zero center, should round-trip
+        (void)outT; (void)outR; (void)outS; (void)outSO; (void)center;
+    }
+
+    // --- factor (note: not yet implemented, stub returns false) ---
+    {
+        SbMatrix m;
+        m.setTransform(SbVec3f(1,2,3), SbRotation(SbVec3f(0,1,0), float(M_PI/6)),
+                       SbVec3f(1,1,1));
+        SbMatrix r, u;
+        SbVec3f sv, t;
+        SbMatrix proj;
+        // factor() is currently a stub - just verify it doesn't crash
+        m.factor(r, sv, u, t, proj);
+    }
+
+    // --- multVecMatrix SbVec4f ---
+    {
+        SbMatrix m = SbMatrix::identity();
+        m[3][0] = 5.0f; // homogeneous translation
+        SbVec4f v(1.0f, 0.0f, 0.0f, 1.0f), result;
+        m.multVecMatrix(v, result);
+        if (!approxEqual(result[0], 6.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: multVecMatrix SbVec4f (got %f)\n", result[0]); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbRotation - slerp, getValue(axis,radians), setValue(from,to)
+// =========================================================================
+static int runRotationSlerpTests()
+{
+    int failures = 0;
+
+    // --- slerp ---
+    {
+        SbRotation r0(SbVec3f(0,1,0), 0.0f);
+        SbRotation r1(SbVec3f(0,1,0), float(M_PI));
+        SbRotation mid = SbRotation::slerp(r0, r1, 0.5f);
+        SbVec3f axis; float angle;
+        mid.getValue(axis, angle);
+        if (!approxEqual(angle, float(M_PI/2), 1e-3f)) {
+            fprintf(stderr, "  FAIL: slerp 0.5 angle (got %f)\n", angle); ++failures;
+        }
+    }
+
+    // --- slerp boundaries ---
+    {
+        SbRotation r0(SbVec3f(1,0,0), float(M_PI/4));
+        SbRotation r1(SbVec3f(1,0,0), float(3*M_PI/4));
+        SbRotation s0 = SbRotation::slerp(r0, r1, 0.0f);
+        SbRotation s1 = SbRotation::slerp(r0, r1, 1.0f);
+        SbVec3f ax; float a0, a1;
+        s0.getValue(ax, a0); s1.getValue(ax, a1);
+        if (!approxEqual(a0, float(M_PI/4), 1e-3f)) {
+            fprintf(stderr, "  FAIL: slerp t=0 (got %f)\n", a0); ++failures;
+        }
+        if (!approxEqual(a1, float(3*M_PI/4), 1e-3f)) {
+            fprintf(stderr, "  FAIL: slerp t=1 (got %f)\n", a1); ++failures;
+        }
+    }
+
+    // --- setValue(rotateFrom, rotateTo) ---
+    {
+        SbRotation r;
+        r.setValue(SbVec3f(1,0,0), SbVec3f(0,1,0)); // rotate X to Y = 90° around Z
+        SbVec3f v(1,0,0), result;
+        r.multVec(v, result);
+        if (!approxEqual(result[0], 0.0f, 1e-3f) || !approxEqual(result[1], 1.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: setValue(from,to) (got %f %f %f)\n", result[0], result[1], result[2]); ++failures;
+        }
+    }
+
+    // --- identity rotation slerp ---
+    {
+        SbRotation id = SbRotation::identity();
+        SbRotation r(SbVec3f(0,0,1), float(M_PI/2));
+        SbRotation half = SbRotation::slerp(id, r, 0.5f);
+        SbVec3f ax; float ang;
+        half.getValue(ax, ang);
+        if (!approxEqual(ang, float(M_PI/4), 1e-3f)) {
+            fprintf(stderr, "  FAIL: slerp from identity (got %f)\n", ang); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbViewVolume deeper (projectPointToLine, getAlignRotation, narrow box)
+// =========================================================================
+static int runViewVolumeAdvancedTests()
+{
+    int failures = 0;
+
+    // --- projectPointToLine ---
+    {
+        SbViewVolume vv;
+        vv.perspective(float(M_PI/3), 1.0f, 0.1f, 100.0f);
+        SbLine line;
+        vv.projectPointToLine(SbVec2f(0.0f, 0.0f), line);
+        // line direction should be non-zero
+        if (line.getDirection().length() < 0.5f) {
+            fprintf(stderr, "  FAIL: projectPointToLine direction\n"); ++failures;
+        }
+    }
+
+    // --- getAlignRotation ---
+    {
+        SbViewVolume vv;
+        vv.perspective(float(M_PI/3), 1.0f, 0.1f, 100.0f);
+        SbRotation align = vv.getAlignRotation(FALSE);
+        float len = std::sqrt(align[0]*align[0] + align[1]*align[1] +
+                              align[2]*align[2] + align[3]*align[3]);
+        if (!approxEqual(len, 1.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: getAlignRotation not unit quat (len=%f)\n", len); ++failures;
+        }
+    }
+
+    // --- narrow(box) ---
+    {
+        SbViewVolume vv;
+        vv.ortho(-2.0f, 2.0f, -2.0f, 2.0f, 1.0f, 100.0f);
+        SbBox3f box(SbVec3f(-0.5f,-0.5f,-2.0f), SbVec3f(0.5f, 0.5f, -1.0f));
+        SbViewVolume narrow = vv.narrow(box);
+        if (narrow.getWidth() <= 0.0f || narrow.getHeight() <= 0.0f) {
+            fprintf(stderr, "  FAIL: narrow(box) invalid size\n"); ++failures;
+        }
+    }
+
+    // --- getWorldToScreenScale ---
+    {
+        SbViewVolume vv;
+        vv.perspective(float(M_PI/3), 1.0f, 1.0f, 100.0f);
+        float scale = vv.getWorldToScreenScale(SbVec3f(0,0,-10.0f), 1.0f);
+        if (scale <= 0.0f) {
+            fprintf(stderr, "  FAIL: getWorldToScreenScale (got %f)\n", scale); ++failures;
+        }
+    }
+
+    // --- getSightPoint ---
+    {
+        SbViewVolume vv;
+        vv.perspective(float(M_PI/3), 1.0f, 1.0f, 100.0f);
+        SbVec3f pt = vv.getSightPoint(5.0f);
+        if (pt[0] != pt[0]) {
+            fprintf(stderr, "  FAIL: getSightPoint NaN\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbPlaneProjector and SbLineProjector
+// =========================================================================
+static int runProjectorTests()
+{
+    int failures = 0;
+
+    // --- SbPlaneProjector ---
+    {
+        SbViewVolume vv;
+        vv.perspective(float(M_PI/3), 1.0f, 1.0f, 100.0f);
+        SbMatrix workSpace = SbMatrix::identity();
+
+        SbPlaneProjector pp(SbPlane(SbVec3f(0,0,1), 0.0f), FALSE);
+        pp.setViewVolume(vv);
+        pp.setWorkingSpace(workSpace);
+
+        if (pp.getPlane().getNormal().length() < 0.5f) {
+            fprintf(stderr, "  FAIL: SbPlaneProjector getPlane\n"); ++failures;
+        }
+        if (pp.isOrientToEye() != FALSE) {
+            fprintf(stderr, "  FAIL: SbPlaneProjector isOrientToEye\n"); ++failures;
+        }
+
+        // copy
+        SbPlaneProjector* copy = static_cast<SbPlaneProjector*>(pp.copy());
+        if (!copy) {
+            fprintf(stderr, "  FAIL: SbPlaneProjector copy null\n"); ++failures;
+        } else {
+            delete copy;
+        }
+
+        // project a point (0.5, 0.5) should give something on the plane
+        SbVec3f pt = pp.project(SbVec2f(0.0f, 0.0f));
+        (void)pt; // just exercise the path; may return invalid if view doesn't hit plane
+    }
+
+    // --- SbLineProjector ---
+    {
+        SbViewVolume vv;
+        vv.perspective(float(M_PI/3), 1.0f, 1.0f, 100.0f);
+
+        SbLineProjector lp;
+        lp.setViewVolume(vv);
+        lp.setWorkingSpace(SbMatrix::identity());
+        lp.setLine(SbLine(SbVec3f(0,0,0), SbVec3f(1,0,0)));
+        if (lp.getLine().getDirection().length() < 0.5f) {
+            fprintf(stderr, "  FAIL: SbLineProjector setLine\n"); ++failures;
+        }
+        SbLineProjector* copy = static_cast<SbLineProjector*>(lp.copy());
+        if (!copy) {
+            fprintf(stderr, "  FAIL: SbLineProjector copy null\n"); ++failures;
+        } else {
+            delete copy;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoSceneManager lifecycle
+// =========================================================================
+static int runSceneManagerLifecycleTests()
+{
+    int failures = 0;
+
+    {
+        SoSceneManager* mgr = new SoSceneManager();
+
+        // setSceneGraph / getSceneGraph
+        SoSeparator* root = new SoSeparator();
+        root->ref();
+        root->addChild(new SoCube());
+        mgr->setSceneGraph(root);
+        if (mgr->getSceneGraph() != root) {
+            fprintf(stderr, "  FAIL: SoSceneManager getSceneGraph\n"); ++failures;
+        }
+
+        // window/size settings
+        mgr->setWindowSize(SbVec2s(800, 600));
+        SbVec2s ws = mgr->getWindowSize();
+        if (ws[0] != 800 || ws[1] != 600) {
+            fprintf(stderr, "  FAIL: SoSceneManager windowSize (got %d %d)\n", ws[0], ws[1]); ++failures;
+        }
+
+        mgr->setSize(SbVec2s(640, 480));
+        SbVec2s sz = mgr->getSize();
+        if (sz[0] != 640 || sz[1] != 480) {
+            fprintf(stderr, "  FAIL: SoSceneManager size (got %d %d)\n", sz[0], sz[1]); ++failures;
+        }
+
+        mgr->setOrigin(SbVec2s(10, 20));
+        SbVec2s orig = mgr->getOrigin();
+        if (orig[0] != 10 || orig[1] != 20) {
+            fprintf(stderr, "  FAIL: SoSceneManager origin (got %d %d)\n", orig[0], orig[1]); ++failures;
+        }
+
+        // viewport region
+        SbViewportRegion vp(800, 600);
+        mgr->setViewportRegion(vp);
+        SbVec2s vpSize = mgr->getViewportRegion().getWindowSize();
+        if (vpSize[0] != 800) {
+            fprintf(stderr, "  FAIL: SoSceneManager viewportRegion\n"); ++failures;
+        }
+
+        // background color
+        mgr->setBackgroundColor(SbColor(0.1f, 0.2f, 0.3f));
+        SbColor bg = mgr->getBackgroundColor();
+        if (!approxEqual(bg[0], 0.1f)) {
+            fprintf(stderr, "  FAIL: SoSceneManager bgColor (got %f)\n", bg[0]); ++failures;
+        }
+
+        // RGB mode
+        mgr->setRGBMode(TRUE);
+        if (!mgr->isRGBMode()) {
+            fprintf(stderr, "  FAIL: SoSceneManager rgbMode\n"); ++failures;
+        }
+
+        // camera
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->ref();
+        mgr->setCamera(cam);
+        if (mgr->getCamera() != cam) {
+            fprintf(stderr, "  FAIL: SoSceneManager getCamera\n"); ++failures;
+        }
+        cam->unref();
+
+        delete mgr;
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoText2, SoText3, SoAsciiText - field access and bbox
+// =========================================================================
+static int runTextNodeTests()
+{
+    int failures = 0;
+
+    // --- SoText2 ---
+    {
+        SoText2* txt = new SoText2();
+        txt->ref();
+        txt->string.set1Value(0, "Hello");
+        txt->spacing.setValue(1.2f);
+        txt->justification.setValue(SoText2::CENTER);
+        if (strcmp(txt->string[0].getString(), "Hello") != 0) {
+            fprintf(stderr, "  FAIL: SoText2 string\n"); ++failures;
+        }
+        if (!approxEqual(txt->spacing.getValue(), 1.2f)) {
+            fprintf(stderr, "  FAIL: SoText2 spacing\n"); ++failures;
+        }
+        // BBox will need a font but should not crash
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoFont* font = new SoFont();
+        font->size.setValue(10.0f);
+        root->addChild(font);
+        root->addChild(txt);
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        root->unref();
+        txt->unref();
+    }
+
+    // --- SoText3 ---
+    {
+        SoText3* txt = new SoText3();
+        txt->ref();
+        txt->string.set1Value(0, "Test3D");
+        txt->spacing.setValue(1.0f);
+        if (strcmp(txt->string[0].getString(), "Test3D") != 0) {
+            fprintf(stderr, "  FAIL: SoText3 string\n"); ++failures;
+        }
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoFont* font = new SoFont();
+        font->size.setValue(10.0f);
+        root->addChild(font);
+        root->addChild(txt);
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        root->unref();
+        txt->unref();
+    }
+
+    // --- SoAsciiText ---
+    {
+        SoAsciiText* txt = new SoAsciiText();
+        txt->ref();
+        txt->string.set1Value(0, "ASCII");
+        if (strcmp(txt->string[0].getString(), "ASCII") != 0) {
+            fprintf(stderr, "  FAIL: SoAsciiText string\n"); ++failures;
+        }
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoFont* font = new SoFont();
+        font->size.setValue(10.0f);
+        root->addChild(font);
+        root->addChild(txt);
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        root->unref();
+        txt->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoTimerSensor (schedule, interval, baseTime)
+// =========================================================================
+static int runTimerSensorTests()
+{
+    int failures = 0;
+
+    // --- basic interval and baseTime ---
+    {
+        SoTimerSensor ts;
+        ts.setInterval(SbTime(0.1));
+        SbTime interval = ts.getInterval();
+        if (!approxEqual(float(interval.getValue()), 0.1f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SoTimerSensor interval (got %f)\n", float(interval.getValue())); ++failures;
+        }
+
+        SbTime base(1000.0);
+        ts.setBaseTime(base);
+        SbTime gotBase = ts.getBaseTime();
+        if (!approxEqual(float(gotBase.getValue()), 1000.0f, 1.0f)) {
+            fprintf(stderr, "  FAIL: SoTimerSensor baseTime (got %f)\n", float(gotBase.getValue())); ++failures;
+        }
+
+        // schedule/unschedule should not crash
+        ts.schedule();
+        ts.unschedule();
+    }
+
+    // --- constructor with callback ---
+    {
+        static int tsCount = 0;
+        tsCount = 0;
+        SoTimerSensor ts([](void*, SoSensor*) { ++tsCount; }, nullptr);
+        ts.setInterval(SbTime(0.001));
+        ts.schedule();
+        // Flush - won't fire immediately in unit test context but shouldn't crash
+        SoDB::getSensorManager()->processTimerQueue();
+        SoDB::getSensorManager()->processDelayQueue(TRUE);
+        ts.unschedule();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoPathSensor
+// =========================================================================
+static int runPathSensorTests()
+{
+    int failures = 0;
+
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCube* cube = new SoCube();
+        root->addChild(cube);
+
+        // Build a path to cube
+        SoPath* path = new SoPath(root);
+        path->ref();
+        path->append(0); // cube
+
+        static int pathFireCount = 0;
+        pathFireCount = 0;
+        SoPathSensor ps([](void*, SoSensor*) { ++pathFireCount; }, nullptr);
+        ps.attach(path);
+        if (ps.getAttachedPath() != path) {
+            fprintf(stderr, "  FAIL: SoPathSensor getAttachedPath\n"); ++failures;
+        }
+
+        // Trigger a change on cube
+        cube->width.setValue(5.0f);
+        SoDB::getSensorManager()->processTimerQueue();
+        SoDB::getSensorManager()->processDelayQueue(TRUE);
+        if (pathFireCount == 0) {
+            fprintf(stderr, "  FAIL: SoPathSensor not fired\n"); ++failures;
+        }
+
+        ps.detach();
+        path->unref();
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoSelection node
+// =========================================================================
+static int runSelectionTests()
+{
+    int failures = 0;
+
+    {
+        SoSelection* sel = new SoSelection();
+        sel->ref();
+        SoCube* cube = new SoCube(); cube->setName("selCube");
+        SoSphere* sphere = new SoSphere(); sphere->setName("selSphere");
+        sel->addChild(cube);
+        sel->addChild(sphere);
+
+        // select by node
+        sel->select(cube);
+        if (!sel->isSelected(cube)) {
+            fprintf(stderr, "  FAIL: SoSelection select node\n"); ++failures;
+        }
+        if (sel->getNumSelected() != 1) {
+            fprintf(stderr, "  FAIL: SoSelection getNumSelected (got %d)\n", sel->getNumSelected()); ++failures;
+        }
+
+        // toggle
+        sel->toggle(sphere);
+        if (!sel->isSelected(sphere)) {
+            fprintf(stderr, "  FAIL: SoSelection toggle\n"); ++failures;
+        }
+        if (sel->getNumSelected() != 2) {
+            fprintf(stderr, "  FAIL: SoSelection getNumSelected after toggle (got %d)\n", sel->getNumSelected()); ++failures;
+        }
+
+        // deselect
+        sel->deselect(cube);
+        if (sel->isSelected(cube)) {
+            fprintf(stderr, "  FAIL: SoSelection deselect node\n"); ++failures;
+        }
+
+        // deselectAll
+        sel->deselectAll();
+        if (sel->getNumSelected() != 0) {
+            fprintf(stderr, "  FAIL: SoSelection deselectAll\n"); ++failures;
+        }
+
+        sel->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoDecomposeVec3f, SoComposeRotation engines
+// =========================================================================
+static int runEngineComposeTests()
+{
+    int failures = 0;
+
+    // --- SoDecomposeVec3f ---
+    {
+        SoDecomposeVec3f* eng = new SoDecomposeVec3f();
+        eng->ref();
+        eng->vector.set1Value(0, SbVec3f(3.0f, 4.0f, 5.0f));
+
+        SoSFFloat xOut, yOut, zOut;
+        xOut.connectFrom(&eng->x);
+        yOut.connectFrom(&eng->y);
+        zOut.connectFrom(&eng->z);
+
+        if (!approxEqual(xOut.getValue(), 3.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: SoDecomposeVec3f x (got %f)\n", xOut.getValue()); ++failures;
+        }
+        if (!approxEqual(yOut.getValue(), 4.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: SoDecomposeVec3f y (got %f)\n", yOut.getValue()); ++failures;
+        }
+        if (!approxEqual(zOut.getValue(), 5.0f, 0.1f)) {
+            fprintf(stderr, "  FAIL: SoDecomposeVec3f z (got %f)\n", zOut.getValue()); ++failures;
+        }
+
+        xOut.disconnect(); yOut.disconnect(); zOut.disconnect();
+        eng->unref();
+    }
+
+    // --- SoComposeRotation ---
+    {
+        SoComposeRotation* eng = new SoComposeRotation();
+        eng->ref();
+        eng->axis.set1Value(0, SbVec3f(0,0,1));
+        eng->angle.set1Value(0, float(M_PI/2));
+
+        SoSFRotation outField;
+        outField.connectFrom(&eng->rotation);
+        SbRotation rot = outField.getValue();
+        SbVec3f ax; float ang;
+        rot.getValue(ax, ang);
+        if (!approxEqual(ang, float(M_PI/2), 0.1f)) {
+            fprintf(stderr, "  FAIL: SoComposeRotation angle (got %f)\n", ang); ++failures;
+        }
+        outField.disconnect();
+        eng->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoPointSet and SoLineSet bbox
+// =========================================================================
+static int runPointLineSetTests()
+{
+    int failures = 0;
+
+    // --- SoPointSet ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(0,0,0));
+        coords->point.set1Value(1, SbVec3f(1,0,0));
+        coords->point.set1Value(2, SbVec3f(0,1,0));
+        root->addChild(coords);
+        SoPointSet* ps = new SoPointSet();
+        root->addChild(ps);
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        if (bba.getBoundingBox().isEmpty()) {
+            fprintf(stderr, "  FAIL: SoPointSet bbox empty\n"); ++failures;
+        }
+        SoGetPrimitiveCountAction pca;
+        pca.apply(root);
+        if (pca.getPointCount() < 3) {
+            fprintf(stderr, "  FAIL: SoPointSet point count (got %d)\n", pca.getPointCount()); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- SoLineSet ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,0,0));
+        coords->point.set1Value(1, SbVec3f( 1,0,0));
+        root->addChild(coords);
+        SoLineSet* ls = new SoLineSet();
+        ls->numVertices.set1Value(0, 2);
+        root->addChild(ls);
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        if (bba.getBoundingBox().isEmpty()) {
+            fprintf(stderr, "  FAIL: SoLineSet bbox empty\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- SoIndexedLineSet ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1,-1,0));
+        coords->point.set1Value(1, SbVec3f( 1,-1,0));
+        coords->point.set1Value(2, SbVec3f( 0, 1,0));
+        root->addChild(coords);
+        SoIndexedLineSet* ils = new SoIndexedLineSet();
+        int32_t indices[] = {0, 1, 2, 0, -1};
+        ils->coordIndex.setValues(0, 5, indices);
+        root->addChild(ils);
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512, 512));
+        bba.apply(root);
+        if (bba.getBoundingBox().isEmpty()) {
+            fprintf(stderr, "  FAIL: SoIndexedLineSet bbox empty\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbDPViewVolume deeper paths
+// =========================================================================
+static int runDPViewVolumeFullTests()
+{
+    int failures = 0;
+
+    // --- ortho full API ---
+    {
+        SbDPViewVolume vv;
+        vv.ortho(-2.0, 2.0, -2.0, 2.0, 1.0, 100.0);
+
+        double nd = vv.getNearDist();
+        if (nd <= 0.0) {
+            fprintf(stderr, "  FAIL: SbDPViewVolume nearDist (got %f)\n", nd); ++failures;
+        }
+        double w = vv.getWidth();
+        double h = vv.getHeight();
+        if (!approxEqual(float(w), 4.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbDPViewVolume ortho width (got %f)\n", w); ++failures;
+        }
+        (void)h;
+
+        // getMatrices
+        SbDPMatrix affine, proj;
+        vv.getMatrices(affine, proj);
+        // Matrices should not be all zeros
+        if (affine[0][0] == 0.0 && affine[1][1] == 0.0) {
+            fprintf(stderr, "  FAIL: SbDPViewVolume getMatrices identity zeros\n"); ++failures;
+        }
+
+        // narrow
+        SbDPViewVolume narrowed = vv.narrow(-1.0, -1.0, 1.0, 1.0);
+        if (narrowed.getWidth() <= 0.0) {
+            fprintf(stderr, "  FAIL: SbDPViewVolume narrow\n"); ++failures;
+        }
+
+        // getPlane
+        SbPlane pl = vv.getPlane(vv.getNearDist());
+        if (pl.getNormal().length() < 0.5f) {
+            fprintf(stderr, "  FAIL: SbDPViewVolume getPlane\n"); ++failures;
+        }
+    }
+
+    // --- perspective full API ---
+    {
+        SbDPViewVolume vv;
+        vv.perspective(M_PI/3, 1.5, 0.1, 100.0);
+
+        double nd = vv.getNearDist();
+        if (nd <= 0.0) {
+            fprintf(stderr, "  FAIL: SbDPViewVolume persp nearDist (got %f)\n", nd); ++failures;
+        }
+
+        SbVec3d pt = vv.getSightPoint(5.0);
+        if (pt[0] != pt[0]) { // NaN check
+            fprintf(stderr, "  FAIL: SbDPViewVolume getSightPoint NaN\n"); ++failures;
+        }
+
+        SbVec3d pp = vv.getProjectionPoint();
+        SbVec3d pd = vv.getProjectionDirection();
+        if (pd.length() < 0.5) {
+            fprintf(stderr, "  FAIL: SbDPViewVolume projDirection\n"); ++failures;
+        }
+        (void)pp;
+
+        // projectToScreen
+        SbVec3d worldPt(0.0, 0.0, -10.0);
+        SbVec3d screenDst;
+        vv.projectToScreen(worldPt, screenDst);
+        // center of view should project near screen center
+        if (screenDst[0] < -0.1 || screenDst[0] > 1.1) {
+            fprintf(stderr, "  FAIL: SbDPViewVolume projectToScreen x (got %f)\n", float(screenDst[0])); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoSearchAction - find ALL matching nodes
+// =========================================================================
+static int runSearchAllTests()
+{
+    int failures = 0;
+
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube());
+        root->addChild(new SoCube());
+        root->addChild(new SoCube());
+        root->addChild(new SoSphere());
+
+        SoSearchAction sa;
+        sa.setType(SoCube::getClassTypeId());
+        sa.setFind(SoSearchAction::TYPE);
+        sa.setInterest(SoSearchAction::ALL);
+        sa.apply(root);
+
+        SoPathList& paths = sa.getPaths();
+        if (paths.getLength() != 3) {
+            fprintf(stderr, "  FAIL: searchAction ALL cubes (got %d)\n", paths.getLength()); ++failures;
+        }
+
+        root->unref();
+    }
+
+    // --- search first/last ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCube* c1 = new SoCube(); c1->setName("first");
+        SoCube* c2 = new SoCube(); c2->setName("second");
+        root->addChild(c1);
+        root->addChild(c2);
+
+        SoSearchAction sa;
+        sa.setType(SoCube::getClassTypeId());
+        sa.setFind(SoSearchAction::TYPE);
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+        if (sa.getPath() == nullptr || sa.getPath()->getTail() != c1) {
+            fprintf(stderr, "  FAIL: searchAction FIRST\n"); ++failures;
+        }
+
+        sa.reset();
+        sa.setType(SoCube::getClassTypeId());
+        sa.setFind(SoSearchAction::TYPE);
+        sa.setInterest(SoSearchAction::LAST);
+        sa.apply(root);
+        if (sa.getPath() == nullptr || sa.getPath()->getTail() != c2) {
+            fprintf(stderr, "  FAIL: searchAction LAST\n"); ++failures;
+        }
+
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoCallbackAction triangle/line/point callbacks
+// =========================================================================
+static int runCallbackActionAdvancedTests()
+{
+    int failures = 0;
+
+    // --- triangle count via callback ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube());
+
+        static int triCount = 0;
+        triCount = 0;
+        SoCallbackAction ca;
+        ca.addTriangleCallback(SoShape::getClassTypeId(),
+            [](void*, SoCallbackAction*, const SoPrimitiveVertex*,
+               const SoPrimitiveVertex*, const SoPrimitiveVertex*) {
+                ++triCount;
+            }, nullptr);
+        ca.apply(root);
+        if (triCount == 0) {
+            fprintf(stderr, "  FAIL: cube triangle callback (got %d)\n", triCount); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- line segment callback ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(0,0,0));
+        coords->point.set1Value(1, SbVec3f(1,0,0));
+        root->addChild(coords);
+        SoLineSet* ls = new SoLineSet();
+        ls->numVertices.set1Value(0, 2);
+        root->addChild(ls);
+
+        static int lineCount = 0;
+        lineCount = 0;
+        SoCallbackAction ca;
+        ca.addLineSegmentCallback(SoShape::getClassTypeId(),
+            [](void*, SoCallbackAction*, const SoPrimitiveVertex*,
+               const SoPrimitiveVertex*) {
+                ++lineCount;
+            }, nullptr);
+        ca.apply(root);
+        if (lineCount == 0) {
+            fprintf(stderr, "  FAIL: lineSet line segment callback (got %d)\n", lineCount); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- point callback ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(0,0,0));
+        coords->point.set1Value(1, SbVec3f(1,0,0));
+        root->addChild(coords);
+        root->addChild(new SoPointSet());
+
+        static int pointCount = 0;
+        pointCount = 0;
+        SoCallbackAction ca;
+        ca.addPointCallback(SoShape::getClassTypeId(),
+            [](void*, SoCallbackAction*, const SoPrimitiveVertex*) {
+                ++pointCount;
+            }, nullptr);
+        ca.apply(root);
+        if (pointCount < 2) {
+            fprintf(stderr, "  FAIL: pointSet point callback (got %d)\n", pointCount); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+REGISTER_TEST(unit_matrix_advanced, ObolTest::TestCategory::Base,
+    "SbMatrix: det3/det4, transpose, LUDecomposition/BackSubstitution, getTransform, factor, multVecMatrix(Vec4f)",
+    e.has_visual = false;
+    e.run_unit = runMatrixAdvancedTests;
+);
+
+REGISTER_TEST(unit_rotation_slerp, ObolTest::TestCategory::Base,
+    "SbRotation: slerp(0.5, boundary), setValue(from,to), identity slerp",
+    e.has_visual = false;
+    e.run_unit = runRotationSlerpTests;
+);
+
+REGISTER_TEST(unit_viewvolume_advanced, ObolTest::TestCategory::Base,
+    "SbViewVolume: projectPointToLine, getAlignRotation, narrow(box), getWorldToScreenScale, getSightPoint",
+    e.has_visual = false;
+    e.run_unit = runViewVolumeAdvancedTests;
+);
+
+REGISTER_TEST(unit_projectors, ObolTest::TestCategory::Base,
+    "SbPlaneProjector (setPlane/isOrientToEye/project/copy), SbLineProjector (setLine/copy)",
+    e.has_visual = false;
+    e.run_unit = runProjectorTests;
+);
+
+REGISTER_TEST(unit_scene_manager, ObolTest::TestCategory::Misc,
+    "SoSceneManager: setSceneGraph, windowSize, size, origin, viewport, background, camera",
+    e.has_visual = false;
+    e.run_unit = runSceneManagerLifecycleTests;
+);
+
+REGISTER_TEST(unit_text_nodes, ObolTest::TestCategory::Nodes,
+    "SoText2 (string/spacing/justification/bbox), SoText3, SoAsciiText",
+    e.has_visual = false;
+    e.run_unit = runTextNodeTests;
+);
+
+REGISTER_TEST(unit_timer_sensor, ObolTest::TestCategory::Sensors,
+    "SoTimerSensor: interval, baseTime, schedule/unschedule, callback",
+    e.has_visual = false;
+    e.run_unit = runTimerSensorTests;
+);
+
+REGISTER_TEST(unit_path_sensor, ObolTest::TestCategory::Sensors,
+    "SoPathSensor: attach/getAttachedPath/fire/detach",
+    e.has_visual = false;
+    e.run_unit = runPathSensorTests;
+);
+
+REGISTER_TEST(unit_selection, ObolTest::TestCategory::Nodes,
+    "SoSelection: select/deselect/toggle/isSelected/deselectAll/getNumSelected",
+    e.has_visual = false;
+    e.run_unit = runSelectionTests;
+);
+
+REGISTER_TEST(unit_engine_compose, ObolTest::TestCategory::Engines,
+    "SoDecomposeVec3f (x/y/z output), SoComposeRotation (axis/angle → rotation)",
+    e.has_visual = false;
+    e.run_unit = runEngineComposeTests;
+);
+
+REGISTER_TEST(unit_point_line_set, ObolTest::TestCategory::Nodes,
+    "SoPointSet (bbox/primCount), SoLineSet (bbox), SoIndexedLineSet (bbox)",
+    e.has_visual = false;
+    e.run_unit = runPointLineSetTests;
+);
+
+REGISTER_TEST(unit_dp_viewvolume_advanced, ObolTest::TestCategory::Base,
+    "SbDPViewVolume: ortho/perspective full API (nearDist, getMatrices, narrow, getPlane, getSightPoint, projectToScreen)",
+    e.has_visual = false;
+    e.run_unit = runDPViewVolumeFullTests;
+);
+
+REGISTER_TEST(unit_search_all, ObolTest::TestCategory::Actions,
+    "SoSearchAction: ALL interest, FIRST/LAST, multiple matches",
+    e.has_visual = false;
+    e.run_unit = runSearchAllTests;
+);
+
+REGISTER_TEST(unit_callback_advanced, ObolTest::TestCategory::Actions,
+    "SoCallbackAction: triangle/lineSegment/point callbacks with cube/lineset/pointset",
+    e.has_visual = false;
+    e.run_unit = runCallbackActionAdvancedTests;
 );
 
 } // anonymous namespace
