@@ -97,11 +97,6 @@
       much higher level interface abstraction than standard C/C++
       arrays.
 
-  Note: there are some field classes which have been obsoleted from the
-  Open Inventor API. They are: SoSFLong, SoSFULong, SoMFLong and
-  SoMFULong. You should use these classes instead (respectively):
-  SoSFInt32, SoSFUInt32, SoMFInt32 and SoMFUInt32.
-
   \TOOLMAKER_REF
 
   \sa SoFieldContainer, SoFieldData
@@ -2568,27 +2563,6 @@ SoField::initClasses(void)
   SoMFVec4ui32::initClass();
   SoMFVec4f::initClass();
   SoMFVec4d::initClass();
-
-  // Create these obsoleted types for backwards compatibility. They
-  // are typedef'ed to the types which obsoleted them, but this is
-  // needed so it will also be possible to use SoType::fromName() with
-  // the old names and create instances in that manner.
-  //
-  // FIXME: SoType::fromName("oldname") == SoType::fromName("newname")
-  // will fail, but this can be solved with a hack in
-  // SoType::operator==(). Do we _want_ to implement this hack,
-  // though? It'd be ugly as hell.  19991109 mortene.
-  // Does it need to be so ugly?  == could compare createInstance
-  // pointers if both have is set?  But would it be correct, and would
-  // any code depend on or benefit from such behaviour?  20070518 larsa
-  SoType::createType(SoSField::getClassTypeId(), "SFLong",
-                     &SoSFInt32::createInstance);
-  SoType::createType(SoSField::getClassTypeId(), "SFULong",
-                     &SoSFUInt32::createInstance);
-  SoType::createType(SoMField::getClassTypeId(), "MFLong",
-                     &SoMFInt32::createInstance);
-  SoType::createType(SoMField::getClassTypeId(), "MFULong",
-                     &SoMFUInt32::createInstance);
 }
 
 #undef FLAG_ALIVE_PATTERN
