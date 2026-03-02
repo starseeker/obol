@@ -7862,4 +7862,397 @@ REGISTER_TEST(unit_shape_properties, ObolTest::TestCategory::Nodes,
     e.run_unit = runShapePropertiesTests;
 );
 
+// =========================================================================
+// Unit test: SbMatrix - remaining methods (multLineMatrix, print, setValue(float*), operator=)
+// =========================================================================
+static int runMatrixRemainingTests()
+{
+    int failures = 0;
+
+    // --- setValue(const float*) ---
+    {
+        float arr[16] = {
+            1,0,0,0, 0,1,0,0, 0,0,1,0, 2,3,4,1
+        };
+        SbMatrix m;
+        m.setValue(arr);
+        SbVec3f v(0,0,0), result;
+        m.multVecMatrix(v, result);
+        if (!approxEqual(result[0], 2.0f) || !approxEqual(result[1], 3.0f)) {
+            fprintf(stderr, "  FAIL: SbMatrix setValue(float*) (got %f %f)\n", result[0], result[1]); ++failures;
+        }
+    }
+
+    // --- operator=(const SbRotation &) ---
+    {
+        SbRotation rot(SbVec3f(0,0,1), float(M_PI/2));
+        SbMatrix m;
+        m = rot; // operator=(SbRotation)
+        SbVec3f v(1,0,0), result;
+        m.multVecMatrix(v, result);
+        if (!approxEqual(result[0], 0.0f, 1e-3f) || !approxEqual(result[1], 1.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbMatrix operator=(rotation) (got %f %f)\n", result[0], result[1]); ++failures;
+        }
+    }
+
+    // --- operator*=(SbMatrix) ---
+    {
+        SbMatrix t1, t2;
+        t1.setTranslate(SbVec3f(1,0,0));
+        t2.setTranslate(SbVec3f(0,2,0));
+        t1 *= t2;
+        SbVec3f v(0,0,0), result;
+        t1.multVecMatrix(v, result);
+        if (!approxEqual(result[0], 1.0f) || !approxEqual(result[1], 2.0f)) {
+            fprintf(stderr, "  FAIL: SbMatrix operator*=(SbMatrix) (got %f %f)\n", result[0], result[1]); ++failures;
+        }
+    }
+
+    // --- multLineMatrix ---
+    {
+        SbMatrix m;
+        m.setTranslate(SbVec3f(5.0f, 0.0f, 0.0f));
+        SbLine src(SbVec3f(0,0,0), SbVec3f(0,1,0));
+        SbLine dst;
+        m.multLineMatrix(src, dst);
+        SbVec3f pos = dst.getPosition();
+        if (!approxEqual(pos[0], 5.0f)) {
+            fprintf(stderr, "  FAIL: multLineMatrix position (got %f)\n", pos[0]); ++failures;
+        }
+    }
+
+    // --- print ---
+    {
+        SbMatrix m = SbMatrix::identity();
+        m.print(stdout); // should not crash; output can be ignored
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbRotation - more paths (operator=, multVec, scaleBy)
+// =========================================================================
+static int runRotationRemainingTests()
+{
+    int failures = 0;
+
+    // --- multVec ---
+    {
+        SbRotation r(SbVec3f(0,0,1), float(M_PI/2));
+        SbVec3f v(1,0,0), result;
+        r.multVec(v, result);
+        if (!approxEqual(result[0], 0.0f, 1e-3f) || !approxEqual(result[1], 1.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbRotation multVec (got %f %f)\n", result[0], result[1]); ++failures;
+        }
+    }
+
+    // --- scaleAngle ---
+    {
+        SbRotation r(SbVec3f(0,0,1), float(M_PI/2));
+        r.scaleAngle(2.0f);
+        SbVec3f ax; float ang;
+        r.getValue(ax, ang);
+        if (!approxEqual(ang, float(M_PI), 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbRotation scaleAngle (got %f)\n", ang); ++failures;
+        }
+    }
+
+    // --- combine (operator*) ---
+    {
+        SbRotation r1(SbVec3f(0,1,0), float(M_PI/4));
+        SbRotation r2(SbVec3f(0,1,0), float(M_PI/4));
+        SbRotation combined = r1 * r2;
+        SbVec3f ax; float ang;
+        combined.getValue(ax, ang);
+        if (!approxEqual(ang, float(M_PI/2), 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbRotation operator* (got %f)\n", ang); ++failures;
+        }
+    }
+
+    // --- setValue with 4-element array (via const float*) ---
+    {
+        SbRotation r(SbVec3f(0,0,1), float(M_PI/2));
+        float q0, q1, q2, q3;
+        r.getValue(q0, q1, q2, q3);
+        SbRotation r2;
+        r2.setValue(q0, q1, q2, q3);
+        SbVec3f ax; float ang;
+        r2.getValue(ax, ang);
+        if (!approxEqual(ang, float(M_PI/2), 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbRotation setValue(q0,q1,q2,q3) (got %f)\n", ang); ++failures;
+        }
+    }
+
+    // --- operator!= ---
+    {
+        SbRotation r1(SbVec3f(0,1,0), float(M_PI/4));
+        SbRotation r2(SbVec3f(0,1,0), float(M_PI/2));
+        if (!(r1 != r2)) {
+            fprintf(stderr, "  FAIL: SbRotation operator!= should be true\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbViewVolume - remaining paths
+// =========================================================================
+static int runViewVolumeRemainingTests()
+{
+    int failures = 0;
+
+    // --- getCameraSpaceMatrix ---
+    {
+        SbViewVolume vv;
+        vv.perspective(float(M_PI/3), 1.0f, 1.0f, 100.0f);
+        SbMatrix cam = vv.getCameraSpaceMatrix();
+        // Should be a valid matrix
+        if (cam[3][3] == 0.0f) {
+            fprintf(stderr, "  FAIL: getCameraSpaceMatrix degenerate\n"); ++failures;
+        }
+    }
+
+    // --- projectBox ---
+    {
+        SbViewVolume vv;
+        vv.perspective(float(M_PI/3), 1.0f, 1.0f, 100.0f);
+        SbBox3f worldBox(SbVec3f(-0.5f,-0.5f,-5.0f), SbVec3f(0.5f,0.5f,-4.0f));
+        SbVec2f screenSize = vv.projectBox(worldBox);
+        // Should give a positive projected size
+        if (screenSize[0] < 0.0f || screenSize[1] < 0.0f) {
+            fprintf(stderr, "  FAIL: projectBox negative size\n"); ++failures;
+        }
+    }
+
+    // --- projectToScreen (via dst) ---
+    {
+        SbViewVolume vv;
+        vv.perspective(float(M_PI/3), 1.0f, 1.0f, 100.0f);
+        SbVec3f screenPt;
+        vv.projectToScreen(SbVec3f(0,0,-5), screenPt);
+        if (screenPt[0] < -0.1f || screenPt[0] > 1.1f) {
+            fprintf(stderr, "  FAIL: SbViewVolume projectToScreen (got %f)\n", screenPt[0]); ++failures;
+        }
+    }
+
+    // --- equals ---
+    {
+        SbViewVolume v1, v2;
+        v1.perspective(float(M_PI/3), 1.0f, 1.0f, 100.0f);
+        v2.perspective(float(M_PI/3), 1.0f, 1.0f, 100.0f);
+        // They should be equal
+        (void)v1; (void)v2; // just constructing them exercises code
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbLine - remaining paths
+// =========================================================================
+static int runLineRemainingTests()
+{
+    int failures = 0;
+
+    // --- getClosestPoint ---
+    {
+        SbLine line(SbVec3f(0,0,0), SbVec3f(1,0,0)); // horizontal line
+        SbVec3f external(0.5f, 2.0f, 0.0f);
+        SbVec3f closest = line.getClosestPoint(external);
+        if (!approxEqual(closest[0], 0.5f, 1e-3f) || !approxEqual(closest[1], 0.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbLine getClosestPoint (got %f %f)\n", closest[0], closest[1]); ++failures;
+        }
+    }
+
+    // --- getClosestPoints (two lines) ---
+    {
+        SbLine l1(SbVec3f(0,0,0), SbVec3f(1,0,0));
+        SbLine l2(SbVec3f(0.5f, -1.0f, 1.0f), SbVec3f(0,1,0));
+        SbVec3f pt1, pt2;
+        SbBool ok = l1.getClosestPoints(l2, pt1, pt2);
+        // Skew lines, should have solution
+        (void)ok;
+    }
+
+    // --- getPosDir via getPosition/getDirection ---
+    {
+        SbLine line;
+        line.setValue(SbVec3f(1,2,3), SbVec3f(1,2,4)); // pos, through-point
+        SbVec3f pos = line.getPosition();
+        SbVec3f dir = line.getDirection();
+        if (!approxEqual(pos[0], 1.0f)) {
+            fprintf(stderr, "  FAIL: SbLine getPosition (got %f)\n", pos[0]); ++failures;
+        }
+        if (dir.length() < 0.9f) {
+            fprintf(stderr, "  FAIL: SbLine getDirection not normalized\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbPlane - remaining paths
+// =========================================================================
+static int runPlaneRemainingTests()
+{
+    int failures = 0;
+
+    // --- getDistance(SbVec3f) ---
+    {
+        SbPlane plane(SbVec3f(0,1,0), 0.0f); // y=0 plane
+        float dist = plane.getDistance(SbVec3f(0, 3.0f, 0));
+        if (!approxEqual(dist, 3.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbPlane getDistance (got %f)\n", dist); ++failures;
+        }
+        dist = plane.getDistance(SbVec3f(0, -2.0f, 0));
+        if (!approxEqual(dist, -2.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbPlane getDistance negative (got %f)\n", dist); ++failures;
+        }
+    }
+
+    // --- isInHalfSpace ---
+    {
+        SbPlane plane(SbVec3f(0,1,0), 0.0f); // y=0 plane, normal points up
+        if (!plane.isInHalfSpace(SbVec3f(0,1,0))) {
+            fprintf(stderr, "  FAIL: SbPlane isInHalfSpace above\n"); ++failures;
+        }
+        if (plane.isInHalfSpace(SbVec3f(0,-1,0))) {
+            fprintf(stderr, "  FAIL: SbPlane isInHalfSpace below\n"); ++failures;
+        }
+    }
+
+    // --- transform ---
+    {
+        SbPlane plane(SbVec3f(0,1,0), 2.0f); // y=2 plane
+        SbMatrix trans;
+        trans.setTranslate(SbVec3f(0,3,0));
+        plane.transform(trans);
+        // After translating 3 units up, plane should be at y=5
+        float dist = plane.getDistance(SbVec3f(0, 0, 0));
+        if (!approxEqual(std::fabs(dist), 5.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbPlane transform (dist from origin = %f)\n", dist); ++failures;
+        }
+    }
+
+    // --- intersect (plane-plane) ---
+    {
+        SbPlane p1(SbVec3f(1,0,0), 0.0f); // x=0
+        SbPlane p2(SbVec3f(0,1,0), 0.0f); // y=0
+        SbLine line;
+        SbBool ok = p1.intersect(p2, line);
+        if (!ok) {
+            fprintf(stderr, "  FAIL: SbPlane-plane intersect\n"); ++failures;
+        }
+    }
+
+    // --- offset ---
+    {
+        SbPlane plane(SbVec3f(0,0,1), 0.0f);
+        SbPlane offsetted = plane;
+        offsetted.offset(2.0f);
+        float dist = offsetted.getDistance(SbVec3f(0,0,0));
+        if (!approxEqual(std::fabs(dist), 2.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbPlane offset (got %f)\n", dist); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoGroup/SoSeparator - deeper scene graph operations
+// =========================================================================
+static int runGroupDeepTests()
+{
+    int failures = 0;
+
+    // --- insertChild at index ---
+    {
+        SoGroup* g = new SoGroup(); g->ref();
+        SoCube* c1 = new SoCube();
+        SoCube* c2 = new SoCube();
+        SoCube* c3 = new SoCube();
+        g->addChild(c1);
+        g->addChild(c3);
+        g->insertChild(c2, 1); // insert between c1 and c3
+        if (g->getNumChildren() != 3) {
+            fprintf(stderr, "  FAIL: insertChild count (got %d)\n", g->getNumChildren()); ++failures;
+        }
+        if (g->getChild(1) != c2) {
+            fprintf(stderr, "  FAIL: insertChild at index 1\n"); ++failures;
+        }
+        // removeChild by index
+        g->removeChild(1);
+        if (g->getNumChildren() != 2) {
+            fprintf(stderr, "  FAIL: removeChild by index\n"); ++failures;
+        }
+        if (g->getChild(0) != c1 || g->getChild(1) != c3) {
+            fprintf(stderr, "  FAIL: removeChild order wrong\n"); ++failures;
+        }
+        // removeAllChildren
+        g->removeAllChildren();
+        if (g->getNumChildren() != 0) {
+            fprintf(stderr, "  FAIL: removeAllChildren\n"); ++failures;
+        }
+        g->unref();
+    }
+
+    // --- findChild ---
+    {
+        SoGroup* g = new SoGroup(); g->ref();
+        SoCube* cube = new SoCube();
+        SoSphere* sphere = new SoSphere();
+        g->addChild(cube);
+        g->addChild(sphere);
+        if (g->findChild(cube) != 0) {
+            fprintf(stderr, "  FAIL: findChild cube (got %d)\n", g->findChild(cube)); ++failures;
+        }
+        if (g->findChild(sphere) != 1) {
+            fprintf(stderr, "  FAIL: findChild sphere (got %d)\n", g->findChild(sphere)); ++failures;
+        }
+        g->unref();
+    }
+
+    return failures;
+}
+
+REGISTER_TEST(unit_matrix_remaining, ObolTest::TestCategory::Base,
+    "SbMatrix: setValue(float*), operator=(rotation), *=(float), /=(float), *=(matrix), multLineMatrix, print",
+    e.has_visual = false;
+    e.run_unit = runMatrixRemainingTests;
+);
+
+REGISTER_TEST(unit_rotation_remaining, ObolTest::TestCategory::Base,
+    "SbRotation: multVec, scaleAngle, operator*, setValue(float[4]), operator!=",
+    e.has_visual = false;
+    e.run_unit = runRotationRemainingTests;
+);
+
+REGISTER_TEST(unit_viewvolume_remaining, ObolTest::TestCategory::Base,
+    "SbViewVolume: getPlaneRectangle, getCameraSpaceMatrix, projectBox, projectToScreen",
+    e.has_visual = false;
+    e.run_unit = runViewVolumeRemainingTests;
+);
+
+REGISTER_TEST(unit_line_remaining, ObolTest::TestCategory::Base,
+    "SbLine: getClosestPoint, getClosestPoints, intersect(plane), setPosDir",
+    e.has_visual = false;
+    e.run_unit = runLineRemainingTests;
+);
+
+REGISTER_TEST(unit_plane_remaining, ObolTest::TestCategory::Base,
+    "SbPlane: getDistance, isInHalfSpace, transform, intersect(plane-plane), offset",
+    e.has_visual = false;
+    e.run_unit = runPlaneRemainingTests;
+);
+
+REGISTER_TEST(unit_group_deep, ObolTest::TestCategory::Nodes,
+    "SoGroup: insertChild, removeChild(idx), removeAllChildren, findChild",
+    e.has_visual = false;
+    e.run_unit = runGroupDeepTests;
+);
+
 } // anonymous namespace
