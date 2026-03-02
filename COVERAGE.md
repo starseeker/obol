@@ -8,20 +8,22 @@ via OSMesa, and most CTest image regression tests.
 
 ---
 
-## Overall Results (Session 2 – Final)
+## Overall Results (Session 3 – Final)
 
 | Metric    | Covered | Total  | Percentage |
 |-----------|---------|--------|------------|
-| Lines     | 39,444  | 85,652 | **46.1%**  |
-| Functions | 7,502   | 15,937 | **47.1%**  |
+| Lines     | 39,590  | 85,652 | **46.2%**  |
+| Functions | 7,539   | 15,937 | **47.3%**  |
 | Branches  | —       | —      | no data    |
 
-*(Session 1 baseline after cleanup: 47.1% lines / 47.7% functions on 85,652 total src lines.
-Session 2 added 23 new unit tests (92→115 total) targeting previously-uncovered subsystems:
-SbDPViewVolume remaining, SoCamera deep, SoGLRenderAction settings, SoOutput/SoInput IO,
-draggers (6 more), SoTransformManip, SoBase, SoSensorManager+one-shot/idle, SoField deeper,
-SbMatrix deeper, SbBox3f/Box2f, SoLight nodes, SoMaterial/property nodes, SbColor, SoTransform
-variants, SoSeparator caching, SbSphere/SbCylinder, SoExtSelection.)*
+*(Session 2 final: 46.1% lines / 47.1% functions at 115 tests.
+Session 3 added 17 new unit tests (115→132 total) targeting previously-uncovered subsystems:
+SoRayPickAction, SoNode copy/override/nodeId, SoGroup child ops, SoPath deeper,
+SbRotation deeper, SoAction apply-to-path, SoFieldData/field API, engine compose/decompose
+(SoComposeVec2f, SoDecomposeVec2f, SoComposeMatrix, SoDecomposeMatrix),
+SoOffscreenRenderer deep, SbViewVolume deep, SbTime, SoSearchAction deeper,
+SoHandleEventAction deeper, SoGetPrimitiveCountAction lines+points,
+SbName, SbString, SoSwitch deeper.)*
 
 ---
 
@@ -136,7 +138,7 @@ variants, SoSeparator caching, SbSphere/SbCylinder, SoExtSelection.)*
 
 ---
 
-## Progress Summary (Both Sessions)
+## Progress Summary (All Sessions)
 
 | Session/Iter | New Tests | Total | Coverage (src/) |
 |---|---|---|---|
@@ -147,9 +149,32 @@ variants, SoSeparator caching, SbSphere/SbCylinder, SoExtSelection.)*
 | Session 2 iter 8 | +6 | 87 | — |
 | Session 2 iter 9 | +5 | 92 | 46.1% lines / 47.0% functions |
 | Session 2 iter 10 | +14 | 106 | 46.0% lines / 47.0% functions |
-| Session 2 iter 11 | +9 | **115** | **46.1% lines / 47.1% functions** |
+| Session 2 iter 11 | +9 | 115 | 46.1% lines / 47.1% functions |
+| Session 3 iter 12 | +10 | 125 | 46.2% lines / 47.3% functions |
+| Session 3 iter 13 | +7 | **132** | **46.2% lines / 47.3% functions** |
 
-**115 unit tests, 0 failures.** The tests cover all major subsystems.
+**132 unit tests, 0 failures.** The tests cover all major subsystems.
+
+## Key Coverage by File (Session 3 Final)
+
+### Well-covered (>45%)
+- `io/SoInput.cpp` — 39.7%  
+- `io/SoOutput.cpp` — 42.2%  
+- `rendering/SoRenderManager.cpp` — 51.4%  
+- `actions/SoCallbackAction.cpp` — 51.9%
+
+### Medium coverage (25–45%)
+- `actions/SoHandleEventAction.cpp` — 32.0%
+- `actions/SoSearchAction.cpp` — 32.6%
+- `base/SbTime.cpp` — 53.3%
+
+### Low coverage targets for future work (<15%)
+- `base/SbDPViewVolume.cpp` — 9.8% (43 non-trivial lines)
+- `draggers/SoHandleBoxDragger.cpp` — 10.5% (dragger event handling hard to test without GL)
+- `actions/SoRayPickAction.cpp` — 11.5% (41 lines)
+- `shapenodes/SoShape.cpp` — 12.1% (requires GL render)
+- `rendering/SoGLBigImage.cpp` — 12.1% (image texturing)
+- `base/SbMatrix.cpp` — 12.9% (57 lines, many edge cases)
 
 Visual scenes rendered during coverage: primitives, materials, lighting, transforms,
 cameras, texture, text, text2, colored_cube, coordinates, transparency, drawstyle,

@@ -10987,4 +10987,477 @@ REGISTER_TEST(unit_viewvolume_deep2, ObolTest::TestCategory::Base,
     e.run_unit = runViewVolumeDeepTests2;
 );
 
+// =========================================================================
+// Iteration 13 tests
+// =========================================================================
+
+// Unit test: SbTime API
+static int runSbTimeTests()
+{
+    int failures = 0;
+
+    // --- construction and getValue ---
+    {
+        SbTime t(1.5);
+        if (!approxEqual(float(t.getValue()), 1.5f, 0.001f)) {
+            fprintf(stderr, "  FAIL: SbTime getValue (got %f)\n", t.getValue()); ++failures;
+        }
+    }
+
+    // --- arithmetic ---
+    {
+        SbTime a(2.0), b(1.0);
+        SbTime sum = a + b;
+        if (!approxEqual(float(sum.getValue()), 3.0f, 0.001f)) {
+            fprintf(stderr, "  FAIL: SbTime + (got %f)\n", sum.getValue()); ++failures;
+        }
+        SbTime diff = a - b;
+        if (!approxEqual(float(diff.getValue()), 1.0f, 0.001f)) {
+            fprintf(stderr, "  FAIL: SbTime - (got %f)\n", diff.getValue()); ++failures;
+        }
+    }
+
+    // --- comparison ---
+    {
+        SbTime a(2.0), b(1.0);
+        if (!(a > b)) { fprintf(stderr, "  FAIL: SbTime >\n"); ++failures; }
+        if (!(b < a)) { fprintf(stderr, "  FAIL: SbTime <\n"); ++failures; }
+        if (a == b)   { fprintf(stderr, "  FAIL: SbTime ==\n"); ++failures; }
+        if (!(a != b)){ fprintf(stderr, "  FAIL: SbTime !=\n"); ++failures; }
+    }
+
+    // --- getTimeOfDay ---
+    {
+        SbTime t = SbTime::getTimeOfDay();
+        if (t.getValue() <= 0.0) {
+            fprintf(stderr, "  FAIL: SbTime::getTimeOfDay <= 0\n"); ++failures;
+        }
+    }
+
+    // --- setValue ---
+    {
+        SbTime t;
+        t.setValue(3.14);
+        if (!approxEqual(float(t.getValue()), 3.14f, 0.001f)) {
+            fprintf(stderr, "  FAIL: SbTime setValue\n"); ++failures;
+        }
+        t.setValue(7, 500000); // 7.5 seconds
+        if (!approxEqual(float(t.getValue()), 7.5f, 0.001f)) {
+            fprintf(stderr, "  FAIL: SbTime setValue(sec,usec)\n"); ++failures;
+        }
+    }
+
+    // --- format ---
+    {
+        SbTime t(65.0); // 1 minute 5 seconds
+        SbString s = t.format();
+        if (s.getLength() == 0) {
+            fprintf(stderr, "  FAIL: SbTime format empty\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// Unit test: SoSearchAction - deeper paths (setSearchingAll, LAST interest, by name)
+static int runSearchActionDeepTests()
+{
+    int failures = 0;
+
+    // --- LAST interest ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCube* c1 = new SoCube(); c1->setName("cube1");
+        SoCube* c2 = new SoCube(); c2->setName("cube2");
+        root->addChild(c1);
+        root->addChild(c2);
+
+        SoSearchAction sa;
+        sa.setType(SoCube::getClassTypeId());
+        sa.setInterest(SoSearchAction::LAST);
+        sa.apply(root);
+
+        SoPath* p = sa.getPath();
+        if (!p || p->getTail() != c2) {
+            fprintf(stderr, "  FAIL: SoSearchAction LAST (got %p, expected %p)\n",
+                p ? p->getTail() : nullptr, c2); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- search by name ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCube* c = new SoCube(); c->setName("findMe");
+        root->addChild(new SoSphere());
+        root->addChild(c);
+
+        SoSearchAction sa;
+        sa.setName("findMe");
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.apply(root);
+
+        SoPath* p = sa.getPath();
+        if (!p || p->getTail() != c) {
+            fprintf(stderr, "  FAIL: SoSearchAction by name\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- setSearchingAll ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoSwitch* sw = new SoSwitch();
+        sw->whichChild.setValue(SO_SWITCH_NONE);
+        SoCube* c = new SoCube(); c->setName("hiddenCube");
+        sw->addChild(c);
+        root->addChild(sw);
+
+        // Without searching all - should not find it
+        SoSearchAction sa;
+        sa.setName("hiddenCube");
+        sa.setSearchingAll(FALSE);
+        sa.apply(root);
+        // (may or may not find it depending on default)
+
+        // With searching all - should find it
+        SoSearchAction sa2;
+        sa2.setName("hiddenCube");
+        sa2.setSearchingAll(TRUE);
+        sa2.apply(root);
+        if (!sa2.isFound()) {
+            fprintf(stderr, "  FAIL: SoSearchAction setSearchingAll TRUE\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- getInterest ---
+    {
+        SoSearchAction sa;
+        sa.setInterest(SoSearchAction::ALL);
+        if (sa.getInterest() != SoSearchAction::ALL) {
+            fprintf(stderr, "  FAIL: SoSearchAction getInterest\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// Unit test: SoHandleEventAction - deeper paths
+static int runHandleEventDeepTests()
+{
+    int failures = 0;
+
+    // --- basic apply ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube());
+
+        SbViewportRegion vp(512, 512);
+        SoHandleEventAction hea(vp);
+
+        SoMouseButtonEvent evt;
+        evt.setButton(SoMouseButtonEvent::BUTTON1);
+        evt.setState(SoButtonEvent::DOWN);
+        evt.setPosition(SbVec2s(256, 256));
+
+        hea.setEvent(&evt);
+        hea.apply(root);
+        // No crash is success
+        root->unref();
+    }
+
+    // --- getViewportRegion ---
+    {
+        SbViewportRegion vp(800, 600);
+        SoHandleEventAction hea(vp);
+        SbVec2s sz = hea.getViewportRegion().getWindowSize();
+        if (sz[0] != 800) {
+            fprintf(stderr, "  FAIL: SoHandleEventAction getViewportRegion (got %d)\n", sz[0]); ++failures;
+        }
+    }
+
+    // --- keyboard event ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SbViewportRegion vp(512, 512);
+        SoHandleEventAction hea(vp);
+
+        SoKeyboardEvent evt;
+        evt.setKey(SoKeyboardEvent::A);
+        evt.setState(SoButtonEvent::DOWN);
+        hea.setEvent(&evt);
+        hea.apply(root);
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: SoPrimitiveCountAction - line/point/text counts  
+static int runPrimCountDeepTests()
+{
+    int failures = 0;
+
+    // --- lines ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(0,0,0));
+        coords->point.set1Value(1, SbVec3f(1,0,0));
+        coords->point.set1Value(2, SbVec3f(1,1,0));
+        root->addChild(coords);
+        SoLineSet* ls = new SoLineSet();
+        ls->numVertices.set1Value(0, 3);
+        root->addChild(ls);
+
+        SoGetPrimitiveCountAction pca(SbViewportRegion(512,512));
+        pca.apply(root);
+        if (pca.getLineCount() == 0) {
+            fprintf(stderr, "  FAIL: SoGetPrimitiveCountAction getLineCount=0\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- points ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoCoordinate3* coords = new SoCoordinate3();
+        for (int i = 0; i < 5; i++) coords->point.set1Value(i, SbVec3f(float(i),0,0));
+        root->addChild(coords);
+        root->addChild(new SoPointSet());
+
+        SoGetPrimitiveCountAction pca(SbViewportRegion(512,512));
+        pca.apply(root);
+        if (pca.getPointCount() == 0) {
+            fprintf(stderr, "  FAIL: SoGetPrimitiveCountAction getPointCount=0\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- mixed ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        root->addChild(new SoCube());
+        root->addChild(new SoSphere());
+
+        SoGetPrimitiveCountAction pca(SbViewportRegion(512,512));
+        pca.apply(root);
+
+        if (pca.getTriangleCount() == 0) {
+            fprintf(stderr, "  FAIL: SoGetPrimitiveCountAction mixed tri=0\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// Unit test: SbName - creation, comparison, hash
+static int runSbNameTests()
+{
+    int failures = 0;
+
+    // --- basic construction ---
+    {
+        SbName n1("hello");
+        SbName n2("hello");
+        SbName n3("world");
+        if (n1 != n2) { fprintf(stderr, "  FAIL: SbName equal names\n"); ++failures; }
+        if (n1 == n3) { fprintf(stderr, "  FAIL: SbName different names\n"); ++failures; }
+    }
+
+    // --- getString ---
+    {
+        SbName n("testName");
+        if (strcmp(n.getString(), "testName") != 0) {
+            fprintf(stderr, "  FAIL: SbName getString (got '%s')\n", n.getString()); ++failures;
+        }
+    }
+
+    // --- getLength ---
+    {
+        SbName n("abc");
+        if (n.getLength() != 3) {
+            fprintf(stderr, "  FAIL: SbName getLength (got %d)\n", n.getLength()); ++failures;
+        }
+    }
+
+    // --- isIdentStartChar / isIdentChar ---
+    {
+        if (!SbName::isIdentStartChar('A')) {
+            fprintf(stderr, "  FAIL: SbName isIdentStartChar A\n"); ++failures;
+        }
+        if (!SbName::isIdentChar('0')) {
+            fprintf(stderr, "  FAIL: SbName isIdentChar 0\n"); ++failures;
+        }
+        if (SbName::isIdentStartChar('0')) {
+            fprintf(stderr, "  FAIL: SbName isIdentStartChar 0 should be false\n"); ++failures;
+        }
+    }
+
+    // --- empty name ---
+    {
+        SbName empty("");
+        if (empty.getLength() != 0) {
+            fprintf(stderr, "  FAIL: SbName empty getLength\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// Unit test: SbString - operations
+static int runSbStringTests()
+{
+    int failures = 0;
+
+    // --- basic ---
+    {
+        SbString s("hello");
+        if (s.getLength() != 5) {
+            fprintf(stderr, "  FAIL: SbString getLength (got %d)\n", s.getLength()); ++failures;
+        }
+        if (strcmp(s.getString(), "hello") != 0) {
+            fprintf(stderr, "  FAIL: SbString getString\n"); ++failures;
+        }
+    }
+
+    // --- concatenation ---
+    {
+        SbString a("foo");
+        SbString b("bar");
+        a += b;
+        if (strcmp(a.getString(), "foobar") != 0) {
+            fprintf(stderr, "  FAIL: SbString += (got '%s')\n", a.getString()); ++failures;
+        }
+    }
+
+    // --- comparison ---
+    {
+        SbString a("abc"), b("abc"), c("def");
+        if (a != b) { fprintf(stderr, "  FAIL: SbString == equal\n"); ++failures; }
+        if (a == c) { fprintf(stderr, "  FAIL: SbString == different\n"); ++failures; }
+    }
+
+    // --- sprintf-style constructor ---
+    {
+        SbString s; s.sprintf("val=%d", 42);
+        if (s.getLength() == 0) {
+            fprintf(stderr, "  FAIL: SbString sprintf empty\n"); ++failures;
+        }
+    }
+
+    // --- find substring ---
+    {
+        SbString s("hello world");
+        int pos = s.find("world");
+        if (pos < 0) {
+            fprintf(stderr, "  FAIL: SbString find substring (got %d)\n", pos); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// Unit test: SoSwitch deeper - SO_SWITCH_ALL, child ops
+static int runSwitchDeepTests()
+{
+    int failures = 0;
+
+    // --- SO_SWITCH_ALL ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoSwitch* sw = new SoSwitch();
+        sw->whichChild.setValue(SO_SWITCH_ALL);
+        sw->addChild(new SoCube());
+        sw->addChild(new SoSphere());
+        root->addChild(sw);
+
+        SoGetBoundingBoxAction bba(SbViewportRegion(512,512));
+        bba.apply(root);
+        if (bba.getBoundingBox().isEmpty()) {
+            fprintf(stderr, "  FAIL: SoSwitch SO_SWITCH_ALL bbox empty\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    // --- SO_SWITCH_INHERIT ---
+    {
+        SoSwitch* sw = new SoSwitch(); sw->ref();
+        sw->whichChild.setValue(SO_SWITCH_INHERIT);
+        sw->addChild(new SoCube());
+        // Just check no crash
+        sw->unref();
+    }
+
+    // --- specific child index ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoSwitch* sw = new SoSwitch();
+        SoCube* cube = new SoCube(); cube->width.setValue(3.0f);
+        SoSphere* sp = new SoSphere();
+        sw->addChild(cube);
+        sw->addChild(sp);
+        sw->whichChild.setValue(0); // only cube visible
+        root->addChild(sw);
+
+        SoGetPrimitiveCountAction pca(SbViewportRegion(512,512));
+        pca.apply(root);
+        int triCount = pca.getTriangleCount();
+        if (triCount == 0) {
+            fprintf(stderr, "  FAIL: SoSwitch child 0 triCount=0\n"); ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Register iteration 13 tests
+// =========================================================================
+
+REGISTER_TEST(unit_sbtime, ObolTest::TestCategory::Base,
+    "SbTime: construction, arithmetic, comparison, getTimeOfDay, setValue, format",
+    e.has_visual = false;
+    e.run_unit = runSbTimeTests;
+);
+
+REGISTER_TEST(unit_search_deep, ObolTest::TestCategory::Actions,
+    "SoSearchAction: LAST interest, search by name, setSearchingAll, getInterest",
+    e.has_visual = false;
+    e.run_unit = runSearchActionDeepTests;
+);
+
+REGISTER_TEST(unit_handle_event_deep, ObolTest::TestCategory::Actions,
+    "SoHandleEventAction: apply mouse/keyboard event, getViewportRegion",
+    e.has_visual = false;
+    e.run_unit = runHandleEventDeepTests;
+);
+
+REGISTER_TEST(unit_prim_count_deep, ObolTest::TestCategory::Actions,
+    "SoGetPrimitiveCountAction: getLineCount, getPointCount, mixed",
+    e.has_visual = false;
+    e.run_unit = runPrimCountDeepTests;
+);
+
+REGISTER_TEST(unit_sbname, ObolTest::TestCategory::Base,
+    "SbName: construction, getString, getLength, isIdentStartChar/isIdentChar",
+    e.has_visual = false;
+    e.run_unit = runSbNameTests;
+);
+
+REGISTER_TEST(unit_sbstring, ObolTest::TestCategory::Base,
+    "SbString: getLength, getString, +=, ==, sprintf, find",
+    e.has_visual = false;
+    e.run_unit = runSbStringTests;
+);
+
+REGISTER_TEST(unit_switch_deep, ObolTest::TestCategory::Nodes,
+    "SoSwitch: SO_SWITCH_ALL, SO_SWITCH_INHERIT, specific child index",
+    e.has_visual = false;
+    e.run_unit = runSwitchDeepTests;
+);
+
 } // anonymous namespace
