@@ -5472,6 +5472,22 @@ SoSeparator* createNanoRTShadow(int width, int height)
 }
 
 // =========================================================================
+// Motion callback: apply the dragger's accumulated transformation to the
+// paired SoTransform so the reference geometry moves with the dragger.
+static void draggerToGeomMotionCB(void* userData, SoDragger* dragger)
+{
+    SoTransform* xf = static_cast<SoTransform*>(userData);
+    SbMatrix m = dragger->getMotionMatrix();
+    SbVec3f t, s, center;
+    SbRotation r, so;
+    m.getTransform(t, r, s, so, center);
+    xf->translation.setValue(t);
+    xf->rotation.setValue(r);
+    xf->scaleFactor.setValue(s);
+    xf->scaleOrientation.setValue(so);
+    xf->center.setValue(center);
+}
+
 // buildDraggerTestScene — camera + light + reference cube + given dragger
 // =========================================================================
 SoSeparator* buildDraggerTestScene(SoDragger* dragger, int width, int height)
@@ -5481,15 +5497,20 @@ SoSeparator* buildDraggerTestScene(SoDragger* dragger, int width, int height)
 
     SoPerspectiveCamera *cam = addCameraAndLight(root);
 
-    // Reference geometry: green cube so SoSurroundScale has something to measure
+    // Reference geometry: green cube driven by the dragger's motion matrix.
     SoSeparator *geom = new SoSeparator;
+    SoTransform *cubeXform = new SoTransform;  // driven by dragger motion
     SoMaterial *mat = new SoMaterial;
     mat->diffuseColor.setValue(0.5f, 0.7f, 0.5f);
+    geom->addChild(cubeXform);
     geom->addChild(mat);
     geom->addChild(new SoCube);
     root->addChild(geom);
 
     root->addChild(dragger);
+
+    // Wire the dragger so every motion update also moves the cube.
+    dragger->addMotionCallback(draggerToGeomMotionCB, cubeXform);
 
     SbViewportRegion vp(width, height);
     cam->viewAll(root, vp);

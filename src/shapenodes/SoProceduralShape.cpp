@@ -473,16 +473,64 @@ static std::string buildProposedParamsJSON(const ShapeTypeEntry&     e,
 struct HandleDragContext {
   SoProceduralShape*  shape;
   int                 handleIndex;
-  SbVec3f             initPos;
+  SbVec3f             initPos;         // handle world position at drag start
+  std::vector<float>  initParams;      // shape params snapshot at drag start
+  SbVec3f             dragStartTrans;  // dragger translation field at drag start
   SoDragger*          dragger;
   SoFieldSensor*      sensor;  // stored so we can detach/reattach on reset
   bool                isNoIntersect; // true → apply validate logic
 
   HandleDragContext(SoProceduralShape* s, int idx, const SbVec3f& pos,
                     SoDragger* d, bool noIntersect)
-    : shape(s), handleIndex(idx), initPos(pos), dragger(d),
-      sensor(nullptr), isNoIntersect(noIntersect) {}
+    : shape(s), handleIndex(idx), initPos(pos), dragStartTrans(0.f, 0.f, 0.f),
+      dragger(d), sensor(nullptr), isNoIntersect(noIntersect) {}
 };
+
+// ---------------------------------------------------------------------------
+// Drag-start callback: snapshot params and dragger translation so that
+// handleDragSensorCB always applies only the *current* drag's delta to a
+// known-good baseline instead of accumulating on top of already-updated params.
+// ---------------------------------------------------------------------------
+
+static void handleDragStartCB(void* userdata, SoDragger*)
+{
+  auto* ctx = static_cast<HandleDragContext*>(userdata);
+  if (!ctx || !ctx->shape || !ctx->dragger) return;
+
+  // Save current dragger translation (the accumulated offset since the
+  // dragger was built) so sensor CB can compute the delta for *this* drag.
+  SoField* tf = ctx->dragger->getField("translation");
+  if (tf && tf->isOfType(SoSFVec3f::getClassTypeId()))
+    ctx->dragStartTrans = static_cast<SoSFVec3f*>(tf)->getValue();
+  else
+    ctx->dragStartTrans.setValue(0.f, 0.f, 0.f);
+
+  // Snapshot shape params: these are the correct baseline for this drag.
+  int nparams = ctx->shape->params.getNum();
+  if (nparams > 0) {
+    const float* pv = ctx->shape->params.getValues(0);
+    ctx->initParams.assign(pv, pv + nparams);
+  } else {
+    ctx->initParams.clear();
+  }
+
+  // Recompute initPos from the topology so that subsequent drags (after a
+  // previous drag moved the handle) start from the correct world position.
+  const ShapeTypeEntry* entry =
+    findEntry(ctx->shape->shapeType.getValue().getString());
+  if (entry && !ctx->initParams.empty() &&
+      ctx->handleIndex < (int)entry->parsedHandles.size()) {
+    const ParsedHandle& hdl = entry->parsedHandles[ctx->handleIndex];
+    SbVec3f pos(0.f, 0.f, 0.f);
+    int cnt = 0;
+    for (int vi : hdl.vertexIdxs) {
+      pos += vertexPos(*entry, vi, ctx->initParams);
+      ++cnt;
+    }
+    if (cnt > 0) pos /= static_cast<float>(cnt);
+    ctx->initPos = pos;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Sensor callback
@@ -498,22 +546,31 @@ static void handleDragSensorCB(void* userdata, SoSensor*)
     findEntry(shape->shapeType.getValue().getString());
   if (!entry) return;
 
-  // Get current dragger translation delta
-  SbVec3f delta(0.f, 0.f, 0.f);
+  // Compute the delta for *this* drag only: subtract the translation that
+  // was already accumulated before this drag started.  This prevents the
+  // callback from re-applying all previous drags' offsets on every fire.
   SoField* tf = ctx->dragger->getField("translation");
+  SbVec3f curTrans(0.f, 0.f, 0.f);
   if (tf && tf->isOfType(SoSFVec3f::getClassTypeId()))
-    delta = static_cast<SoSFVec3f*>(tf)->getValue();
+    curTrans = static_cast<SoSFVec3f*>(tf)->getValue();
+
+  SbVec3f delta = curTrans - ctx->dragStartTrans;
 
   SbVec3f proposedNewPos = ctx->initPos + delta;
   SbVec3f acceptedPos    = proposedNewPos;
 
-  // Snapshot of current params
+  // Use the params snapshot taken at the start of this drag as the baseline.
+  // Applying only the current drag's delta to this snapshot ensures the
+  // result is correct regardless of how many times the sensor fires.
   int   nparams = shape->params.getNum();
-  std::vector<float> paramsCopy(static_cast<size_t>(nparams), 0.f);
-  if (nparams > 0) {
+  std::vector<float> paramsCopy;
+  if (!ctx->initParams.empty()) {
+    paramsCopy = ctx->initParams;
+  } else if (nparams > 0) {
     const float* pv = shape->params.getValues(0);
     paramsCopy.assign(pv, pv + nparams);
   }
+  paramsCopy.resize(static_cast<size_t>(nparams), 0.f);
 
   if (ctx->isNoIntersect) {
     // Build proposed params: apply the drag delta to the affected vertices.
@@ -535,11 +592,11 @@ static void handleDragSensorCB(void* userdata, SoSensor*)
       std::string json = buildProposedParamsJSON(*entry, proposed);
       SbBool ok = entry->objectValidateCB(json.c_str(), entry->userdata);
       if (!ok) {
-        // Rejected — snap dragger back to its start position.
+        // Rejected — snap dragger back to its position at the start of this drag.
         acceptedPos = ctx->initPos;
         if (ctx->sensor) ctx->sensor->detach();
         SoSFVec3f* tvf = static_cast<SoSFVec3f*>(tf);
-        if (tvf) tvf->setValue(SbVec3f(0.f, 0.f, 0.f));
+        if (tvf) tvf->setValue(ctx->dragStartTrans);
         if (ctx->sensor && tf) ctx->sensor->attach(tf);
         return; // params unchanged
       }
@@ -558,10 +615,11 @@ static void handleDragSensorCB(void* userdata, SoSensor*)
     // 1 micrometre squared threshold avoids spurious resets from float noise.
     static const float kDraggerResetThreshSq = 1e-6f * 1e-6f;
     if ((acceptedPos - proposedNewPos).sqrLength() > kDraggerResetThreshSq) {
-      SbVec3f acceptedDelta = acceptedPos - ctx->initPos;
+      // Compose new translation: drag-start offset + accepted delta for this drag.
+      SbVec3f newTrans = ctx->dragStartTrans + (acceptedPos - ctx->initPos);
       if (ctx->sensor) ctx->sensor->detach();
       SoSFVec3f* tvf = static_cast<SoSFVec3f*>(tf);
-      if (tvf) tvf->setValue(acceptedDelta);
+      if (tvf) tvf->setValue(newTrans);
       if (ctx->sensor && tf) ctx->sensor->attach(tf);
     }
   }
@@ -569,7 +627,7 @@ static void handleDragSensorCB(void* userdata, SoSensor*)
   // --- Apply drag via topology-based built-in OR application callback ---
   if (entry->topologyParsed && !entry->handleDragCB &&
       ctx->handleIndex < (int)entry->parsedHandles.size()) {
-    // Built-in: apply accepted delta to affected vertex params
+    // Built-in: apply accepted delta to initParams baseline
     const ParsedHandle& hdl = entry->parsedHandles[ctx->handleIndex];
 
     SbVec3f appliedDelta = acceptedPos - ctx->initPos;
@@ -583,7 +641,7 @@ static void handleDragSensorCB(void* userdata, SoSensor*)
     shape->params.setValues(0, nparams, paramsCopy.data());
 
   } else if (entry->handleDragCB) {
-    // Application-supplied callback
+    // Application-supplied callback: receives initParams baseline + drag positions
     entry->handleDragCB(paramsCopy.data(), nparams,
                         ctx->handleIndex,
                         ctx->initPos, acceptedPos,
@@ -883,6 +941,29 @@ SoProceduralShape::buildHandleDraggers()
 
   if (handles.empty()) return nullptr;
 
+  // Compute a scale factor for dragger widget geometry proportional to the
+  // shape's bounding-box extent.  Smaller shapes get smaller handle widgets
+  // so the controls don't dwarf the geometry.  The scale is applied via the
+  // dragger's initial motionMatrix, which affects only the visual size; the
+  // drag projections and reported translation deltas remain in parent-space
+  // (world) coordinates and are unaffected.
+  float handleScale = 1.0f;
+  if (entry->bboxCB && nparams > 0) {
+    SbVec3f mn, mx;
+    entry->bboxCB(pv, nparams, mn, mx, entry->userdata);
+    SbVec3f sz = mx - mn;
+    float maxDim = sz[0];
+    if (sz[1] > maxDim) maxDim = sz[1];
+    if (sz[2] > maxDim) maxDim = sz[2];
+    if (maxDim > 1e-6f) {
+      // Target: handle widget ≈ 20% of the largest bounding-box dimension,
+      // clamped to [0.04, 2.0] to avoid degenerate sizes.
+      handleScale = maxDim * 0.20f;
+      if (handleScale < 0.04f) handleScale = 0.04f;
+      if (handleScale > 2.0f)  handleScale = 2.0f;
+    }
+  }
+
   SoSeparator* sep = new SoSeparator;
 
   for (int i = 0; i < (int)handles.size(); ++i) {
@@ -926,11 +1007,25 @@ SoProceduralShape::buildHandleDraggers()
       break;
     }
 
+    // Scale the dragger widget to match the shape's bounding-box extent.
+    // Using the initial motionMatrix (not a parent SoScale) keeps the
+    // drag delta reported in parent-coordinate (world) space.
+    if (handleScale != 1.0f) {
+      SbMatrix scaleMtx;
+      scaleMtx.setScale(SbVec3f(handleScale, handleScale, handleScale));
+      dragger->setMotionMatrix(scaleMtx);
+    }
+
     hsep->addChild(dragger);
     sep->addChild(hsep);
 
     bool isNoIntersect = (h.dragType == SoProceduralHandle::DRAG_NO_INTERSECT);
     auto* ctx = new HandleDragContext(this, i, h.position, dragger, isNoIntersect);
+
+    // Register start callback to snapshot params and translation at the
+    // beginning of each drag so the sensor CB applies only the current
+    // drag's delta to a known-good baseline.
+    dragger->addStartCallback(handleDragStartCB, ctx);
 
     SoField* tf = dragger->getField("translation");
     if (tf) {
