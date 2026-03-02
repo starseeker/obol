@@ -1178,6 +1178,7 @@ glglue_resolve_symbols(SoGLContext * w)
   w->glEndList        = (OBOL_PFNGLENDLISTPROC)PROC(w, glEndList);
   w->glCallList       = (OBOL_PFNGLCALLLISTPROC)PROC(w, glCallList);
   w->glDeleteLists    = (OBOL_PFNGLDELETELISTSPROC)PROC(w, glDeleteLists);
+  w->glGenLists       = (OBOL_PFNGLGENLISTSPROC)PROC(w, glGenLists);
   w->glPushAttrib     = (OBOL_PFNGLPUSHATTRIBPROC)PROC(w, glPushAttrib);
   w->glPopAttrib      = (OBOL_PFNGLPOPATTRIBPROC)PROC(w, glPopAttrib);
 
@@ -6270,6 +6271,13 @@ SoGLContext_glDeleteLists(const SoGLContext * glue, GLuint list, GLsizei range)
 {
   assert(glue->glDeleteLists);
   glue->glDeleteLists(list, range);
+}
+
+GLuint
+SoGLContext_glGenLists(const SoGLContext * glue, GLsizei range)
+{
+  assert(glue->glGenLists);
+  return glue->glGenLists(range);
 }
 
 void

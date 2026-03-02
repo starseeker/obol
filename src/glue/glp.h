@@ -250,6 +250,7 @@ typedef void (APIENTRY * OBOL_PFNGLNEWLISTPROC)(GLuint list, GLenum mode);
 typedef void (APIENTRY * OBOL_PFNGLENDLISTPROC)(void);
 typedef void (APIENTRY * OBOL_PFNGLCALLLISTPROC)(GLuint list);
 typedef void (APIENTRY * OBOL_PFNGLDELETELISTSPROC)(GLuint list, GLsizei range);
+typedef GLuint (APIENTRY * OBOL_PFNGLGENLISTSPROC)(GLsizei range);
 typedef void (APIENTRY * OBOL_PFNGLPUSHATTRIBPROC)(GLbitfield mask);
 typedef void (APIENTRY * OBOL_PFNGLPOPATTRIBPROC)(void);
 
@@ -839,6 +840,7 @@ struct SoGLContext {
   OBOL_PFNGLENDLISTPROC glEndList;
   OBOL_PFNGLCALLLISTPROC glCallList;
   OBOL_PFNGLDELETELISTSPROC glDeleteLists;
+  OBOL_PFNGLGENLISTSPROC glGenLists;
   OBOL_PFNGLPUSHATTRIBPROC glPushAttrib;
   OBOL_PFNGLPOPATTRIBPROC glPopAttrib;
 
@@ -1789,6 +1791,7 @@ void SoGLContext_glNewList(const SoGLContext * glue, GLuint list, GLenum mode);
 void SoGLContext_glEndList(const SoGLContext * glue);
 void SoGLContext_glCallList(const SoGLContext * glue, GLuint list);
 void SoGLContext_glDeleteLists(const SoGLContext * glue, GLuint list, GLsizei range);
+GLuint SoGLContext_glGenLists(const SoGLContext * glue, GLsizei range);
 void SoGLContext_glPushAttrib(const SoGLContext * glue, GLbitfield mask);
 void SoGLContext_glPopAttrib(const SoGLContext * glue);
 
