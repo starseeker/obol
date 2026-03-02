@@ -2443,6 +2443,15 @@ SoExtSelectionP::offscreenRenderCallback(void * userdata, SoAction * action)
 SbBool
 SoExtSelectionP::checkOffscreenRendererCapabilities()
 {
+  if (!this->cachedGlue) {
+    SoDebugError::post("SoExtSelectionP::checkOffscreenRendererCapabilities",
+                       "No OpenGL context available (cachedGlue is NULL) -- "
+                       "cannot proceed with VISIBLE_SHAPES selection. Make "
+                       "sure the scene has been rendered before triggering "
+                       "a selection event.");
+    return FALSE;
+  }
+
   GLboolean rgbmode;
   SoGLContext_glGetBooleanv(this->cachedGlue, GL_RGBA_MODE, &rgbmode);
   if (!rgbmode) {
