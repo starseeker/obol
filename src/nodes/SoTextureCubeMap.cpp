@@ -462,45 +462,6 @@ SoTextureCubeMap::GLRender(SoGLRenderAction * action)
 void
 SoTextureCubeMap::doAction(SoAction * OBOL_UNUSED_ARG(action))
 {
-#if 0 // not implemented yet
-  SoState * state = action->getState();
-
-  if (SoTextureOverrideElement::getImageOverride(state))
-    return;
-
-  int nc;
-  SbVec2s size;
-  const unsigned char * bytes = this->image.getValue(size, nc);
-
-  if (size != SbVec2s(0,0)) {
-    SoTextureImageElement::set(state, this,
-                               size, nc, bytes,
-                               (int)this->wrapT.getValue(),
-                               (int)this->wrapS.getValue(),
-                               (SoTextureImageElement::Model) model.getValue(),
-                               this->blendColor.getValue());
-    SoTextureEnabledElement::set(state, this, TRUE);
-  }
-  // if a filename has been set, but the file has not been loaded, supply
-  // a dummy texture image to make sure texture coordinates are generated.
-  else if (this->image.isDefault() && this->filename.getValue().getLength()) {
-    static const unsigned char dummytex[] = {0xff,0xff,0xff,0xff};
-    SoTextureImageElement::set(state, this,
-                               SbVec2s(2,2), 1, dummytex,
-                               (int)this->wrapT.getValue(),
-                               (int)this->wrapS.getValue(),
-                               (SoTextureImageElement::Model) model.getValue(),
-                               this->blendColor.getValue());
-    SoTextureEnabledElement::set(state, this, TRUE);
-  }
-  else {
-    SoTextureImageElement::setDefault(state, this);
-    SoTextureEnabledElement::set(state, this, FALSE);
-  }
-  if (this->isOverride()) {
-    SoTextureOverrideElement::setImageOverride(state, TRUE);
-  }
-#endif // not implemented
 }
 
 // doc from parent

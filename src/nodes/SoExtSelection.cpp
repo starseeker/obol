@@ -564,18 +564,6 @@ line_line_intersect(const SbVec2s &p00, const SbVec2s & p01,
 
   /*compute intersection coordinates*/
   if (f == 0) return COLINEAR;
-#if 0 // we don't need the intersection point, disabled
-  int num, offset;
-  int x, y;
-  num = d*Ax;                                           /* numerator */
-  offset = SAME_SIGNS(num,f) ? f/2 : -f/2;              /* round direction*/
-  x = x1 + (num+offset) / f;                            /* intersection x */
-
-  num = d*Ay;
-  offset = SAME_SIGNS(num,f) ? f/2 : -f/2;
-  y = y1 + (num+offset) / f;                            /* intersection y */
-#endif // disabled code
-
   return DO_INTERSECT;
 #undef COLINEAR
 #undef DONT_INTERSECT

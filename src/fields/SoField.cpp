@@ -1586,21 +1586,6 @@ SoField::shouldWrite(void) const
   if (this->isIgnored()) return TRUE;
 
   if (this->isConnected()) {
-#if 0 // disabled (was only needed for bidirectional connections in PROTOs)
-    // I suspect this code was here only to make the bidirectional
-    // connection hack in SoProto work. Connected PROTO instance
-    // fields should be written even if they have the default value
-    // (just like any other field). pederb, 2005-12-20
-    SoFieldContainer * thecontainer = this->getContainer();
-    if ( thecontainer != NULL &&
-         thecontainer->isOfType(SoProtoInstance::getClassTypeId()) ) {
-      // PROTO instance fields are usually connected, but we don't want to
-      // write out PROTO instance fields that contain default values - they
-      // will be hooked up and get the default value from the PROTO interface
-      // when they are read in again later anyways. -- 20040115 larsa
-      return FALSE;
-    }
-#endif // disabled PROTO hack
     return TRUE;
   }
 
