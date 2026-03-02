@@ -180,8 +180,6 @@ protected:
   void convertInt32Array(char * from, int32_t * to, int len);
   void convertFloatArray(char * from, float * to, int len);
   void convertDoubleArray(char * from, double * to, int len);
-  char * URLToFile(char * out_buf, const char * in_buf);
-  SbBool IsURL(const char * c_strng);
 
   static void setDirectories(SbStringList * dirs);
 
