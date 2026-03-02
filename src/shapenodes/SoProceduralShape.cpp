@@ -55,6 +55,7 @@
 #include <Inventor/actions/SoGetPrimitiveCountAction.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
 #include <Inventor/elements/SoLineWidthElement.h>
+#include <Inventor/elements/SoModelMatrixElement.h>
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/fields/SoSFVec3f.h>
@@ -1235,6 +1236,20 @@ SoProceduralShape::generatePrimitives(SoAction* action)
         const SbViewVolume& vv = SoViewVolumeElement::get(state);
         float wh = vv.getHeight();
         if (wh > 1e-6f) {
+          // For perspective cameras vv.getHeight() is the frustum height at
+          // the near plane.  Scale to the object's viewing distance so that
+          // the cylinder radius corresponds to lineW pixels at object depth.
+          if (vv.getProjectionType() == SbViewVolume::PERSPECTIVE) {
+            const float nearDist = vv.getNearDist();
+            if (nearDist > 1e-6f) {
+              const SbMatrix& mm = SoModelMatrixElement::get(state);
+              const SbVec3f objPos(mm[3][0], mm[3][1], mm[3][2]);
+              const float dist =
+                (objPos - vv.getProjectionPoint()).length();
+              const float refDist = (dist > nearDist) ? dist : nearDist;
+              wh = wh * refDist / nearDist;
+            }
+          }
           const SbViewportRegion& vpr = SoViewportRegionElement::get(state);
           float vpH = static_cast<float>(vpr.getViewportSizePixels()[1]);
           if (vpH > 0.0f)
