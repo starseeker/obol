@@ -995,28 +995,6 @@ SoDB::getSensorManager(void)
 }
 
 /*!
-  NOTE: THIS METHOD IS OBSOLETED. DON'T USE IT.
-
-  This is a wrapper around the POSIX \c select() call. It is provided
-  so you can do synchronous I/O while Coin continues to handle sensor
-  events, rendering, etc. The parameters are the same as for \c
-  select(), so check your system documentation on how to use them.
-
-  The void* arguments must be valid pointers to fd_set
-  structures. We've changed this from the original SGI Inventor API to
-  avoid messing up the header file with system-specific includes.
-
-  NOTE: THIS METHOD IS OBSOLETED. DON'T USE IT.
-*/
-int
-SoDB::doSelect(int OBOL_UNUSED_ARG(nfds), void * OBOL_UNUSED_ARG(readfds), void * OBOL_UNUSED_ARG(writefds),
-               void * OBOL_UNUSED_ARG(exceptfds), struct timeval * OBOL_UNUSED_ARG(usertimeout))
-{
-  assert(FALSE && "obsoleted method");
-  return 0;
-}
-
-/*!
   Notify SoDB that there exists a way to convert data from the \a from
   SoField type to the \a to SoField type, by connecting them with an
   instance of the \a converter SoFieldConverter type.

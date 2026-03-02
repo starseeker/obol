@@ -517,18 +517,6 @@ SoTextureCubeMap::rayPick(SoRayPickAction * action)
   SoTextureCubeMap::doAction(action);
 }
 
-/*!
-  Not implemented in Coin; should probably not have been public in the
-  original SGI Open Inventor API.  We'll consider to implement it if
-  requested.
-*/
-SbBool
-SoTextureCubeMap::readImage(const SbString & OBOL_UNUSED_ARG(fname), int & OBOL_UNUSED_ARG(w), int & OBOL_UNUSED_ARG(h), int & OBOL_UNUSED_ARG(nc),
-                      unsigned char *& OBOL_UNUSED_ARG(bytes))
-{
-  OBOL_OBSOLETED();
-  return FALSE;
-}
 
 /*!
   Returns read status. 1 for success, 0 for failure.
