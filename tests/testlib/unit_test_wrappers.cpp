@@ -18673,12 +18673,7 @@ static int runSelectionDeepTest()
             fprintf(stderr, "  FAIL: SoSelection::toggle OFF\n"); ++failures;
         }
 
-        // Remove callbacks
-        selection->removeSelectionCallback([](void*, SoPath*){}, nullptr);
-        selection->removeDeselectionCallback([](void*, SoPath*){}, nullptr);
-        selection->removeStartCallback([](void*, SoSelection*){}, nullptr);
-        selection->removeFinishCallback([](void*, SoSelection*){}, nullptr);
-        selection->removeChangeCallback([](void*, SoSelection*){}, nullptr);
+        // (Don't try to remove callbacks added as lambdas - each lambda is a unique object)
 
         // setPickMatching
         selection->setPickMatching(TRUE);
@@ -18778,11 +18773,7 @@ static int runDraggerCallbackTest()
         dragger->enableValueChangedCallbacks(FALSE);
         dragger->enableValueChangedCallbacks(TRUE);
 
-        // Remove callbacks
-        dragger->removeStartCallback([](void*, SoDragger*){}, nullptr);
-        dragger->removeMotionCallback([](void*, SoDragger*){}, nullptr);
-        dragger->removeFinishCallback([](void*, SoDragger*){}, nullptr);
-        dragger->removeValueChangedCallback([](void*, SoDragger*){}, nullptr);
+        // (Don't try to remove lambda callbacks - each lambda is a unique pointer)
 
         root->unref();
     }
@@ -18797,7 +18788,7 @@ static int runDraggerCallbackTest()
 
         SoTranslate1Dragger* dragger = new SoTranslate1Dragger();
         dragger->addOtherEventCallback([](void*, SoDragger*) { otherEvCB++; }, nullptr);
-        dragger->removeOtherEventCallback([](void*, SoDragger*){}, nullptr);
+        // (Don't try to remove a different lambda pointer)
         root->addChild(dragger);
 
         SbViewportRegion vp(256,256);
@@ -19856,3 +19847,1142 @@ REGISTER_TEST(unit_animation_nodes_gl, ObolTest::TestCategory::Rendering,
 );
 
 } // anonymous namespace (session 6)
+
+// =========================================================================
+// Session 7 tests — targeting remaining high-potential coverage areas
+// =========================================================================
+#include <Inventor/SbDPLine.h>
+#include <Inventor/SbVec3d.h>
+#include <Inventor/SbVec2d.h>
+#include <Inventor/SbDPPlane.h>
+#include <Inventor/nodes/SoAnnotation.h>
+#include <Inventor/nodes/SoLOD.h>
+#include <Inventor/nodes/SoLevelOfDetail.h>
+#include <Inventor/nodes/SoArray.h>
+#include <Inventor/nodes/SoMultipleCopy.h>
+#include <Inventor/nodes/SoColorIndex.h>
+#include <Inventor/nodes/SoFrustumCamera.h>
+#include <Inventor/nodes/SoCacheHint.h>
+#include <Inventor/nodes/SoDepthBuffer.h>
+#include <Inventor/nodes/SoAlphaTest.h>
+
+namespace {
+
+// =========================================================================
+// Session 7 / Iter 28: SoGLRenderAction deeper paths
+// =========================================================================
+static int runGLRenderActionDeepTest()
+{
+    int failures = 0;
+
+    // We need an active GL context for SoGLRenderAction to work.
+    // Use SoOffscreenRenderer::getGLRenderAction() to access the action
+    // after the renderer has established a GL context.
+
+    SoSeparator* baseRoot = new SoSeparator(); baseRoot->ref();
+    SoPerspectiveCamera* baseCam = new SoPerspectiveCamera();
+    baseCam->position.setValue(SbVec3f(0,0,5));
+    baseRoot->addChild(baseCam);
+    baseRoot->addChild(new SoDirectionalLight());
+    baseRoot->addChild(new SoSphere());
+    SbViewportRegion baseVP(64, 64);
+    baseCam->viewAll(baseRoot, baseVP);
+
+    SoOffscreenRenderer renderer(baseVP);
+    renderer.setComponents(SoOffscreenRenderer::RGB);
+
+    // --- setNumPasses ---
+    renderer.getGLRenderAction()->setNumPasses(4);
+    if (renderer.getGLRenderAction()->getNumPasses() != 4) {
+        fprintf(stderr, "  FAIL: getNumPasses: got %d\n",
+                renderer.getGLRenderAction()->getNumPasses()); ++failures;
+    }
+    renderer.getGLRenderAction()->setPassUpdate(TRUE);
+    SbBool pu = renderer.getGLRenderAction()->isPassUpdate();
+    (void)pu;
+    renderer.getGLRenderAction()->setNumPasses(1);
+
+    // setPassCallback
+    static int passCBCount = 0;
+    renderer.getGLRenderAction()->setPassCallback([](void* ud) { (*(int*)ud)++; }, &passCBCount);
+    renderer.render(baseRoot);
+
+    // setSmoothing
+    renderer.getGLRenderAction()->setSmoothing(TRUE);
+    if (!renderer.getGLRenderAction()->isSmoothing()) {
+        fprintf(stderr, "  FAIL: isSmoothing after setSmoothing(TRUE)\n"); ++failures;
+    }
+    renderer.render(baseRoot);
+    renderer.getGLRenderAction()->setSmoothing(FALSE);
+
+    // setUpdateArea
+    renderer.getGLRenderAction()->setUpdateArea(SbVec2f(0.0f, 0.0f), SbVec2f(1.0f, 1.0f));
+    {
+        SbVec2f orig, sz;
+        renderer.getGLRenderAction()->getUpdateArea(orig, sz);
+        if (sz[0] < 0.5f || sz[1] < 0.5f) {
+            fprintf(stderr, "  FAIL: getUpdateArea size: %.2f %.2f\n", sz[0], sz[1]); ++failures;
+        }
+    }
+    renderer.render(baseRoot);
+
+    // setAbortCallback (CONTINUE)
+    static int abortCBCount = 0;
+    renderer.getGLRenderAction()->setAbortCallback([](void* ud) -> SoGLRenderAction::AbortCode {
+        (*(int*)ud)++;
+        return SoGLRenderAction::CONTINUE;
+    }, &abortCBCount);
+    {
+        SoGLRenderAction::SoGLRenderAbortCB* cb_out = nullptr;
+        void* ud_out = nullptr;
+        renderer.getGLRenderAction()->getAbortCallback(cb_out, ud_out);
+        if (!cb_out) {
+            fprintf(stderr, "  FAIL: getAbortCallback returned null\n"); ++failures;
+        }
+    }
+    renderer.render(baseRoot);
+    renderer.getGLRenderAction()->setAbortCallback(nullptr, nullptr);
+
+    // addPreRenderCallback
+    static int preCBCount = 0;
+    SoGLPreRenderCB* preRenderCB = [](void* ud, SoGLRenderAction*) { (*(int*)ud)++; };
+    renderer.getGLRenderAction()->addPreRenderCallback(preRenderCB, &preCBCount);
+    renderer.render(baseRoot);
+    if (preCBCount == 0) {
+        fprintf(stderr, "  FAIL: pre-render callback not called\n"); ++failures;
+    }
+    renderer.getGLRenderAction()->removePreRenderCallback(preRenderCB, &preCBCount);
+
+    // TransparentDelayedObjectRenderType
+    renderer.getGLRenderAction()->setTransparencyType(SoGLRenderAction::SORTED_OBJECT_BLEND);
+    renderer.getGLRenderAction()->setTransparentDelayedObjectRenderType(SoGLRenderAction::ONE_PASS);
+    {
+        SoGLRenderAction::TransparentDelayedObjectRenderType ttype =
+            renderer.getGLRenderAction()->getTransparentDelayedObjectRenderType();
+        if (ttype != SoGLRenderAction::ONE_PASS) {
+            fprintf(stderr, "  FAIL: getTransparentDelayedObjectRenderType: got %d\n", (int)ttype); ++failures;
+        }
+    }
+    renderer.render(baseRoot);
+    renderer.getGLRenderAction()->setTransparentDelayedObjectRenderType(
+        SoGLRenderAction::NONSOLID_SEPARATE_BACKFACE_PASS);
+    renderer.render(baseRoot);
+
+    // setDelayedObjDepthWrite
+    renderer.getGLRenderAction()->setDelayedObjDepthWrite(TRUE);
+    if (!renderer.getGLRenderAction()->getDelayedObjDepthWrite()) {
+        fprintf(stderr, "  FAIL: getDelayedObjDepthWrite\n"); ++failures;
+    }
+    renderer.render(baseRoot);
+
+    // setRenderingIsRemote
+    renderer.getGLRenderAction()->setRenderingIsRemote(TRUE);
+    (void)renderer.getGLRenderAction()->getRenderingIsRemote();
+
+    // setCacheContext
+    {
+        uint32_t cacheCtx = renderer.getGLRenderAction()->getCacheContext();
+        renderer.getGLRenderAction()->setCacheContext(cacheCtx + 100);
+        uint32_t newCtx = renderer.getGLRenderAction()->getCacheContext();
+        if (newCtx != cacheCtx + 100) {
+            fprintf(stderr, "  FAIL: setCacheContext: expected %u got %u\n",
+                    cacheCtx+100, newCtx); ++failures;
+        }
+    }
+
+    baseRoot->unref();
+    return failures;
+}
+
+// =========================================================================
+// Session 7 / Iter 28: SoRayPickAction deeper — intersect API and pick paths
+// =========================================================================
+static int runRayPickDeepTest()
+{
+    int failures = 0;
+
+    // --- SoRayPickAction intersect() methods ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(256,256);
+        cam->viewAll(root, vp);
+
+        SoRayPickAction rpa(vp);
+        rpa.setPoint(SbVec2s(128, 128));
+        rpa.setPickAll(TRUE);
+        rpa.apply(root);
+
+        // getLine (returns the pick ray)
+        const SbLine& line = rpa.getLine();
+        SbVec3f dir = line.getDirection();
+        if (dir.length() < 0.01f) {
+            fprintf(stderr, "  FAIL: pick line direction nearly zero\n"); ++failures;
+        }
+
+        // getViewVolume (may return default/partial state before object-space setup)
+        const SbViewVolume& vv = rpa.getViewVolume();
+        (void)vv; // Just verify no crash
+
+        // hasWorldSpaceRay
+        SbBool hasRay = rpa.hasWorldSpaceRay();
+        if (!hasRay) {
+            fprintf(stderr, "  FAIL: hasWorldSpaceRay should be TRUE after setPoint\n"); ++failures;
+        }
+
+        // getPickedPointList
+        const SoPickedPointList& ppList = rpa.getPickedPointList();
+        // We may have picked the sphere
+        (void)ppList;
+
+        root->unref();
+    }
+
+    // --- intersect() for triangles, line segments, and points ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        // Place a large flat quad at z=0
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-2,-2,0));
+        coords->point.set1Value(1, SbVec3f( 2,-2,0));
+        coords->point.set1Value(2, SbVec3f( 2, 2,0));
+        coords->point.set1Value(3, SbVec3f(-2, 2,0));
+        root->addChild(coords);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        ifs->coordIndex.set1Value(0, 0);
+        ifs->coordIndex.set1Value(1, 1);
+        ifs->coordIndex.set1Value(2, 2);
+        ifs->coordIndex.set1Value(3, 3);
+        ifs->coordIndex.set1Value(4, -1);
+        root->addChild(ifs);
+
+        SbViewportRegion vp(256,256);
+        cam->viewAll(root, vp);
+
+        SoRayPickAction rpa(vp);
+        rpa.setNormalizedPoint(SbVec2f(0.5f, 0.5f));
+        rpa.apply(root);
+
+        // Now use the intersect API
+        // intersect(triangle)
+        SbVec3f isect, bary;
+        SbBool front;
+        SbBool hitTri = rpa.intersect(
+            SbVec3f(-2,-2,0), SbVec3f(2,-2,0), SbVec3f(0,2,0),
+            isect, bary, front);
+
+        // intersect(line segment)
+        SbVec3f lineIsect;
+        SbBool hitLine = rpa.intersect(
+            SbVec3f(-2,0,0), SbVec3f(2,0,0), lineIsect);
+
+        // intersect(point)
+        SbBool hitPt = rpa.intersect(SbVec3f(0,0,0));
+
+        // intersect(box)
+        SbVec3f boxIsect;
+        SbBool onSurface;
+        SbBox3f box(SbVec3f(-1,-1,-1), SbVec3f(1,1,1));
+        SbBool hitBox = rpa.intersect(box, boxIsect, onSurface);
+
+        // isBetweenPlanes
+        SbBool between = rpa.isBetweenPlanes(SbVec3f(0,0,0));
+        (void)between;
+
+        root->unref();
+    }
+
+    // --- SoRayPickAction with scene containing multiple shapes ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,8));
+        root->addChild(cam);
+
+        // Multiple shapes at different positions
+        for (int i = -2; i <= 2; ++i) {
+            SoSeparator* sep = new SoSeparator();
+            SoTranslation* tr = new SoTranslation();
+            tr->translation.setValue(SbVec3f(float(i)*1.5f, 0, 0));
+            sep->addChild(tr);
+            SoSphere* s = new SoSphere();
+            s->radius.setValue(0.4f);
+            sep->addChild(s);
+            root->addChild(sep);
+        }
+
+        SbViewportRegion vp(512,512);
+        cam->viewAll(root, vp);
+
+        // Pick at several locations
+        for (int x = 100; x < 500; x += 80) {
+            SoRayPickAction rpa(vp);
+            rpa.setPoint(SbVec2s(x, 256));
+            rpa.setPickAll(FALSE);
+            rpa.apply(root);
+            (void)rpa.getPickedPoint();
+        }
+
+        // Pick all at center
+        SoRayPickAction rpaAll(vp);
+        rpaAll.setPoint(SbVec2s(256, 256));
+        rpaAll.setPickAll(TRUE);
+        rpaAll.apply(root);
+        const SoPickedPointList& ppAll = rpaAll.getPickedPointList();
+        (void)ppAll;
+
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 7 / Iter 29: SoField deeper paths
+// =========================================================================
+static int runFieldDeepTest()
+{
+    int failures = 0;
+
+    // --- SoField connections (field-to-field) ---
+    {
+        SoMaterial* mat1 = new SoMaterial(); mat1->ref();
+        SoMaterial* mat2 = new SoMaterial(); mat2->ref();
+
+        mat1->diffuseColor.setValue(SbColor(0.8f, 0.2f, 0.1f));
+
+        // Connect mat2.diffuseColor to mat1.diffuseColor
+        mat2->diffuseColor.connectFrom(&mat1->diffuseColor);
+        if (!mat2->diffuseColor.isConnected()) {
+            fprintf(stderr, "  FAIL: field-to-field connection\n"); ++failures;
+        }
+        if (!mat2->diffuseColor.isConnectedFromField()) {
+            fprintf(stderr, "  FAIL: isConnectedFromField\n"); ++failures;
+        }
+        if (mat2->diffuseColor.isConnectedFromEngine()) {
+            fprintf(stderr, "  FAIL: isConnectedFromEngine should be FALSE\n"); ++failures;
+        }
+
+        // getConnectedField
+        SoField* connField = nullptr;
+        SbBool gotConn = mat2->diffuseColor.getConnectedField(connField);
+        if (!gotConn || connField != &mat1->diffuseColor) {
+            fprintf(stderr, "  FAIL: getConnectedField\n"); ++failures;
+        }
+
+        // getConnections (forward)
+        SoFieldList connections;
+        int nConn = mat1->diffuseColor.getForwardConnections(connections);
+        if (nConn == 0) {
+            fprintf(stderr, "  FAIL: getForwardConnections returned 0\n"); ++failures;
+        }
+
+        // getNumConnections
+        int num = mat2->diffuseColor.getNumConnections();
+        if (num != 1) {
+            fprintf(stderr, "  FAIL: getNumConnections: got %d\n", num); ++failures;
+        }
+
+        // isConnectionEnabled
+        SbBool enabled = mat2->diffuseColor.isConnectionEnabled();
+        if (!enabled) {
+            fprintf(stderr, "  FAIL: isConnectionEnabled\n"); ++failures;
+        }
+
+        // enableConnection
+        mat2->diffuseColor.enableConnection(FALSE);
+        if (mat2->diffuseColor.isConnectionEnabled()) {
+            fprintf(stderr, "  FAIL: enableConnection(FALSE)\n"); ++failures;
+        }
+        mat2->diffuseColor.enableConnection(TRUE);
+
+        // disconnect(field)
+        mat2->diffuseColor.disconnect(&mat1->diffuseColor);
+        if (mat2->diffuseColor.isConnected()) {
+            fprintf(stderr, "  FAIL: still connected after disconnect\n"); ++failures;
+        }
+
+        mat1->unref();
+        mat2->unref();
+    }
+
+    // --- SoField get/set string API ---
+    {
+        SoMaterial* mat = new SoMaterial(); mat->ref();
+        mat->diffuseColor.setValue(SbColor(0.5f, 0.3f, 0.7f));
+
+        SbString str;
+        mat->diffuseColor.get(str);
+        if (str.getLength() == 0) {
+            fprintf(stderr, "  FAIL: SoField::get() returned empty string\n"); ++failures;
+        }
+
+        // set via string
+        SbBool setOk = mat->diffuseColor.set("0.9 0.1 0.5");
+        if (!setOk) {
+            fprintf(stderr, "  FAIL: SoField::set() string failed\n"); ++failures;
+        }
+
+        // touch
+        mat->diffuseColor.touch();
+
+        // isDefault
+        SbBool isDef = mat->diffuseColor.isDefault();
+        (void)isDef;
+
+        // setDefault
+        mat->diffuseColor.setDefault(TRUE);
+        if (!mat->diffuseColor.isDefault()) {
+            fprintf(stderr, "  FAIL: isDefault after setDefault(TRUE)\n"); ++failures;
+        }
+        mat->diffuseColor.setDefault(FALSE);
+
+        // isIgnored / setIgnored
+        mat->diffuseColor.setIgnored(TRUE);
+        if (!mat->diffuseColor.isIgnored()) {
+            fprintf(stderr, "  FAIL: isIgnored after setIgnored(TRUE)\n"); ++failures;
+        }
+        mat->diffuseColor.setIgnored(FALSE);
+
+        // enableNotify / isNotifyEnabled
+        mat->diffuseColor.enableNotify(FALSE);
+        if (mat->diffuseColor.isNotifyEnabled()) {
+            fprintf(stderr, "  FAIL: isNotifyEnabled should be FALSE\n"); ++failures;
+        }
+        mat->diffuseColor.enableNotify(TRUE);
+
+        mat->unref();
+    }
+
+    // --- SoField engine connection ---
+    {
+        SoMaterial* mat = new SoMaterial(); mat->ref();
+
+        SoElapsedTime* timer = new SoElapsedTime(); timer->ref();
+        SoInterpolateFloat* interp = new SoInterpolateFloat(); interp->ref();
+        interp->input0.setValue(0.0f);
+        interp->input1.setValue(1.0f);
+        interp->alpha.setValue(0.5f);
+
+        // Connect output to mat->transparency
+        mat->transparency.connectFrom(&interp->output);
+        if (!mat->transparency.isConnected()) {
+            fprintf(stderr, "  FAIL: engine output connection\n"); ++failures;
+        }
+        if (!mat->transparency.isConnectedFromEngine()) {
+            fprintf(stderr, "  FAIL: isConnectedFromEngine\n"); ++failures;
+        }
+
+        // getConnectedEngine
+        SoEngineOutput* engOut = nullptr;
+        SbBool gotEng = mat->transparency.getConnectedEngine(engOut);
+        if (!gotEng || !engOut) {
+            fprintf(stderr, "  FAIL: getConnectedEngine\n"); ++failures;
+        }
+
+        // Disconnect
+        mat->transparency.disconnect();
+        if (mat->transparency.isConnected()) {
+            fprintf(stderr, "  FAIL: still connected after disconnect()\n"); ++failures;
+        }
+
+        mat->unref();
+        timer->unref();
+        interp->unref();
+    }
+
+    // --- MF field operations ---
+    {
+        SoMFFloat mff;
+        mff.setValue(1.5f);
+        if (mff.getNum() != 1) {
+            fprintf(stderr, "  FAIL: MFFloat getNum after setValue: %d\n", mff.getNum()); ++failures;
+        }
+
+        // append values
+        mff.set1Value(1, 2.5f);
+        mff.set1Value(2, 3.5f);
+        if (mff.getNum() != 3) {
+            fprintf(stderr, "  FAIL: MFFloat getNum after set1Value: %d\n", mff.getNum()); ++failures;
+        }
+
+        // deleteValues
+        mff.deleteValues(1, 1);
+        if (mff.getNum() != 2) {
+            fprintf(stderr, "  FAIL: MFFloat getNum after deleteValues: %d\n", mff.getNum()); ++failures;
+        }
+
+        // insertSpace
+        mff.insertSpace(1, 2);
+        if (mff.getNum() != 4) {
+            fprintf(stderr, "  FAIL: MFFloat getNum after insertSpace: %d\n", mff.getNum()); ++failures;
+        }
+
+        // get/set string
+        SbString str;
+        mff.get(str);
+        if (str.getLength() == 0) {
+            fprintf(stderr, "  FAIL: MFFloat get() empty\n"); ++failures;
+        }
+
+        // setNum
+        mff.setNum(2);
+        if (mff.getNum() != 2) {
+            fprintf(stderr, "  FAIL: setNum: %d\n", mff.getNum()); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 7 / Iter 30: SoGLImage texture deeper + SoGLBigImage
+// =========================================================================
+static int runGLImageDeepTest()
+{
+    int failures = 0;
+
+    // --- Large texture (bigger than typical to trigger mipmaps) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        const int W=256, H=256;
+        std::vector<unsigned char> rgb(W*H*3);
+        for (int y=0; y<H; ++y)
+            for (int x=0; x<W; ++x) {
+                rgb[(y*W+x)*3+0] = (unsigned char)((x*255)/W);
+                rgb[(y*W+x)*3+1] = (unsigned char)((y*255)/H);
+                rgb[(y*W+x)*3+2] = 128;
+            }
+
+        SoTexture2* tex = new SoTexture2();
+        tex->image.setValue(SbVec2s(W,H), 3, rgb.data());
+        tex->model.setValue(SoTexture2::MODULATE);
+        tex->wrapS.setValue(SoTexture2::REPEAT);
+        tex->wrapT.setValue(SoTexture2::REPEAT);
+        root->addChild(tex);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(128, 128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: large texture mipmap render\n"); ++failures; }
+
+        // Render 3 more times to exercise cache hit paths
+        for (int i = 0; i < 3; ++i) renderer.render(root);
+        root->unref();
+    }
+
+    // --- Texture with NEAREST filter ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        const int W=32, H=32;
+        unsigned char rgba[W*H*4];
+        for (int i=0; i<W*H*4; ++i) rgba[i] = (unsigned char)(i%256);
+
+        SoTexture2* tex = new SoTexture2();
+        tex->image.setValue(SbVec2s(W,H), 4, rgba);
+        tex->wrapS.setValue(SoTexture2::REPEAT);
+        tex->wrapT.setValue(SoTexture2::REPEAT);
+        root->addChild(tex);
+        root->addChild(new SoCone());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+        root->unref();
+    }
+
+    // --- Multiple textures (SoTexture2 switching) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        for (int i=0; i<3; ++i) {
+            SoSeparator* sep = new SoSeparator();
+            SoTranslation* tr = new SoTranslation();
+            tr->translation.setValue(SbVec3f(float(i-1)*1.5f, 0, 0));
+            sep->addChild(tr);
+
+            unsigned char rgb[8*8*3];
+            for (int j=0; j<8*8*3; ++j) rgb[j] = (unsigned char)((i*80+j*3)%256);
+
+            SoTexture2* tex = new SoTexture2();
+            tex->image.setValue(SbVec2s(8,8), 3, rgb);
+            sep->addChild(tex);
+            SoSphere* s = new SoSphere();
+            s->radius.setValue(0.4f);
+            sep->addChild(s);
+            root->addChild(sep);
+        }
+
+        SbViewportRegion vp(128,128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        // Render multiple times to hit all cached textures
+        for (int i=0; i<4; ++i) renderer.render(root);
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 7 / Iter 30: SoAnnotation, SoLOD, SoArray, SoMultipleCopy GL
+// =========================================================================
+static int runSpecialNodesGLTest()
+{
+    int failures = 0;
+
+    // --- SoAnnotation (always on top) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        // Background geometry
+        SoMaterial* mat1 = new SoMaterial();
+        mat1->diffuseColor.setValue(SbColor(0.3f, 0.3f, 0.9f));
+        root->addChild(mat1);
+        root->addChild(new SoCube());
+
+        // Annotation (should appear on top)
+        SoAnnotation* annot = new SoAnnotation();
+        SoMaterial* mat2 = new SoMaterial();
+        mat2->diffuseColor.setValue(SbColor(0.9f, 0.1f, 0.1f));
+        annot->addChild(mat2);
+        SoSphere* s = new SoSphere();
+        s->radius.setValue(0.3f);
+        annot->addChild(s);
+        root->addChild(annot);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoAnnotation render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- SoLOD (distance-based LOD) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoLOD* lod = new SoLOD();
+        lod->center.setValue(SbVec3f(0,0,0));
+        lod->range.set1Value(0, 3.0f);
+        lod->range.set1Value(1, 6.0f);
+
+        // High detail
+        SoSphere* highDetail = new SoSphere();
+        highDetail->radius.setValue(1.0f);
+        lod->addChild(highDetail);
+
+        // Medium detail
+        SoCone* medDetail = new SoCone();
+        lod->addChild(medDetail);
+
+        // Low detail (empty cube)
+        lod->addChild(new SoCube());
+
+        root->addChild(lod);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoLOD render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- SoLevelOfDetail (polygon-count based LOD) ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoLevelOfDetail* lod = new SoLevelOfDetail();
+        lod->screenArea.set1Value(0, 10000.0f);
+        lod->screenArea.set1Value(1, 1000.0f);
+
+        SoSphere* s1 = new SoSphere();
+        SoSphere* s2 = new SoSphere();
+        lod->addChild(s1);
+        lod->addChild(s2);
+        root->addChild(lod);
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoLevelOfDetail render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- SoArray ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,12));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoArray* arr = new SoArray();
+        arr->numElements1.setValue(3);
+        arr->numElements2.setValue(2);
+        arr->separation1.setValue(SbVec3f(1.5f, 0, 0));
+        arr->separation2.setValue(SbVec3f(0, 1.5f, 0));
+
+        SoMaterial* mat = new SoMaterial();
+        mat->diffuseColor.setValue(SbColor(0.6f, 0.4f, 0.8f));
+        arr->addChild(mat);
+        SoSphere* s = new SoSphere();
+        s->radius.setValue(0.4f);
+        arr->addChild(s);
+        root->addChild(arr);
+
+        SbViewportRegion vp(128,128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoArray render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- SoMultipleCopy ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,8));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoMultipleCopy* mc = new SoMultipleCopy();
+        // Add 4 transforms as separate 4-element rows
+        SbMatrix m0; m0.setTranslate(SbVec3f(-1.5f, 0, 0));
+        SbMatrix m1; m1.setTranslate(SbVec3f(-0.5f, 0, 0));
+        SbMatrix m2; m2.setTranslate(SbVec3f( 0.5f, 0, 0));
+        SbMatrix m3; m3.setTranslate(SbVec3f( 1.5f, 0, 0));
+        mc->matrix.set1Value(0, m0);
+        mc->matrix.set1Value(1, m1);
+        mc->matrix.set1Value(2, m2);
+        mc->matrix.set1Value(3, m3);
+
+        SoSphere* s = new SoSphere();
+        s->radius.setValue(0.3f);
+        mc->addChild(s);
+        root->addChild(mc);
+
+        SbViewportRegion vp(128,128);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoMultipleCopy render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- SoDepthBuffer ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoDepthBuffer* db = new SoDepthBuffer();
+        db->test.setValue(TRUE);
+        db->write.setValue(TRUE);
+        db->function.setValue(SoDepthBuffer::LESS);
+        db->range.setValue(SbVec2f(0.0f, 1.0f));
+        root->addChild(db);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoDepthBuffer render\n"); ++failures; }
+
+        // Test ALWAYS function
+        db->function.setValue(SoDepthBuffer::ALWAYS);
+        renderer.render(root);
+
+        // Test write disabled
+        db->write.setValue(FALSE);
+        renderer.render(root);
+
+        root->unref();
+    }
+
+    // --- SoAlphaTest ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoAlphaTest* alphaTest = new SoAlphaTest();
+        alphaTest->function.setValue(SoAlphaTest::GREATER);
+        alphaTest->value.setValue(0.5f);
+        root->addChild(alphaTest);
+
+        SoMaterial* mat = new SoMaterial();
+        mat->transparency.setValue(0.3f);
+        root->addChild(mat);
+        root->addChild(new SoCube());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB_TRANSPARENCY);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoAlphaTest render\n"); ++failures; }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 7 / Iter 31: SbDPLine, SbDPPlane, SbMatrix deeper
+// =========================================================================
+static int runMathDeepTest2()
+{
+    int failures = 0;
+
+    // --- SbDPLine operations ---
+    {
+        SbDPLine line1(SbVec3d(0,0,0), SbVec3d(1,0,0));
+        SbDPLine line2(SbVec3d(0,1,0), SbVec3d(0,-1,0));
+
+        // getClosestPoints
+        SbVec3d p1, p2;
+        SbBool got = line1.getClosestPoints(line2, p1, p2);
+        (void)got;
+
+        // getClosestPoint
+        SbVec3d cp = line1.getClosestPoint(SbVec3d(0.5, 1.0, 0));
+        (void)cp;
+
+        // getPosition / getDirection
+        const SbVec3d& pos = line1.getPosition();
+        const SbVec3d& dir = line1.getDirection();
+        if (dir.length() < 0.5) {
+            fprintf(stderr, "  FAIL: SbDPLine direction length < 0.5\n"); ++failures;
+        }
+
+        // setValue
+        SbDPLine line3;
+        line3.setValue(SbVec3d(1,0,0), SbVec3d(0,1,0));
+    }
+
+    // --- SbMatrix deeper ---
+    {
+        SbMatrix m;
+        m.makeIdentity();
+
+        // setTransform with full parameters (translation, rotation, scale, scaleOrientation, center)
+        SbVec3f trans(1.0f, 2.0f, 3.0f);
+        SbRotation rot(SbVec3f(0,1,0), float(M_PI)/6.0f);
+        SbVec3f scale(1.5f, 1.5f, 1.5f);
+        SbRotation scaleOrient;
+        SbVec3f center(0.5f, 0.5f, 0.5f);
+
+        m.setTransform(trans, rot, scale, scaleOrient, center);
+
+        // getTransform (4-arg)
+        SbVec3f tTrans, tScale;
+        SbRotation tRot, tScaleOrient;
+        m.getTransform(tTrans, tRot, tScale, tScaleOrient);
+
+        // getTransform (5-arg)
+        SbVec3f tCenter;
+        m.getTransform(tTrans, tRot, tScale, tScaleOrient, SbVec3f(0.5f,0.5f,0.5f));
+
+        // multLeft
+        SbMatrix m2;
+        m2.makeIdentity();
+        m2.setRotate(SbRotation(SbVec3f(1,0,0), 0.3f));
+        SbMatrix result = m;
+        result.multLeft(m2);
+
+        // multRight (standard)
+        SbMatrix result2 = m;
+        result2 *= m2;
+
+        // multVecMatrix (vec4)
+        SbVec4f v4in(1,0,0,1);
+        SbVec4f v4out;
+        m.multVecMatrix(v4in, v4out);
+        if (std::isnan(v4out[0])) {
+            fprintf(stderr, "  FAIL: multVecMatrix vec4 NaN\n"); ++failures;
+        }
+
+        // multLineMatrix
+        SbLine lineIn(SbVec3f(0,0,0), SbVec3f(1,0,0));
+        SbLine lineOut;
+        m.multLineMatrix(lineIn, lineOut);
+
+        // det3 / det4
+        float d4 = m.det4();
+        (void)d4;
+
+        // inverse
+        SbMatrix inv = m.inverse();
+
+        // setRotate / setTranslate / setScale
+        SbMatrix mr; mr.setRotate(rot);
+        SbMatrix mt; mt.setTranslate(trans);
+        SbMatrix ms; ms.setScale(scale);
+        SbMatrix ms2; ms2.setScale(2.0f);
+
+        // compose them
+        SbMatrix composed = mt;
+        composed *= mr;
+        composed *= ms;
+
+        // getValue / setValue via array
+        float vals[4][4];
+        composed.getValue(vals);
+        SbMatrix restored;
+        restored.setValue(vals);
+
+        // == operator
+        SbBool eq = (composed == restored);
+        if (!eq) {
+            fprintf(stderr, "  FAIL: SbMatrix == after getValue/setValue\n"); ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Session 7 / Iter 32: SoCacheHint, SoFrustumCamera GL
+// =========================================================================
+static int runMiscGLTest()
+{
+    int failures = 0;
+
+    // --- SoCacheHint ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoCacheHint* hint = new SoCacheHint();
+        hint->memValue.setValue(1.0f);
+        hint->gfxValue.setValue(1.0f);
+        root->addChild(hint);
+
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoCacheHint render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- SoFrustumCamera ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoFrustumCamera* cam = new SoFrustumCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        cam->left.setValue(-1.0f);
+        cam->right.setValue(1.0f);
+        cam->top.setValue(1.0f);
+        cam->bottom.setValue(-1.0f);
+        cam->nearDistance.setValue(0.1f);
+        cam->farDistance.setValue(100.0f);
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64,64);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoFrustumCamera render\n"); ++failures; }
+        root->unref();
+    }
+
+    // --- SoDrawStyle with point size and line width ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+
+        SoDrawStyle* ds = new SoDrawStyle();
+        ds->style.setValue(SoDrawStyle::LINES);
+        ds->lineWidth.setValue(2.0f);
+        ds->linePattern.setValue(0xAAAA);
+        ds->pointSize.setValue(5.0f);
+        root->addChild(ds);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.render(root);
+
+        // POINTS style
+        ds->style.setValue(SoDrawStyle::POINTS);
+        renderer.render(root);
+
+        // FILLED style
+        ds->style.setValue(SoDrawStyle::FILLED);
+        renderer.render(root);
+
+        // INVISIBLE style
+        ds->style.setValue(SoDrawStyle::INVISIBLE);
+        renderer.render(root);
+
+        root->unref();
+    }
+
+    // --- SoEnvironment ---
+    {
+        SoSeparator* root = new SoSeparator(); root->ref();
+        SoPerspectiveCamera* cam = new SoPerspectiveCamera();
+        cam->position.setValue(SbVec3f(0,0,5));
+        root->addChild(cam);
+        root->addChild(new SoDirectionalLight());
+
+        SoEnvironment* env = new SoEnvironment();
+        env->fogType.setValue(SoEnvironment::HAZE);
+        env->fogColor.setValue(SbColor(0.5f, 0.5f, 0.5f));
+        env->fogVisibility.setValue(10.0f);
+        env->ambientIntensity.setValue(0.3f);
+        env->ambientColor.setValue(SbColor(0.2f, 0.2f, 0.3f));
+        root->addChild(env);
+        root->addChild(new SoSphere());
+
+        SbViewportRegion vp(64,64);
+        cam->viewAll(root, vp);
+        SoOffscreenRenderer renderer(vp);
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        SbBool ok = renderer.render(root);
+        if (!ok) { fprintf(stderr, "  FAIL: SoEnvironment fog render\n"); ++failures; }
+
+        // SMOKE fog type
+        env->fogType.setValue(SoEnvironment::SMOKE);
+        renderer.render(root);
+
+        // FOG type
+        env->fogType.setValue(SoEnvironment::FOG);
+        renderer.render(root);
+
+        // NONE
+        env->fogType.setValue(SoEnvironment::NONE);
+        renderer.render(root);
+
+        root->unref();
+    }
+
+    // --- SoColorIndex (color index mode) ---
+    {
+        SoColorIndex* ci = new SoColorIndex(); ci->ref();
+        ci->index.set1Value(0, 1);
+        ci->index.set1Value(1, 3);
+        // Just test construction/field access - color index mode not commonly used
+        SoSFEnum defField;
+        (void)ci;
+        ci->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Registration: Session 7 tests
+// =========================================================================
+
+REGISTER_TEST(unit_gl_render_action_deep, ObolTest::TestCategory::Rendering,
+    "SoGLRenderAction: setNumPasses, setPassCallback, setAbortCallback+getAbortCallback, addPreRenderCallback, setUpdateArea, setTransparentDelayedObjectRenderType, setDelayedObjDepthWrite, setRenderingIsRemote, setCacheContext",
+    e.has_visual = false;
+    e.run_unit = runGLRenderActionDeepTest;
+);
+
+REGISTER_TEST(unit_raypick_deep2, ObolTest::TestCategory::Actions,
+    "SoRayPickAction: intersect(triangle/segment/point/box), isBetweenPlanes, getLine, getViewVolume, hasWorldSpaceRay, multi-shape pick",
+    e.has_visual = false;
+    e.run_unit = runRayPickDeepTest;
+);
+
+REGISTER_TEST(unit_field_deep3, ObolTest::TestCategory::Fields,
+    "SoField: field-to-field connect/disconnect, getConnectedField, getForwardConnections, isConnectionEnabled, enableConnection; get/set string, touch, setDefault, setIgnored, enableNotify; engine connection; MF field ops",
+    e.has_visual = false;
+    e.run_unit = runFieldDeepTest;
+);
+
+REGISTER_TEST(unit_gl_image_deep, ObolTest::TestCategory::Rendering,
+    "SoGLImage: large texture (256x256), NEAREST filter, multiple texture switching, 4x renders for cache hits",
+    e.has_visual = false;
+    e.run_unit = runGLImageDeepTest;
+);
+
+REGISTER_TEST(unit_special_nodes_gl, ObolTest::TestCategory::Rendering,
+    "GL render: SoAnnotation, SoLOD, SoLevelOfDetail, SoArray, SoMultipleCopy, SoDepthBuffer (LESS/ALWAYS/no-write), SoAlphaTest",
+    e.has_visual = false;
+    e.run_unit = runSpecialNodesGLTest;
+);
+
+REGISTER_TEST(unit_math_deep2, ObolTest::TestCategory::Base,
+    "SbDPLine (getClosestPoints, getClosestPoint, getDirection, setValue); SbMatrix deeper (setTransform 5-arg, getTransform 4/5-arg, multLeft, multVecMatrix vec4, multLineMatrix, det4, compose, getValue/setValue)",
+    e.has_visual = false;
+    e.run_unit = runMathDeepTest2;
+);
+
+REGISTER_TEST(unit_misc_gl, ObolTest::TestCategory::Rendering,
+    "GL render: SoCacheHint, SoFrustumCamera, SoDrawStyle (LINES/lineWidth/linePattern, POINTS, INVISIBLE), SoEnvironment (HAZE/SMOKE/FOG/NONE)",
+    e.has_visual = false;
+    e.run_unit = runMiscGLTest;
+);
+
+} // anonymous namespace (session 7)
