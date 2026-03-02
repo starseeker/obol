@@ -170,6 +170,7 @@
 #include <Inventor/sensors/SoFieldSensor.h>
 #include <Inventor/system/gl.h>
 
+#include "glue/glp.h"
 #include "nodes/SoSubNodeP.h"
 #include "base/SbImageFormatHandler.h"
 #include "base/SbJpegImageHandler.h"
