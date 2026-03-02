@@ -2014,7 +2014,7 @@ REGISTER_TEST(simple_draggers, ObolTest::TestCategory::Draggers,
 );
 
 REGISTER_TEST(arb8_draggers, ObolTest::TestCategory::Draggers,
-    "ARB8-style box (solid + wireframe) for procedural dragger topology tests",
+    "ARB8 SoProceduralShape with interactive vertex/edge/face dragger handles",
     e.has_visual = true;
     e.has_interactive = true;
     e.nanort_ok = true;
@@ -2022,7 +2022,7 @@ REGISTER_TEST(arb8_draggers, ObolTest::TestCategory::Draggers,
 );
 
 REGISTER_TEST(arb8_edit_cycle, ObolTest::TestCategory::Draggers,
-    "ARB8 box with golden corner-handle spheres — edit-cycle visualization",
+    "ARB8 SoProceduralShape edit-cycle: solid + selection display + dragger handles",
     e.has_visual = true;
     e.has_interactive = true;
     e.nanort_ok = true;
