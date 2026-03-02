@@ -35,6 +35,9 @@
 
 // See .cpp-file for documentation.
 
+// This file has been removed from the build. CoinStaticObjectInDLL was a
+// Windows-only DLL double-load detector; all Linux code paths were stubs.
+
 // *************************************************************************
 
 #ifndef OBOL_INTERNAL

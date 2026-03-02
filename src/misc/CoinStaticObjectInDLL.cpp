@@ -30,6 +30,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
+// This file has been removed from the build (excluded from CMakeLists.txt).
+// CoinStaticObjectInDLL was a Windows-only DLL double-load detector; all
+// Linux code paths were assert(FALSE) stubs.
+
 // The purpose of the class in this file is to try to aid in detecting
 // when multiple Coin DLLs are loaded into the same runtime process
 // image under Windows.

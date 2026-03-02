@@ -33,9 +33,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-// FIXME: this class has not yet been implemented in Coin. this is a
-// placeholder / stub / skeleton code, not yet built (nor installed,
-// obviously).  --mortene.
+// This class was never implemented and has been removed from the build.
+// This header is retained for reference only and is not installed.
 
 #include <Inventor/actions/SoSimplifyAction.h>
 #include <Inventor/tools/SbLazyPimplPtr.h>

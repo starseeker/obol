@@ -105,7 +105,6 @@
 /* glue/glp.h include removed - no longer needed for old callback system */
 
 #include "fields/SoGlobalField.h"
-#include "misc/CoinStaticObjectInDLL.h"
 #include "misc/systemsanity.icc"
 #include "misc/SoDBP.h"
 #include "misc/SbHash.h"
@@ -258,10 +257,6 @@ SoDB::init(ContextManager * context_manager)
 
   // Initialize threading subsystem first as it's needed for other components
   cc_thread_init();
-
-  // Releasing the mutex used for detecting multiple Coin instances in
-  // the process image.
-  CoinStaticObjectInDLL::init();
 
   // See systemsanity.icc
   SoDB_checkGCCBuiltinExpectSanity();
@@ -432,10 +427,9 @@ SoDB::init(ContextManager * context_manager)
   SoDBP::isinitialized = TRUE;
 
   // NOTE: SoDBP::isinitialized must be set to TRUE before this block,
-  // or you will get a "mysterious" crash on a mutex in
-  // CoinStaticObjectInDLL.cpp.  Logically, it should not be flagged
-  // before after initialization is done, but subsystems invoked from
-  // these methods needs to know that Coin is already initialized.
+  // or you will get a "mysterious" crash on a mutex. Logically, it should
+  // not be flagged before initialization is done, but subsystems invoked
+  // from these methods need to know that Coin is already initialized.
   SoProfilerP::parseCoinProfilerVariable();
   if (SoProfiler::isEnabled()) {
     SoProfiler::init();
