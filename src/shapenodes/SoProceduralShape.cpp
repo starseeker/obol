@@ -54,6 +54,9 @@
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoGetPrimitiveCountAction.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
+#include <Inventor/elements/SoLineWidthElement.h>
+#include <Inventor/elements/SoViewVolumeElement.h>
+#include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/fields/SoSFVec3f.h>
 #include <Inventor/misc/SoState.h>
 #include <Inventor/nodes/SoSeparator.h>
@@ -1204,17 +1207,42 @@ SoProceduralShape::generatePrimitives(SoAction* action)
   int         nparams = this->params.getNum();
   const float* pv     = nparams > 0 ? this->params.getValues(0) : nullptr;
 
-  // For GLRenderAction, respect the current draw style.
+  // Consult the current draw style for all action types that carry state.
+  // (For GLRenderAction the element is always present; for SoCallbackAction
+  // and SoRaytraceRenderAction it is set when a SoDrawStyle node is traversed.)
   bool wireframeMode = false;
-  if (action->getTypeId().isDerivedFrom(SoGLRenderAction::getClassTypeId())) {
-    SoState* state = static_cast<SoGLRenderAction*>(action)->getState();
-    wireframeMode  = (SoDrawStyleElement::get(state) == SoDrawStyleElement::LINES);
+  SoState* state = action->getState();
+  if (state) {
+    wireframeMode = (SoDrawStyleElement::get(state) == SoDrawStyleElement::LINES);
   }
 
   if (wireframeMode) {
     SoProceduralWireframe wire;
     entry->geomCB(pv, nparams, nullptr, &wire, entry->userdata);
-    emitWireframe(action, wire);
+    if (action->getTypeId().isDerivedFrom(SoGLRenderAction::getClassTypeId())) {
+      // GL path: emit line primitives as usual.
+      emitWireframe(action, wire);
+    } else {
+      // Non-GL path (e.g. SoCallbackAction for nanort): render each wireframe
+      // segment as a thin tessellated cylinder so that triangle callbacks pick
+      // it up correctly.  Compute the world-space radius from the current line
+      // width and view volume when available, otherwise fall back to a small
+      // fixed value.
+      float radius = 0.02f;
+      if (state) {
+        float lineW = SoLineWidthElement::get(state);
+        if (lineW <= 0.0f) lineW = 1.0f;
+        const SbViewVolume& vv = SoViewVolumeElement::get(state);
+        float wh = vv.getHeight();
+        if (wh > 1e-6f) {
+          const SbViewportRegion& vpr = SoViewportRegionElement::get(state);
+          float vpH = static_cast<float>(vpr.getViewportSizePixels()[1]);
+          if (vpH > 0.0f)
+            radius = lineW * wh / vpH * 0.5f;
+        }
+      }
+      emitWireframeCylinders(action, wire, radius);
+    }
   } else {
     SoProceduralTriangles tris;
     entry->geomCB(pv, nparams, &tris, nullptr, entry->userdata);
@@ -1311,5 +1339,78 @@ SoProceduralShape::emitWireframe(SoAction*                    action,
     pv.setPoint(wire.vertices[static_cast<size_t>(b)]);
     this->shapeVertex(&pv);
   }
+  this->endShape();
+}
+
+void
+SoProceduralShape::emitWireframeCylinders(SoAction*                    action,
+                                          const SoProceduralWireframe& wire,
+                                          float                        radius)
+{
+  // Tessellate each wireframe segment as a 6-sided prism (cylinder) so that
+  // ray-tracing backends (e.g. nanort via SoCallbackAction) can pick up the
+  // geometry via their triangle callbacks.  This mirrors the cylinder-proxy
+  // mechanism used for SoLineSet / SoIndexedLineSet in nanort_context_manager.h.
+  if (wire.vertices.empty() || wire.segments.empty()) return;
+
+  const int    nv     = static_cast<int>(wire.vertices.size());
+  // 6-sided (hexagonal) cross-section: efficient for thin wires and still
+  // visually round enough for the wireframe-as-cylinders approximation.
+  const int    kSides = 6;
+  const float  twoPi  = 2.0f * static_cast<float>(M_PI);
+
+  SoPrimitiveVertex pv;
+  pv.setTextureCoords(SbVec4f(0.0f, 0.0f, 0.0f, 1.0f));
+
+  this->beginShape(action, SoShape::TRIANGLES);
+
+  for (size_t si = 0; si + 1 < wire.segments.size(); si += 2) {
+    const int32_t ia = wire.segments[si];
+    const int32_t ib = wire.segments[si + 1];
+    if (ia < 0 || ib < 0 || ia >= nv || ib >= nv) continue;
+
+    const SbVec3f& A = wire.vertices[static_cast<size_t>(ia)];
+    const SbVec3f& B = wire.vertices[static_cast<size_t>(ib)];
+
+    SbVec3f axis = B - A;
+    const float axisLen = axis.length();
+    if (axisLen < 1e-8f) continue;
+    axis /= axisLen;
+
+    // Build an orthonormal basis {u, v} perpendicular to axis.
+    // 0.9f ≈ cos(26°): switch reference vector when axis is nearly parallel
+    // to Y (within 26°) to avoid a degenerate cross-product.
+    SbVec3f ref(0.0f, 1.0f, 0.0f);
+    if (fabsf(axis.dot(ref)) > 0.9f)
+      ref = SbVec3f(1.0f, 0.0f, 0.0f);
+    SbVec3f u = ref.cross(axis);  u.normalize();
+    SbVec3f v = axis.cross(u);    // already unit length
+
+    // Precompute ring positions and outward normals for both ends.
+    SbVec3f posA[kSides], posB[kSides], norm[kSides];
+    for (int k = 0; k < kSides; ++k) {
+      const float angle = twoPi * k / kSides;
+      const SbVec3f n   = u * cosf(angle) + v * sinf(angle);
+      posA[k] = A + n * radius;
+      posB[k] = B + n * radius;
+      norm[k] = n;
+    }
+
+    // Emit two triangles per prism face (no end-caps needed for thin wires).
+    for (int k = 0; k < kSides; ++k) {
+      const int kn = (k + 1) % kSides;
+
+      // Triangle 1: A[k] → A[kn] → B[k]
+      pv.setNormal(norm[k]);  pv.setPoint(posA[k]);  this->shapeVertex(&pv);
+      pv.setNormal(norm[kn]); pv.setPoint(posA[kn]); this->shapeVertex(&pv);
+      pv.setNormal(norm[k]);  pv.setPoint(posB[k]);  this->shapeVertex(&pv);
+
+      // Triangle 2: A[kn] → B[kn] → B[k]
+      pv.setNormal(norm[kn]); pv.setPoint(posA[kn]); this->shapeVertex(&pv);
+      pv.setNormal(norm[kn]); pv.setPoint(posB[kn]); this->shapeVertex(&pv);
+      pv.setNormal(norm[k]);  pv.setPoint(posB[k]);  this->shapeVertex(&pv);
+    }
+  }
+
   this->endShape();
 }
