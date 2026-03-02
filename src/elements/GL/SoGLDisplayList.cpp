@@ -119,7 +119,8 @@ SoGLDisplayList::SoGLDisplayList(SoState * state, Type type, int allocnum,
   }
 
   if (PRIVATE(this)->type == DISPLAY_LIST) {
-    PRIVATE(this)->firstindex = (unsigned int) glGenLists(allocnum);
+    const SoGLContext * glw = SoGLContext_instance(PRIVATE(this)->context);
+    PRIVATE(this)->firstindex = (unsigned int) SoGLContext_glGenLists(glw, allocnum);
     if (PRIVATE(this)->firstindex == 0) {
       SoDebugError::post("SoGLDisplayList::SoGLDisplayList",
                          "Could not reserve %d displaylist%s. "
