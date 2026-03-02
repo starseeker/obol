@@ -355,6 +355,123 @@ int main(int argc, char ** argv)
     }
 
     // -----------------------------------------------------------------------
+    // Test 10: border width/colour round-trips
+    // -----------------------------------------------------------------------
+    {
+        SoQuadViewport qv;
+
+        // Default: no border
+        bool ok = (qv.getBorderWidth() == 0);
+
+        qv.setBorderWidth(4);
+        ok = ok && (qv.getBorderWidth() == 4);
+
+        // Negative width should clamp to 0
+        qv.setBorderWidth(-1);
+        ok = ok && (qv.getBorderWidth() == 0);
+
+        // Colour round-trip
+        SbColor yellow(1.0f, 1.0f, 0.0f);
+        qv.setBorderColor(yellow);
+        const SbColor & gc = qv.getBorderColor();
+        ok = ok && (std::fabs(gc[0] - yellow[0]) < 1e-4f &&
+                    std::fabs(gc[1] - yellow[1]) < 1e-4f &&
+                    std::fabs(gc[2] - yellow[2]) < 1e-4f);
+
+        printf("  test10 border API ok=%d\n", (int)ok);
+        if (!ok) { printf("FAIL test10\n"); ++failures; }
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 11: writeCompositeToRGB — non-blank composite + border pixels
+    // -----------------------------------------------------------------------
+    {
+        SoSeparator * geom = buildLODScene();
+
+        SoQuadViewport qv;
+        qv.setWindowSize(SbVec2s((short)W, (short)H));
+        qv.setSceneGraph(geom);
+
+        // Same camera setup as test5
+        float cameraZ[3] = { 3.0f, 8.0f, 20.0f };
+        for (int i = 0; i < 3; ++i) {
+            SoPerspectiveCamera * cam = new SoPerspectiveCamera;
+            cam->position.setValue(0.0f, 0.0f, cameraZ[i]);
+            cam->pointAt(SbVec3f(0.0f, 0.0f, 0.0f));
+            cam->nearDistance.setValue(0.1f);
+            cam->farDistance.setValue(cameraZ[i] + 5.0f);
+            qv.setCamera(i, cam);
+        }
+        SoOrthographicCamera * ortho = new SoOrthographicCamera;
+        ortho->position.setValue(5.0f, 0.0f, 5.0f);
+        ortho->pointAt(SbVec3f(0.0f, 0.0f, 0.0f));
+        ortho->height.setValue(4.0f);
+        ortho->nearDistance.setValue(0.1f);
+        ortho->farDistance.setValue(20.0f);
+        qv.setCamera(3, ortho);
+
+        // Enable a 4-pixel white border
+        qv.setBorderWidth(4);
+        qv.setBorderColor(SbColor(1.0f, 1.0f, 1.0f));
+
+        SbVec2s qs = qv.getQuadrantSize();
+        SoOffscreenRenderer * renderer =
+            new SoOffscreenRenderer(getCoinHeadlessContextManager(),
+                                    SbViewportRegion(qs[0], qs[1]));
+        renderer->setComponents(SoOffscreenRenderer::RGB);
+
+        char compPath[1024];
+        snprintf(compPath, sizeof(compPath), "%s_composite.rgb", basepath);
+        SbBool ok = qv.writeCompositeToRGB(compPath, renderer);
+        printf("  test11 writeCompositeToRGB ok=%d  file=%s\n",
+               (int)ok, compPath);
+
+        if (ok) {
+            // Read back the SGI RGB file and verify two things:
+            // 1. The horizontal border row (y = H/2) has white pixels.
+            // 2. The vertical border column (x = W/2) has white pixels.
+            // SGI RGB: 512-byte header, then planar R/G/B, rows bottom-to-top.
+            const int CW = W, CH = H;
+            const int CqW = CW / 2, CqH = CH / 2;
+            FILE * fp = fopen(compPath, "rb");
+            if (fp) {
+                fseek(fp, 512, SEEK_SET);
+                const int planeSz = CW * CH;
+                unsigned char * rp = new unsigned char[planeSz * 3];
+                bool readOk = (fread(rp, 1, planeSz * 3, fp) == (size_t)(planeSz * 3));
+                fclose(fp);
+
+                if (readOk) {
+                    // Border is 4 pixels wide centred at qH; check y=qH row.
+                    int hBorderRow = CqH;
+                    unsigned char hR = rp[hBorderRow * CW + CW / 4];
+                    unsigned char hG = rp[planeSz + hBorderRow * CW + CW / 4];
+                    unsigned char hB = rp[2 * planeSz + hBorderRow * CW + CW / 4];
+                    bool hBorderWhite = (hR > 200 && hG > 200 && hB > 200);
+
+                    int vBorderCol = CqW;
+                    unsigned char vR = rp[CH / 4 * CW + vBorderCol];
+                    unsigned char vG = rp[planeSz + CH / 4 * CW + vBorderCol];
+                    unsigned char vB = rp[2 * planeSz + CH / 4 * CW + vBorderCol];
+                    bool vBorderWhite = (vR > 200 && vG > 200 && vB > 200);
+
+                    printf("  test11 H-border pixel RGB=(%d,%d,%d) white=%d\n",
+                           hR, hG, hB, (int)hBorderWhite);
+                    printf("  test11 V-border pixel RGB=(%d,%d,%d) white=%d\n",
+                           vR, vG, vB, (int)vBorderWhite);
+
+                    ok = ok && hBorderWhite && vBorderWhite;
+                }
+                delete[] rp;
+            }
+        }
+
+        delete renderer;
+        geom->unref();
+        if (!ok) { printf("FAIL test11\n"); ++failures; }
+    }
+
+    // -----------------------------------------------------------------------
     printf("\n=== Summary: %d failure(s) ===\n", failures);
     return failures ? 1 : 0;
 }

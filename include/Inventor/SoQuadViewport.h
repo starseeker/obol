@@ -178,6 +178,25 @@ public:
     void           setBackgroundColor(int quad, const SbColor & color);
     const SbColor& getBackgroundColor(int quad) const;
 
+    // ---- Borders -----------------------------------------------------------
+
+    /**
+     * Set the pixel width of the dividing lines drawn between quadrants in
+     * the composite image produced by writeCompositeToRGB().
+     * A value of 0 (the default) suppresses border drawing entirely.
+     * The border straddles the mathematical division point: half the pixels
+     * fall in each adjacent quadrant's area.
+     */
+    void setBorderWidth(int pixelWidth);
+    int  getBorderWidth() const;
+
+    /**
+     * Set the colour of the quadrant border lines.
+     * Default: white (1, 1, 1).
+     */
+    void          setBorderColor(const SbColor & color);
+    const SbColor& getBorderColor() const;
+
     // ---- Rendering (convenience wrapper) -----------------------------------
 
     /**
@@ -185,6 +204,29 @@ public:
      * Delegates to getViewport(quad)->render(renderer).
      */
     SbBool renderQuadrant(int quad, SoOffscreenRenderer * renderer);
+
+    /**
+     * Render all four quadrants into a composite full-window image and write
+     * it to an SGI RGB file.
+     *
+     * @a quadRenderer is used for per-quadrant rendering and must have been
+     * initialised with an appropriate context manager.  Its viewport region
+     * is temporarily modified to the quadrant size (getQuadrantSize()) during
+     * each per-quadrant render call.
+     *
+     * The composite buffer is assembled from the four quadrant renders placed
+     * in their correct 2×2 tile positions.  If getBorderWidth() > 0 the
+     * horizontal and vertical dividing lines are then painted over the
+     * composite in getBorderColor().
+     *
+     * The output file is in SGI RGB format (same as
+     * SoOffscreenRenderer::writeToRGB()), suitable for conversion to PNG with
+     * the rgb_to_png tool.
+     *
+     * @return TRUE on success, FALSE if any render or file-write step failed.
+     */
+    SbBool writeCompositeToRGB(const char * filename,
+                               SoOffscreenRenderer * quadRenderer);
 
     // ---- Event routing -----------------------------------------------------
 
@@ -199,11 +241,14 @@ private:
     SoQuadViewport & operator=(const SoQuadViewport &);
 
     void updateViewports();
+    void applyBordersToBuffer(unsigned char * buf, int W, int H) const;
 
     SoViewport   tiles_[NUM_QUADS];  // the four underlying viewports
     SoNode *     scene_;             // shared scene (ref'd), may be NULL
     SbVec2s      windowSize_;
     int          activeQuad_;
+    int          borderWidth_;       // 0 = no border (default)
+    SbColor      borderColor_;       // default white
 };
 
 #endif // !OBOL_SOQUADVIEWPORT_H
