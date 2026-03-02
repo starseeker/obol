@@ -2927,6 +2927,15 @@ SoSeparator* createText3Parts(int width, int height)
 
     root->addChild(new SoDirectionalLight);
 
+    // Use a small font so all three rows fit without overlapping.
+    // Default font size is 10 units but the y-translations are only 3 units
+    // apart, so a font size of 2 keeps each row within ~2 units tall and
+    // prevents the red FRONT row from bleeding into the green ALL row in
+    // the NanoRT panel (where overlapping coplanar triangles cause z-fighting).
+    SoFont *fnt = new SoFont;
+    fnt->size.setValue(2.0f);
+    root->addChild(fnt);
+
     const int partsValues[3] = {
         SoText3::FRONT,
         SoText3::ALL,
