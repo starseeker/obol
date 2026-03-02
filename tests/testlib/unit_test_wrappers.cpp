@@ -14855,14 +14855,14 @@ REGISTER_TEST(unit_sbxfbox3f, ObolTest::TestCategory::Base,
 // =========================================================================
 
 // Helper: render a scene with a given transparency type, return non-black pixel count
-static int renderWithTransparency(SoGLRenderAction::TransparencyType ttype,
+static int renderWithTransparency(SoGLRenderAction::TransparencyType transparencyType,
                                   SoNode* root)
 {
     SbViewportRegion vp(64, 64);
     SoOffscreenRenderer renderer(vp);
     renderer.setComponents(SoOffscreenRenderer::RGB_TRANSPARENCY);
     SoGLRenderAction* ra = renderer.getGLRenderAction();
-    ra->setTransparencyType(ttype);
+    ra->setTransparencyType(transparencyType);
     renderer.render(root);
     const unsigned char* buf = renderer.getBuffer();
     if (!buf) return -1;
