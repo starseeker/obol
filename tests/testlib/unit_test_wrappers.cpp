@@ -103,6 +103,26 @@
 #include <Inventor/SbTime.h>
 #include <Inventor/actions/SoGetPrimitiveCountAction.h>
 
+// Additional headers for high-priority coverage tests
+#include <Inventor/SbPlane.h>
+#include <Inventor/SbLine.h>
+#include <Inventor/SbViewVolume.h>
+#include <Inventor/SbBox3d.h>
+#include <Inventor/SbBox2f.h>
+#include <Inventor/SbBox2s.h>
+#include <Inventor/SbVec2s.h>
+#include <Inventor/SbSphere.h>
+#include <Inventor/SbCylinder.h>
+#include <Inventor/SoSceneManager.h>
+#include <Inventor/actions/SoRayPickAction.h>
+#include <Inventor/SoPickedPoint.h>
+#include <Inventor/nodes/SoOrthographicCamera.h>
+#include <Inventor/nodes/SoIndexedFaceSet.h>
+#include <Inventor/nodes/SoCoordinate3.h>
+#include <Inventor/nodes/SoNormal.h>
+#include <Inventor/nodes/SoNormalBinding.h>
+#include <Inventor/nodes/SoFaceSet.h>
+
 #include <cmath>
 #include <cstdio>
 #include <utility>
@@ -2083,6 +2103,673 @@ REGISTER_TEST(nanort_shadow, ObolTest::TestCategory::Rendering,
     e.has_interactive = true;
     e.nanort_ok = true;
     e.create_scene = ObolTest::Scenes::createNanoRTShadow;
+);
+
+// =========================================================================
+// Unit test: SbMatrix comprehensive
+// =========================================================================
+static int runMatrixTests()
+{
+    int failures = 0;
+
+    // --- inverse of translation matrix ---
+    {
+        SbMatrix m;
+        m.setTranslate(SbVec3f(3.0f, -2.0f, 5.0f));
+        SbMatrix inv = m.inverse();
+        SbVec3f v(0.0f, 0.0f, 0.0f);
+        SbVec3f r;
+        m.multVecMatrix(v, r);
+        // translate(3,-2,5) moves (0,0,0) to (3,-2,5)
+        if (!approxEqual(r[0], 3.0f) || !approxEqual(r[1], -2.0f) || !approxEqual(r[2], 5.0f)) {
+            fprintf(stderr, "  FAIL: setTranslate transform (got %f %f %f)\n", r[0], r[1], r[2]);
+            ++failures;
+        }
+        // inverse should move it back
+        SbVec3f r2;
+        inv.multVecMatrix(r, r2);
+        if (!approxEqual(r2[0], 0.0f, 1e-3f) || !approxEqual(r2[1], 0.0f, 1e-3f) || !approxEqual(r2[2], 0.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: inverse of translate (got %f %f %f)\n", r2[0], r2[1], r2[2]);
+            ++failures;
+        }
+    }
+
+    // --- scale matrix ---
+    {
+        SbMatrix m;
+        m.setScale(SbVec3f(2.0f, 3.0f, 4.0f));
+        SbVec3f v(1.0f, 1.0f, 1.0f), r;
+        m.multVecMatrix(v, r);
+        if (!approxEqual(r[0], 2.0f) || !approxEqual(r[1], 3.0f) || !approxEqual(r[2], 4.0f)) {
+            fprintf(stderr, "  FAIL: setScale(vec) (got %f %f %f)\n", r[0], r[1], r[2]);
+            ++failures;
+        }
+    }
+
+    // --- uniform scale ---
+    {
+        SbMatrix m;
+        m.setScale(5.0f);
+        SbVec3f v(1.0f, 1.0f, 1.0f), r;
+        m.multVecMatrix(v, r);
+        if (!approxEqual(r[0], 5.0f) || !approxEqual(r[1], 5.0f) || !approxEqual(r[2], 5.0f)) {
+            fprintf(stderr, "  FAIL: setScale(float) (got %f %f %f)\n", r[0], r[1], r[2]);
+            ++failures;
+        }
+    }
+
+    // --- rotation matrix ---
+    {
+        SbRotation rot(SbVec3f(0, 0, 1), float(M_PI / 2.0)); // 90° around Z
+        SbMatrix m;
+        m.setRotate(rot);
+        SbVec3f v(1.0f, 0.0f, 0.0f), r;
+        m.multVecMatrix(v, r);
+        // (1,0,0) rotated 90° around Z → (0,1,0)
+        if (!approxEqual(r[0], 0.0f, 1e-3f) || !approxEqual(r[1], 1.0f, 1e-3f) || !approxEqual(r[2], 0.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: setRotate 90-Z (got %f %f %f)\n", r[0], r[1], r[2]);
+            ++failures;
+        }
+    }
+
+    // --- setTransform / getTransform round-trip ---
+    {
+        SbVec3f t(1.0f, 2.0f, 3.0f);
+        SbRotation r(SbVec3f(0, 1, 0), float(M_PI / 4.0));
+        SbVec3f s(1.0f, 1.0f, 1.0f);
+        SbMatrix m;
+        m.setTransform(t, r, s);
+        SbVec3f tout; SbRotation rout; SbVec3f sout; SbRotation soout;
+        m.getTransform(tout, rout, sout, soout);
+        if (!approxEqual(tout[0], t[0], 1e-3f) || !approxEqual(tout[1], t[1], 1e-3f) || !approxEqual(tout[2], t[2], 1e-3f)) {
+            fprintf(stderr, "  FAIL: getTransform translation (got %f %f %f)\n", tout[0], tout[1], tout[2]);
+            ++failures;
+        }
+        if (!approxEqual(sout[0], s[0], 1e-3f) || !approxEqual(sout[1], s[1], 1e-3f) || !approxEqual(sout[2], s[2], 1e-3f)) {
+            fprintf(stderr, "  FAIL: getTransform scale (got %f %f %f)\n", sout[0], sout[1], sout[2]);
+            ++failures;
+        }
+    }
+
+    // --- multRight and matrix multiplication ---
+    {
+        SbMatrix a, b;
+        a.setTranslate(SbVec3f(1.0f, 0.0f, 0.0f));
+        b.setTranslate(SbVec3f(0.0f, 2.0f, 0.0f));
+        SbMatrix c = a;
+        c.multRight(b); // c = a * b  → translate (1,2,0)
+        SbVec3f v(0.0f, 0.0f, 0.0f), r;
+        c.multVecMatrix(v, r);
+        if (!approxEqual(r[0], 1.0f, 1e-3f) || !approxEqual(r[1], 2.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: multRight translation (got %f %f %f)\n", r[0], r[1], r[2]);
+            ++failures;
+        }
+    }
+
+    // --- operator* ---
+    {
+        SbMatrix a, b;
+        a.setTranslate(SbVec3f(3.0f, 0.0f, 0.0f));
+        b.setScale(2.0f);
+        SbMatrix c = a * b;
+        SbVec3f v(0.0f, 0.0f, 0.0f), r;
+        c.multVecMatrix(v, r);
+        // translate then scale: (3,0,0)*2 = (6,0,0)
+        if (!approxEqual(r[0], 6.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: operator* (got %f %f %f)\n", r[0], r[1], r[2]);
+            ++failures;
+        }
+    }
+
+    // --- transpose ---
+    {
+        SbMatrix m(1,2,3,4, 5,6,7,8, 9,10,11,12, 13,14,15,16);
+        SbMatrix t = m.transpose();
+        SbMat mv, tv;
+        m.getValue(mv);
+        t.getValue(tv);
+        if (!approxEqual(tv[0][1], mv[1][0]) || !approxEqual(tv[1][2], mv[2][1])) {
+            fprintf(stderr, "  FAIL: transpose\n");
+            ++failures;
+        }
+    }
+
+    // --- det3 / det4 of identity ---
+    {
+        SbMatrix ident = SbMatrix::identity();
+        if (!approxEqual(ident.det3(), 1.0f)) {
+            fprintf(stderr, "  FAIL: identity det3 = %f\n", ident.det3());
+            ++failures;
+        }
+        if (!approxEqual(ident.det4(), 1.0f)) {
+            fprintf(stderr, "  FAIL: identity det4 = %f\n", ident.det4());
+            ++failures;
+        }
+    }
+
+    // --- equals ---
+    {
+        SbMatrix a = SbMatrix::identity();
+        SbMatrix b = SbMatrix::identity();
+        if (!a.equals(b, 1e-5f)) {
+            fprintf(stderr, "  FAIL: equals identity\n");
+            ++failures;
+        }
+        b[3][0] = 1.0f;
+        if (a.equals(b, 1e-5f)) {
+            fprintf(stderr, "  FAIL: equals should be false\n");
+            ++failures;
+        }
+    }
+
+    // --- multDirMatrix (no translation) ---
+    {
+        SbMatrix m;
+        m.setTranslate(SbVec3f(10.0f, 20.0f, 30.0f));
+        SbVec3f dir(1.0f, 0.0f, 0.0f), r;
+        m.multDirMatrix(dir, r);
+        // Direction should NOT be affected by translation
+        if (!approxEqual(r[0], 1.0f, 1e-3f) || !approxEqual(r[1], 0.0f, 1e-3f) || !approxEqual(r[2], 0.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: multDirMatrix translation ignored (got %f %f %f)\n", r[0], r[1], r[2]);
+            ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbRotation comprehensive
+// =========================================================================
+static int runRotationTests()
+{
+    int failures = 0;
+
+    // --- identity ---
+    {
+        SbRotation r = SbRotation::identity();
+        SbVec3f v(1.0f, 2.0f, 3.0f), out;
+        r.multVec(v, out);
+        if (!approxEqual(out[0], 1.0f, 1e-4f) || !approxEqual(out[1], 2.0f, 1e-4f) || !approxEqual(out[2], 3.0f, 1e-4f)) {
+            fprintf(stderr, "  FAIL: identity rotation (got %f %f %f)\n", out[0], out[1], out[2]);
+            ++failures;
+        }
+    }
+
+    // --- getValue(axis, radians) ---
+    {
+        SbVec3f axis(0.0f, 1.0f, 0.0f);
+        float rad = float(M_PI / 3.0);
+        SbRotation r(axis, rad);
+        SbVec3f gotAxis; float gotRad;
+        r.getValue(gotAxis, gotRad);
+        if (!approxEqual(gotRad, rad, 1e-4f)) {
+            fprintf(stderr, "  FAIL: getValue radians (got %f, expected %f)\n", gotRad, rad);
+            ++failures;
+        }
+        if (!approxEqual(std::fabs(gotAxis[1]), 1.0f, 1e-4f)) {
+            fprintf(stderr, "  FAIL: getValue axis Y (got %f)\n", gotAxis[1]);
+            ++failures;
+        }
+    }
+
+    // --- getValue(matrix) round-trip ---
+    {
+        SbRotation r(SbVec3f(1.0f, 0.0f, 0.0f), float(M_PI / 4.0));
+        SbMatrix m;
+        r.getValue(m);
+        SbRotation r2(m);
+        SbVec3f v(0.0f, 1.0f, 0.0f), a, b;
+        r.multVec(v, a);
+        r2.multVec(v, b);
+        if (!approxEqual(a[0], b[0], 1e-3f) || !approxEqual(a[1], b[1], 1e-3f) || !approxEqual(a[2], b[2], 1e-3f)) {
+            fprintf(stderr, "  FAIL: matrix round-trip (a=%f %f %f, b=%f %f %f)\n",
+                    a[0], a[1], a[2], b[0], b[1], b[2]);
+            ++failures;
+        }
+    }
+
+    // --- rotate-to constructor (from, to) ---
+    {
+        SbVec3f from(1.0f, 0.0f, 0.0f);
+        SbVec3f to(0.0f, 1.0f, 0.0f);
+        SbRotation r(from, to);
+        SbVec3f result;
+        r.multVec(from, result);
+        if (!approxEqual(result[0], to[0], 1e-3f) || !approxEqual(result[1], to[1], 1e-3f)) {
+            fprintf(stderr, "  FAIL: from-to rotation (got %f %f %f)\n", result[0], result[1], result[2]);
+            ++failures;
+        }
+    }
+
+    // --- composition of rotations ---
+    {
+        // Two 90° rotations around Y should give a 180° rotation
+        SbRotation r90(SbVec3f(0, 1, 0), float(M_PI / 2.0));
+        SbRotation r180 = r90 * r90;
+        SbVec3f v(1.0f, 0.0f, 0.0f), r;
+        r180.multVec(v, r);
+        // 180° around Y: (1,0,0) → (-1,0,0)
+        if (!approxEqual(r[0], -1.0f, 1e-3f) || !approxEqual(r[1], 0.0f, 1e-3f) || !approxEqual(r[2], 0.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: rotation composition (got %f %f %f)\n", r[0], r[1], r[2]);
+            ++failures;
+        }
+    }
+
+    // --- invert ---
+    {
+        SbRotation r(SbVec3f(0, 0, 1), float(M_PI / 3.0));
+        SbRotation inv = r.inverse();
+        SbRotation combined = r * inv;
+        SbVec3f v(1.0f, 2.0f, 3.0f), out;
+        combined.multVec(v, out);
+        if (!approxEqual(out[0], 1.0f, 1e-3f) || !approxEqual(out[1], 2.0f, 1e-3f) || !approxEqual(out[2], 3.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: r * r.inverse != identity (got %f %f %f)\n", out[0], out[1], out[2]);
+            ++failures;
+        }
+    }
+
+    // --- slerp ---
+    {
+        SbRotation from = SbRotation::identity();
+        SbRotation to(SbVec3f(0, 1, 0), float(M_PI / 2.0));
+        SbRotation mid = SbRotation::slerp(from, to, 0.5f);
+        SbVec3f v(1.0f, 0.0f, 0.0f), r;
+        mid.multVec(v, r);
+        // At t=0.5, should be ~45° around Y: (cos45, 0, -sin45)
+        float expected_x = std::cos(float(M_PI / 4.0));
+        float expected_z = -std::sin(float(M_PI / 4.0));
+        if (!approxEqual(r[0], expected_x, 1e-2f) || !approxEqual(r[2], expected_z, 1e-2f)) {
+            fprintf(stderr, "  FAIL: slerp midpoint (got %f %f %f, expected ~%f 0 %f)\n",
+                    r[0], r[1], r[2], expected_x, expected_z);
+            ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbViewVolume + SbPlane + SbLine
+// =========================================================================
+static int runViewVolumeTests()
+{
+    int failures = 0;
+
+    // --- SbPlane: distance, intersect, transform ---
+    {
+        SbPlane p(SbVec3f(0, 1, 0), 0.0f); // XZ plane at y=0
+        float d = p.getDistance(SbVec3f(0.0f, 5.0f, 0.0f));
+        if (!approxEqual(d, 5.0f)) {
+            fprintf(stderr, "  FAIL: SbPlane getDistance (got %f)\n", d);
+            ++failures;
+        }
+        // Point on positive side
+        if (!p.isInHalfSpace(SbVec3f(0.0f, 1.0f, 0.0f))) {
+            fprintf(stderr, "  FAIL: SbPlane isInHalfSpace positive\n");
+            ++failures;
+        }
+        if (p.isInHalfSpace(SbVec3f(0.0f, -1.0f, 0.0f))) {
+            fprintf(stderr, "  FAIL: SbPlane isInHalfSpace negative\n");
+            ++failures;
+        }
+    }
+
+    // --- SbPlane intersect with SbLine ---
+    {
+        SbPlane p(SbVec3f(0, 0, 1), 0.0f); // XY plane at z=0
+        SbLine line(SbVec3f(0, 0, -1), SbVec3f(0, 0, 1)); // line along Z
+        SbVec3f intersection;
+        SbBool hit = p.intersect(line, intersection);
+        if (!hit) {
+            fprintf(stderr, "  FAIL: SbPlane intersect with line should hit\n");
+            ++failures;
+        } else if (!approxEqual(intersection[2], 0.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbPlane intersect Z (got %f)\n", intersection[2]);
+            ++failures;
+        }
+    }
+
+    // --- SbLine: getClosestPoint ---
+    {
+        SbLine line(SbVec3f(0, 0, 0), SbVec3f(1, 0, 0)); // X axis
+        SbVec3f pt(3.0f, 5.0f, 0.0f);
+        SbVec3f closest = line.getClosestPoint(pt);
+        // Closest point on X axis to (3,5,0) is (3,0,0)
+        if (!approxEqual(closest[0], 3.0f, 1e-3f) || !approxEqual(closest[1], 0.0f, 1e-3f)) {
+            fprintf(stderr, "  FAIL: SbLine getClosestPoint (got %f %f %f)\n", closest[0], closest[1], closest[2]);
+            ++failures;
+        }
+    }
+
+    // --- SbViewVolume ortho: getPlane, projectToScreen ---
+    {
+        SbViewVolume vv;
+        vv.ortho(-1.0f, 1.0f, -1.0f, 1.0f, 0.1f, 100.0f);
+        // Near plane is at distance nearVal from eye along -Z
+        SbPlane nearPlane = vv.getPlane(0.1f);
+        // Near plane normal should point towards +Z (towards viewer)
+        SbVec3f n = nearPlane.getNormal();
+        if (std::fabs(n[2]) < 0.5f) {
+            fprintf(stderr, "  FAIL: ortho near plane normal Z (got %f %f %f)\n", n[0], n[1], n[2]);
+            ++failures;
+        }
+    }
+
+    // --- SbViewVolume perspective: getSightPoint ---
+    {
+        SbViewVolume vv;
+        vv.perspective(float(M_PI / 2.0), 1.0f, 0.1f, 100.0f); // 90° FOV
+        SbVec3f sight = vv.getSightPoint(10.0f);
+        // Sight point at dist 10 should be directly in front (along -Z in eye space)
+        if (!approxEqual(sight[0], 0.0f, 1e-2f) || !approxEqual(sight[1], 0.0f, 1e-2f)) {
+            fprintf(stderr, "  FAIL: getSightPoint off-axis (got %f %f %f)\n", sight[0], sight[1], sight[2]);
+            ++failures;
+        }
+    }
+
+    // --- SbSphere: intersect with line ---
+    {
+        SbSphere sphere(SbVec3f(0, 0, 0), 1.0f);
+        SbLine line(SbVec3f(-2.0f, 0.0f, 0.0f), SbVec3f(2.0f, 0.0f, 0.0f));
+        SbVec3f enter, exit;
+        SbBool hit = sphere.intersect(line, enter, exit);
+        if (!hit) {
+            fprintf(stderr, "  FAIL: SbSphere intersect should hit\n");
+            ++failures;
+        } else {
+            if (!approxEqual(enter[0], -1.0f, 1e-3f)) {
+                fprintf(stderr, "  FAIL: SbSphere enter X (got %f)\n", enter[0]);
+                ++failures;
+            }
+            if (!approxEqual(exit[0], 1.0f, 1e-3f)) {
+                fprintf(stderr, "  FAIL: SbSphere exit X (got %f)\n", exit[0]);
+                ++failures;
+            }
+        }
+    }
+
+    // --- SbCylinder: intersect with line ---
+    {
+        SbCylinder cyl(SbLine(SbVec3f(0,0,0), SbVec3f(0,1,0)), 1.0f); // Y-axis cylinder
+        SbLine ray(SbVec3f(-2.0f, 0.5f, 0.0f), SbVec3f(2.0f, 0.5f, 0.0f));
+        SbVec3f enter, exit;
+        SbBool hit = cyl.intersect(ray, enter, exit);
+        if (!hit) {
+            fprintf(stderr, "  FAIL: SbCylinder intersect should hit\n");
+            ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoSceneManager (basic lifecycle)
+// =========================================================================
+static int runSceneManagerTests()
+{
+    int failures = 0;
+
+    // --- construction / destruction ---
+    {
+        SoSceneManager* mgr = new SoSceneManager();
+        if (!mgr) {
+            fprintf(stderr, "  FAIL: SoSceneManager construction\n");
+            ++failures;
+        }
+        delete mgr;
+    }
+
+    // --- setSceneGraph / getSceneGraph ---
+    {
+        SoSceneManager mgr;
+        SoSeparator* root = new SoSeparator();
+        root->ref();
+        mgr.setSceneGraph(root);
+        if (mgr.getSceneGraph() != root) {
+            fprintf(stderr, "  FAIL: getSceneGraph\n");
+            ++failures;
+        }
+        mgr.setSceneGraph(nullptr);
+        root->unref();
+    }
+
+    // --- setViewportRegion / getViewportRegion ---
+    {
+        SoSceneManager mgr;
+        SbViewportRegion vp(800, 600);
+        mgr.setViewportRegion(vp);
+        const SbViewportRegion& got = mgr.getViewportRegion();
+        if (got.getWindowSize()[0] != 800 || got.getWindowSize()[1] != 600) {
+            fprintf(stderr, "  FAIL: getViewportRegion size (got %d %d)\n",
+                    got.getWindowSize()[0], got.getWindowSize()[1]);
+            ++failures;
+        }
+    }
+
+    // --- setBackgroundColor ---
+    {
+        SoSceneManager mgr;
+        mgr.setBackgroundColor(SbColor(0.5f, 0.25f, 0.75f));
+        SbColor c = mgr.getBackgroundColor();
+        if (!approxEqual(c[0], 0.5f) || !approxEqual(c[1], 0.25f) || !approxEqual(c[2], 0.75f)) {
+            fprintf(stderr, "  FAIL: getBackgroundColor (got %f %f %f)\n", c[0], c[1], c[2]);
+            ++failures;
+        }
+    }
+
+    // --- isRGBMode (default) ---
+    {
+        SoSceneManager mgr;
+        if (!mgr.isRGBMode()) {
+            fprintf(stderr, "  FAIL: default isRGBMode should be true\n");
+            ++failures;
+        }
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SoRayPickAction
+// =========================================================================
+static int runRayPickTests()
+{
+    int failures = 0;
+
+    // --- construction and viewport setup ---
+    {
+        SbViewportRegion vp(512, 512);
+        SoRayPickAction rp(vp);
+        // Verify viewport is stored correctly
+        if (rp.getViewportRegion().getWindowSize()[0] != 512) {
+            fprintf(stderr, "  FAIL: RayPickAction viewport size\n");
+            ++failures;
+        }
+    }
+
+    // --- pick radius ---
+    {
+        SbViewportRegion vp(512, 512);
+        SoRayPickAction rp(vp);
+        rp.setRadius(5.0f);
+        if (!approxEqual(rp.getRadius(), 5.0f)) {
+            fprintf(stderr, "  FAIL: pick radius (got %f)\n", rp.getRadius());
+            ++failures;
+        }
+    }
+
+    // --- pick a sphere in a simple scene ---
+    {
+        SoSeparator* root = new SoSeparator();
+        root->ref();
+        SoSphere* sphere = new SoSphere();
+        sphere->radius = 1.0f;
+        root->addChild(sphere);
+
+        SbViewportRegion vp(512, 512);
+        SoRayPickAction rp(vp);
+        // Set ray along -Z through origin (should hit the sphere at z~1)
+        rp.setRay(SbVec3f(0.0f, 0.0f, 10.0f), SbVec3f(0.0f, 0.0f, -1.0f));
+        rp.apply(root);
+
+        const SoPickedPointList& picks = rp.getPickedPointList();
+        if (picks.getLength() == 0) {
+            fprintf(stderr, "  FAIL: RayPickAction should hit sphere\n");
+            ++failures;
+        }
+        root->unref();
+    }
+
+    // --- pick misses empty scene ---
+    {
+        SoSeparator* root = new SoSeparator();
+        root->ref();
+
+        SbViewportRegion vp(512, 512);
+        SoRayPickAction rp(vp);
+        rp.setRay(SbVec3f(0.0f, 0.0f, 10.0f), SbVec3f(0.0f, 0.0f, -1.0f));
+        rp.apply(root);
+
+        const SoPickedPointList& picks = rp.getPickedPointList();
+        if (picks.getLength() != 0) {
+            fprintf(stderr, "  FAIL: RayPickAction should miss empty scene\n");
+            ++failures;
+        }
+        root->unref();
+    }
+
+    // --- pick with SoIndexedFaceSet ---
+    {
+        SoSeparator* root = new SoSeparator();
+        root->ref();
+
+        SoCoordinate3* coords = new SoCoordinate3();
+        coords->point.set1Value(0, SbVec3f(-1, -1, 0));
+        coords->point.set1Value(1, SbVec3f( 1, -1, 0));
+        coords->point.set1Value(2, SbVec3f( 0,  1, 0));
+        root->addChild(coords);
+
+        SoIndexedFaceSet* ifs = new SoIndexedFaceSet();
+        int32_t indices[] = {0, 1, 2, -1};
+        ifs->coordIndex.setValues(0, 4, indices);
+        root->addChild(ifs);
+
+        SbViewportRegion vp(512, 512);
+        SoRayPickAction rp(vp);
+        rp.setRay(SbVec3f(0.0f, 0.0f, 10.0f), SbVec3f(0.0f, 0.0f, -1.0f));
+        rp.apply(root);
+
+        const SoPickedPointList& picks = rp.getPickedPointList();
+        if (picks.getLength() == 0) {
+            fprintf(stderr, "  FAIL: RayPickAction should hit triangle\n");
+            ++failures;
+        }
+        root->unref();
+    }
+
+    return failures;
+}
+
+// =========================================================================
+// Unit test: SbBox variants (double-precision and integer types)
+// =========================================================================
+static int runBoxVariantsTests()
+{
+    int failures = 0;
+
+    // --- SbBox3d basic operations ---
+    {
+        SbBox3d box;
+        if (!box.isEmpty()) {
+            fprintf(stderr, "  FAIL: default SbBox3d should be empty\n");
+            ++failures;
+        }
+        box.extendBy(SbVec3d(1.0, 2.0, 3.0));
+        box.extendBy(SbVec3d(-1.0, -2.0, -3.0));
+        if (box.isEmpty()) {
+            fprintf(stderr, "  FAIL: SbBox3d isEmpty after extendBy\n");
+            ++failures;
+        }
+        SbVec3d center = box.getCenter();
+        if (std::fabs(center[0]) > 1e-9 || std::fabs(center[1]) > 1e-9 || std::fabs(center[2]) > 1e-9) {
+            fprintf(stderr, "  FAIL: SbBox3d center (got %f %f %f)\n", center[0], center[1], center[2]);
+            ++failures;
+        }
+    }
+
+    // --- SbBox2f basic operations ---
+    {
+        SbBox2f box;
+        if (!box.isEmpty()) {
+            fprintf(stderr, "  FAIL: default SbBox2f should be empty\n");
+            ++failures;
+        }
+        box.extendBy(SbVec2f(1.0f, 2.0f));
+        box.extendBy(SbVec2f(-1.0f, -2.0f));
+        SbVec2f size = box.getSize();
+        if (!approxEqual(size[0], 2.0f) || !approxEqual(size[1], 4.0f)) {
+            fprintf(stderr, "  FAIL: SbBox2f getSize (got %f %f)\n", size[0], size[1]);
+            ++failures;
+        }
+        if (box.hasArea() == FALSE) {
+            fprintf(stderr, "  FAIL: SbBox2f hasArea\n");
+            ++failures;
+        }
+    }
+
+    // --- SbBox2s basic operations ---
+    {
+        SbBox2s box(SbVec2s(-5, -5), SbVec2s(5, 5));
+        if (box.isEmpty()) {
+            fprintf(stderr, "  FAIL: SbBox2s isEmpty for constructed box\n");
+            ++failures;
+        }
+        SbVec2f center = box.getCenter();
+        if (center[0] != 0.0f || center[1] != 0.0f) {
+            fprintf(stderr, "  FAIL: SbBox2s center (got %f %f)\n", center[0], center[1]);
+            ++failures;
+        }
+    }
+
+    return failures;
+}
+
+REGISTER_TEST(unit_matrix, ObolTest::TestCategory::Base,
+    "SbMatrix: inverse, scale, rotate, setTransform/getTransform, multRight, transpose, det",
+    e.has_visual = false;
+    e.run_unit = runMatrixTests;
+);
+
+REGISTER_TEST(unit_rotation, ObolTest::TestCategory::Base,
+    "SbRotation: identity, axis-angle, matrix round-trip, from-to, composition, slerp",
+    e.has_visual = false;
+    e.run_unit = runRotationTests;
+);
+
+REGISTER_TEST(unit_viewvolume, ObolTest::TestCategory::Base,
+    "SbViewVolume, SbPlane, SbLine, SbSphere, SbCylinder geometric operations",
+    e.has_visual = false;
+    e.run_unit = runViewVolumeTests;
+);
+
+REGISTER_TEST(unit_scenemanager, ObolTest::TestCategory::Misc,
+    "SoSceneManager: construction, setSceneGraph, viewport, background color",
+    e.has_visual = false;
+    e.run_unit = runSceneManagerTests;
+);
+
+REGISTER_TEST(unit_raypick, ObolTest::TestCategory::Actions,
+    "SoRayPickAction: viewport, pick radius, pick sphere, miss, pick triangle",
+    e.has_visual = false;
+    e.run_unit = runRayPickTests;
+);
+
+REGISTER_TEST(unit_box_variants, ObolTest::TestCategory::Base,
+    "SbBox3d, SbBox2f, SbBox2s: empty, extendBy, getCenter, getSize",
+    e.has_visual = false;
+    e.run_unit = runBoxVariantsTests;
 );
 
 } // anonymous namespace
