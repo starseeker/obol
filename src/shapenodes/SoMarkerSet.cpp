@@ -1497,25 +1497,4 @@ SoMarkerSet::removeMarker(int idx)
   return TRUE;
 }
 
-/*!
-  Returns \c TRUE if bit \a bitNumber in the bitmap data for the marker
-  at \a idx is set, \c FALSE otherwise.  The bits are numbered from the
-  most-significant bit of the first byte (bit 0 = MSB of byte 0).
-
-  Returns \c FALSE if \a idx is out of range, the marker has no data,
-  or \a bitNumber is negative or beyond the end of the bitmap.
-*/
-SbBool
-SoMarkerSet::isMarkerBitSet(int idx, int bitNumber)
-{
-  if (idx < 0 || idx >= markerlist->getLength()) return FALSE;
-  const so_marker * m = &(*markerlist)[idx];
-  if (!m->data) return FALSE;
-  int totalBits = ((m->width + 7) / 8) * m->height * 8;
-  if (bitNumber < 0 || bitNumber >= totalBits) return FALSE;
-  int byteIdx = bitNumber / 8;
-  int bitIdx  = bitNumber % 8;
-  return (m->data[byteIdx] & (0x80 >> bitIdx)) ? TRUE : FALSE;
-}
-
 
