@@ -568,8 +568,15 @@ public:
 
     void setScene(SoSeparator* r, SoPerspectiveCamera* c, bool nanort_supported = true) {
         root = r; cam = c; nanort_ok_ = nanort_supported; status_text.clear();
-        /* Scene change invalidates coarse-render calibration. */
+        /* Scene change invalidates coarse-render calibration and the BVH
+         * geometry cache.  The cache reset is essential: Coin frees the old
+         * scene nodes and the allocator may immediately recycle those
+         * addresses for the new scene, so the new root/camera pointers can
+         * appear identical to the old ones even though the geometry has
+         * completely changed.  Without an explicit reset the stale BVH would
+         * be reused for the new scene (e.g. a cube rendered as a sphere). */
         coarseRW_ = 0; coarseRH_ = 0; calFocalDist_ = 0.0f;
+        s_nanort_mgr.resetCache();
         if (!nanort_ok_) {
             status_text = "Not supported (NanoRT)";
             delete fltk_img; fltk_img = nullptr;

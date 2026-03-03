@@ -1197,6 +1197,13 @@ static void nrt_trace(const NrtScene & scene,
 //         traversal and BVH rebuild are performed and the cache is updated.
 //         Text/HUD overlays are also collected during this traversal.
 //   • Switching to a different root node pointer invalidates the cache.
+//     IMPORTANT: callers must also call resetCache() explicitly when the
+//     scene root is replaced.  Coin may free the old root and immediately
+//     reuse those heap addresses for the new scene nodes, making the new
+//     root/camera pointers identical to the old ones even though the
+//     content has completely changed.  resetCache() sets cachedScene_ to
+//     nullptr so the very next renderScene() call sees scene != cachedScene_
+//     and unconditionally rebuilds the BVH.
 //
 // This gives a large speedup for the interactive viewer where:
 //   1. timedStepIn_() calls doRender_() N times at increasing resolutions;
@@ -1208,6 +1215,9 @@ static void nrt_trace(const NrtScene & scene,
 //      cachedCamId_ pair tracks the camera node independently so that a
 //      root-nodeId change that is solely due to a camera move is not
 //      mistaken for a geometry change requiring a BVH rebuild.
+//      The cameraOnlyMoved check also requires the root pointer to match
+//      the cached root to guard against pointer aliasing across scene
+//      switches (the resetCache() call in setScene() makes this secondary).
 //   3. Static scenes (same root, no field changes) skip the traversal.
 //
 // Thread safety: SoNanoRTContextManager is not thread-safe; it is expected
@@ -1227,6 +1237,29 @@ public:
     void restorePreviousContext(void *) override {}
 
     void destroyContext(void *) override {}
+
+    // -----------------------------------------------------------------------
+    // Cache management
+    // -----------------------------------------------------------------------
+
+    // Discard the cached BVH so the next renderScene() call unconditionally
+    // rebuilds geometry.  Call this whenever the scene root is replaced (e.g.
+    // when the viewer switches to a different demo scene) to prevent a false
+    // cache hit caused by pointer aliasing: Coin frees the old scene nodes and
+    // the allocator may immediately recycle those addresses for the new scene,
+    // making the new root/camera pointers identical to the old ones even though
+    // the scene content has completely changed.
+    void resetCache() {
+        // Clear all cached state so the next renderScene() call performs a
+        // full SoCallbackAction traversal (re-collecting all source geometry
+        // and lights) followed by a fresh BVH build.
+        cachedScene_  = nullptr;
+        cachedRootId_ = 0;
+        cachedCamPtr_ = nullptr;
+        cachedCamId_  = 0;
+        cachedNrtScene_ = NrtScene();  // clears tris, vertices, faces, normals, accel
+        cachedLights_.clear();
+    }
 
     // -----------------------------------------------------------------------
     // Rendering path
@@ -1267,12 +1300,17 @@ public:
         }
         const SbUniqueId camId = cam ? cam->getNodeId() : 0;
 
-        // A "camera-only move" is inferred when the same camera node (same
-        // pointer, and that pointer has been recorded from a prior BVH build)
-        // has a new nodeId but no other scene change is known.
+        // A "camera-only move" is inferred when the same scene root (same
+        // pointer) contains the same camera node (same pointer, recorded at
+        // the last BVH build) that now has a different nodeId.  Requiring the
+        // scene root pointer to also match prevents a false positive caused by
+        // pointer aliasing: after a scene switch the allocator may recycle the
+        // freed node addresses, giving the new root/camera the same pointers
+        // as the old ones even though the scene content has completely changed.
         const bool cameraOnlyMoved =
             (cam != nullptr) &&
             (cachedCamPtr_ != nullptr) &&
+            (scene == cachedScene_) &&
             (cam == cachedCamPtr_) &&
             (camId != cachedCamId_);
         const bool needRebuild =
