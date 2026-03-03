@@ -362,7 +362,11 @@ public:
 
     void setCamera(const float pos[3], const float orient[4], float dist) {
         if (!state || !state->cam) return;
-        state->cam->position.setValue(pos[0],pos[1],pos[2]);
+        /* Decode incoming orientation and only call setValue() when the value
+         * actually changed.  Unconditionally calling setValue() with the same
+         * values bumps the camera node's uniqueId, which propagates to the
+         * scene root and confuses the NanoRT BVH cache into thinking only the
+         * camera moved (cameraOnlyMoved false positive → stale renders). */
         float qx=orient[0],qy=orient[1],qz=orient[2],qw=orient[3];
         float len = sqrtf(qx*qx+qy*qy+qz*qz+qw*qw);
         if (len > 1e-6f) { qx/=len; qy/=len; qz/=len; qw/=len; }
@@ -370,8 +374,16 @@ public:
         SbVec3f ax(qx,qy,qz);
         if (ax.length() < 1e-6f) { ax=SbVec3f(0,1,0); angle=0; }
         else ax.normalize();
-        state->cam->orientation.setValue(SbRotation(ax, angle));
-        if (dist > 0.0f) state->cam->focalDistance.setValue(dist);
+        SbRotation newRot(ax, angle);
+
+        SbVec3f curPos = state->cam->position.getValue();
+        if (fabsf(curPos[0]-pos[0]) > 1e-6f || fabsf(curPos[1]-pos[1]) > 1e-6f ||
+                fabsf(curPos[2]-pos[2]) > 1e-6f)
+            state->cam->position.setValue(pos[0],pos[1],pos[2]);
+        if (!state->cam->orientation.getValue().equals(newRot, 1e-5f))
+            state->cam->orientation.setValue(newRot);
+        if (dist > 0.0f && fabsf(state->cam->focalDistance.getValue() - dist) > 1e-6f)
+            state->cam->focalDistance.setValue(dist);
         refreshRender();
     }
 
@@ -645,15 +657,30 @@ public:
 
     void setCamera(const float pos[3], const float orient[4], float dist) {
         if (!cam) return;
-        cam->position.setValue(pos[0], pos[1], pos[2]);
+        /* Decode incoming orientation once so we can equality-check before
+         * calling setValue().  Skipping setValue() when the value has not
+         * changed prevents spurious SoNode::uniqueId bumps that would make
+         * the NanoRT BVH cache incorrectly infer a camera-only change
+         * (cameraOnlyMoved = true) when the geometry has also changed (e.g.
+         * a manipulator was just dragged).  Without this guard, calling
+         * setCamera() with the same values during a manip drag caused the
+         * NanoRT panel to skip the BVH rebuild and show a stale image. */
         float qx=orient[0], qy=orient[1], qz=orient[2], qw=orient[3];
         float len = sqrtf(qx*qx+qy*qy+qz*qz+qw*qw);
         if (len > 1e-6f) { qx/=len; qy/=len; qz/=len; qw/=len; }
         float angle = 2.0f*acosf(qw);
         SbVec3f ax(qx,qy,qz);
         if (ax.length() < 1e-6f) { ax=SbVec3f(0,1,0); angle=0; } else ax.normalize();
-        cam->orientation.setValue(SbRotation(ax, angle));
-        if (dist > 0.0f) cam->focalDistance.setValue(dist);
+        SbRotation newRot(ax, angle);
+
+        SbVec3f curPos = cam->position.getValue();
+        if (fabsf(curPos[0]-pos[0]) > 1e-6f || fabsf(curPos[1]-pos[1]) > 1e-6f ||
+                fabsf(curPos[2]-pos[2]) > 1e-6f)
+            cam->position.setValue(pos[0], pos[1], pos[2]);
+        if (!cam->orientation.getValue().equals(newRot, 1e-5f))
+            cam->orientation.setValue(newRot);
+        if (dist > 0.0f && fabsf(cam->focalDistance.getValue() - dist) > 1e-6f)
+            cam->focalDistance.setValue(dist);
         /* Camera is being moved (driven by sync from another panel or own drag):
          * switch to coarse mode for this render and schedule a full-resolution
          * refinement pass once the view has been stable for kRefineDelaySec. */
@@ -1074,15 +1101,24 @@ public:
 
     void setCamera(const float pos[3], const float orient[4], float dist) {
         if (!cam) return;
-        cam->position.setValue(pos[0], pos[1], pos[2]);
+        /* Only call setValue() when the value has actually changed to avoid
+         * spurious camera nodeId bumps (see NanoRTPanel::setCamera comment). */
         float qx=orient[0], qy=orient[1], qz=orient[2], qw=orient[3];
         float len = sqrtf(qx*qx+qy*qy+qz*qz+qw*qw);
         if (len > 1e-6f) { qx/=len; qy/=len; qz/=len; qw/=len; }
         float angle = 2.0f*acosf(qw);
         SbVec3f ax(qx,qy,qz);
         if (ax.length() < 1e-6f) { ax=SbVec3f(0,1,0); angle=0; } else ax.normalize();
-        cam->orientation.setValue(SbRotation(ax, angle));
-        if (dist > 0.0f) cam->focalDistance.setValue(dist);
+        SbRotation newRot(ax, angle);
+
+        SbVec3f curPos = cam->position.getValue();
+        if (fabsf(curPos[0]-pos[0]) > 1e-6f || fabsf(curPos[1]-pos[1]) > 1e-6f ||
+                fabsf(curPos[2]-pos[2]) > 1e-6f)
+            cam->position.setValue(pos[0], pos[1], pos[2]);
+        if (!cam->orientation.getValue().equals(newRot, 1e-5f))
+            cam->orientation.setValue(newRot);
+        if (dist > 0.0f && fabsf(cam->focalDistance.getValue() - dist) > 1e-6f)
+            cam->focalDistance.setValue(dist);
         refreshRender();
     }
 

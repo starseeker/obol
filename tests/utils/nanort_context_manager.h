@@ -1307,6 +1307,16 @@ public:
         // pointer aliasing: after a scene switch the allocator may recycle the
         // freed node addresses, giving the new root/camera the same pointers
         // as the old ones even though the scene content has completely changed.
+        //
+        // IMPORTANT: callers must avoid calling SoCamera::setValue() (or any
+        // camera field setter) with unchanged values.  Coin bumps a node's
+        // uniqueId on every setValue() call, even when the value is the same.
+        // If the camera is set to its current value while scene geometry is
+        // also being changed (e.g. a manipulator drag), the camera nodeId
+        // bump makes cameraOnlyMoved appear true even though geometry changed,
+        // causing the BVH rebuild to be incorrectly skipped (stale renders).
+        // The obol_viewer.cpp setCamera() methods guard against this by
+        // comparing values before calling setValue().
         const bool cameraOnlyMoved =
             (cam != nullptr) &&
             (cachedCamPtr_ != nullptr) &&
