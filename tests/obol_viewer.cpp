@@ -663,6 +663,22 @@ public:
         refreshRender();
     }
 
+    /* Called by the cross-panel sync callback to re-render this panel after
+     * another panel's camera or scene changed.  All panels share the same
+     * camera pointer, so no camera field writes are needed here – doing them
+     * would trigger spurious Coin3D notifications that bump the camera's
+     * nodeId, causing the NanoRT BVH cache's "camera-only moved" heuristic to
+     * incorrectly skip a geometry rebuild when the dragger also moved scene
+     * objects.  Setting coarse mode and calling refreshRender() is sufficient
+     * to show the already-updated shared scene. */
+    void refreshFromSync() {
+        if (!root || !nanort_ok_) return;
+        coarse_ = true;
+        Fl::remove_timeout(doRefine, this);
+        Fl::add_timeout(kRefineDelaySec, doRefine, this);
+        refreshRender();
+    }
+
     /* ---- FLTK overrides ---- */
 
     void draw() override {
@@ -1305,34 +1321,45 @@ public:
         }
 #endif /* OBOL_VIEWER_NANORT */
 
-        /* Wire unified all-to-all camera sync so every active panel stays in
-         * sync when the sync button is checked. A single syncing_ flag prevents
-         * recursive callbacks. */
+        /* Wire unified all-to-all sync so every active panel stays in sync when
+         * the sync button is checked.  A single syncing_ flag prevents recursive
+         * callbacks.
+         *
+         * All panels share the same camera pointer, so setCamera() writes from
+         * the sync path would just re-set the camera to its current values.
+         * Coin3D fires a field-change notification even for same-value writes,
+         * which bumps the camera's nodeId.  The NanoRT BVH cache uses a
+         * "camera-only moved" heuristic to skip geometry rebuilds when only the
+         * camera changed; a spurious camera-nodeId bump caused by the redundant
+         * setCamera() write would trigger that heuristic even when a dragger
+         * also moved scene geometry, silently suppressing the BVH rebuild and
+         * leaving the NanoRT panel showing the old geometry.
+         *
+         * The fix: use refreshRender() / refreshFromSync() directly in the
+         * sync callbacks instead of setCamera().  The shared camera is already
+         * at the correct position; only a re-render is needed to show the
+         * updated scene in the other panels. */
 #if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT)
-        coin_panel_->on_camera_changed = [this](CoinPanel* src) {
+        coin_panel_->on_camera_changed = [this](CoinPanel* /*src*/) {
             if (!syncing_ && sync_btn_ && sync_btn_->value()) {
                 syncing_ = true;
-                float pos[3], orient[4], dist = 1.0f;
-                src->getCamera(pos, orient, dist);
 #  ifdef OBOL_VIEWER_OSMESA_PANEL
-                if (osmesa_panel_) osmesa_panel_->setCamera(pos, orient, dist);
+                if (osmesa_panel_) osmesa_panel_->refreshRender();
 #  endif
 #  ifdef OBOL_VIEWER_NANORT
-                if (nrt_panel_) nrt_panel_->setCamera(pos, orient, dist);
+                if (nrt_panel_) nrt_panel_->refreshFromSync();
 #  endif
                 syncing_ = false;
             }
         };
 #  ifdef OBOL_VIEWER_OSMESA_PANEL
         if (osmesa_panel_) {
-            osmesa_panel_->on_camera_changed = [this](OSMesaPanel* src) {
+            osmesa_panel_->on_camera_changed = [this](OSMesaPanel* /*src*/) {
                 if (!syncing_ && sync_btn_ && sync_btn_->value()) {
                     syncing_ = true;
-                    float pos[3], orient[4], dist = 1.0f;
-                    src->getCamera(pos, orient, dist);
-                    coin_panel_->setCamera(pos, orient, dist);
+                    coin_panel_->refreshRender();
 #    ifdef OBOL_VIEWER_NANORT
-                    if (nrt_panel_) nrt_panel_->setCamera(pos, orient, dist);
+                    if (nrt_panel_) nrt_panel_->refreshFromSync();
 #    endif
                     syncing_ = false;
                 }
@@ -1341,14 +1368,12 @@ public:
 #  endif /* OBOL_VIEWER_OSMESA_PANEL */
 #  ifdef OBOL_VIEWER_NANORT
         if (nrt_panel_) {
-            nrt_panel_->on_camera_changed = [this](NanoRTPanel* src) {
+            nrt_panel_->on_camera_changed = [this](NanoRTPanel* /*src*/) {
                 if (!syncing_ && sync_btn_ && sync_btn_->value()) {
                     syncing_ = true;
-                    float pos[3], orient[4], dist = 1.0f;
-                    src->getCamera(pos, orient, dist);
-                    coin_panel_->setCamera(pos, orient, dist);
+                    coin_panel_->refreshRender();
 #    ifdef OBOL_VIEWER_OSMESA_PANEL
-                    if (osmesa_panel_) osmesa_panel_->setCamera(pos, orient, dist);
+                    if (osmesa_panel_) osmesa_panel_->refreshRender();
 #    endif
                     syncing_ = false;
                 }
