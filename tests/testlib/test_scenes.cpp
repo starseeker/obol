@@ -602,6 +602,126 @@ SoSeparator* createText2(int width, int height)
 }
 
 // =========================================================================
+// 7c. IosevkaText2 — SoText2 labels rendered with the Iosevka Aile font
+// =========================================================================
+#ifndef OBOL_FONTS_DIR
+#define OBOL_FONTS_DIR ""
+#endif
+/* OBOL_FONTS_DIR is set by CMake to the source-tree fonts/ directory.
+ * If it is empty (fallback, e.g. standalone builds) loadFont() will fail
+ * gracefully and the scene will fall back to the embedded ProFont. */
+static const char k_iosevka_regular[] =
+    OBOL_FONTS_DIR "/Iosevka/IosevkaAile-Regular.ttc";
+
+SoSeparator* createIosevkaText2(int width, int height)
+{
+    SoSeparator* root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera* cam = addCameraAndLight(root);
+
+    // Reference sphere so the camera has geometry to frame
+    SoSeparator* sphereSep = new SoSeparator;
+    SoTranslation* sphT = new SoTranslation;
+    sphT->translation.setValue(0.0f, 0.0f, 0.0f);
+    sphereSep->addChild(sphT);
+    SoMaterial* sphMat = new SoMaterial;
+    sphMat->diffuseColor.setValue(0.25f, 0.35f, 0.6f);
+    sphereSep->addChild(sphMat);
+    SoSphere* sph = new SoSphere;
+    sph->radius.setValue(0.5f);
+    sphereSep->addChild(sph);
+    root->addChild(sphereSep);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    SbVec3f pos = cam->position.getValue();
+    cam->position.setValue(pos[0], pos[1], pos[2] * 1.4f);
+
+    // SoText2 labels with Iosevka Aile Regular font
+    struct LabelSpec { float x, y, z; float r, g, b; float sz; const char* str; };
+    const LabelSpec labels[] = {
+        { -0.8f,  0.9f, 0.0f,  1.0f, 1.0f, 0.3f, 20.0f, "Iosevka Aile"   },
+        { -0.7f,  0.3f, 0.0f,  0.3f, 1.0f, 0.5f, 16.0f, "Hello World"    },
+        {  0.0f, -0.3f, 0.0f,  1.0f, 0.5f, 0.2f, 14.0f, "OpenGL Text"    },
+        { -0.5f, -0.8f, 0.0f,  0.8f, 0.8f, 1.0f, 12.0f, "AaBbCc 012"     },
+    };
+    for (const auto& l : labels) {
+        SoSeparator* sep = new SoSeparator;
+        SoTranslation* t = new SoTranslation;
+        t->translation.setValue(l.x, l.y, l.z);
+        sep->addChild(t);
+        SoFont* font = new SoFont;
+        font->name.setValue(k_iosevka_regular);
+        font->size.setValue(l.sz);
+        sep->addChild(font);
+        SoMaterial* mat = new SoMaterial;
+        mat->diffuseColor.setValue(l.r, l.g, l.b);
+        mat->emissiveColor.setValue(l.r * 0.8f, l.g * 0.8f, l.b * 0.8f);
+        sep->addChild(mat);
+        SoText2* text2 = new SoText2;
+        text2->string.setValue(l.str);
+        sep->addChild(text2);
+        root->addChild(sep);
+    }
+
+    return root;
+}
+
+// =========================================================================
+// 7d. IosevkaText3 — SoText3 extruded 3-D text with Iosevka Aile font
+// =========================================================================
+SoSeparator* createIosevkaText3(int width, int height)
+{
+    SoSeparator* root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera* cam = addCameraAndLight(root);
+
+    // First SoText3 line
+    SoSeparator* t3sep = new SoSeparator;
+    SoTranslation* t3pos = new SoTranslation;
+    t3pos->translation.setValue(-1.0f, 0.5f, 0.0f);
+    t3sep->addChild(t3pos);
+    SoMaterial* t3mat = new SoMaterial;
+    t3mat->diffuseColor.setValue(0.9f, 0.6f, 0.1f);
+    t3sep->addChild(t3mat);
+    SoFont* t3font = new SoFont;
+    t3font->name.setValue(k_iosevka_regular);
+    t3font->size.setValue(0.6f);
+    t3sep->addChild(t3font);
+    SoText3* text3 = new SoText3;
+    text3->string.setValue("Iosevka");
+    text3->parts.setValue(SoText3::ALL);
+    t3sep->addChild(text3);
+    root->addChild(t3sep);
+
+    // Second SoText3 line
+    SoSeparator* t3bsep = new SoSeparator;
+    SoTranslation* t3bpos = new SoTranslation;
+    t3bpos->translation.setValue(-1.0f, -0.4f, 0.0f);
+    t3bsep->addChild(t3bpos);
+    SoMaterial* t3bmat = new SoMaterial;
+    t3bmat->diffuseColor.setValue(0.2f, 0.6f, 0.9f);
+    t3bsep->addChild(t3bmat);
+    SoFont* t3bfont = new SoFont;
+    t3bfont->name.setValue(k_iosevka_regular);
+    t3bfont->size.setValue(0.5f);
+    t3bsep->addChild(t3bfont);
+    SoText3* text3b = new SoText3;
+    text3b->string.setValue("Aile 3D");
+    text3b->parts.setValue(SoText3::ALL);
+    t3bsep->addChild(text3b);
+    root->addChild(t3bsep);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    SbVec3f pos = cam->position.getValue();
+    cam->position.setValue(pos[0], pos[1], pos[2] * 1.5f);
+    return root;
+}
+
+// =========================================================================
 // 8. Gradient background
 // =========================================================================
 
