@@ -749,6 +749,7 @@ public:
             return 1;
         }
         case FL_RELEASE: {
+            bool was_dragger_active = dragger_active_;
             dragging_ = false;
             dragger_active_ = false;
             int rx = Fl::event_x()-x(), ry = Fl::event_y()-y();
@@ -765,6 +766,16 @@ public:
              * at full resolution immediately. */
             Fl::remove_timeout(doRefine, this);
             coarse_ = false;
+            /* After a dragger drag the coarse calibration was measured while
+             * BVH rebuilds were happening on every frame.  That overhead made
+             * the calibration too conservative (too low a resolution).  Reset
+             * it here so the next drag or orbit re-calibrates from scratch,
+             * measuring only pure raytrace cost and converging to the correct
+             * resolution for the scene. */
+            if (was_dragger_active) {
+                coarseRW_ = 0; coarseRH_ = 0;
+                stepInComplete_ = false; calFocalDist_ = 0.0f;
+            }
             notifyCameraChanged(); refreshRender(); return 1;
         }
         case FL_DRAG: {
@@ -915,6 +926,12 @@ private:
      * optimal level has been found, false if the per-call budget was
      * exhausted before convergence (caller should invoke again next frame).
      *
+     * Both the fresh and resume paths perform an uncounted warm-up render
+     * when a BVH rebuild is expected (fresh start, or resume with an active
+     * scene dragger).  The warm-up absorbs the rebuild cost so the timed
+     * search loop measures only pure raytracing time, preventing BVH
+     * construction overhead from contaminating the calibration.
+     *
      * Sets coarseRW_, coarseRH_, calPanelW_, calPanelH_ on every return. */
     bool timedStepIn_(int pw, int ph) {
         using clock = std::chrono::steady_clock;
@@ -950,6 +967,26 @@ private:
             }
             tStart = clock::now();  /* reset search budget after cache warm-up */
             crw *= 2;               /* warm-up covered this level; start timed loop one step up */
+        } else if (dragger_active_) {
+            /* Resume warm-up for dynamic geometry: when a scene dragger is
+             * actively changing geometry each frame, the BVH is rebuilt on
+             * each renderScene() call.  Without a warm-up, that rebuild cost
+             * leaks into the timed search loop and makes the calibration
+             * converge to a resolution that is too coarse – the algorithm
+             * thinks the scene is slow to raytrace, but the slowness is
+             * actually BVH construction overhead.  Performing an uncounted
+             * warm-up at the current best resolution absorbs the rebuild cost
+             * before the timed loop begins, so the loop measures only pure
+             * raytracing time and calibrates coarseRW_ correctly.
+             * tStart is reset after the warm-up so the search budget only
+             * covers the raytrace measurements. */
+            const int rw0 = coarseRW_ < pw ? coarseRW_ : pw;
+            const int rh0 = rw0 < pw ? std::max(1, (rw0 * ph + pw / 2) / pw) : ph;
+            if (doRender_(pw, ph, rw0, rh0)) {
+                bestRW = rw0;
+                bestRH = rh0;
+            }
+            tStart = clock::now();  /* reset search budget: BVH rebuild cost excluded */
         }
 
         bool optimal = false;
