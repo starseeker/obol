@@ -1069,6 +1069,12 @@ SoGLRenderAction::beginTraversal(SoNode * node)
   if (OBOL_GLBBOX) {
     PRIVATE(this)->bboxaction->apply(node);
   }
+
+  // Install the thread-local render glue so that SoCallback nodes using
+  // <Inventor/gl.h> macros (which call sogl_current_render_glue()) get the
+  // correct dispatch context for this traversal pass.
+  sogl_set_current_render_glue(SoGLContext_instance(PRIVATE(this)->cachecontext));
+
   int err_before_init = GL_NO_ERROR;
 
   if (sogl_glerror_debugging()) {
@@ -1118,6 +1124,7 @@ SoGLRenderAction::beginTraversal(SoNode * node)
 
   PRIVATE(this)->render(node);
   // GL errors after rendering will be caught in SoNode::GLRenderS().
+  sogl_set_current_render_glue(nullptr);
 }
 
 // Documented in superclass. Overridden from parent class to clean up

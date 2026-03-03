@@ -1533,6 +1533,24 @@ SbMatrix::print(FILE * fp) const
   }
 }
 
+/*!
+  Decomposes the matrix into the components \a r (rotation), \a s
+  (scale factors), \a u (scale orientation), \a t (translation), and
+  \a proj (projection).
+
+  This is the classical Open Inventor matrix decomposition.
+
+  \note This method is not yet implemented and always returns FALSE.
+ */
+SbBool
+SbMatrix::factor(SbMatrix & r, SbVec3f & s, SbMatrix & u,
+                 SbVec3f & t, SbMatrix & proj) const
+{
+  // TODO: Implement full matrix factorization; stub for now
+  (void)r; (void)s; (void)u; (void)t; (void)proj;
+  return FALSE;
+}
+
 /***********************************************************************
    below is the polar_decomp implementation by Ken Shoemake
    <shoemake@graphics.cis.upenn.edu>. It was part of the
