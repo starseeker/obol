@@ -889,6 +889,10 @@ private:
             pixel_buf[i*4+2] = bg_b;
             pixel_buf[i*4+3] = 255;
         }
+        /* Inform the NanoRT renderer of the full display dimensions so that
+         * line/point/cylinder proxy geometry is sized for the real panel
+         * resolution, not the reduced coarse render grid. */
+        s_nanort_mgr.setDisplayViewport((unsigned int)pw, (unsigned int)ph);
         SbBool ok = s_nanort_mgr.renderScene(root,
                                              (unsigned int)rw,
                                              (unsigned int)rh,

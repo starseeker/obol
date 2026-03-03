@@ -1257,10 +1257,30 @@ public:
         cachedRootId_ = 0;
         cachedCamPtr_ = nullptr;
         cachedCamId_  = 0;
-        cachedVpWidth_  = 0;
-        cachedVpHeight_ = 0;
         cachedNrtScene_ = NrtScene();  // clears tris, vertices, faces, normals, accel
         cachedLights_.clear();
+    }
+
+    // -----------------------------------------------------------------------
+    // Display viewport for proxy geometry sizing
+    // -----------------------------------------------------------------------
+
+    // Inform the renderer of the full display (panel) dimensions so that
+    // line/point/cylinder proxy geometry is always sized correctly for the
+    // real display resolution, even when renderScene() is called at a reduced
+    // (coarse) resolution for interactive speed.
+    //
+    // The proxy radius formula is:
+    //   radius = sizePx * worldHeight / viewportHeightPx * 0.5
+    //
+    // "viewportHeightPx" should be the display height, not the coarse render
+    // height, so that geometry is consistent regardless of render resolution.
+    // Call this before renderScene() whenever the panel dimensions differ from
+    // the render dimensions (i.e. during coarse refinement rendering).
+    // Pass (0, 0) to revert to using the render dimensions (the default).
+    void setDisplayViewport(unsigned int w, unsigned int h) {
+        displayVpW_ = w;
+        displayVpH_ = h;
     }
 
     // -----------------------------------------------------------------------
@@ -1274,8 +1294,21 @@ public:
     {
         if (!scene) return FALSE;
 
+        // Ray generation uses the actual render dimensions (width × height).
         const SbViewportRegion vp(static_cast<short>(width),
                                   static_cast<short>(height));
+
+        // Proxy geometry (lines, points, cylinders) is sized in world-space
+        // units using the viewport height in pixels.  When rendering at a
+        // coarse resolution the caller may set a separate "display viewport"
+        // via setDisplayViewport() so that proxy radii reflect the real panel
+        // pixel density, not the reduced render grid.  If no display viewport
+        // has been provided, fall back to the render dimensions.
+        const SbViewportRegion proxyVp =
+            (displayVpW_ > 0 && displayVpH_ > 0)
+            ? SbViewportRegion(static_cast<short>(displayVpW_),
+                               static_cast<short>(displayVpH_))
+            : vp;
 
         // --- 1. Find the camera and determine whether geometry needs rebuild. ---
         // The camera is found early (before the rebuild check) so its nodeId
@@ -1327,14 +1360,12 @@ public:
             (camId != cachedCamId_);
         const bool needRebuild =
             (scene != cachedScene_) ||
-            (scene->getNodeId() != cachedRootId_ && !cameraOnlyMoved) ||
-            (static_cast<int>(width)  != cachedVpWidth_) ||
-            (static_cast<int>(height) != cachedVpHeight_);
+            (scene->getNodeId() != cachedRootId_ && !cameraOnlyMoved);
 
         // Text/HUD overlay data – always regenerated so that screen-space
         // positions track the current camera even on cache hits.
         NrtProxyData proxyData;
-        proxyData.vp = vp;
+        proxyData.vp = proxyVp;
 
         if (needRebuild) {
             // --- 1a. Full traversal: geometry + lights + overlays -----------
@@ -1418,11 +1449,9 @@ public:
             }
 
             // Record the cache key so subsequent calls can detect hits.
-            cachedScene_    = scene;
-            cachedRootId_   = scene->getNodeId();
-            cachedCamPtr_   = cam;
-            cachedVpWidth_  = static_cast<int>(width);
-            cachedVpHeight_ = static_cast<int>(height);
+            cachedScene_  = scene;
+            cachedRootId_ = scene->getNodeId();
+            cachedCamPtr_ = cam;
         } else {
             // --- 1c. Cache hit: lightweight text/HUD-overlay traversal ------
             // The geometry and lights are reused from the previous render.
@@ -1677,13 +1706,6 @@ private:
     //                 (updated after every successful render, not just after
     //                 rebuilds).  Together with cachedCamPtr_ this lets us
     //                 infer "camera-only moved → skip BVH rebuild".
-    // cachedVpWidth_ / cachedVpHeight_ – render viewport dimensions used when
-    //                 the BVH was last built.  Line/point/cylinder proxy
-    //                 geometry is expressed in world-space units that depend
-    //                 on the viewport size (radius ∝ 1/vpHeight), so the BVH
-    //                 must be rebuilt whenever the render resolution changes
-    //                 (e.g. coarse → full refinement) to keep cylinder radii
-    //                 visually correct at the new pixel density.
     // cachedNrtScene_ – the built BVH plus triangle/normal data.
     // cachedLights_   – world-space light descriptors from the last build.
     //
@@ -1695,14 +1717,17 @@ private:
     SbUniqueId                cachedRootId_          = 0;
     SoCamera *                cachedCamPtr_          = nullptr;
     SbUniqueId                cachedCamId_           = 0;
-    int                       cachedVpWidth_         = 0;
-    int                       cachedVpHeight_        = 0;
     NrtScene                  cachedNrtScene_;
     std::vector<NrtLightInfo> cachedLights_;
     bool                      cachedShadowsEnabled_    = false;
     int                       cachedMaxBouncesAllowed_ = 0;
     int                       cachedSamplesPerPixel_   = 1;
     float                     cachedAmbientFill_       = 0.20f;
+
+    // Display viewport for proxy geometry sizing.
+    // Set via setDisplayViewport(); 0 means "use render dimensions".
+    unsigned int              displayVpW_            = 0;
+    unsigned int              displayVpH_            = 0;
 };
 
 #endif // OBOL_NANORT_CONTEXT_MANAGER_H
