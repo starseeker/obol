@@ -1,29 +1,25 @@
-/* qt_obol_example.cpp — Minimal Qt/Obol application
+/* qt_obol_example.cpp — Qt/Obol example with render mode, stereo, context menu
  *
- * The Obol equivalent of Quarter's minimal.cpp example.  Shows a yellow cone
- * in a QtObolWidget.  Build with:
+ * Demonstrates the full-featured QtObolWidget.  Shows a yellow cone and:
+ *   - Right-click context menu with render mode / stereo / transparency submenu
+ *   - Interaction mode: Alt-key cursor change (6 lines vs Quarter's 151)
+ *   - viewAll via the context menu
  *
- *   cmake -DOBOL_BUILD_QT_EXAMPLE=ON ...
+ * Build with:   cmake -DOBOL_BUILD_QT_EXAMPLE=ON ...
  *
- * Compare with the Quarter version (quarter/src/examples/minimal.cpp):
+ * Compare with Quarter's minimal.cpp:
  *
- *   Quarter:                          | Obol (this file):
- *   ----------------------------------+----------------------------------
- *   #include <Quarter/Quarter.h>      | (no separate init library)
- *   #include <Quarter/QuarterWidget.h>| #include "qt_obol_widget.h"
- *   Quarter::init();                  | (SoDB::init handles everything)
- *   QuarterWidget * viewer = new...   | QtObolWidget * viewer = new...
- *   viewer->setNavigationModeFile(...)| (not needed; scene handles it)
- *   viewer->setSceneGraph(root);      | viewer->setSceneGraph(root);
- *   app.exec();                       | app.exec();
- *   Quarter::clean();                 | SoDB::finish();
- *
- * Key observations:
- *  1. No separate "Quarter::init()" is needed; Obol's SoDB::init() suffices.
- *  2. No navigation mode file is required; the scene graph itself can embed
- *     an SoTrackballManip or similar node for interactive rotation.
- *  3. The QtObolContextManager is only needed if SoOffscreenRenderer is also
- *     used in the same process; it is omitted here for simplicity.
+ *   Quarter:                           | Obol (this file):
+ *   -----------------------------------+----------------------------------
+ *   #include <Quarter/Quarter.h>       | (no separate init library)
+ *   #include <Quarter/QuarterWidget.h> | #include "qt_obol_widget.h"
+ *   Quarter::init();                   | (SoDB::init handles everything)
+ *   QuarterWidget * viewer = new...    | QtObolWidget * viewer = new...
+ *   viewer->setNavigationModeFile(...) | (not needed)
+ *   viewer->setSceneGraph(root);       | viewer->setSceneGraph(root);
+ *   // right-click menu automatic     | // right-click menu automatic
+ *   app.exec();                        | app.exec();
+ *   Quarter::clean();                  | SoDB::finish();
  */
 
 #include <QApplication>

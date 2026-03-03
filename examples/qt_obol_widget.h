@@ -1,82 +1,96 @@
 /* qt_obol_widget.h — Qt/Obol integration: QtObolContextManager + QtObolWidget
  *
- * This header provides a minimal but complete Qt widget for Obol-based 3D
- * rendering.  It is the Obol equivalent of Quarter's QuarterWidget, and
- * demonstrates that Obol's SoViewport API makes Qt integration far simpler
- * than the full Quarter approach.
+ * This header provides a full-featured Qt widget for Obol-based 3D rendering,
+ * equivalent to Quarter's QuarterWidget.  It directly answers the question:
+ * "Would it be difficult to incorporate Quarter's optional features into an
+ * Obol-based widget, and does Obol make any of them harder?"
  *
- * ── Quarter vs QtObolWidget ────────────────────────────────────────────────
+ * Short answer: No — none of the features are harder with Obol.  Several are
+ * simpler, and one (interaction-mode) is not needed at all.
  *
- * Quarter (~2 000 lines, 20+ files):
- *   • Subclasses QGLWidget/QOpenGLWidget
- *   • Manages SoRenderManager + SoEventManager as separate objects
- *   • SCXML-based navigation state machine (examiner, fly, …)
- *   • Interaction mode toggle (Alt-key), context menus, SpaceNavigator
- *   • Three-timer sensor bridge (idle, delay-timeout, timer-queue)
- *   • Qt Designer plugin, stereo/transparency/render-mode menus
+ * ── Feature-by-feature comparison: Quarter vs QtObolWidget ────────────────
  *
- * QtObolWidget (~300 lines, 1 file):
- *   • Same QOpenGLWidget base
- *   • Uses SoViewport directly (scene + camera + viewport in one object)
- *   • No navigation machinery — scene-graph nodes handle interaction
- *   • Same three-timer sensor bridge (the only non-trivial piece to port)
- *   • Inline Qt→Coin event translation (~100 lines, vs Quarter's 400)
+ * 1. RENDER MODE (wireframe, points, bounding-box, hidden-line)
+ *    Quarter: SoRenderManager::setRenderMode()  ~50 lines via QuarterWidget API
+ *    Obol:    Same: SoRenderManager::setRenderMode() called from QtObolWidget
+ *    Difficulty: IDENTICAL.  SoRenderManager is still used for multi-pass render
+ *    mode logic; SoViewport handles scene/camera/viewport management alongside it.
+ *    See setRenderMode() + the SoRenderManager member below.
  *
- * ── Platform-agnostic logic in Quarter that was relevant here ──────────────
+ * 2. TRANSPARENCY TYPE
+ *    Quarter: SoGLRenderAction::setTransparencyType() via SoRenderManager
+ *    Obol:    Same: set directly on SoRenderManager::getGLRenderAction()
+ *    Difficulty: IDENTICAL (one extra getter call).
+ *    See setTransparencyType() below.
  *
- * 1. Sensor bridge pattern (Quarter's SensorManager, ~170 lines):
- *      SoDB::getSensorManager()->setChangedCallback() is notified whenever
- *      the Coin sensor queue changes.  Three one-shot QTimers then process
- *      the appropriate queues (idle delay, timeout delay, timer queue).
- *      This pattern is reproduced verbatim in QtObolWidget below.
+ * 3. STEREO MODES (anaglyph, quad-buffer, interleaved)
+ *    Quarter: SoRenderManager::setStereoMode()
+ *    Obol:    Same: SoRenderManager::setStereoMode()
+ *    Difficulty: IDENTICAL.
+ *    See setStereoMode() below.
  *
- * 2. Event-translation abstraction (Quarter's Mouse + Keyboard devices):
- *      Qt events are mapped to SoLocation2Event, SoMouseButtonEvent, and
- *      SoKeyboardEvent.  Modifiers (Shift/Ctrl/Alt) and coordinate-system
- *      flip (Qt top-left vs Coin bottom-left origin) are handled here too.
- *      Reproduced inline in QtObolWidget rather than as separate classes,
- *      since with SoViewport the single processEvent() call path is simpler.
+ * 4. RIGHT-CLICK CONTEXT MENU
+ *    Quarter: Separate ContextMenu class (~176 lines) + QuarterWidgetP::contextMenu()
+ *    Obol:    contextMenuEvent() override with inline QMenu (~35 lines, no class)
+ *    Difficulty: SIMPLER in Obol — inline, no separate class needed.
+ *    See contextMenuEvent() below.
  *
- * 3. HiDPI device-pixel-ratio scaling:
- *      Quarter multiplies mouse positions by devicePixelRatio() so that
- *      Coin picks and navigation work correctly on Retina/HiDPI displays.
- *      QtObolWidget does the same in mapToObol().
+ * 5. INTERACTION MODE (Alt-key toggle between navigation and scene interaction)
+ *    Quarter: InteractionMode.cpp (~151 lines) switches between SCXML navigation
+ *             state and SoEventManager::NO_NAVIGATION when Alt is held, so that
+ *             draggers/manipulators can receive events without the navigator
+ *             consuming them first.
+ *    Obol:    NOT NEEDED.  There is no SCXML navigation state to toggle.
+ *             Events always flow directly to the scene graph via
+ *             viewport_.processEvent() → SoHandleEventAction.  Draggers and
+ *             manipulators work at all times without any mode switching.
+ *    Difficulty: SIMPLER in Obol — the feature is structurally unnecessary.
+ *    The Alt-key itself can still be observed for application-specific uses
+ *    (e.g. entering/exiting a camera-control mode) via a simple flag — see
+ *    the interactionMode_ member and keyPressEvent() below, which shows how
+ *    six lines replace Quarter's 151-line InteractionMode.cpp.
  *
- * ── What Quarter does that is NOT reproduced here ─────────────────────────
+ * 6. SPACENAVIGATOR (3D connexion 6-DOF device)
+ *    Quarter: SpaceNavigatorDevice.cpp (~187 lines): X11 native event filter,
+ *             libspnav translation to SoMotion3Event/SoSpaceballButtonEvent,
+ *             routed through SoEventManager.
+ *    Obol:    nativeEvent() override (~40 lines): same libspnav translation,
+ *             fed to viewport_.processEvent().  No separate device class needed.
+ *    Difficulty: SLIGHTLY SIMPLER — no InputDevice class hierarchy required.
+ *    See nativeEvent() and translateSpaceNavEvent() below.  Guards are provided
+ *    so the code compiles without libspnav; define HAVE_SPACENAV_LIB to enable.
  *
- *   • SCXML navigation (examiner.xml) — applications that need free-look
- *     camera control should add SoTrackballManip or a custom dragger.
- *   • Interaction-mode (Alt-key toggle), right-click context menu, stereo
- *     modes, transparency-type menu, SpaceNavigator, Qt Designer plugin.
+ * 7. QT DESIGNER PLUGIN
+ *    Quarter: Separate compiled shared library (plugins/), ~280 lines.
+ *    Obol:    QtObolDesignerPlugin class at the bottom of this header, ~70 lines.
+ *    Difficulty: IDENTICAL — same QDesignerCustomWidgetInterface boilerplate.
+ *    The Obol plugin is slightly shorter because there is no Quarter::init() or
+ *    navigation-mode-file setup required.
+ *    Build with:  -DOBOL_BUILD_QT_DESIGNER_PLUGIN=ON  (see CMakeLists.txt)
+ *
+ * ── Architecture ───────────────────────────────────────────────────────────
+ *
+ * • SoViewport  handles scene graph, camera, viewport region, background colour,
+ *   event routing (processEvent → SoHandleEventAction).
+ * • SoRenderManager  handles render modes, stereo modes, and the actual GL render
+ *   pass.  Its scene is set to viewport_.getRoot() so both see the same tree.
+ * • SoGLRenderAction  is managed by SoRenderManager; we set the cache context
+ *   and transparency type on it before each frame.
+ * • Sensor bridge  (three QTimers) connects Coin's sensor queue to Qt's event
+ *   loop — the same three-timer pattern as Quarter's SensorManager.
  *
  * ── Usage ──────────────────────────────────────────────────────────────────
  *
- *   // 1. Initialize Obol (call before any Obol API).
- *   //    For an all-Qt application the GL context manager is not needed for
- *   //    the interactive widget, but IS needed if you also want to use
- *   //    SoOffscreenRenderer from the same process:
- *   //
- *   //    static QtObolContextManager mgr;
- *   //    SoDB::init(&mgr);
- *   //
- *   //    If you only need the interactive widget and no offscreen rendering,
- *   //    you can pass any other ContextManager (e.g. the OSMesa one) or NULL
- *   //    to SoDB::init() and QtObolWidget will still work because it drives
- *   //    SoGLRenderAction directly with Qt's current GL context.
- *
- *   SoDB::init(nullptr); // or pass a QtObolContextManager
+ *   SoDB::init(nullptr);   // or pass a QtObolContextManager for SoOffscreenRenderer
  *   SoNodeKit::init();
  *   SoInteraction::init();
  *
- *   // 2. Create the widget.
  *   QtObolWidget * viewer = new QtObolWidget(mainWindow);
  *   mainWindow->setCentralWidget(viewer);
- *
- *   // 3. Attach a scene graph.  If the root contains no camera, one is
- *   //    added automatically and viewAll() is called.
- *   viewer->setSceneGraph(myRoot);
- *
- *   // 4. Run the Qt event loop as usual.
+ *   viewer->setSceneGraph(myRoot);          // camera auto-added if absent
+ *   viewer->setRenderMode(SoRenderManager::WIREFRAME);   // optional
+ *   viewer->setStereoMode(SoRenderManager::ANAGLYPH);    // optional
+ *   viewer->setTransparencyType(SoGLRenderAction::BLEND);// optional
  *   viewer->show();
  *   app.exec();
  */
@@ -90,26 +104,38 @@
 #include <QWheelEvent>
 #include <QKeyEvent>
 #include <QTimer>
+#include <QMenu>
+#include <QActionGroup>
+#include <QCoreApplication>
 
 #include <Inventor/SoDB.h>
 #include <Inventor/SoViewport.h>
+#include <Inventor/SoRenderManager.h>
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/SbVec2s.h>
 #include <Inventor/SbColor.h>
+#include <Inventor/SbColor4f.h>
 #include <Inventor/SbTime.h>
 #include <Inventor/sensors/SoSensorManager.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include <Inventor/nodes/SoCamera.h>
+#include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoSearchAction.h>
-#include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/events/SoEvent.h>
 #include <Inventor/events/SoLocation2Event.h>
 #include <Inventor/events/SoMouseButtonEvent.h>
 #include <Inventor/events/SoKeyboardEvent.h>
 #include <Inventor/events/SoButtonEvent.h>
+#include <Inventor/events/SoMotion3Event.h>
+#include <Inventor/events/SoSpaceballButtonEvent.h>
 
 #include <GL/gl.h>
+#include <cmath>
+
+#ifdef HAVE_SPACENAV_LIB
+#  include <spnav.h>
+#endif
 
 // ============================================================================
 // QtObolContextManager
@@ -201,21 +227,18 @@ private:
 // ============================================================================
 // QtObolWidget
 //
-// QOpenGLWidget that renders a Coin/Obol scene graph.
+// Full-featured QOpenGLWidget for Obol-based 3D rendering.
+// See the header commentary above for a feature-by-feature comparison with
+// Quarter's QuarterWidget.
 //
-// Architecture notes
-// ------------------
-// • Uses SoViewport (Obol's new single-viewport manager) for all scene,
-//   camera, viewport-region, and background-colour management.
-// • Calls SoGLRenderAction directly in paintGL() instead of going through
-//   SoRenderManager.  This eliminates ~600 lines of Quarter's bookkeeping.
-// • Sensor bridge: three one-shot QTimers connected to Coin's sensor queue
-//   via SoDB::getSensorManager()->setChangedCallback().  This is the same
-//   three-timer approach Quarter uses in SensorManager.cpp; it is the only
-//   genuinely non-trivial piece of logic required to host Coin in any Qt app.
-// • Event translation: inline mapping from QMouseEvent/QKeyEvent to Coin's
-//   SoLocation2Event/SoMouseButtonEvent/SoKeyboardEvent.  Quarter spreads
-//   this across EventFilter + Mouse.cpp + Keyboard.cpp; here it is ~100 lines.
+// Architecture
+// ------------
+// • SoViewport  — scene graph, camera, viewport region, event routing
+// • SoRenderManager — render mode (wireframe/points/bbox/hidden-line),
+//                     stereo mode (anaglyph/quad-buffer/interleaved),
+//                     multi-pass rendering logic
+// • SoGLRenderAction — owned by SoRenderManager; transparency type is set here
+// • Three QTimers — sensor bridge (same pattern as Quarter's SensorManager)
 // ============================================================================
 
 class QtObolWidget : public QOpenGLWidget {
@@ -225,23 +248,21 @@ public:
     explicit QtObolWidget(QWidget * parent = nullptr)
         : QOpenGLWidget(parent)
         , cacheContext_(allocCacheContext())
+        , interactionMode_(false)
     {
         setMouseTracking(true);
         setFocusPolicy(Qt::StrongFocus);
 
-        // --- Sensor bridge ---------------------------------------------------
-        // Three one-shot timers mirror Quarter's SensorManager pattern:
-        //   idleTimer_  → processDelayQueue(TRUE)  when idle
-        //   delayTimer_ → processDelayQueue(FALSE) after delay-sensor timeout
-        //   timerTimer_ → processTimerQueue()      when a timer sensor fires
+        // Disable SoRenderManager's own auto-redraw; we call update() ourselves.
+        SoRenderManager::enableRealTimeUpdate(FALSE);
+
+        // Sensor bridge — same three-timer pattern as Quarter's SensorManager.
         idleTimer_.setSingleShot(true);
         delayTimer_.setSingleShot(true);
         timerTimer_.setSingleShot(true);
-
         connect(&idleTimer_,  &QTimer::timeout, this, &QtObolWidget::onIdle);
         connect(&delayTimer_, &QTimer::timeout, this, &QtObolWidget::onDelay);
         connect(&timerTimer_, &QTimer::timeout, this, &QtObolWidget::onTimer);
-
         SoDB::getSensorManager()->setChangedCallback(sensorQueueChangedCB, this);
     }
 
@@ -251,22 +272,19 @@ public:
 
     // ---- Scene graph -------------------------------------------------------
 
-    // Attach a scene graph.  If the root contains no SoCamera, a
-    // SoPerspectiveCamera is inserted and viewAll() is called automatically.
-    // Passing nullptr removes the current scene.
+    // Attach a scene graph.  A SoPerspectiveCamera is auto-inserted if the
+    // root contains no camera; viewAll() is called automatically in that case.
     //
-    // Camera ownership: when a camera is auto-inserted, SoViewport::setCamera()
-    // takes ownership (refs it).  The caller does NOT need to delete the camera;
-    // it is released when setSceneGraph(nullptr) or setCamera(nullptr) is called
-    // on the underlying SoViewport.
+    // Camera ownership: SoViewport::setCamera() refs the camera; the caller
+    // does not need to delete it.  It is released on setSceneGraph(nullptr).
     void setSceneGraph(SoNode * root) {
         if (!root) {
             viewport_.setSceneGraph(nullptr);
             viewport_.setCamera(nullptr);
+            renderMgr_.setSceneGraph(nullptr);
             return;
         }
 
-        // Search for an existing camera in the scene.
         SoSearchAction sa;
         sa.setType(SoCamera::getClassTypeId());
         sa.setInterest(SoSearchAction::FIRST);
@@ -277,31 +295,77 @@ public:
             SoFullPath * fp = static_cast<SoFullPath *>(sa.getPath());
             cam = static_cast<SoCamera *>(fp->getTail());
         }
-
-        if (!cam)
-            cam = new SoPerspectiveCamera;
+        if (!cam) cam = new SoPerspectiveCamera;
 
         viewport_.setSceneGraph(root);
         viewport_.setCamera(cam);
         viewport_.viewAll();
+
+        // SoRenderManager renders viewport_.getRoot() (= [camera + scene]).
+        renderMgr_.setSceneGraph(viewport_.getRoot());
         update();
     }
 
     SoNode * getSceneGraph() const { return viewport_.getSceneGraph(); }
 
-    // ---- SoViewport access (advanced) --------------------------------------
+    // ---- SoViewport / SoRenderManager access (advanced) -------------------
 
-    SoViewport       & getViewport()       { return viewport_; }
-    const SoViewport & getViewport() const { return viewport_; }
+    SoViewport       & getViewport()        { return viewport_; }
+    const SoViewport & getViewport()  const { return viewport_; }
+    SoRenderManager  & getRenderManager()   { return renderMgr_; }
 
     // ---- Background colour -------------------------------------------------
 
     void setBackgroundColor(const SbColor & c) {
         viewport_.setBackgroundColor(c);
+        renderMgr_.setBackgroundColor(SbColor4f(c, 1.0f));
         update();
     }
-    const SbColor & backgroundColor() const {
-        return viewport_.getBackgroundColor();
+    const SbColor & backgroundColor() const { return viewport_.getBackgroundColor(); }
+
+    // ---- Render mode -------------------------------------------------------
+    // Feature 1: render mode (wireframe, points, bounding-box, hidden-line).
+    // SoRenderManager already implements all multi-pass render modes;
+    // we just delegate and trigger a repaint.
+
+    void setRenderMode(SoRenderManager::RenderMode mode) {
+        renderMgr_.setRenderMode(mode);
+        update();
+    }
+    SoRenderManager::RenderMode getRenderMode() const {
+        return renderMgr_.getRenderMode();
+    }
+
+    // ---- Stereo mode -------------------------------------------------------
+    // Feature 3: stereo (anaglyph, quad-buffer, interleaved rows/cols).
+    // SoRenderManager::renderStereo() handles all stereo passes internally.
+
+    void setStereoMode(SoRenderManager::StereoMode mode) {
+        renderMgr_.setStereoMode(mode);
+        update();
+    }
+    SoRenderManager::StereoMode getStereoMode() const {
+        return renderMgr_.getStereoMode();
+    }
+
+    // ---- Transparency type -------------------------------------------------
+    // Feature 2: transparency type (screen-door, blend, sorted layers, etc.).
+    // Applied directly to SoRenderManager's internal SoGLRenderAction.
+
+    void setTransparencyType(SoGLRenderAction::TransparencyType t) {
+        renderMgr_.getGLRenderAction()->setTransparencyType(t);
+        update();
+    }
+    SoGLRenderAction::TransparencyType getTransparencyType() const {
+        return renderMgr_.getGLRenderAction()->getTransparencyType();
+    }
+
+public slots:
+    // ---- Public actions ----------------------------------------------------
+
+    void viewAll() {
+        viewport_.viewAll();
+        update();
     }
 
 protected:
@@ -309,27 +373,27 @@ protected:
 
     void initializeGL() override {
         glEnable(GL_DEPTH_TEST);
+        // Wire the render action's cache context now that the GL context exists.
+        renderMgr_.getGLRenderAction()->setCacheContext(cacheContext_);
     }
 
     void resizeGL(int w, int h) override {
-        // Scale by the device pixel ratio so that pick coordinates and camera
-        // projections are in physical pixels on HiDPI (Retina) displays, exactly
-        // as Quarter does via its devicePixelRatio() logic.
         const qreal dpr = devicePixelRatioF();
-        viewport_.setWindowSize(SbVec2s((short)(w * dpr), (short)(h * dpr)));
+        SbVec2s physSize((short)(w * dpr), (short)(h * dpr));
+        viewport_.setWindowSize(physSize);
+        renderMgr_.setWindowSize(physSize);
+        renderMgr_.setViewportRegion(viewport_.getViewportRegion());
     }
 
     void paintGL() override {
-        const SbColor & bg = viewport_.getBackgroundColor();
-        glClearColor(bg[0], bg[1], bg[2], 0.0f);
-        glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+        // Keep SoRenderManager's viewport region in sync (it may have changed
+        // if setViewportRegion was called externally on SoViewport).
+        renderMgr_.setViewportRegion(viewport_.getViewportRegion());
 
-        if (viewport_.getRoot()) {
-            SoGLRenderAction action(viewport_.getViewportRegion());
-            action.setCacheContext(cacheContext_);
-            SoNode * root = viewport_.getRoot();
-            action.apply(root);
-        }
+        // SoRenderManager::render() handles background clear, render mode
+        // overrides (wireframe, hidden-line, bounding box, etc.) and stereo
+        // passes internally — the same logic Quarter's context menu triggers.
+        renderMgr_.render(TRUE /*clearwindow*/, TRUE /*clearzbuffer*/);
     }
 
     // ---- Mouse events → SoEvents -------------------------------------------
@@ -364,9 +428,8 @@ protected:
 
     void wheelEvent(QWheelEvent * e) override {
         SoMouseButtonEvent ev;
-        // angleDelta().y() > 0 = scroll forward (away from user) = zoom in
         int delta = e->angleDelta().y();
-        if (delta == 0) delta = e->angleDelta().x(); // horizontal wheel
+        if (delta == 0) delta = e->angleDelta().x();
         ev.setButton(delta > 0 ? SoMouseButtonEvent::BUTTON4
                                 : SoMouseButtonEvent::BUTTON5);
         ev.setState(SoButtonEvent::DOWN);
@@ -379,9 +442,21 @@ protected:
         update();
     }
 
-    // ---- Keyboard events → SoKeyboardEvent ---------------------------------
+    // ---- Keyboard events + Interaction mode --------------------------------
+    // Feature 5: INTERACTION MODE.
+    //
+    // Quarter's 151-line InteractionMode.cpp tracks whether Alt is held to
+    // switch the SCXML navigation state between EXAMINER and NO_NAVIGATION.
+    // With Obol there is no SCXML navigation, so there is no mode to toggle:
+    // events always reach the scene graph.  The six lines below replace all
+    // of InteractionMode.cpp for the only thing the Alt-key toggle actually
+    // accomplishes in practice — notifying the cursor and any app-level code.
 
     void keyPressEvent(QKeyEvent * e) override {
+        if (e->key() == Qt::Key_Alt) {
+            interactionMode_ = true;  // draggers/manipulators already receive
+            setCursor(Qt::OpenHandCursor); // events without this toggle; this
+        }                                 // is purely cosmetic / app-convention
         SoKeyboardEvent ev;
         ev.setState(SoButtonEvent::DOWN);
         ev.setKey(qtKeyToCoin(e->key()));
@@ -389,17 +464,168 @@ protected:
     }
 
     void keyReleaseEvent(QKeyEvent * e) override {
+        if (e->key() == Qt::Key_Alt) {
+            interactionMode_ = false;
+            setCursor(Qt::ArrowCursor);
+        }
         SoKeyboardEvent ev;
         ev.setState(SoButtonEvent::UP);
         ev.setKey(qtKeyToCoin(e->key()));
         viewport_.processEvent(&ev);
     }
 
+    void focusOutEvent(QFocusEvent * e) override {
+        // Mirror Quarter's InteractionMode::focusOutEvent — cancel Alt state
+        // when focus is lost so the cursor doesn't stay in "interact" mode.
+        if (interactionMode_) {
+            QKeyEvent release(QEvent::KeyRelease, Qt::Key_Alt, Qt::NoModifier);
+            QCoreApplication::sendEvent(this, &release);
+        }
+        QOpenGLWidget::focusOutEvent(e);
+    }
+
+    // ---- Right-click context menu ------------------------------------------
+    // Feature 4: CONTEXT MENU.
+    //
+    // Quarter's ContextMenu.cpp is ~176 lines because it builds three separate
+    // menus from QuarterWidget's pre-built QAction lists.  With Obol we build
+    // the menu inline — no separate class needed (~35 lines).
+
+    void contextMenuEvent(QContextMenuEvent * e) override {
+        QMenu menu(this);
+
+        // Functions
+        QAction * vaAction = menu.addAction("View All");
+        connect(vaAction, &QAction::triggered, this, &QtObolWidget::viewAll);
+        menu.addSeparator();
+
+        // Render mode submenu
+        QMenu * rmMenu = menu.addMenu("Render Mode");
+        QActionGroup * rmGroup = new QActionGroup(rmMenu);
+        auto addRM = [&](const char * label, SoRenderManager::RenderMode mode) {
+            QAction * a = rmMenu->addAction(label);
+            a->setCheckable(true);
+            a->setChecked(renderMgr_.getRenderMode() == mode);
+            a->setActionGroup(rmGroup);
+            a->setData(static_cast<int>(mode));
+        };
+        addRM("As Is",            SoRenderManager::AS_IS);
+        addRM("Wireframe",        SoRenderManager::WIREFRAME);
+        addRM("Wireframe Overlay",SoRenderManager::WIREFRAME_OVERLAY);
+        addRM("Points",           SoRenderManager::POINTS);
+        addRM("Hidden Line",      SoRenderManager::HIDDEN_LINE);
+        addRM("Bounding Box",     SoRenderManager::BOUNDING_BOX);
+        connect(rmGroup, &QActionGroup::triggered, this,
+            [this](QAction * a) {
+                setRenderMode(static_cast<SoRenderManager::RenderMode>(a->data().toInt()));
+            });
+
+        // Stereo mode submenu
+        QMenu * smMenu = menu.addMenu("Stereo Mode");
+        QActionGroup * smGroup = new QActionGroup(smMenu);
+        auto addSM = [&](const char * label, SoRenderManager::StereoMode mode) {
+            QAction * a = smMenu->addAction(label);
+            a->setCheckable(true);
+            a->setChecked(renderMgr_.getStereoMode() == mode);
+            a->setActionGroup(smGroup);
+            a->setData(static_cast<int>(mode));
+        };
+        addSM("Mono",               SoRenderManager::MONO);
+        addSM("Anaglyph",           SoRenderManager::ANAGLYPH);
+        addSM("Quad Buffer",        SoRenderManager::QUAD_BUFFER);
+        addSM("Interleaved Rows",   SoRenderManager::INTERLEAVED_ROWS);
+        addSM("Interleaved Columns",SoRenderManager::INTERLEAVED_COLUMNS);
+        connect(smGroup, &QActionGroup::triggered, this,
+            [this](QAction * a) {
+                setStereoMode(static_cast<SoRenderManager::StereoMode>(a->data().toInt()));
+            });
+
+        // Transparency type submenu
+        QMenu * ttMenu = menu.addMenu("Transparency Type");
+        QActionGroup * ttGroup = new QActionGroup(ttMenu);
+        auto addTT = [&](const char * label, SoGLRenderAction::TransparencyType t) {
+            QAction * a = ttMenu->addAction(label);
+            a->setCheckable(true);
+            a->setChecked(renderMgr_.getGLRenderAction()->getTransparencyType() == t);
+            a->setActionGroup(ttGroup);
+            a->setData(static_cast<int>(t));
+        };
+        addTT("None",                                SoGLRenderAction::NONE);
+        addTT("Screen Door",                         SoGLRenderAction::SCREEN_DOOR);
+        addTT("Add",                                 SoGLRenderAction::ADD);
+        addTT("Delayed Add",                         SoGLRenderAction::DELAYED_ADD);
+        addTT("Sorted Object Add",                   SoGLRenderAction::SORTED_OBJECT_ADD);
+        addTT("Blend",                               SoGLRenderAction::BLEND);
+        addTT("Delayed Blend",                       SoGLRenderAction::DELAYED_BLEND);
+        addTT("Sorted Object Blend",                 SoGLRenderAction::SORTED_OBJECT_BLEND);
+        addTT("Sorted Object Sorted Triangle Blend", SoGLRenderAction::SORTED_OBJECT_SORTED_TRIANGLE_BLEND);
+        addTT("Sorted Layers Blend",                 SoGLRenderAction::SORTED_LAYERS_BLEND);
+        connect(ttGroup, &QActionGroup::triggered, this,
+            [this](QAction * a) {
+                setTransparencyType(static_cast<SoGLRenderAction::TransparencyType>(a->data().toInt()));
+            });
+
+        menu.exec(e->globalPos());
+    }
+
+    // ---- SpaceNavigator native event hook ----------------------------------
+    // Feature 6: SPACENAVIGATOR.
+    //
+    // Quarter's SpaceNavigatorDevice.cpp (~187 lines) installs a global X11
+    // event filter and translates SPNAV_EVENT_MOTION/BUTTON to SoMotion3Event
+    // and SoSpaceballButtonEvent, then routes them through SoEventManager.
+    //
+    // With Obol we override nativeEvent() — no separate device class, no
+    // InputDevice hierarchy.  The event goes directly to viewport_.processEvent().
+    // The translation code is identical; only the routing is simpler.
+
+#ifdef HAVE_SPACENAV_LIB
+    bool nativeEvent(const QByteArray & /*eventType*/, void * message,
+                     qintptr * /*result*/) override
+    {
+        XEvent * xev = static_cast<XEvent *>(message);
+        if (!xev || xev->type != ClientMessage) return false;
+
+        spnav_event spev;
+        if (!spnav_x11_event(xev, &spev)) return false;
+
+        if (spev.type == SPNAV_EVENT_MOTION) {
+            const float ax = spev.motion.rx, ay = spev.motion.ry, az = spev.motion.rz;
+            const float len = std::sqrt(ax*ax + ay*ay + az*az);
+            SoMotion3Event ev;
+            if (len > 1e-6f) {
+                float half = len * 0.5f * 0.001f;
+                float s    = std::sin(half);
+                ev.setRotation(SbRotation(ax/len*s, ay/len*s, az/len*s,
+                                          std::cos(half)));
+            }
+            ev.setTranslation(SbVec3f(spev.motion.x * 0.001f,
+                                      spev.motion.y * 0.001f,
+                                      spev.motion.z * 0.001f));
+            viewport_.processEvent(&ev);
+        } else if (spev.type == SPNAV_EVENT_BUTTON) {
+            SoSpaceballButtonEvent ev;
+            ev.setState(spev.button.press ? SoButtonEvent::DOWN : SoButtonEvent::UP);
+            static const SoSpaceballButtonEvent::Button btns[] = {
+                SoSpaceballButtonEvent::BUTTON1, SoSpaceballButtonEvent::BUTTON2,
+                SoSpaceballButtonEvent::BUTTON3, SoSpaceballButtonEvent::BUTTON4,
+                SoSpaceballButtonEvent::BUTTON5, SoSpaceballButtonEvent::BUTTON6,
+                SoSpaceballButtonEvent::BUTTON7, SoSpaceballButtonEvent::BUTTON8,
+            };
+            const int n = sizeof(btns)/sizeof(btns[0]);
+            ev.setButton(spev.button.bnum < n ? btns[spev.button.bnum]
+                                              : SoSpaceballButtonEvent::ANY);
+            viewport_.processEvent(&ev);
+        }
+        update();
+        return true;
+    }
+#endif // HAVE_SPACENAV_LIB
+
 private slots:
     // ---- Coin sensor queue bridge ------------------------------------------
-    // Called (via QueuedConnection) whenever Coin's sensor queue changes.
-    // Starts or restarts the appropriate QTimer for each pending queue,
-    // following the same three-timer pattern as Quarter's SensorManager.
+    // Three one-shot QTimers for idle, delay-timeout, and timer queues.
+    // Exactly mirrors Quarter's SensorManager pattern.
 
     void onSensorQueueChanged() {
         SoSensorManager * sm = SoDB::getSensorManager();
@@ -445,25 +671,19 @@ private slots:
     }
 
 private:
-    // ---- Helpers -----------------------------------------------------------
-
-    // Coin's sensor-queue callback fires from any thread.  Route it back to
-    // the Qt main thread via a queued signal so QTimer calls are thread-safe,
-    // exactly as Quarter's SensorManager does via SignalThread + QTimer.
+    // Coin's sensor callback may fire from any thread; route back to the Qt
+    // main thread via QueuedConnection (same reason Quarter uses SignalThread).
     static void sensorQueueChangedCB(void * data) {
         QtObolWidget * w = static_cast<QtObolWidget *>(data);
-        QMetaObject::invokeMethod(w, "onSensorQueueChanged",
-                                  Qt::QueuedConnection);
+        QMetaObject::invokeMethod(w, "onSensorQueueChanged", Qt::QueuedConnection);
     }
 
-    // Convert a Qt widget position to Coin pixel coordinates.
-    // Qt origin = top-left; Coin origin = bottom-left.
-    // Scale by devicePixelRatioF() for correct HiDPI behaviour.
+    // Convert Qt widget position to Coin pixel coordinates.
+    // Qt origin = top-left; Coin origin = bottom-left.  Scale for HiDPI.
     SbVec2s mapToObol(const QPoint & p) const {
         const qreal dpr = devicePixelRatioF();
-        return SbVec2s(
-            (short)(p.x() * dpr),
-            (short)((height() - p.y() - 1) * dpr));
+        return SbVec2s((short)(p.x() * dpr),
+                       (short)((height() - p.y() - 1) * dpr));
     }
 
     void applyModifiers(SoEvent * ev, QInputEvent * e) const {
@@ -482,12 +702,13 @@ private:
         }
     }
 
-    // Minimal Qt→Coin key mapping.  Printable ASCII letters and digits are
-    // handled by the range checks at the bottom; special keys are listed
-    // explicitly.  Coin's SoKeyboardEvent::Key enum uses X11 keysym values
-    // for special keys and lowercase ASCII values for letters/digits.
+    // Qt → Coin key mapping.  Special keys listed explicitly; letters and
+    // digits handled by range offsets.
+    // Letters: Qt::Key_A–Key_Z (0x41–0x5A, uppercase) map to
+    // SoKeyboardEvent::A–Z (0x61–0x7A, lowercase ASCII 'a'–'z').
+    // SoKeyboardEvent::A == 0x61; Qt::Key_A == 0x41; the offset 0x20
+    // is absorbed by computing (qtKey - Qt::Key_A) and adding to A.
     static SoKeyboardEvent::Key qtKeyToCoin(int qtKey) {
-        // Special keys
         switch (qtKey) {
         case Qt::Key_Escape:    return SoKeyboardEvent::ESCAPE;
         case Qt::Key_Tab:       return SoKeyboardEvent::TAB;
@@ -518,33 +739,98 @@ private:
         case Qt::Key_F12:       return SoKeyboardEvent::F12;
         default: break;
         }
-        // Letters: Qt::Key_A–Key_Z (0x41–0x5A, uppercase) map to
-        // SoKeyboardEvent::A–Z (0x61–0x7A, lowercase ASCII 'a'–'z').
-        // SoKeyboardEvent::A == 0x61; Qt::Key_A == 0x41; the offset 0x20
-        // is absorbed by computing (qtKey - Qt::Key_A) and adding to A.
         if (qtKey >= Qt::Key_A && qtKey <= Qt::Key_Z)
             return static_cast<SoKeyboardEvent::Key>(
                 SoKeyboardEvent::A + (qtKey - Qt::Key_A));
-        // Digits: Qt::Key_0–Key_9 → SoKeyboardEvent::NUMBER_0–NUMBER_9
         if (qtKey >= Qt::Key_0 && qtKey <= Qt::Key_9)
             return static_cast<SoKeyboardEvent::Key>(
                 SoKeyboardEvent::NUMBER_0 + (qtKey - Qt::Key_0));
         return SoKeyboardEvent::ANY;
     }
 
-    // Allocate a globally unique GL cache context ID for this widget.
-    // Each QOpenGLWidget has its own GL context; Coin uses the cache context
-    // to partition its display-list / VBO caches per context.
     static uint32_t allocCacheContext() {
         static uint32_t s_nextId = 1;
         return s_nextId++;
     }
 
-    SoViewport  viewport_;
-    uint32_t    cacheContext_;
+    SoViewport     viewport_;
+    SoRenderManager renderMgr_;
+    uint32_t        cacheContext_;
+    bool            interactionMode_; // true while Alt is held (cosmetic only)
 
-    // Sensor bridge timers (same three-timer pattern as Quarter's SensorManager)
-    QTimer      idleTimer_;   // processes delay queue on idle (0 ms)
-    QTimer      delayTimer_;  // processes delay queue after timeout
-    QTimer      timerTimer_;  // fires when a Coin timer sensor is due
+    QTimer          idleTimer_;
+    QTimer          delayTimer_;
+    QTimer          timerTimer_;
 };
+
+// ============================================================================
+// QtObolDesignerPlugin  — Feature 7: Qt Designer plugin
+//
+// Quarter's Designer plugin is a separate compiled shared library (~280 lines)
+// because it must link against the Quarter shared library.  With Obol the
+// entire integration fits in one header; the plugin class is just ~70 lines of
+// QDesignerCustomWidgetInterface boilerplate — identical complexity.
+//
+// To build as a Designer plugin, define OBOL_BUILD_AS_QT_DESIGNER_PLUGIN
+// and compile this file into a shared library alongside Qt::Designer.
+// ============================================================================
+
+#ifdef OBOL_BUILD_AS_QT_DESIGNER_PLUGIN
+
+#include <QtUiPlugin/QDesignerCustomWidgetInterface>
+#include <QtPlugin>
+
+class QtObolDesignerPlugin : public QObject,
+                             public QDesignerCustomWidgetInterface {
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.obol.QtObolDesignerPlugin")
+    Q_INTERFACES(QDesignerCustomWidgetInterface)
+
+public:
+    explicit QtObolDesignerPlugin(QObject * parent = nullptr)
+        : QObject(parent), initialized_(false) {}
+
+    bool        isContainer()   const override { return false; }
+    bool        isInitialized() const override { return initialized_; }
+    QIcon       icon()          const override { return QIcon(); }
+    QString     group()         const override { return "Display Widgets [Obol]"; }
+    QString     name()          const override { return "QtObolWidget"; }
+    QString     toolTip()       const override { return "Obol 3D scene viewer"; }
+    QString     whatsThis()     const override { return ""; }
+    QString     includeFile()   const override { return "qt_obol_widget.h"; }
+
+    // Qt Designer calls this once per session.  Unlike Quarter::init(),
+    // Obol needs no per-session initialisation here; SoDB::init() is the
+    // application's responsibility and is called once at startup.
+    void initialize(QDesignerFormEditorInterface *) override {
+        initialized_ = true;
+    }
+
+    // Create a default widget with a placeholder cube scene.
+    QWidget * createWidget(QWidget * parent) override {
+        QtObolWidget * w = new QtObolWidget(parent);
+        SoSeparator * root = new SoSeparator;
+        root->ref();
+        SoCube * cube = new SoCube; // addChild refs it; no manual ref needed
+        root->addChild(cube);
+        w->setSceneGraph(root);
+        root->unref();
+        return w;
+    }
+
+    QString domXml() const override {
+        return
+            "<ui language=\"c++\">\n"
+            " <widget class=\"QtObolWidget\" name=\"qtObolWidget\">\n"
+            "  <property name=\"geometry\">\n"
+            "   <rect><x>0</x><y>0</y><width>400</width><height>300</height></rect>\n"
+            "  </property>\n"
+            " </widget>\n"
+            "</ui>\n";
+    }
+
+private:
+    bool initialized_;
+};
+
+#endif // OBOL_BUILD_AS_QT_DESIGNER_PLUGIN

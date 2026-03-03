@@ -661,14 +661,16 @@ endif()
 # Qt example (examples/qt_obol_example.cpp + examples/qt_obol_widget.h)
 #
 # Built when -DOBOL_BUILD_QT_EXAMPLE=ON and Qt6 (Widgets + OpenGL) is found.
-# Demonstrates Qt/Obol integration using QtObolWidget, the minimal equivalent
-# of Quarter's QuarterWidget.  See examples/qt_obol_widget.h for the survey
-# of what Quarter provides and how it maps onto Obol's SoViewport API.
+# Demonstrates Qt/Obol integration using QtObolWidget, the full-featured
+# equivalent of Quarter's QuarterWidget.  See examples/qt_obol_widget.h for:
+#   - Feature-by-feature comparison: Quarter vs Obol (render/stereo/transparency
+#     modes, interaction mode, SpaceNavigator, Qt Designer plugin)
+#   - Answer to "does Obol make any of these harder?" (answer: no)
 # ============================================================================
 option(OBOL_BUILD_QT_EXAMPLE "Build the Qt/Obol example (requires Qt6)" OFF)
 
 if(OBOL_BUILD_QT_EXAMPLE)
-  find_package(Qt6 QUIET COMPONENTS Widgets OpenGL OpenGLWidgets)
+  find_package(Qt6 QUIET COMPONENTS Core Widgets OpenGL OpenGLWidgets)
   if(Qt6Widgets_FOUND AND Qt6OpenGL_FOUND AND Qt6OpenGLWidgets_FOUND)
     set(CMAKE_AUTOMOC ON)
     add_executable(qt_obol_example
@@ -685,6 +687,7 @@ if(OBOL_BUILD_QT_EXAMPLE)
     target_link_libraries(qt_obol_example PRIVATE
         ${PROJECT_NAME}
         ${OBOL_TARGET_LINK_LIBRARIES}
+        Qt6::Core
         Qt6::Widgets
         Qt6::OpenGL
         Qt6::OpenGLWidgets
