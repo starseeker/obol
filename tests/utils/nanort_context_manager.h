@@ -1262,6 +1262,28 @@ public:
     }
 
     // -----------------------------------------------------------------------
+    // Display viewport for proxy geometry sizing
+    // -----------------------------------------------------------------------
+
+    // Inform the renderer of the full display (panel) dimensions so that
+    // line/point/cylinder proxy geometry is always sized correctly for the
+    // real display resolution, even when renderScene() is called at a reduced
+    // (coarse) resolution for interactive speed.
+    //
+    // The proxy radius formula is:
+    //   radius = sizePx * worldHeight / viewportHeightPx * 0.5
+    //
+    // "viewportHeightPx" should be the display height, not the coarse render
+    // height, so that geometry is consistent regardless of render resolution.
+    // Call this before renderScene() whenever the panel dimensions differ from
+    // the render dimensions (i.e. during coarse refinement rendering).
+    // Pass (0, 0) to revert to using the render dimensions (the default).
+    void setDisplayViewport(unsigned int w, unsigned int h) {
+        displayVpW_ = w;
+        displayVpH_ = h;
+    }
+
+    // -----------------------------------------------------------------------
     // Rendering path
     // -----------------------------------------------------------------------
     SbBool renderScene(SoNode * scene,
@@ -1272,8 +1294,21 @@ public:
     {
         if (!scene) return FALSE;
 
+        // Ray generation uses the actual render dimensions (width × height).
         const SbViewportRegion vp(static_cast<short>(width),
                                   static_cast<short>(height));
+
+        // Proxy geometry (lines, points, cylinders) is sized in world-space
+        // units using the viewport height in pixels.  When rendering at a
+        // coarse resolution the caller may set a separate "display viewport"
+        // via setDisplayViewport() so that proxy radii reflect the real panel
+        // pixel density, not the reduced render grid.  If no display viewport
+        // has been provided, fall back to the render dimensions.
+        const SbViewportRegion proxyVp =
+            (displayVpW_ > 0 && displayVpH_ > 0)
+            ? SbViewportRegion(static_cast<short>(displayVpW_),
+                               static_cast<short>(displayVpH_))
+            : vp;
 
         // --- 1. Find the camera and determine whether geometry needs rebuild. ---
         // The camera is found early (before the rebuild check) so its nodeId
@@ -1330,7 +1365,7 @@ public:
         // Text/HUD overlay data – always regenerated so that screen-space
         // positions track the current camera even on cache hits.
         NrtProxyData proxyData;
-        proxyData.vp = vp;
+        proxyData.vp = proxyVp;
 
         if (needRebuild) {
             // --- 1a. Full traversal: geometry + lights + overlays -----------
@@ -1688,6 +1723,11 @@ private:
     int                       cachedMaxBouncesAllowed_ = 0;
     int                       cachedSamplesPerPixel_   = 1;
     float                     cachedAmbientFill_       = 0.20f;
+
+    // Display viewport for proxy geometry sizing.
+    // Set via setDisplayViewport(); 0 means "use render dimensions".
+    unsigned int              displayVpW_            = 0;
+    unsigned int              displayVpH_            = 0;
 };
 
 #endif // OBOL_NANORT_CONTEXT_MANAGER_H
