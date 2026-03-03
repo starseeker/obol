@@ -1698,12 +1698,6 @@ const SoGLContext * sogl_glue_from_state(const SoState * state);
    raw OpenGL headers in dl.cpp. */
 void * coin_gl_getstring_ptr(void);
 
-/* Thread-local current render glue — set by SoGLRenderAction before each
-   traversal pass so that GL element updategl() methods (which lack a state
-   pointer) can still dispatch through the correct backend in dual-GL builds. */
-const SoGLContext * sogl_current_render_glue(void);
-void sogl_set_current_render_glue(const SoGLContext * glue);
-
 /* ********************************************************************** */
 
 /*
