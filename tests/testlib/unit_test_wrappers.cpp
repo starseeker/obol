@@ -19857,6 +19857,7 @@ REGISTER_TEST(unit_animation_nodes_gl, ObolTest::TestCategory::Rendering,
 #include <Inventor/nodes/SoCacheHint.h>
 #include <Inventor/nodes/SoDepthBuffer.h>
 #include <Inventor/nodes/SoAlphaTest.h>
+#include <Inventor/nodes/SoEnvironment.h>
 
 namespace {
 
