@@ -97,58 +97,56 @@ cannot be represented as a single scene go last (marked **hard**).
 | render_image_deep                  | createImageDeep           | No                | easy       | ✅ Done                |
 | render_quad_mesh_deep              | createQuadMeshDeep        | No                | easy       | ✅ Done                |
 | render_offscreen                   | createOffscreen           | No                | easy       | ✅ Done                |
-| render_shape_hints                 | createShapeHints          | **Yes**           | easy       | 🔓 Needs ctrl img regen|
-| render_environment                 | createEnvironment         | **Yes**           | easy       | 🔓 Needs ctrl img regen|
-| render_depth_buffer                | createDepthBuffer         | **Yes**           | easy       | 🔓 Needs ctrl img regen|
-| render_alpha_test                  | createAlphaTest           | **Yes**           | easy       | 🔓 Needs ctrl img regen|
-| render_scene_texture               | createSceneTexture        | **Yes**           | easy       | 🔓 Needs ctrl img regen|
-| render_procedural_shape            | createProceduralShape     | **Yes**           | easy       | 🔓 Needs ctrl img regen|
-| render_scene_texture_multi_mgr     | (no matching factory yet) | No                | hard       | ☐ Pending             |
-| render_gl_features                 | createGLFeatures          | No                | easy       | ☐ Pending             |
-| render_sorender_manager            | createSoRenderManager     | No                | easy       | ☐ Pending             |
-| render_image_deep                  | createImageDeep           | No                | easy       | ☐ Pending             |
-| render_quad_mesh_deep              | createQuadMeshDeep        | No                | easy       | ☐ Pending             |
-| render_sogl_bindings               | createSOGLBindings        | No                | easy       | ☐ Pending             |
-| render_material_binding            | createMaterialBinding     | No                | easy       | ☐ Pending             |
-| render_switch_visibility           | createSwitchVisibility    | No                | easy       | ☐ Pending             |
-| render_offscreen                   | createOffscreen           | No                | easy       | ☐ Pending             |
-| render_offscreen_advanced          | createOffscreenAdvanced   | No                | medium     | ☐ Pending             |
-| render_render_manager_full         | createRenderManagerFull   | No                | medium     | ☐ Pending             |
-| render_glrender_deep               | createGLRenderDeep        | No                | medium     | ☐ Pending             |
-| render_glrender_action_modes       | createGLRenderActionModes | No                | medium     | ☐ Pending             |
-| render_view_volume_ops             | createViewVolumeOps       | No                | medium     | ☐ Pending             |
-| render_field_connections           | createFieldConnections    | No                | medium     | ☐ Pending             |
-| render_engine_converter            | createEngineConverter     | No                | medium     | ☐ Pending             |
-| render_engine_interaction          | createEngineInteraction   | No                | medium     | ☐ Pending             |
-| render_sensors_rendering           | createSensorsRendering    | No                | medium     | ☐ Pending             |
-| render_sensor_interaction          | createSensorInteraction   | No                | medium     | ☐ Pending             |
-| render_path_operations             | createPathOperations      | No                | medium     | ☐ Pending             |
-| render_write_read_action           | createWriteReadAction     | No                | medium     | ☐ Pending             |
-| render_search_action               | createSearchAction        | No                | medium     | ☐ Pending             |
-| render_text3_parts                 | createText3Parts          | No                | medium     | ☐ Pending             |
-| render_arb8_draggers               | createArb8Draggers        | No                | medium     | ☐ Pending             |
-| render_arb8_edit_cycle             | createArb8EditCycle       | **Yes**           | medium     | 🔓 Needs ctrl img regen|
-| render_rt_proxy_shapes             | createRTProxyShapes       | No                | medium     | ☐ Pending             |
-| render_raypick_shapes              | createRaypickShapes       | No                | medium     | ☐ Pending             |
-| render_ext_selection               | createExtSelection        | No                | medium     | ☐ Pending             |
-| render_ext_selection_events        | createExtSelectionEvents  | No                | medium     | ☐ Pending             |
-| render_nodekit_interaction         | createNodeKitInteraction  | No                | medium     | ☐ Pending             |
-| render_scene_interaction           | createSceneInteraction    | No                | medium     | ☐ Pending             |
-| render_camera_interaction          | createCameraInteraction   | No                | medium     | ☐ Pending             |
-| render_hud_interaction             | createHUDInteraction      | No                | easy       | ☐ Pending             |
-| render_event_callback_interaction  | createEventCallbackInteraction | No          | medium     | ☐ Pending             |
-| render_selection_interaction       | createSelectionInteraction | No               | medium     | ☐ Pending             |
-| render_pick_interaction            | createPickInteraction     | No                | medium     | ☐ Pending             |
-| render_pick_filter                 | createPickFilter          | No                | medium     | ☐ Pending             |
-| render_lod_picking                 | createLODPicking          | No                | medium     | ☐ Pending             |
-| render_callback_action             | createCallbackAction      | No                | hard       | ☐ Pending             |
-| render_callback_action_deep        | createCallbackActionDeep  | No                | hard       | ☐ Pending             |
-| render_callback_node               | createCallbackNode        | No                | hard       | ☐ Pending             |
-| render_event_propagation           | createEventPropagation    | No                | hard       | ☐ Pending             |
-| render_bbox_action                 | createBBoxAction          | No                | hard       | ☐ Pending             |
-| render_background_gradient         | createBackgroundGradient  | No                | easy       | ☐ Pending             |
-| render_viewport                    | (no factory yet)          | No                | hard       | ☐ Pending             |
-| render_quad_viewport               | (no factory yet)          | No                | hard       | ☐ Pending             |
+| render_offscreen_advanced          | createOffscreenAdvanced   | No                | medium     | ✅ Done                |
+| render_render_manager_full         | createRenderManagerFull   | No                | medium     | ✅ Done                |
+| render_glrender_deep               | createGLRenderDeep        | No                | medium     | ✅ Done                |
+| render_glrender_action_modes       | createGLRenderActionModes | No                | medium     | ✅ Done                |
+| render_view_volume_ops             | createViewVolumeOps       | No                | medium     | ✅ Done                |
+| render_field_connections           | createFieldConnections    | No                | medium     | ✅ Done                |
+| render_engine_converter            | createEngineConverter     | No                | medium     | ✅ Done                |
+| render_engine_interaction          | createEngineInteraction   | No                | medium     | ✅ Done                |
+| render_sensors_rendering           | createSensorsRendering    | No                | medium     | ✅ Done                |
+| render_sensor_interaction          | createSensorInteraction   | No                | medium     | ✅ Done                |
+| render_path_operations             | createPathOperations      | No                | medium     | ✅ Done                |
+| render_write_read_action           | createWriteReadAction     | No                | medium     | ✅ Done                |
+| render_search_action               | createSearchAction        | No                | medium     | ✅ Done                |
+| render_text3_parts                 | createText3Parts          | No                | medium     | ✅ Done                |
+| render_arb8_draggers               | createArb8Draggers        | No                | medium     | ✅ Done                |
+| render_rt_proxy_shapes             | createRTProxyShapes       | No                | medium     | ✅ Done                |
+| render_raypick_shapes              | createRaypickShapes       | No                | medium     | ✅ Done                |
+| render_ext_selection               | createExtSelection        | No                | medium     | ✅ Done                |
+| render_ext_selection_events        | createExtSelectionEvents  | No                | medium     | ✅ Done                |
+| render_nodekit_interaction         | createNodeKitInteraction  | No                | medium     | ✅ Done                |
+| render_scene_interaction           | createSceneInteraction    | No                | medium     | ✅ Done                |
+| render_camera_interaction          | createCameraInteraction   | No                | medium     | ✅ Done                |
+| render_hud_interaction             | createHUDInteraction      | No                | easy       | ✅ Done                |
+| render_event_callback_interaction  | createEventCallbackInteraction | No          | medium     | ✅ Done                |
+| render_selection_interaction       | createSelectionInteraction | No               | medium     | ✅ Done                |
+| render_pick_interaction            | createPickInteraction     | No                | medium     | ✅ Done                |
+| render_pick_filter                 | createPickFilter          | No                | medium     | ✅ Done                |
+| render_lod_picking                 | createLODPicking          | No                | medium     | ✅ Done                |
+| render_callback_action             | createCallbackAction      | No                | hard       | ✅ Done                |
+| render_callback_action_deep        | createCallbackActionDeep  | No                | hard       | ✅ Done                |
+| render_callback_node               | createCallbackNode        | No                | hard       | ✅ Done                |
+| render_event_propagation           | createEventPropagation    | No                | hard       | ✅ Done                |
+| render_bbox_action                 | createBBoxAction          | No                | hard       | ✅ Done                |
+| render_background_gradient         | createBackgroundGradient  | No                | easy       | ✅ Done                |
+| render_shader_program              | createShaderProgram       | No                | medium     | ✅ Done                |
+| render_shape_hints                 | createShapeHints          | **Yes**           | easy       | ✅ Done (ctrl regen)   |
+| render_environment                 | createEnvironment         | **Yes**           | easy       | ✅ Done (ctrl regen)   |
+| render_depth_buffer                | createDepthBuffer         | **Yes**           | easy       | ✅ Done (ctrl regen)   |
+| render_alpha_test                  | createAlphaTest           | **Yes**           | easy       | ✅ Done (ctrl regen)   |
+| render_scene_texture               | createSceneTexture        | **Yes**           | easy       | ✅ Done (ctrl regen)   |
+| render_procedural_shape            | createProceduralShape     | **Yes**           | easy       | ✅ Done (ctrl regen)   |
+| render_arb8_edit_cycle             | createArb8EditCycle       | **Yes**           | medium     | ✅ Done (ctrl regen)   |
+| render_texture3                    | createTexture3            | **Yes**           | easy       | ✅ Done (ctrl regen)   |
+| render_bump_map                    | createBumpMap             | **Yes**           | easy       | ✅ Done (ctrl regen)   |
+| render_texture_transform           | createTextureTransform    | **Yes**           | easy       | ✅ Done (ctrl regen)   |
+| render_scene_texture_multi_mgr     | (no factory yet)          | No                | hard       | ☐ Phase 5: needs factory|
+| render_viewport                    | (no factory yet)          | No                | hard       | ☐ Phase 5: needs factory|
+| render_quad_viewport               | (no factory yet)          | No                | hard       | ☐ Phase 5: needs factory|
+| render_quad_viewport_lod           | (no factory yet)          | **Yes**           | hard       | ☐ Phase 5: needs factory|
+| render_viewport_scene              | (no factory yet)          | **Yes**           | hard       | ☐ Phase 5: needs factory|
 
 ### Phase 4 — Interactive Elements for Visual Tests
 
@@ -320,23 +318,31 @@ Total: ~100 tests across all rendering scenarios.
   test's fixed position, producing ~32 RMSE difference (threshold: 15.0).
   These tests need control image regeneration in a future session.
 
-### Session 2 (planned)
-- Phase 3: continue conversions for tests WITHOUT control images (easy/medium):
-  render_gl_features, render_sorender_manager, render_quad_mesh_deep,
-  render_sogl_bindings, render_material_binding, render_switch_visibility,
-  render_offscreen, render_engine_interaction, render_sensors_rendering,
-  render_sensor_interaction, render_path_operations, render_write_read_action,
-  render_search_action, render_arb8_draggers, render_rt_proxy_shapes,
-  render_raypick_shapes, render_ext_selection, render_ext_selection_events,
-  render_camera_interaction, render_hud_interaction, etc.
-- Phase 3 (deferred – needs ctrl img regen):
-  render_texture3, render_bump_map, render_texture_transform, render_shape_hints,
-  render_environment, render_depth_buffer, render_alpha_test, render_scene_texture,
-  render_procedural_shape, render_arb8_edit_cycle
-- Phase 4: implement `render_sequence` callbacks for pick/selection/dragger tests
+### Session 2 (2026-03-03)
+- **Phase 3 bulk conversions (no control images):** 32 tests converted using
+  standard basepath-injection pattern. All inject the factory scene render at
+  the top of main() before existing behavioral sub-tests:
+  - Standard basepath tests: field_connections, engine_converter, engine_interaction,
+    sensors_rendering, sensor_interaction, text3_parts, ext_selection, nodekit_interaction,
+    scene_interaction, camera_interaction, event_callback_interaction, selection_interaction,
+    pick_interaction, pick_filter, lod_picking, bbox_action, callback_node, event_propagation,
+    shader_program, offscreen_advanced, render_manager_full, glrender_deep,
+    glrender_action_modes, view_volume_ops, search_action, callback_action,
+    path_operations, callback_action_deep, ext_selection_events
+  - Void-argc pattern: write_read_action, raypick_shapes
+  - Inline-root pattern: arb8_draggers, hud_interaction, rt_proxy_shapes, background_gradient
+- **Phase 3 control-image-regen tests (10 tests):**
+  Converted and regenerated control images for: texture3, bump_map, texture_transform,
+  shape_hints, environment, depth_buffer, alpha_test, scene_texture, procedural_shape,
+  arb8_edit_cycle. Strategy: inject factory render as primary output, keep behavioral
+  multi-frame tests for validation only (not written to primary outpath).
+  For arb8_edit_cycle: factory writes primary `.rgb`; inline step 4 now writes to
+  `_step4.rgb` (not compared to control) to avoid overwriting the factory output.
+- **Phase 5 remaining (5 tests need new factories):**
+  render_viewport, render_quad_viewport, render_quad_viewport_lod, render_viewport_scene,
+  render_scene_texture_multi_mgr — no testlib factories exist yet.
 
 ### Session 3+ (planned)
-- Continue Phase 3 conversions (medium/hard difficulty tests)
-- Phase 4 completion: all render tests have meaningful interactive elements
-- Phase 5: add missing viewport factories
+- Phase 4: implement `render_sequence` callbacks for pick/selection/dragger tests
+- Phase 5: add missing viewport scene factories + conversions
 - Final review and cleanup
