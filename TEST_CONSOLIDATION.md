@@ -61,53 +61,70 @@ graph, despite having matching `create_scene` factories registered in the
 `TestRegistry`.  Converting them to use the shared factory ensures the viewer
 and the CLI image-generation path render **identical scenes**.
 
+**Important constraint**: Tests that have existing control images
+(`tests/control_images/<name>_control.png`) cannot be converted simply by
+swapping in the testlib factory.  The testlib factories call `cam->viewAll()`
+after setting a fixed camera position, whereas the original standalone tests
+used fixed camera positions only.  The `viewAll` call adjusts the camera
+distance to frame the scene's bounding sphere, producing a different (larger)
+rendered object.  The RMSE difference between factory output and the original
+control image can exceed the 15.0 RMSE threshold.
+
+**Conversion strategy for tests with control images:**
+1. Convert the test source to use the factory.
+2. Render the new output and commit updated control images alongside the source.
+3. Widen the RMSE threshold in `add_rendering_image_test` if the factory's
+   `viewAll` camera framing produces measurably different output.
+   Alternatively, update the factory to match the old camera framing.
+
+Tests without control images can be converted freely (done = ✅, safe = 🔓).
+
 Priority order: tests whose standalone scenes already closely match the factory
 output go first (marked **easy**).  Tests that run multiple sub-scenarios and
 cannot be represented as a single scene go last (marked **hard**).
 
-| Render test                        | Factory in testlib?       | Difficulty | Status       |
-|------------------------------------|---------------------------|------------|--------------|
-| render_shadow_advanced             | createShadowAdvanced      | medium     | ✅ Done       |
-| render_scene_texture               | createSceneTexture        | easy       | ☐ Pending   |
-| render_scene_texture_multi_mgr     | (no matching factory yet) | hard       | ☐ Pending   |
-| render_shape_hints                 | createShapeHints          | easy       | ☐ Pending   |
-| render_environment                 | createEnvironment         | easy       | ☐ Pending   |
-| render_texture3                    | createTexture3            | easy       | ☐ Pending   |
-| render_bump_map                    | createBumpMap             | easy       | ☐ Pending   |
-| render_texture_transform           | createTextureTransform    | easy       | ☐ Pending   |
-| render_depth_buffer                | createDepthBuffer         | easy       | ☐ Pending   |
-| render_alpha_test                  | createAlphaTest           | easy       | ☐ Pending   |
-| render_cubemap                     | createCubemap             | easy       | ☐ Pending   |
-| render_gl_big_image                | createGLBigImage          | easy       | ☐ Pending   |
-| render_gl_features                 | createGLFeatures          | easy       | ☐ Pending   |
-| render_multi_texture               | createMultiTexture        | easy       | ☐ Pending   |
-| render_procedural_shape            | createProceduralShape     | easy       | ☐ Pending   |
-| render_shader_program              | createShaderProgram       | easy       | ☐ Pending   |
-| render_sorender_manager            | createSoRenderManager     | easy       | ☐ Pending   |
-| render_image_deep                  | createImageDeep           | easy       | ☐ Pending   |
-| render_quad_mesh_deep              | createQuadMeshDeep        | easy       | ☐ Pending   |
-| render_sogl_bindings               | createSOGLBindings        | easy       | ☐ Pending   |
-| render_material_binding            | createMaterialBinding     | easy       | ☐ Pending   |
-| render_switch_visibility           | createSwitchVisibility    | easy       | ☐ Pending   |
-| render_offscreen                   | createOffscreen           | easy       | ☐ Pending   |
-| render_offscreen_advanced          | createOffscreenAdvanced   | medium     | ☐ Pending   |
-| render_render_manager_full         | createRenderManagerFull   | medium     | ☐ Pending   |
-| render_glrender_deep               | createGLRenderDeep        | medium     | ☐ Pending   |
-| render_glrender_action_modes       | createGLRenderActionModes | medium     | ☐ Pending   |
-| render_view_volume_ops             | createViewVolumeOps       | medium     | ☐ Pending   |
-| render_field_connections           | createFieldConnections    | medium     | ☐ Pending   |
-| render_engine_converter            | createEngineConverter     | medium     | ☐ Pending   |
-| render_engine_interaction          | createEngineInteraction   | medium     | ☐ Pending   |
-| render_sensors_rendering           | createSensorsRendering    | medium     | ☐ Pending   |
-| render_sensor_interaction          | createSensorInteraction   | medium     | ☐ Pending   |
-| render_path_operations             | createPathOperations      | medium     | ☐ Pending   |
-| render_write_read_action           | createWriteReadAction     | medium     | ☐ Pending   |
-| render_search_action               | createSearchAction        | medium     | ☐ Pending   |
-| render_text3_parts                 | createText3Parts          | medium     | ☐ Pending   |
-| render_arb8_draggers               | createArb8Draggers        | medium     | ☐ Pending   |
-| render_arb8_edit_cycle             | createArb8EditCycle       | medium     | ☐ Pending   |
-| render_rt_proxy_shapes             | createRTProxyShapes       | medium     | ☐ Pending   |
-| render_raypick_shapes              | createRaypickShapes       | medium     | ☐ Pending   |
+| Render test                        | Factory in testlib?       | Has control image | Difficulty | Status                |
+|------------------------------------|---------------------------|-------------------|------------|-----------------------|
+| render_shadow_advanced             | createShadowAdvanced      | No                | medium     | ✅ Done                |
+| render_cubemap                     | createCubemap             | No                | easy       | ✅ Done                |
+| render_gl_big_image                | createGLBigImage          | No                | easy       | ✅ Done                |
+| render_multi_texture               | createMultiTexture        | No                | easy       | ✅ Done                |
+| render_texture3                    | createTexture3            | **Yes**           | easy       | 🔓 Needs ctrl img regen|
+| render_bump_map                    | createBumpMap             | **Yes**           | easy       | 🔓 Needs ctrl img regen|
+| render_texture_transform           | createTextureTransform    | **Yes**           | easy       | 🔓 Needs ctrl img regen|
+| render_shape_hints                 | createShapeHints          | **Yes**           | easy       | 🔓 Needs ctrl img regen|
+| render_environment                 | createEnvironment         | **Yes**           | easy       | 🔓 Needs ctrl img regen|
+| render_depth_buffer                | createDepthBuffer         | **Yes**           | easy       | 🔓 Needs ctrl img regen|
+| render_alpha_test                  | createAlphaTest           | **Yes**           | easy       | 🔓 Needs ctrl img regen|
+| render_scene_texture               | createSceneTexture        | **Yes**           | easy       | 🔓 Needs ctrl img regen|
+| render_procedural_shape            | createProceduralShape     | **Yes**           | easy       | 🔓 Needs ctrl img regen|
+| render_scene_texture_multi_mgr     | (no matching factory yet) | No                | hard       | ☐ Pending             |
+| render_gl_features                 | createGLFeatures          | No                | easy       | ☐ Pending             |
+| render_sorender_manager            | createSoRenderManager     | No                | easy       | ☐ Pending             |
+| render_image_deep                  | createImageDeep           | No                | easy       | ☐ Pending             |
+| render_quad_mesh_deep              | createQuadMeshDeep        | No                | easy       | ☐ Pending             |
+| render_sogl_bindings               | createSOGLBindings        | No                | easy       | ☐ Pending             |
+| render_material_binding            | createMaterialBinding     | No                | easy       | ☐ Pending             |
+| render_switch_visibility           | createSwitchVisibility    | No                | easy       | ☐ Pending             |
+| render_offscreen                   | createOffscreen           | No                | easy       | ☐ Pending             |
+| render_offscreen_advanced          | createOffscreenAdvanced   | No                | medium     | ☐ Pending             |
+| render_render_manager_full         | createRenderManagerFull   | No                | medium     | ☐ Pending             |
+| render_glrender_deep               | createGLRenderDeep        | No                | medium     | ☐ Pending             |
+| render_glrender_action_modes       | createGLRenderActionModes | No                | medium     | ☐ Pending             |
+| render_view_volume_ops             | createViewVolumeOps       | No                | medium     | ☐ Pending             |
+| render_field_connections           | createFieldConnections    | No                | medium     | ☐ Pending             |
+| render_engine_converter            | createEngineConverter     | No                | medium     | ☐ Pending             |
+| render_engine_interaction          | createEngineInteraction   | No                | medium     | ☐ Pending             |
+| render_sensors_rendering           | createSensorsRendering    | No                | medium     | ☐ Pending             |
+| render_sensor_interaction          | createSensorInteraction   | No                | medium     | ☐ Pending             |
+| render_path_operations             | createPathOperations      | No                | medium     | ☐ Pending             |
+| render_write_read_action           | createWriteReadAction     | No                | medium     | ☐ Pending             |
+| render_search_action               | createSearchAction        | No                | medium     | ☐ Pending             |
+| render_text3_parts                 | createText3Parts          | No                | medium     | ☐ Pending             |
+| render_arb8_draggers               | createArb8Draggers        | No                | medium     | ☐ Pending             |
+| render_arb8_edit_cycle             | createArb8EditCycle       | **Yes**           | medium     | 🔓 Needs ctrl img regen|
+| render_rt_proxy_shapes             | createRTProxyShapes       | No                | medium     | ☐ Pending             |
+| render_raypick_shapes              | createRaypickShapes       | No                | medium     | ☐ Pending             |
 | render_ext_selection               | createExtSelection        | medium     | ☐ Pending   |
 | render_ext_selection_events        | createExtSelectionEvents  | medium     | ☐ Pending   |
 | render_nodekit_interaction         | createNodeKitInteraction  | medium     | ☐ Pending   |
@@ -290,13 +307,28 @@ Total: ~100 tests across all rendering scenarios.
     changed to `add_testlib_rendering_test`
   - Updated `tests/rendering/CMakeLists.txt` `add_rendering_image_test` macro
     to use `obol_render` instead of `obol_test`
+  - Converted 3 tests without control images to use testlib factories:
+    `render_cubemap`, `render_gl_big_image`, `render_multi_texture`
+- **Key finding:** Tests with existing control images cannot be trivially
+  converted — the testlib factories call `cam->viewAll()` after setting a
+  fixed camera position, which moves the camera closer than the standalone
+  test's fixed position, producing ~32 RMSE difference (threshold: 15.0).
+  These tests need control image regeneration in a future session.
 
 ### Session 2 (planned)
-- Begin Phase 3: convert easy standalone render tests to use testlib factories
-- Implement `render_sequence` callbacks for high-priority interaction tests
-  (pick_interaction, selection_interaction, draggers)
-- Add explicit interactive elements to tests that currently have only static
-  scenes (gradient, colored_cube, switch_visibility, etc.)
+- Phase 3: continue conversions for tests WITHOUT control images (easy/medium):
+  render_gl_features, render_sorender_manager, render_quad_mesh_deep,
+  render_sogl_bindings, render_material_binding, render_switch_visibility,
+  render_offscreen, render_engine_interaction, render_sensors_rendering,
+  render_sensor_interaction, render_path_operations, render_write_read_action,
+  render_search_action, render_arb8_draggers, render_rt_proxy_shapes,
+  render_raypick_shapes, render_ext_selection, render_ext_selection_events,
+  render_camera_interaction, render_hud_interaction, etc.
+- Phase 3 (deferred – needs ctrl img regen):
+  render_texture3, render_bump_map, render_texture_transform, render_shape_hints,
+  render_environment, render_depth_buffer, render_alpha_test, render_scene_texture,
+  render_procedural_shape, render_arb8_edit_cycle
+- Phase 4: implement `render_sequence` callbacks for pick/selection/dragger tests
 
 ### Session 3+ (planned)
 - Continue Phase 3 conversions (medium/hard difficulty tests)
