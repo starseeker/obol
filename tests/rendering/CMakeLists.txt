@@ -214,6 +214,83 @@ macro(add_nanort_testlib_rendering_test name)
     endif()
 endmacro()
 
+# ---- Embree 4 raytracing backend -----------------------------------------
+#
+# Intel Embree is an optional system library (not bundled).  When found via
+# find_package(), the add_embree_rendering_test() macro compiles tests with:
+#   - OBOL_EMBREE_BUILD defined  →  headless_utils.h uses SoEmbreeContextManager
+#   - The system embree4 include path and link target
+#
+# Embree tests use SoRaytracerSceneCollector (the same generic scene collection
+# API used by the NanoRT backend) so the same scene-graph functionality is
+# exercised: proxy shapes for line/point sets, wireframe cylinder rings,
+# text/HUD overlays, lights, and invisible-shape pruning.
+find_package(embree 4 QUIET
+    HINTS /usr/lib/x86_64-linux-gnu/cmake/embree-4.3.0
+          /usr/lib/cmake/embree4
+          /usr/local/lib/cmake/embree4)
+if(embree_FOUND OR TARGET embree4)
+    if(TARGET embree4)
+        set(EMBREE_LINK_TARGET embree4)
+    else()
+        set(EMBREE_LINK_TARGET embree)
+    endif()
+    message(STATUS "Embree ${embree_VERSION} found — building Embree rendering tests")
+
+    macro(add_embree_rendering_test name)
+        add_executable(emb_${name} ${name}.cpp)
+        target_include_directories(emb_${name} PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/tests/utils
+            ${PROJECT_SOURCE_DIR}/include
+            ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+            ${PROJECT_BINARY_DIR}/include
+            ${OBOL_TARGET_INCLUDE_DIRECTORIES}
+        )
+        target_compile_definitions(emb_${name} PRIVATE OBOL_EMBREE_BUILD)
+        target_link_libraries(emb_${name}
+            ${PROJECT_NAME}
+            ${EMBREE_LINK_TARGET}
+            ${OBOL_TARGET_LINK_LIBRARIES})
+        set_target_properties(emb_${name} PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
+        )
+        add_test(
+            NAME emb_${name}
+            COMMAND "${CMAKE_COMMAND}"
+                -DEXECUTABLE=$<TARGET_FILE:emb_${name}>
+                -DTEST_TIMEOUT=${IMAGE_COMPARISON_TEST_TIMEOUT}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/run_rendering_test.cmake"
+        )
+        set_tests_properties(emb_${name} PROPERTIES
+            TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
+        )
+    endmacro()
+
+    macro(add_embree_testlib_rendering_test name)
+        add_embree_rendering_test(${name})
+        if(TARGET obol_testlib)
+            target_link_libraries(emb_${name} obol_testlib)
+            target_include_directories(emb_${name} PRIVATE
+                ${CMAKE_SOURCE_DIR}/tests
+            )
+        endif()
+    endmacro()
+
+    # Embree rendering tests (parallel to the NanoRT suite; same source files,
+    # different context manager via the OBOL_EMBREE_BUILD compile definition)
+    add_embree_rendering_test(render_embree)
+    add_embree_rendering_test(render_rt_proxy_shapes)
+    add_embree_rendering_test(render_background_gradient)
+    add_embree_testlib_rendering_test(render_primitives)
+    add_embree_testlib_rendering_test(render_materials)
+    add_embree_testlib_rendering_test(render_colored_cube)
+    add_embree_testlib_rendering_test(render_scene)
+else()
+    message(STATUS "Embree not found — skipping Embree rendering tests")
+    message(STATUS "  Install libembree-dev (Ubuntu) or embree-devel (Fedora) to enable")
+endif()
+
 # ---- NanoRT versions of standard rendering tests ----------------------------
 # These tests use SoOffscreenRenderer + the generalized ContextManager hook to
 # produce pixel output via nanort.  They operate on triangle-based geometry;
