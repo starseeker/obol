@@ -1717,13 +1717,6 @@ SoGLRenderActionP::render(SoNode * node)
                                FALSE, !this->isDirectRendering(state));
   SoGLRenderPassElement::set(state, 0);
 
-  /* Maintain the thread-local render glue for deprecated static query methods
-     (SoGLLightIdElement::getMaxGLSources, SoGLClipPlaneElement::getMaxGLPlanes,
-     SoGLMultiTextureImageElement::getMaxGLTextureSize) that lack a state pointer.
-     These methods are documented as obsolete; all other GL dispatch now uses
-     explicit context pointers derived from state. */
-  sogl_set_current_render_glue(sogl_glue_instance(state));
-
   this->precblist.invokeCallbacks(static_cast<void *>(this->action));
 
   if (this->action->getNumPasses() > 1 && this->internal_multipass) {
@@ -1946,9 +1939,6 @@ SoGLRenderActionP::renderSingle(SoNode * node)
   this->transpobjpaths.truncate(0);
   this->sorttranspobjdistances.truncate(0);
   this->delayedpaths.truncate(0);
-
-  /* Clear the thread-local render glue now that the render pass is done. */
-  sogl_set_current_render_glue(NULL);
 
 }
 

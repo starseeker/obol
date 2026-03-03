@@ -1329,16 +1329,6 @@ SoShape::getPrimitiveCount(SoGetPrimitiveCountAction * action)
   if (this->shouldPrimitiveCount(action)) this->generatePrimitives(action);
 }
 
-/*!
-  Not implemented in Coin. Should probably have been private in TGS
-  Inventor API.
- */
-float
-SoShape::getDecimatedComplexity(SoState * OBOL_UNUSED_ARG(state), float complexity)
-{
-  OBOL_OBSOLETED();
-  return 1.0f * complexity;
-}
 
 /*!
   Render a bounding box.
