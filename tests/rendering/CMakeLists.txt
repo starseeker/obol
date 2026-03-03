@@ -139,7 +139,7 @@ add_rendering_test(render_event_propagation)
 add_rendering_test(render_shader_program)
 add_rendering_test(render_raypick_shapes)
 add_rendering_test(render_material_binding)
-add_rendering_test(render_shadow_advanced)
+add_testlib_rendering_test(render_shadow_advanced)
 add_rendering_test(render_ext_selection)
 add_rendering_test(render_view_volume_ops)
 add_rendering_test(render_glrender_action_modes)
@@ -385,7 +385,7 @@ macro(add_rendering_image_test test_name)
         add_test(
             NAME ${test_name}_image_test
             COMMAND ${CMAKE_COMMAND}
-                -DEXECUTABLE=$<TARGET_FILE:obol_test>
+                -DEXECUTABLE=$<TARGET_FILE:obol_render>
                 -DTEST_NAME=${test_name}
                 -DTEST_BASE=${TEST_BASE}
                 -DCONTROL_IMAGE=${CONTROL_IMAGE}
