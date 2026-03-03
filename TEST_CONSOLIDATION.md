@@ -89,9 +89,14 @@ cannot be represented as a single scene go last (marked **hard**).
 | render_cubemap                     | createCubemap             | No                | easy       | ✅ Done                |
 | render_gl_big_image                | createGLBigImage          | No                | easy       | ✅ Done                |
 | render_multi_texture               | createMultiTexture        | No                | easy       | ✅ Done                |
-| render_texture3                    | createTexture3            | **Yes**           | easy       | 🔓 Needs ctrl img regen|
-| render_bump_map                    | createBumpMap             | **Yes**           | easy       | 🔓 Needs ctrl img regen|
-| render_texture_transform           | createTextureTransform    | **Yes**           | easy       | 🔓 Needs ctrl img regen|
+| render_switch_visibility           | createSwitchVisibility    | No                | easy       | ✅ Done                |
+| render_sorender_manager            | createSoRenderManager     | No                | easy       | ✅ Done                |
+| render_gl_features                 | createGLFeatures          | No                | easy       | ✅ Done                |
+| render_sogl_bindings               | createSOGLBindings        | No                | easy       | ✅ Done                |
+| render_material_binding            | createMaterialBinding     | No                | easy       | ✅ Done                |
+| render_image_deep                  | createImageDeep           | No                | easy       | ✅ Done                |
+| render_quad_mesh_deep              | createQuadMeshDeep        | No                | easy       | ✅ Done                |
+| render_offscreen                   | createOffscreen           | No                | easy       | ✅ Done                |
 | render_shape_hints                 | createShapeHints          | **Yes**           | easy       | 🔓 Needs ctrl img regen|
 | render_environment                 | createEnvironment         | **Yes**           | easy       | 🔓 Needs ctrl img regen|
 | render_depth_buffer                | createDepthBuffer         | **Yes**           | easy       | 🔓 Needs ctrl img regen|
