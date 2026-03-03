@@ -1692,6 +1692,15 @@ void * coin_gl_current_context(void);
    render pipeline, including during SoState construction. */
 const SoGLContext * sogl_glue_from_state(const SoState * state);
 
+/* Return the GL dispatch context active on this thread during the current
+   SoGLRenderAction traversal pass.  NULL outside of a render pass. */
+const SoGLContext * sogl_current_render_glue(void);
+
+/* Set/clear the thread-local render glue used by sogl_current_render_glue().
+   Must be called by SoGLRenderAction at the start and end of each traversal
+   pass so that SoCallback nodes can use the <Inventor/gl.h> macro wrappers. */
+void sogl_set_current_render_glue(const SoGLContext * glue);
+
 /* Returns the function pointer for glGetString as seen in the linked GL
    library.  Used by dl.cpp to verify that cc_dl_opengl_handle() opened the
    same GL DLL that the rest of the library uses, without needing to include

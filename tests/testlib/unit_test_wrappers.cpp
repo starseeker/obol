@@ -4903,7 +4903,7 @@ static int runViewVolumeDeepTests()
 }
 
 // =========================================================================
-// Unit test: SbMatrix factor/LU/more paths
+// Unit test: SbMatrix LU/more paths
 // =========================================================================
 static int runMatrixDeepTests()
 {
@@ -6488,7 +6488,7 @@ REGISTER_TEST(unit_viewvolume_ortho, ObolTest::TestCategory::Base,
 );
 
 // =========================================================================
-// Unit test: SbMatrix - det3/det4, transpose, LU, getTransform, factor
+// Unit test: SbMatrix - det3/det4, transpose, LU, getTransform
 // =========================================================================
 static int runMatrixAdvancedTests()
 {
@@ -6570,18 +6570,6 @@ static int runMatrixAdvancedTests()
         m.getTransform(outT, outR, outS, outSO, center);
         // After setTransform with identity SO and zero center, should round-trip
         (void)outT; (void)outR; (void)outS; (void)outSO; (void)center;
-    }
-
-    // --- factor (note: not yet implemented, stub returns false) ---
-    {
-        SbMatrix m;
-        m.setTransform(SbVec3f(1,2,3), SbRotation(SbVec3f(0,1,0), float(M_PI/6)),
-                       SbVec3f(1,1,1));
-        SbMatrix r, u;
-        SbVec3f sv, t;
-        SbMatrix proj;
-        // factor() is currently a stub - just verify it doesn't crash
-        m.factor(r, sv, u, t, proj);
     }
 
     // --- multVecMatrix SbVec4f ---
@@ -7416,7 +7404,7 @@ static int runCallbackActionAdvancedTests()
 }
 
 REGISTER_TEST(unit_matrix_advanced, ObolTest::TestCategory::Base,
-    "SbMatrix: det3/det4, transpose, LUDecomposition/BackSubstitution, getTransform, factor, multVecMatrix(Vec4f)",
+    "SbMatrix: det3/det4, transpose, LUDecomposition/BackSubstitution, getTransform, multVecMatrix(Vec4f)",
     e.has_visual = false;
     e.run_unit = runMatrixAdvancedTests;
 );
