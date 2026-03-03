@@ -1257,6 +1257,8 @@ public:
         cachedRootId_ = 0;
         cachedCamPtr_ = nullptr;
         cachedCamId_  = 0;
+        cachedVpWidth_  = 0;
+        cachedVpHeight_ = 0;
         cachedNrtScene_ = NrtScene();  // clears tris, vertices, faces, normals, accel
         cachedLights_.clear();
     }
@@ -1325,7 +1327,9 @@ public:
             (camId != cachedCamId_);
         const bool needRebuild =
             (scene != cachedScene_) ||
-            (scene->getNodeId() != cachedRootId_ && !cameraOnlyMoved);
+            (scene->getNodeId() != cachedRootId_ && !cameraOnlyMoved) ||
+            (static_cast<int>(width)  != cachedVpWidth_) ||
+            (static_cast<int>(height) != cachedVpHeight_);
 
         // Text/HUD overlay data – always regenerated so that screen-space
         // positions track the current camera even on cache hits.
@@ -1414,9 +1418,11 @@ public:
             }
 
             // Record the cache key so subsequent calls can detect hits.
-            cachedScene_  = scene;
-            cachedRootId_ = scene->getNodeId();
-            cachedCamPtr_ = cam;
+            cachedScene_    = scene;
+            cachedRootId_   = scene->getNodeId();
+            cachedCamPtr_   = cam;
+            cachedVpWidth_  = static_cast<int>(width);
+            cachedVpHeight_ = static_cast<int>(height);
         } else {
             // --- 1c. Cache hit: lightweight text/HUD-overlay traversal ------
             // The geometry and lights are reused from the previous render.
@@ -1671,6 +1677,13 @@ private:
     //                 (updated after every successful render, not just after
     //                 rebuilds).  Together with cachedCamPtr_ this lets us
     //                 infer "camera-only moved → skip BVH rebuild".
+    // cachedVpWidth_ / cachedVpHeight_ – render viewport dimensions used when
+    //                 the BVH was last built.  Line/point/cylinder proxy
+    //                 geometry is expressed in world-space units that depend
+    //                 on the viewport size (radius ∝ 1/vpHeight), so the BVH
+    //                 must be rebuilt whenever the render resolution changes
+    //                 (e.g. coarse → full refinement) to keep cylinder radii
+    //                 visually correct at the new pixel density.
     // cachedNrtScene_ – the built BVH plus triangle/normal data.
     // cachedLights_   – world-space light descriptors from the last build.
     //
@@ -1682,6 +1695,8 @@ private:
     SbUniqueId                cachedRootId_          = 0;
     SoCamera *                cachedCamPtr_          = nullptr;
     SbUniqueId                cachedCamId_           = 0;
+    int                       cachedVpWidth_         = 0;
+    int                       cachedVpHeight_        = 0;
     NrtScene                  cachedNrtScene_;
     std::vector<NrtLightInfo> cachedLights_;
     bool                      cachedShadowsEnabled_    = false;
