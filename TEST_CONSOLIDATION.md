@@ -125,25 +125,25 @@ cannot be represented as a single scene go last (marked **hard**).
 | render_arb8_edit_cycle             | createArb8EditCycle       | **Yes**           | medium     | 🔓 Needs ctrl img regen|
 | render_rt_proxy_shapes             | createRTProxyShapes       | No                | medium     | ☐ Pending             |
 | render_raypick_shapes              | createRaypickShapes       | No                | medium     | ☐ Pending             |
-| render_ext_selection               | createExtSelection        | medium     | ☐ Pending   |
-| render_ext_selection_events        | createExtSelectionEvents  | medium     | ☐ Pending   |
-| render_nodekit_interaction         | createNodeKitInteraction  | medium     | ☐ Pending   |
-| render_scene_interaction           | createSceneInteraction    | medium     | ☐ Pending   |
-| render_camera_interaction          | createCameraInteraction   | medium     | ☐ Pending   |
-| render_hud_interaction             | createHUDInteraction      | easy       | ☐ Pending   |
-| render_event_callback_interaction  | createEventCallbackInteraction | medium | ☐ Pending |
-| render_selection_interaction       | createSelectionInteraction | medium    | ☐ Pending   |
-| render_pick_interaction            | createPickInteraction     | medium     | ☐ Pending   |
-| render_pick_filter                 | createPickFilter          | medium     | ☐ Pending   |
-| render_lod_picking                 | createLODPicking          | medium     | ☐ Pending   |
-| render_callback_action             | createCallbackAction      | hard       | ☐ Pending   |
-| render_callback_action_deep        | createCallbackActionDeep  | hard       | ☐ Pending   |
-| render_callback_node               | createCallbackNode        | hard       | ☐ Pending   |
-| render_event_propagation           | createEventPropagation    | hard       | ☐ Pending   |
-| render_bbox_action                 | createBBoxAction          | hard       | ☐ Pending   |
-| render_background_gradient         | createBackgroundGradient  | easy       | ☐ Pending   |
-| render_viewport                    | (no matching factory yet) | hard       | ☐ Pending   |
-| render_quad_viewport               | (no matching factory yet) | hard       | ☐ Pending   |
+| render_ext_selection               | createExtSelection        | No                | medium     | ☐ Pending             |
+| render_ext_selection_events        | createExtSelectionEvents  | No                | medium     | ☐ Pending             |
+| render_nodekit_interaction         | createNodeKitInteraction  | No                | medium     | ☐ Pending             |
+| render_scene_interaction           | createSceneInteraction    | No                | medium     | ☐ Pending             |
+| render_camera_interaction          | createCameraInteraction   | No                | medium     | ☐ Pending             |
+| render_hud_interaction             | createHUDInteraction      | No                | easy       | ☐ Pending             |
+| render_event_callback_interaction  | createEventCallbackInteraction | No          | medium     | ☐ Pending             |
+| render_selection_interaction       | createSelectionInteraction | No               | medium     | ☐ Pending             |
+| render_pick_interaction            | createPickInteraction     | No                | medium     | ☐ Pending             |
+| render_pick_filter                 | createPickFilter          | No                | medium     | ☐ Pending             |
+| render_lod_picking                 | createLODPicking          | No                | medium     | ☐ Pending             |
+| render_callback_action             | createCallbackAction      | No                | hard       | ☐ Pending             |
+| render_callback_action_deep        | createCallbackActionDeep  | No                | hard       | ☐ Pending             |
+| render_callback_node               | createCallbackNode        | No                | hard       | ☐ Pending             |
+| render_event_propagation           | createEventPropagation    | No                | hard       | ☐ Pending             |
+| render_bbox_action                 | createBBoxAction          | No                | hard       | ☐ Pending             |
+| render_background_gradient         | createBackgroundGradient  | No                | easy       | ☐ Pending             |
+| render_viewport                    | (no factory yet)          | No                | hard       | ☐ Pending             |
+| render_quad_viewport               | (no factory yet)          | No                | hard       | ☐ Pending             |
 
 ### Phase 4 — Interactive Elements for Visual Tests
 

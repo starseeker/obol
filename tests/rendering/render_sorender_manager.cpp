@@ -68,6 +68,9 @@ int main(int argc, char ** argv)
         ok = false;
     }
 
+    /* Delete the manager before rendering: the scene graph is ref-counted and
+     * will not be freed by the manager's destructor.  Rendering is done through
+     * a separate SoOffscreenRenderer so we can produce a portable .rgb file. */
     delete mgr;
 
     /* Render to file via SoOffscreenRenderer (matches viewer output). */

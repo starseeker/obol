@@ -87,7 +87,8 @@ static void cmdList(bool byCategory)
         for (const auto& cat : cats) {
             ObolTest::TestCategory tc = ObolTest::categoryFromString(cat);
             auto tests = reg.getByCategory(tc);
-            // Only show tests with unit test functions
+            /* Pre-scan: only print the category header if at least one test in
+             * this category has a run_unit function (i.e. is a unit test). */
             bool hasUnit = false;
             for (const auto* e : tests) {
                 if (e->run_unit) { hasUnit = true; break; }

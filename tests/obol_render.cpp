@@ -96,6 +96,14 @@ static void printHelp(const char* argv0)
         argv0);
 }
 
+static const char* testFlags(bool hasSeq, bool hasInteract)
+{
+    if (hasSeq && hasInteract) return "seq+interact";
+    if (hasSeq)                return "sequence";
+    if (hasInteract)           return "interactive";
+    return "static";
+}
+
 static void cmdList(bool byCategory)
 {
     ObolTest::TestRegistry& reg = ObolTest::TestRegistry::instance();
@@ -113,15 +121,13 @@ static void cmdList(bool byCategory)
             printf("[%s]\n", cat.c_str());
             for (const auto* e : tests) {
                 if (!e->has_visual) continue;
-                const char* flags = "";
-                if (e->render_sequence && e->has_interactive)
-                    flags = " [sequence,interactive]";
-                else if (e->render_sequence)
-                    flags = " [sequence]";
-                else if (e->has_interactive)
-                    flags = " [interactive]";
+                const char* flags = testFlags(!!e->render_sequence, e->has_interactive);
+                /* Prefix flags with space for inline display */
+                char flagbuf[32];
+                if (flags[0]) snprintf(flagbuf, sizeof(flagbuf), " [%s]", flags);
+                else flagbuf[0] = '\0';
                 printf("  %-35s  %s%s\n",
-                       e->name.c_str(), e->description.c_str(), flags);
+                       e->name.c_str(), e->description.c_str(), flagbuf);
             }
             printf("\n");
         }
@@ -137,15 +143,10 @@ static void cmdList(bool byCategory)
         int count = 0;
         for (const auto& e : tests) {
             if (!e.has_visual) continue;
-            const char* flags =
-                (e.render_sequence && e.has_interactive) ? "seq+interact" :
-                (e.render_sequence)                       ? "sequence"     :
-                (e.has_interactive)                       ? "interactive"  :
-                                                            "static";
             printf("%-35s  %-16s  %-12s  %s\n",
                    e.name.c_str(),
                    ObolTest::categoryToString(e.category).c_str(),
-                   flags,
+                   testFlags(!!e.render_sequence, e.has_interactive),
                    e.description.c_str());
             ++count;
         }

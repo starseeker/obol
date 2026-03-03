@@ -96,15 +96,20 @@ int main(int argc, char **argv)
     sa.apply(root);
     SoPathList &paths = sa.getPaths();
 
-    SoSwitch *redSwitch  = nullptr;
-    SoSwitch *blueSwitch = nullptr;
-    if (paths.getLength() >= 1)
-        redSwitch  = dynamic_cast<SoSwitch *>(paths[0]->getTail());
-    if (paths.getLength() >= 2)
-        blueSwitch = dynamic_cast<SoSwitch *>(paths[1]->getTail());
+    SoSwitch *redSwitch  = (paths.getLength() >= 1)
+                         ? dynamic_cast<SoSwitch *>(paths[0]->getTail())
+                         : nullptr;
+    SoSwitch *blueSwitch = (paths.getLength() >= 2)
+                         ? dynamic_cast<SoSwitch *>(paths[1]->getTail())
+                         : nullptr;
 
-    if (!redSwitch || !blueSwitch) {
-        fprintf(stderr, "render_switch_visibility: could not find SoSwitch nodes\n");
+    if (!redSwitch) {
+        fprintf(stderr, "render_switch_visibility: could not locate first SoSwitch node\n");
+        root->unref();
+        return 1;
+    }
+    if (!blueSwitch) {
+        fprintf(stderr, "render_switch_visibility: could not locate second SoSwitch node\n");
         root->unref();
         return 1;
     }

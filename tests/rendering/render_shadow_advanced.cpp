@@ -49,6 +49,17 @@ static bool validateScene(const unsigned char *buf)
 
 static void reportShadowContrast(const unsigned char *buf)
 {
+    /* Count pixels that appear to belong to the lit ground plane versus the
+     * shadow region.  A pixel is considered "ground" when it is nearly achromatic
+     * (max - min channel < 40 = low saturation).  Among those, pixels with
+     * luma >= 140 are "lit" and those with luma 11-139 are "shadowed".
+     * Thresholds: litGround > 30 and shadowGround > 5 indicate working shadows. */
+    static const int SATURATION_LIMIT = 40;  /* max-min channel: achromatic test */
+    static const int LIT_LUMA_MIN     = 140; /* luma threshold for lit ground   */
+    static const int SHADOW_LUMA_MIN  =  10; /* luma threshold for shadow region */
+    static const int LIT_MIN_PIXELS   =  30; /* minimum lit pixels for "detected" */
+    static const int SHADOW_MIN_PIXELS =  5; /* minimum shadow pixels for "detected" */
+
     int litGround    = 0;
     int shadowGround = 0;
     for (int i = 0; i < W * H; ++i) {
@@ -56,14 +67,14 @@ static void reportShadowContrast(const unsigned char *buf)
         int r = p[0], g = p[1], b = p[2];
         int hi = std::max({r, g, b});
         int lo = std::min({r, g, b});
-        if (hi - lo > 40) continue;
+        if (hi - lo > SATURATION_LIMIT) continue;
         int luma = (r + g + b) / 3;
-        if      (luma >= 140) ++litGround;
-        else if (luma >  10) ++shadowGround;
+        if      (luma >= LIT_LUMA_MIN)    ++litGround;
+        else if (luma >  SHADOW_LUMA_MIN) ++shadowGround;
     }
     printf("render_shadow_advanced: shadow contrast – litGround=%d shadowGround=%d\n",
            litGround, shadowGround);
-    if (litGround > 30 && shadowGround > 5)
+    if (litGround > LIT_MIN_PIXELS && shadowGround > SHADOW_MIN_PIXELS)
         printf("render_shadow_advanced: shadow regions detected\n");
     else
         printf("render_shadow_advanced: shadow regions not detected "

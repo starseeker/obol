@@ -141,8 +141,8 @@ struct TestEntry {
      * @param width     Render width in pixels.
      * @param height    Render height in pixels.
      */
-    std::function<int(const std::string& basepath, int width, int height)>
-        render_sequence;
+    std::function<int(const std::string& /*basepath*/,
+                      int /*width*/, int /*height*/)> render_sequence;
 };
 
 // -------------------------------------------------------------------------
