@@ -4787,7 +4787,9 @@ static void arb8SceneGeom(const float* pp, int n,
             SbVec3f v1(p[3*fv[1]],p[3*fv[1]+1],p[3*fv[1]+2]);
             SbVec3f v2(p[3*fv[2]],p[3*fv[2]+1],p[3*fv[2]+2]);
             SbVec3f v3(p[3*fv[3]],p[3*fv[3]+1],p[3*fv[3]+2]);
-            SbVec3f nm = (v1-v0).cross(v2-v0); nm.normalize();
+            // Use (v2-v0)×(v1-v0) cross-product order so that outward-facing
+            // normals are produced for the face winding stored in kArb8SceneFaces.
+            SbVec3f nm = (v2-v0).cross(v1-v0); nm.normalize();
             int b = (int)tris->vertices.size();
             tris->vertices.insert(tris->vertices.end(),{v0,v1,v2,v3});
             tris->normals .insert(tris->normals .end(),{nm,nm,nm,nm});
@@ -4969,6 +4971,11 @@ SoSeparator* createArb8EditCycle(int width, int height)
     SoSeparator *root = new SoSeparator;
     root->ref();
 
+    /* The camera is positioned along the diagonal from the cube so that
+     * three faces are visible simultaneously.  With the corrected outward
+     * face normals in arb8SceneGeom this direction is correctly lit by the
+     * directional light (previously inward normals caused zero diffuse on
+     * all faces visible from the diagonal). */
     SoPerspectiveCamera *cam = new SoPerspectiveCamera;
     cam->position.setValue(2.5f, 2.0f, 2.5f);
     root->addChild(cam);
@@ -4989,7 +4996,21 @@ SoSeparator* createArb8EditCycle(int width, int height)
     shapeSep->addChild(shape);
     root->addChild(shapeSep);
 
-    // Golden selection-display overlay (labelled handle spheres)
+    /* Call viewAll on the solid geometry BEFORE adding the selection-display
+     * overlay.  buildSelectionDisplay() inserts SoText2 labels that have
+     * no well-defined 3-D bounding box; they would cause viewAll() to
+     * produce an incorrect camera position (often pushing the camera far
+     * past the scene's far-clipping plane). */
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    const float backoff = 1.5f;
+    cam->position.setValue(cam->position.getValue() * backoff);
+    /* Extend the far-clipping plane so the full scene remains visible
+     * after moving the camera back (matches setupCamera() in the test). */
+    cam->farDistance.setValue(cam->farDistance.getValue() * backoff * 1.5f);
+
+    // Golden selection-display overlay (labelled handle spheres) — added
+    // AFTER viewAll so SoText2 labels do not skew the camera setup.
     SoSeparator *selDisp = shape->buildSelectionDisplay();
     if (selDisp) {
         SoSeparator *selSep = new SoSeparator;
@@ -5004,9 +5025,6 @@ SoSeparator* createArb8EditCycle(int width, int height)
     SoSeparator *handles = shape->buildHandleDraggers();
     if (handles) root->addChild(handles);
 
-    SbViewportRegion vp(width, height);
-    cam->viewAll(root, vp);
-    cam->position.setValue(cam->position.getValue() * 1.4f);
     return root;
 }
 

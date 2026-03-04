@@ -247,13 +247,14 @@ int main(int argc, char** argv)
     const char* base = (argc > 1) ? argv[1] : "render_arb8_edit_cycle";
 
     /* Render the canonical factory scene as the primary output image.
-     * This ensures obol_viewer and obol_render produce identical scenes. */
+     * This ensures obol_viewer and obol_render produce identical scenes.
+     * Use the same dimensions and background as the step renders. */
     {
-        SoSeparator *fRoot = ObolTest::Scenes::createArb8EditCycle(256, 256);
-        SbViewportRegion fVp(256, 256);
+        SoSeparator *fRoot = ObolTest::Scenes::createArb8EditCycle(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        SbViewportRegion fVp(DEFAULT_WIDTH, DEFAULT_HEIGHT);
         SoOffscreenRenderer fRen(fVp);
         fRen.setComponents(SoOffscreenRenderer::RGB);
-        fRen.setBackgroundColor(SbColor(0.0f, 0.0f, 0.0f));
+        fRen.setBackgroundColor(kBgColor);
         if (fRen.render(fRoot)) {
             char primaryPath[4096];
             snprintf(primaryPath, sizeof(primaryPath), "%s.rgb", base);
