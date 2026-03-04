@@ -2342,6 +2342,17 @@ namespace Scenes {
 // =========================================================================
 // 39. AlphaTest — textured quad with SoAlphaTest in GREATER mode
 // =========================================================================
+//
+// The canonical scene renders with SoAlphaTest::GREATER(0.5) to demonstrate
+// the alpha test in action.  The 16×16 RGBA checkerboard texture (alpha=255
+// at even-(x+y) texels, alpha=0 elsewhere) produces a characteristic pattern:
+//   • Most rows show a fine red/black checkerboard (alternating pass/fail).
+//   • A small number of rows are entirely black.  These occur when the
+//     bilinear T-fraction between two vertically-adjacent phase-inverted
+//     texel rows lands exactly at 0.5, making every x-position produce
+//     alpha=0.5 which fails the strict GREATER(0.5) test.
+// These all-black rows ARE the correct, expected rendering output for this
+// scene; they are not artifacts.
 
 // Build a 16×16 RGBA checkerboard: opaque red / transparent white
 static void ts_buildAlphaTexture(SoTexture2 *tex)
@@ -2384,7 +2395,7 @@ SoSeparator* createAlphaTest(int width, int height)
     light->direction.setValue(0.0f, 0.0f, -1.0f);
     root->addChild(light);
 
-    // GREATER threshold: only opaque red texels pass
+    // GREATER threshold: only fragments with alpha > 0.5 pass.
     SoAlphaTest *at = new SoAlphaTest;
     at->function.setValue(SoAlphaTest::GREATER);
     at->value.setValue(0.5f);
@@ -4907,7 +4918,9 @@ static void arb8SceneGeom(const float* pp, int n,
             SbVec3f v1(p[3*fv[1]],p[3*fv[1]+1],p[3*fv[1]+2]);
             SbVec3f v2(p[3*fv[2]],p[3*fv[2]+1],p[3*fv[2]+2]);
             SbVec3f v3(p[3*fv[3]],p[3*fv[3]+1],p[3*fv[3]+2]);
-            SbVec3f nm = (v1-v0).cross(v2-v0); nm.normalize();
+            // Use (v2-v0)×(v1-v0) cross-product order so that outward-facing
+            // normals are produced for the face winding stored in kArb8SceneFaces.
+            SbVec3f nm = (v2-v0).cross(v1-v0); nm.normalize();
             int b = (int)tris->vertices.size();
             tris->vertices.insert(tris->vertices.end(),{v0,v1,v2,v3});
             tris->normals .insert(tris->normals .end(),{nm,nm,nm,nm});
@@ -5089,6 +5102,11 @@ SoSeparator* createArb8EditCycle(int width, int height)
     SoSeparator *root = new SoSeparator;
     root->ref();
 
+    /* The camera is positioned along the diagonal from the cube so that
+     * three faces are visible simultaneously.  With the corrected outward
+     * face normals in arb8SceneGeom this direction is correctly lit by the
+     * directional light (previously inward normals caused zero diffuse on
+     * all faces visible from the diagonal). */
     SoPerspectiveCamera *cam = new SoPerspectiveCamera;
     cam->position.setValue(2.5f, 2.0f, 2.5f);
     root->addChild(cam);
@@ -5109,7 +5127,21 @@ SoSeparator* createArb8EditCycle(int width, int height)
     shapeSep->addChild(shape);
     root->addChild(shapeSep);
 
-    // Golden selection-display overlay (labelled handle spheres)
+    /* Call viewAll on the solid geometry BEFORE adding the selection-display
+     * overlay.  buildSelectionDisplay() inserts SoText2 labels that have
+     * no well-defined 3-D bounding box; they would cause viewAll() to
+     * produce an incorrect camera position (often pushing the camera far
+     * past the scene's far-clipping plane). */
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    const float backoff = 1.5f;
+    cam->position.setValue(cam->position.getValue() * backoff);
+    /* Extend the far-clipping plane so the full scene remains visible
+     * after moving the camera back (matches setupCamera() in the test). */
+    cam->farDistance.setValue(cam->farDistance.getValue() * backoff * 1.5f);
+
+    // Golden selection-display overlay (labelled handle spheres) — added
+    // AFTER viewAll so SoText2 labels do not skew the camera setup.
     SoSeparator *selDisp = shape->buildSelectionDisplay();
     if (selDisp) {
         SoSeparator *selSep = new SoSeparator;
@@ -5124,9 +5156,6 @@ SoSeparator* createArb8EditCycle(int width, int height)
     SoSeparator *handles = shape->buildHandleDraggers();
     if (handles) root->addChild(handles);
 
-    SbViewportRegion vp(width, height);
-    cam->viewAll(root, vp);
-    cam->position.setValue(cam->position.getValue() * 1.4f);
     return root;
 }
 
@@ -5602,6 +5631,177 @@ SoSeparator* buildManipTestBase(int width, int height)
     cam->viewAll(root, vp);
 
     root->unrefNoDelete(); // transfer ownership to caller
+    return root;
+}
+
+// =========================================================================
+// 103. Viewport — blue sphere scene for SoViewport API tests
+// =========================================================================
+SoSeparator* createViewport(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    root->addChild(cam);
+
+    SoDirectionalLight *lt = new SoDirectionalLight;
+    lt->direction.setValue(-1.0f, -1.0f, -1.0f);
+    root->addChild(lt);
+
+    SoMaterial *mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.2f, 0.4f, 0.9f);   // blue
+    root->addChild(mat);
+
+    root->addChild(new SoSphere);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    return root;
+}
+
+// =========================================================================
+// 104. ViewportScene — green sphere rendered via SoViewport (control image)
+// =========================================================================
+SoSeparator* createViewportScene(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    root->addChild(cam);
+
+    SoDirectionalLight *lt = new SoDirectionalLight;
+    lt->direction.setValue(-1.0f, -1.0f, -1.0f);
+    root->addChild(lt);
+
+    SoMaterial *mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.1f, 0.8f, 0.2f);   // green
+    root->addChild(mat);
+
+    root->addChild(new SoSphere);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    return root;
+}
+
+// =========================================================================
+// 105. QuadViewport — LOD scene (sphere/cube/cone) for SoQuadViewport tests
+// =========================================================================
+SoSeparator* createQuadViewport(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    root->addChild(cam);
+
+    SoDirectionalLight *lt = new SoDirectionalLight;
+    lt->direction.setValue(-1.0f, -1.0f, -1.0f);
+    root->addChild(lt);
+
+    SoLOD *lod = new SoLOD;
+    lod->range.set1Value(0,  5.0f);
+    lod->range.set1Value(1, 12.0f);
+
+    // HIGH detail: green sphere
+    SoSeparator *hi = new SoSeparator;
+    SoMaterial  *hiMat = new SoMaterial;
+    hiMat->diffuseColor.setValue(0.1f, 0.8f, 0.1f);
+    hi->addChild(hiMat);
+    hi->addChild(new SoSphere);
+    lod->addChild(hi);
+
+    // MEDIUM detail: orange cube
+    SoSeparator *med = new SoSeparator;
+    SoMaterial  *medMat = new SoMaterial;
+    medMat->diffuseColor.setValue(0.9f, 0.5f, 0.1f);
+    med->addChild(medMat);
+    med->addChild(new SoCube);
+    lod->addChild(med);
+
+    // LOW detail: red cone
+    SoSeparator *lo = new SoSeparator;
+    SoMaterial  *loMat = new SoMaterial;
+    loMat->diffuseColor.setValue(0.8f, 0.1f, 0.1f);
+    lo->addChild(loMat);
+    lo->addChild(new SoCone);
+    lod->addChild(lo);
+
+    root->addChild(lod);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    /* Place camera at ~8 units (medium LOD range: 5–12) → orange cube. */
+    SbVec3f pos = cam->position.getValue();
+    pos.normalize();
+    cam->position.setValue(pos * 8.0f);
+    return root;
+}
+
+// =========================================================================
+// 106. QuadViewportLOD — LOD composite scene (control image source)
+// =========================================================================
+SoSeparator* createQuadViewportLOD(int width, int height)
+{
+    /* Return the same LOD scene as createQuadViewport; the control image
+     * is generated from this single-image factory render. */
+    return createQuadViewport(width, height);
+}
+
+// =========================================================================
+// 107. SceneTextureMultiMgr — SoSceneTexture2 quad scene (multi-mgr test)
+// =========================================================================
+SoSeparator* createSceneTextureMultiMgr(int width, int height)
+{
+    (void)width; (void)height;
+
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoOrthographicCamera *cam = new SoOrthographicCamera;
+    cam->position.setValue(0.0f, 0.0f, 2.0f);
+    cam->nearDistance = 0.1f;
+    cam->farDistance  = 10.0f;
+    cam->height       = 2.2f;
+    root->addChild(cam);
+
+    SoDirectionalLight *light = new SoDirectionalLight;
+    light->direction.setValue(0.0f, 0.0f, -1.0f);
+    root->addChild(light);
+
+    SoSceneTexture2 *stex = new SoSceneTexture2;
+    stex->size.setValue(SbVec2s(64, 64));
+    stex->backgroundColor.setValue(0.0f, 0.0f, 0.2f, 1.0f);
+    stex->type.setValue(SoSceneTexture2::RGBA8);
+    stex->wrapS.setValue(SoSceneTexture2::CLAMP);
+    stex->wrapT.setValue(SoSceneTexture2::CLAMP);
+    stex->scene.setValue(ts_buildConeSubScene());
+    root->addChild(stex);
+
+    SoMaterial *mat = new SoMaterial;
+    mat->diffuseColor.setValue(1.0f, 1.0f, 1.0f);
+    root->addChild(mat);
+
+    SoTextureCoordinate2 *tc = new SoTextureCoordinate2;
+    tc->point.set1Value(0, SbVec2f(0.0f, 0.0f));
+    tc->point.set1Value(1, SbVec2f(1.0f, 0.0f));
+    tc->point.set1Value(2, SbVec2f(1.0f, 1.0f));
+    tc->point.set1Value(3, SbVec2f(0.0f, 1.0f));
+    root->addChild(tc);
+
+    SoCoordinate3 *coords = new SoCoordinate3;
+    coords->point.set1Value(0, SbVec3f(-1.0f, -1.0f, 0.0f));
+    coords->point.set1Value(1, SbVec3f( 1.0f, -1.0f, 0.0f));
+    coords->point.set1Value(2, SbVec3f( 1.0f,  1.0f, 0.0f));
+    coords->point.set1Value(3, SbVec3f(-1.0f,  1.0f, 0.0f));
+    root->addChild(coords);
+
+    SoFaceSet *fs = new SoFaceSet;
+    fs->numVertices.setValue(4);
+    root->addChild(fs);
+
     return root;
 }
 
