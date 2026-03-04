@@ -35,6 +35,18 @@
 
 #include <Inventor/events/SoEvent.h>
 
+/* Protect against conflicts caused by any system that defines UP and DOWN by
+ * suppressing those macros to avoid conflicts with the SoButtonEvent::State
+ * enum definition.  Files that need UP/DOWN as numeric constants after
+ * including this header should use the explicit values (0/1) or add their own
+ * #ifndef guards. */
+#ifdef UP
+#  undef UP
+#endif
+#ifdef DOWN
+#  undef DOWN
+#endif
+
 class SbString;
 
 class OBOL_DLL_API SoButtonEvent : public SoEvent {
