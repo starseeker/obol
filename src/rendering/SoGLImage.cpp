@@ -454,7 +454,6 @@ fast_mipmap(SoState * state, int width, int height, int depth,
             int nc, const unsigned char *data, const SbBool useglsubimage,
             SbBool compress)
 {
-  const SoGLContext * glue = sogl_glue_instance(state);
   const SoGLContext * glw = sogl_glue_instance(state);
   GLint internalFormat = SoGLContext_get_internal_texture_format(glw, nc, compress);
   GLenum format = SoGLContext_get_texture_format(glw, nc);
@@ -631,6 +630,7 @@ public:
     dldata(const dldata & org)
       : dlist(org.dlist),
         age(org.age) { }
+    dldata & operator=(const dldata &) = default;
     SoGLDisplayList *dlist;
     uint32_t age;
   };
@@ -980,7 +980,6 @@ SoGLImage::setData(const SbImage *image,
                    SoState *createinstate)
 
 {
-  const SoGLContext * glue = sogl_glue_instance(createinstate);
   PRIVATE(this)->imageage = 0;
 
   if (image == NULL) {
@@ -1512,7 +1511,6 @@ SoGLImageP::resizeImage(SoState * state, unsigned char *& imageptr,
 SoGLDisplayList *
 SoGLImageP::createGLDisplayList(SoState *state)
 {
-  const SoGLContext * glue = sogl_glue_instance(state);
   SbVec3s size;
   int numcomponents;
   unsigned char *bytes =
@@ -1622,7 +1620,6 @@ SoGLImageP::checkTransparency(void)
 static GLenum
 translate_wrap(SoState *state, const SoGLImage::Wrap wrap)
 {
-  const SoGLContext * glue = sogl_glue_instance(state);
   if (wrap == SoGLImage::REPEAT) return (GLenum) GL_REPEAT;
   if (wrap == SoGLImage::CLAMP_TO_BORDER) return (GLenum) GL_CLAMP_TO_BORDER;
   if (OBOL_ENABLE_CONFORMANT_GL_CLAMP) {
