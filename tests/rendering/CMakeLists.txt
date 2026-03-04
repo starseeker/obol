@@ -180,6 +180,7 @@ macro(add_nanort_rendering_test name)
     add_executable(nrt_${name} ${name}.cpp)
     target_include_directories(nrt_${name} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/tests
         ${CMAKE_SOURCE_DIR}/tests/utils
         ${PROJECT_SOURCE_DIR}/include
         ${PROJECT_SOURCE_DIR}/include/Inventor/annex
@@ -243,7 +244,8 @@ if(embree_FOUND OR TARGET embree4)
         add_executable(emb_${name} ${name}.cpp)
         target_include_directories(emb_${name} PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}
-            ${CMAKE_SOURCE_DIR}/tests/utils
+				${CMAKE_SOURCE_DIR}/tests
+				${CMAKE_SOURCE_DIR}/tests/utils
             ${PROJECT_SOURCE_DIR}/include
             ${PROJECT_SOURCE_DIR}/include/Inventor/annex
             ${PROJECT_BINARY_DIR}/include
@@ -383,7 +385,8 @@ add_nanort_testlib_rendering_test(render_hud_nanort)
 add_executable(render_nanort render_nanort.cpp)
 target_include_directories(render_nanort PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/tests/utils
+	 ${CMAKE_SOURCE_DIR}/tests
+	 ${CMAKE_SOURCE_DIR}/tests/utils
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_SOURCE_DIR}/include/Inventor/annex
     ${PROJECT_BINARY_DIR}/include
@@ -405,7 +408,8 @@ set_target_properties(render_nanort PROPERTIES
 add_executable(stt_reference stt_reference.cpp)
 target_include_directories(stt_reference PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/tests/utils
+	 ${CMAKE_SOURCE_DIR}/tests
+	 ${CMAKE_SOURCE_DIR}/tests/utils
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_SOURCE_DIR}/include/Inventor/annex
     ${PROJECT_BINARY_DIR}/include
