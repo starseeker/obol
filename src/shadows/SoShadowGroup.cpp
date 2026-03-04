@@ -1036,7 +1036,7 @@ SoShadowGroupP::updateShadowLights(SoGLRenderAction * action)
 
   if (!this->shadowlightsvalid) {
     int lightidoffset = SoLightElement::getLights(state).getLength();
-    float smoothing = 0.0f; // FIXME: temporary until we have time to fix this feature
+    // FIXME: implement gaussian smoothing for shadow edges
 
     int gaussmatrixsize = 0;
     float gaussstandarddeviation = 0.6f;
@@ -1675,7 +1675,6 @@ SoShadowGroupP::setFragmentShader(SoState * state)
   SbBool perpixelother = FALSE;
   this->getQuality(state, perpixelspot, perpixelother);
 
-  const SoGLContext * glue = SoGLContext_instance(SoGLCacheContextElement::get(state));
   SbBool storedinvalid = SoCacheElement::setInvalid(FALSE);
   state->push();
 

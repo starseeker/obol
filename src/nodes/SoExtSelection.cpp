@@ -259,8 +259,8 @@
 class SoExtSelectionP {
 public:
   SoExtSelectionP(SoExtSelection * masterptr)
-    : runningselection(masterptr),
-      contextManager(NULL)
+    : contextManager(NULL),
+      runningselection(masterptr)
   {
     PUBLIC(this) = masterptr;
   }
@@ -1489,12 +1489,14 @@ SoExtSelectionP::testShape(SoCallbackAction * action, const SoShape * shape)
 
   SbBool full = FALSE;
   switch (PUBLIC(this)->lassoPolicy.getValue()) {
-  case SoExtSelection::FULL_BBOX: /* fall through intended */
+  case SoExtSelection::FULL_BBOX:
     full = TRUE;
+    [[fallthrough]];
   case SoExtSelection::PART_BBOX:
     return testBBox(action, projmatrix, shape, rectbbox, full);
-  case SoExtSelection::FULL: /* fall through intended */
+  case SoExtSelection::FULL:
     full = TRUE;
+    [[fallthrough]];
   case SoExtSelection::PART:
     return testPrimitives(action, projmatrix, shape, rectbbox, full);
   default:
