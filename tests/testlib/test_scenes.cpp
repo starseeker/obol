@@ -2220,18 +2220,19 @@ namespace ObolTest {
 namespace Scenes {
 
 // =========================================================================
-// 39. AlphaTest — textured quad with SoAlphaTest in NONE (disabled) mode
+// 39. AlphaTest — textured quad with SoAlphaTest in GREATER mode
 // =========================================================================
 //
-// The factory renders with SoAlphaTest::NONE so that the full checkerboard
-// texture (opaque red + transparent white) is visible as a clean red/white
-// pattern without alpha clipping.  Using SoAlphaTest::GREATER in the factory
-// scene causes rendering artifacts: bilinear texture filtering at alternating-
-// row phase boundaries (e.g. tile rows 14→15 of a 16-row tile) produces alpha
-// ≈ 0.5 for every pixel in those scan lines, which all fail the GREATER(0.5)
-// threshold, creating completely-black rows at 40-pixel intervals.
-// The alpha test GREATER functionality is validated separately by the three-
-// frame test in render_alpha_test.cpp.
+// The canonical scene renders with SoAlphaTest::GREATER(0.5) to demonstrate
+// the alpha test in action.  The 16×16 RGBA checkerboard texture (alpha=255
+// at even-(x+y) texels, alpha=0 elsewhere) produces a characteristic pattern:
+//   • Most rows show a fine red/black checkerboard (alternating pass/fail).
+//   • A small number of rows are entirely black.  These occur when the
+//     bilinear T-fraction between two vertically-adjacent phase-inverted
+//     texel rows lands exactly at 0.5, making every x-position produce
+//     alpha=0.5 which fails the strict GREATER(0.5) test.
+// These all-black rows ARE the correct, expected rendering output for this
+// scene; they are not artifacts.
 
 // Build a 16×16 RGBA checkerboard: opaque red / transparent white
 static void ts_buildAlphaTexture(SoTexture2 *tex)
@@ -2274,10 +2275,9 @@ SoSeparator* createAlphaTest(int width, int height)
     light->direction.setValue(0.0f, 0.0f, -1.0f);
     root->addChild(light);
 
-    // Disabled alpha test (NONE): all fragments pass, full texture visible.
-    // See comment above for why GREATER mode is not used in the factory.
+    // GREATER threshold: only fragments with alpha > 0.5 pass.
     SoAlphaTest *at = new SoAlphaTest;
-    at->function.setValue(SoAlphaTest::NONE);
+    at->function.setValue(SoAlphaTest::GREATER);
     at->value.setValue(0.5f);
     root->addChild(at);
 
