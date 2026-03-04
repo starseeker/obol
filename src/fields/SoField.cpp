@@ -1444,8 +1444,8 @@ SoField::notify(SoNotList * nlist)
   if (this->isNotifyEnabled()) {
     SoFieldContainer * cont = this->getContainer();
     this->setStatusBits(FLAG_ISNOTIFIED);
-    SoNotRec rec(createNotRec(cont));
-    nlist->append(&rec, this);
+    SoNotRec notify_rec(createNotRec(cont));
+    nlist->append(&notify_rec, this);
     nlist->setLastType(SoNotRec::CONTAINER);
 
 #if OBOL_DEBUG_EXTRA
