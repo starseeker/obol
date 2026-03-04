@@ -142,11 +142,11 @@ cannot be represented as a single scene go last (marked **hard**).
 | render_texture3                    | createTexture3            | **Yes**           | easy       | ✅ Done (ctrl regen)   |
 | render_bump_map                    | createBumpMap             | **Yes**           | easy       | ✅ Done (ctrl regen)   |
 | render_texture_transform           | createTextureTransform    | **Yes**           | easy       | ✅ Done (ctrl regen)   |
-| render_scene_texture_multi_mgr     | (no factory yet)          | No                | hard       | ☐ Phase 5: needs factory|
-| render_viewport                    | (no factory yet)          | No                | hard       | ☐ Phase 5: needs factory|
-| render_quad_viewport               | (no factory yet)          | No                | hard       | ☐ Phase 5: needs factory|
-| render_quad_viewport_lod           | (no factory yet)          | **Yes**           | hard       | ☐ Phase 5: needs factory|
-| render_viewport_scene              | (no factory yet)          | **Yes**           | hard       | ☐ Phase 5: needs factory|
+| render_scene_texture_multi_mgr     | createSceneTextureMultiMgr | No               | hard       | ✅ Done                |
+| render_viewport                    | createViewport            | No                | hard       | ✅ Done                |
+| render_quad_viewport               | createQuadViewport        | No                | hard       | ✅ Done                |
+| render_quad_viewport_lod           | createQuadViewportLOD     | **Yes**           | hard       | ✅ Done (ctrl regen)   |
+| render_viewport_scene              | createViewportScene       | **Yes**           | hard       | ✅ Done (ctrl regen)   |
 
 ### Phase 4 — Interactive Elements for Visual Tests
 
@@ -342,7 +342,24 @@ Total: ~100 tests across all rendering scenarios.
   render_viewport, render_quad_viewport, render_quad_viewport_lod, render_viewport_scene,
   render_scene_texture_multi_mgr — no testlib factories exist yet.
 
-### Session 3+ (planned)
-- Phase 4: implement `render_sequence` callbacks for pick/selection/dragger tests
-- Phase 5: add missing viewport scene factories + conversions
-- Final review and cleanup
+### Session 3 (2026-03-04)
+- **Phase 5 complete: all 5 remaining tests converted.**
+  - Added 5 new scene factories to `test_scenes.cpp`/`test_scenes.h`:
+    `createViewport`, `createViewportScene`, `createQuadViewport`,
+    `createQuadViewportLOD`, `createSceneTextureMultiMgr`.
+  - Added 5 new `REGISTER_TEST` entries in `unit_test_wrappers.cpp` (session 9 namespace).
+  - Converted all 5 test files: factory render injected, SoViewport/SoQuadViewport
+    includes preserved, `render_scene_texture_multi_mgr` gained basepath parsing.
+  - Updated CMakeLists: all 5 changed from `add_rendering_test` → `add_testlib_rendering_test`.
+  - Regenerated control images for `render_viewport_scene` and `render_quad_viewport_lod`.
+  - **Zero remaining `add_rendering_test(` entries in CMakeLists — full migration complete.**
+- **Final state:** All 62 former standalone render tests now use testlib factories.
+  Every test registers a `create_scene` factory in `TestRegistry`, ensuring
+  `obol_render`, `obol_viewer`, and the legacy `render_test` dispatch all render
+  the same authoritative scene from a single source.
+
+### Outstanding work (Phase 4)
+- Phase 4: implement `render_sequence` callbacks for pick/selection/dragger tests.
+  These tests have `has_interactive = true` but no multi-frame sequence support yet.
+  Adding sequences would improve interactive coverage in `obol_viewer`, but the
+  current state is complete for the Phase 3/5 consolidation goals.

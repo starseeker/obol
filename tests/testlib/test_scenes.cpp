@@ -5485,5 +5485,176 @@ SoSeparator* buildManipTestBase(int width, int height)
     return root;
 }
 
+// =========================================================================
+// 103. Viewport — blue sphere scene for SoViewport API tests
+// =========================================================================
+SoSeparator* createViewport(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    root->addChild(cam);
+
+    SoDirectionalLight *lt = new SoDirectionalLight;
+    lt->direction.setValue(-1.0f, -1.0f, -1.0f);
+    root->addChild(lt);
+
+    SoMaterial *mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.2f, 0.4f, 0.9f);   // blue
+    root->addChild(mat);
+
+    root->addChild(new SoSphere);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    return root;
+}
+
+// =========================================================================
+// 104. ViewportScene — green sphere rendered via SoViewport (control image)
+// =========================================================================
+SoSeparator* createViewportScene(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    root->addChild(cam);
+
+    SoDirectionalLight *lt = new SoDirectionalLight;
+    lt->direction.setValue(-1.0f, -1.0f, -1.0f);
+    root->addChild(lt);
+
+    SoMaterial *mat = new SoMaterial;
+    mat->diffuseColor.setValue(0.1f, 0.8f, 0.2f);   // green
+    root->addChild(mat);
+
+    root->addChild(new SoSphere);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    return root;
+}
+
+// =========================================================================
+// 105. QuadViewport — LOD scene (sphere/cube/cone) for SoQuadViewport tests
+// =========================================================================
+SoSeparator* createQuadViewport(int width, int height)
+{
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoPerspectiveCamera *cam = new SoPerspectiveCamera;
+    root->addChild(cam);
+
+    SoDirectionalLight *lt = new SoDirectionalLight;
+    lt->direction.setValue(-1.0f, -1.0f, -1.0f);
+    root->addChild(lt);
+
+    SoLOD *lod = new SoLOD;
+    lod->range.set1Value(0,  5.0f);
+    lod->range.set1Value(1, 12.0f);
+
+    // HIGH detail: green sphere
+    SoSeparator *hi = new SoSeparator;
+    SoMaterial  *hiMat = new SoMaterial;
+    hiMat->diffuseColor.setValue(0.1f, 0.8f, 0.1f);
+    hi->addChild(hiMat);
+    hi->addChild(new SoSphere);
+    lod->addChild(hi);
+
+    // MEDIUM detail: orange cube
+    SoSeparator *med = new SoSeparator;
+    SoMaterial  *medMat = new SoMaterial;
+    medMat->diffuseColor.setValue(0.9f, 0.5f, 0.1f);
+    med->addChild(medMat);
+    med->addChild(new SoCube);
+    lod->addChild(med);
+
+    // LOW detail: red cone
+    SoSeparator *lo = new SoSeparator;
+    SoMaterial  *loMat = new SoMaterial;
+    loMat->diffuseColor.setValue(0.8f, 0.1f, 0.1f);
+    lo->addChild(loMat);
+    lo->addChild(new SoCone);
+    lod->addChild(lo);
+
+    root->addChild(lod);
+
+    SbViewportRegion vp(width, height);
+    cam->viewAll(root, vp);
+    /* Place camera at ~8 units (medium LOD range: 5–12) → orange cube. */
+    SbVec3f pos = cam->position.getValue();
+    pos.normalize();
+    cam->position.setValue(pos * 8.0f);
+    return root;
+}
+
+// =========================================================================
+// 106. QuadViewportLOD — LOD composite scene (control image source)
+// =========================================================================
+SoSeparator* createQuadViewportLOD(int width, int height)
+{
+    /* Return the same LOD scene as createQuadViewport; the control image
+     * is generated from this single-image factory render. */
+    return createQuadViewport(width, height);
+}
+
+// =========================================================================
+// 107. SceneTextureMultiMgr — SoSceneTexture2 quad scene (multi-mgr test)
+// =========================================================================
+SoSeparator* createSceneTextureMultiMgr(int width, int height)
+{
+    (void)width; (void)height;
+
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+
+    SoOrthographicCamera *cam = new SoOrthographicCamera;
+    cam->position.setValue(0.0f, 0.0f, 2.0f);
+    cam->nearDistance = 0.1f;
+    cam->farDistance  = 10.0f;
+    cam->height       = 2.2f;
+    root->addChild(cam);
+
+    SoDirectionalLight *light = new SoDirectionalLight;
+    light->direction.setValue(0.0f, 0.0f, -1.0f);
+    root->addChild(light);
+
+    SoSceneTexture2 *stex = new SoSceneTexture2;
+    stex->size.setValue(SbVec2s(64, 64));
+    stex->backgroundColor.setValue(0.0f, 0.0f, 0.2f, 1.0f);
+    stex->type.setValue(SoSceneTexture2::RGBA8);
+    stex->wrapS.setValue(SoSceneTexture2::CLAMP);
+    stex->wrapT.setValue(SoSceneTexture2::CLAMP);
+    stex->scene.setValue(ts_buildConeSubScene());
+    root->addChild(stex);
+
+    SoMaterial *mat = new SoMaterial;
+    mat->diffuseColor.setValue(1.0f, 1.0f, 1.0f);
+    root->addChild(mat);
+
+    SoTextureCoordinate2 *tc = new SoTextureCoordinate2;
+    tc->point.set1Value(0, SbVec2f(0.0f, 0.0f));
+    tc->point.set1Value(1, SbVec2f(1.0f, 0.0f));
+    tc->point.set1Value(2, SbVec2f(1.0f, 1.0f));
+    tc->point.set1Value(3, SbVec2f(0.0f, 1.0f));
+    root->addChild(tc);
+
+    SoCoordinate3 *coords = new SoCoordinate3;
+    coords->point.set1Value(0, SbVec3f(-1.0f, -1.0f, 0.0f));
+    coords->point.set1Value(1, SbVec3f( 1.0f, -1.0f, 0.0f));
+    coords->point.set1Value(2, SbVec3f( 1.0f,  1.0f, 0.0f));
+    coords->point.set1Value(3, SbVec3f(-1.0f,  1.0f, 0.0f));
+    root->addChild(coords);
+
+    SoFaceSet *fs = new SoFaceSet;
+    fs->numVertices.setValue(4);
+    root->addChild(fs);
+
+    return root;
+}
+
 } // namespace Scenes
 } // namespace ObolTest
