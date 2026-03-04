@@ -49,6 +49,18 @@
 
 class SbString;
 
+/*!
+  \class SoButtonEvent SoButtonEvent.h Inventor/events/SoButtonEvent.h
+  \brief Base class for button-press and button-release events.
+
+  \ingroup coin_events
+
+  SoButtonEvent extends SoEvent with button-state information
+  (pressed or released).  It is the base for SoKeyboardEvent,
+  SoMouseButtonEvent, and SoSpaceballButtonEvent.
+
+  \sa SoEvent, SoKeyboardEvent, SoMouseButtonEvent
+*/
 class OBOL_DLL_API SoButtonEvent : public SoEvent {
   typedef SoEvent inherited;
 
