@@ -202,11 +202,18 @@ option(OBOL_COVERAGE "Enable code coverage instrumentation (GCC/Clang)" OFF)
 # Applied via target_compile_options so external dependencies are unaffected.
 #
 # Flags applied when OBOL_WARNINGS=ON:
-#   -Wall         catch a broad set of common problems
-#   -Wextra       additional checks beyond -Wall
-#   -Wundef       warn when an undefined identifier is used in #if
-#   -Wshadow      warn when a local variable shadows a member or outer variable
+#   -Wall          catch a broad set of common problems
+#   -Wextra        additional checks beyond -Wall
+#   -Wundef        warn when an undefined identifier is used in #if
+#   -Wshadow       warn when a local variable shadows a member or outer variable
 #   -Wno-long-long suppress warnings about 'long long' (valid in C++11 and later)
+#   -Wpedantic     enforce strict ISO C++17.  The codebase now uses [[maybe_unused]]
+#                  (C++17) instead of __attribute__((__unused__)).  The only
+#                  exception is evaluator_tab.cpp + so_eval.ic, which are
+#                  pre-generated Bison/flex outputs committed to the repository
+#                  (bison/flex are NOT re-run during the build); -Wshadow is
+#                  suppressed for that file alone via set_source_files_properties
+#                  in src/engines/CMakeLists.txt.
 #
 # Flags intentionally NOT applied and why:
 #   -Wfloat-equal  Not viable: 3D geometry code legitimately compares floating-
@@ -214,20 +221,16 @@ option(OBOL_COVERAGE "Enable code coverage instrumentation (GCC/Clang)" OFF)
 #                  degenerate cases (zero-length vectors, identity matrices, etc.).
 #                  Suppressing all 300+ such comparisons would bloat the code
 #                  with meaningless casts and obscure the intent.
-#   -pedantic      Not viable: the codebase uses several GCC/Clang extensions
-#                  (e.g. zero-length arrays, __attribute__ annotations) that
-#                  -pedantic would flag as errors; fixing them all is out of
-#                  scope and would risk breaking platform-specific paths.
 #   -Wbad-function-cast  C-only flag; not applicable to the C++ Obol library.
 #   -Wc++-compat         C-only flag; not applicable.
 #   -Winline       Too noisy: many functions are marked inline for API
 #                  compatibility reasons even when the compiler cannot inline
 #                  them; the warnings provide no actionable signal.
-option(OBOL_WARNINGS "Enable extra warning flags (-Wall -Wextra -Wundef -Wshadow) on the Obol target" ON)
+option(OBOL_WARNINGS "Enable extra warning flags (-Wall -Wextra -Wundef -Wshadow -Wpedantic) on the Obol target" ON)
 
 if(OBOL_WARNINGS AND NOT MSVC)
   set(_obol_warning_flags "")
-  foreach(_flag Wall Wextra Wundef Wshadow Wno-long-long)
+  foreach(_flag Wall Wextra Wundef Wshadow Wno-long-long Wpedantic)
     check_cxx_compiler_flag("-${_flag}" OBOL_CXX_HAS_${_flag})
     if(OBOL_CXX_HAS_${_flag})
       list(APPEND _obol_warning_flags "-${_flag}")

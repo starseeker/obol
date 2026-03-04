@@ -594,7 +594,7 @@ public:
                            const int w, const int h, const int d,
                            const SbBool dlist,
                            const SbBool mipmap,
-                           const int border);
+                           const int bdr);
   void reallyBindPBuffer(SoState *state);
   void resizeImage(SoState * state, unsigned char *&imageptr,
                    uint32_t &xsize, uint32_t &ysize, uint32_t &zsize);
@@ -616,7 +616,7 @@ public:
   SoGLImage::Wrap wraps;
   SoGLImage::Wrap wrapt;
   SoGLImage::Wrap wrapr;
-  int border;
+  int tex_border;
   SbBool isregistered;
   uint32_t imageage;
 
@@ -925,12 +925,12 @@ SoGLImage::setData(const SbImage * image,
                    const Wrap wraps,
                    const Wrap wrapt,
                    const float quality,
-                   const int border,
+                   const int tex_border,
                    SoState * createinstate)
 
 {
   this->setData(image, wraps, wrapt, (Wrap)PRIVATE(this)->wrapr,
-                quality, border, createinstate);
+                quality, tex_border, createinstate);
 }
 
 /*!
@@ -948,8 +948,8 @@ SoGLImage::setData(const SbImage * image,
   will be recreated as a mipmap texture object. This will happen only
   once though, of course.
 
-  If \a border != 0, the OpenGL texture will be created with this
-  border size. Be aware that this might be extremely slow on most PC
+  If \a tex_border != 0, the OpenGL texture will be created with this
+  tex_border size. Be aware that this might be extremely slow on most PC
   hardware.
 
   Normally, the OpenGL texture object isn't created until the first
@@ -976,7 +976,7 @@ SoGLImage::setData(const SbImage *image,
                    const Wrap wrapt,
                    const Wrap wrapr,
                    const float quality,
-                   const int border,
+                   const int tex_border,
                    SoState *createinstate)
 
 {
@@ -1005,8 +1005,8 @@ SoGLImage::setData(const SbImage *image,
       wraps == PRIVATE(this)->wraps &&
       wrapt == PRIVATE(this)->wrapt &&
       wrapr == PRIVATE(this)->wrapr &&
-      border == PRIVATE(this)->border &&
-      border == 0 && // haven't tested with borders yet. Play it safe.
+      tex_border == PRIVATE(this)->tex_border &&
+      tex_border == 0 && // haven't tested with borders yet. Play it safe.
       (dl = PRIVATE(this)->findDL(createinstate)) != NULL;
 
     SbVec3s size;
@@ -1062,7 +1062,7 @@ SoGLImage::setData(const SbImage *image,
       PRIVATE(this)->wraps = wraps;
       PRIVATE(this)->wrapt = wrapt;
       PRIVATE(this)->wrapr = wrapr;
-      PRIVATE(this)->border = border;
+      PRIVATE(this)->tex_border = tex_border;
       PRIVATE(this)->unrefDLists(createinstate);
       if (createinstate) {
         PRIVATE(this)->dlists.append(SoGLImageP::dldata(PRIVATE(this)->createGLDisplayList(createinstate)));
@@ -1075,7 +1075,7 @@ SoGLImage::setData(const SbImage *image,
     PRIVATE(this)->wraps = wraps;
     PRIVATE(this)->wrapt = wrapt;
     PRIVATE(this)->wrapr = wrapr;
-    PRIVATE(this)->border = border;
+    PRIVATE(this)->tex_border = tex_border;
     PRIVATE(this)->unrefDLists(createinstate);
   }
 
@@ -1096,13 +1096,13 @@ SoGLImage::setData(const unsigned char *bytes,
                    const Wrap wraps,
                    const Wrap wrapt,
                    const float quality,
-                   const int border,
+                   const int tex_border,
                    SoState *createinstate)
 {
   PRIVATE(this)->dummyimage.setValuePtr(size, numcomponents, bytes);
   this->setData(&PRIVATE(this)->dummyimage,
                 wraps, wrapt, quality,
-                border, createinstate);
+                tex_border, createinstate);
 }
 
 /*!
@@ -1118,13 +1118,13 @@ SoGLImage::setData(const unsigned char *bytes,
                    const Wrap wrapt,
                    const Wrap wrapr,
                    const float quality,
-                   const int border,
+                   const int tex_border,
                    SoState *createinstate)
 {
   PRIVATE(this)->dummyimage.setValuePtr(size, numcomponents, bytes);
   this->setData(&PRIVATE(this)->dummyimage,
                 wraps, wrapt, wrapr, quality,
-                border, createinstate);
+                tex_border, createinstate);
 }
 
 
@@ -1305,7 +1305,7 @@ SoGLImageP::init(void)
   this->wraps = SoGLImage::CLAMP;
   this->wrapt = SoGLImage::CLAMP;
   this->wrapr = SoGLImage::CLAMP;
-  this->border = 0;
+  this->tex_border = 0;
   this->flags = SoGLImage::USE_QUALITY_VALUE;
   this->needtransparencytest = TRUE;
   this->hastransparency = FALSE;
@@ -1335,9 +1335,9 @@ SoGLImageP::resizeImage(SoState * state, unsigned char *& imageptr,
   uint32_t maxrectsize = 0;
 
   if (!(this->flags & SoGLImage::RECTANGLE)) {
-    newx = coin_geq_power_of_two(xsize - 2*this->border);
-    newy = coin_geq_power_of_two(ysize - 2*this->border);
-    newz = zsize ? coin_geq_power_of_two(zsize - 2*this->border) : 0;
+    newx = coin_geq_power_of_two(xsize - 2*this->tex_border);
+    newy = coin_geq_power_of_two(ysize - 2*this->tex_border);
+    newz = zsize ? coin_geq_power_of_two(zsize - 2*this->tex_border) : 0;
 
     // if >= 256 and low quality, don't scale up unless size is
     // close to an above power of two. This saves a lot of texture memory
@@ -1350,11 +1350,11 @@ SoGLImageP::resizeImage(SoState * state, unsigned char *& imageptr,
     }
     else if (this->flags & SoGLImage::USE_QUALITY_VALUE) {
       if (this->quality < OBOL_TEX2_SCALEUP_LIMIT) {
-        if ((newx >= 256) && ((newx - (xsize-2*this->border)) > (newx>>3)))
+        if ((newx >= 256) && ((newx - (xsize-2*this->tex_border)) > (newx>>3)))
           newx >>= 1;
-        if ((newy >= 256) && ((newy - (ysize-2*this->border)) > (newy>>3)))
+        if ((newy >= 256) && ((newy - (ysize-2*this->tex_border)) > (newy>>3)))
           newy >>= 1;
-        if ((newz >= 256) && ((newz - (zsize-2*this->border)) > (newz>>3)))
+        if ((newz >= 256) && ((newz - (zsize-2*this->tex_border)) > (newz>>3)))
           newz >>= 1;
       }
     }
@@ -1429,9 +1429,9 @@ SoGLImageP::resizeImage(SoState * state, unsigned char *& imageptr,
   }
 #endif // OBOL_DEBUG
 
-  newx += 2 * this->border;
-  newy += 2 * this->border;
-  newz = (zsize==0)?0:newz + (2 * this->border);
+  newx += 2 * this->tex_border;
+  newy += 2 * this->tex_border;
+  newz = (zsize==0)?0:newz + (2 * this->tex_border);
 
   if ((newx != xsize) || (newy != ysize) || (newz != zsize)) {
     // We need to resize.
@@ -1566,7 +1566,7 @@ SoGLImageP::createGLDisplayList(SoState *state)
                               xsize, ysize, zsize,
                               dl->getType() == SoGLDisplayList::DISPLAY_LIST,
                               mipmap,
-                              this->border);
+                              this->tex_border);
   }
   dl->close(state);
   return dl;
@@ -1659,7 +1659,7 @@ SoGLImageP::reallyCreateTexture(SoState *state,
                                 const int w, const int h, const int d,
                                 const SbBool OBOL_UNUSED_ARG(dlist), //FIXME: Not in use (kintel 20011129)
                                 const SbBool mipmap,
-                                const int border)
+                                const int bdr)
 {
   const SoGLContext * glue = sogl_glue_instance(state);
   const SoGLContext * glw = sogl_glue_instance(state);
@@ -1691,7 +1691,7 @@ SoGLImageP::reallyCreateTexture(SoState *state,
     if (!mipmap) {
       if (SoGLDriverDatabase::isSupported(glw, SO_GL_3D_TEXTURES)) {
         SoGLContext_glTexImage3D(glw, GL_TEXTURE_3D, 0, internalFormat, w, h, d,
-                               border, dataFormat, GL_UNSIGNED_BYTE, texture);
+                               bdr, dataFormat, GL_UNSIGNED_BYTE, texture);
       }
     }
     else { // mipmaps
@@ -1751,7 +1751,7 @@ SoGLImageP::reallyCreateTexture(SoState *state,
     if (!mipmapimage) {
       // Create only level 0 texture. Mimpamps might be created by glGenerateMipmap
       SoGLContext_glTexImage2D(glue, target, 0, internalFormat, w, h,
-                   border, dataFormat, GL_UNSIGNED_BYTE, texture);
+                   bdr, dataFormat, GL_UNSIGNED_BYTE, texture);
 
       if (generatemipmap) {
         SbBool wasenabled = TRUE;

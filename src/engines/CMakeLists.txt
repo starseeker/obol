@@ -58,6 +58,17 @@ foreach(SRCFILE ${OBOL_ENGINES_FILES})
 	set(OBOL_SOURCE ${OBOL_SOURCE} engines/${SRCFILE} CACHE INTERNAL "OBOL_SOURCE")
 endforeach(SRCFILE)
 
+# evaluator_tab.cpp is a pre-generated Bison/flex output committed to the repository
+# (the .y/.l grammar sources exist but bison/flex are NOT invoked during the build).
+# The generated code contains a naming collision that triggers -Wshadow, so suppress
+# that warning for this file only rather than patching third-party generated code.
+if(NOT MSVC)
+  set_source_files_properties(
+    "${CMAKE_CURRENT_SOURCE_DIR}/evaluator_tab.cpp"
+    PROPERTIES COMPILE_OPTIONS "-Wno-shadow"
+  )
+endif()
+
 # define documentation
 foreach(SRCFILE ${OBOL_ENGINES_FILES})
 	set(OBOL_DOCUMENTATION_FILES ${OBOL_DOCUMENTATION_FILES} ${PROJECT_SOURCE_DIR}/src/engines/${SRCFILE} CACHE INTERNAL "OBOL_DOCUMENTATION_FILES")
