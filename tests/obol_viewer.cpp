@@ -1387,6 +1387,10 @@ public:
         buildUI(W, H);
         end();
         resizable(this);
+        /* Ensure all FLTK windows (including the hidden GL context window
+         * created by FLTKContextManager) are hidden when the user closes the
+         * main window, so that Fl::run() can return cleanly. */
+        callback(closeCB);
     }
 
     void loadScene(const char* name) {
@@ -1603,6 +1607,16 @@ private:
             "max_diff: maximum per-channel difference (0-255)\n"
             "RMSE: root mean square error across all channels\n"
             "rows_with_diff: % of rows containing any channel diff > 1");
+    }
+
+    static void closeCB(Fl_Widget*, void*) {
+        /* Hide every FLTK window so Fl::run() returns.  This is necessary
+         * because FLTKContextManager keeps a hidden 1×1 Fl_Gl_Window shown
+         * for the lifetime of the program; without this callback that window
+         * would keep the event loop alive after the user closes the main
+         * window. */
+        while (Fl_Window* w = Fl::first_window())
+            w->hide();
     }
 
     static void browserCB(Fl_Widget*, void* data) {
