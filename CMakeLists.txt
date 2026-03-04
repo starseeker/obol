@@ -131,6 +131,25 @@ cmake_dependent_option(OBOL_BUILD_VIEWER
   "OBOL_BUILD_TESTS;FLTK_FOUND"
   OFF)
 
+# Qt scene viewer (obol_qt_viewer)
+# Requires Qt6 Widgets + Gui modules and OBOL_BUILD_TESTS.
+# Auto-detected: enabled when Qt6 is found and OBOL_BUILD_TESTS is ON.
+find_package(Qt6 QUIET COMPONENTS Widgets Gui)
+if(OBOL_BUILD_TESTS AND Qt6_FOUND)
+  message(STATUS "Qt6 found (${Qt6_VERSION}): obol_qt_viewer can be built")
+  set(QT_VIEWER_DEFAULT ON)
+else()
+  if(OBOL_BUILD_TESTS)
+    message(STATUS "Qt6 not found – obol_qt_viewer disabled")
+  endif()
+  set(QT_VIEWER_DEFAULT OFF)
+endif()
+cmake_dependent_option(OBOL_BUILD_QT_VIEWER
+  "Build the Qt scene viewer (obol_qt_viewer); requires Qt6 and OBOL_BUILD_TESTS"
+  "${QT_VIEWER_DEFAULT}"
+  "OBOL_BUILD_TESTS;Qt6_FOUND"
+  OFF)
+
 # Internal alias used throughout src/ for Windows shared/static detection
 set(OBOL_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
 
