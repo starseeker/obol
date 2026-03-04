@@ -208,12 +208,11 @@ option(OBOL_COVERAGE "Enable code coverage instrumentation (GCC/Clang)" OFF)
 #   -Wshadow       warn when a local variable shadows a member or outer variable
 #   -Wno-long-long suppress warnings about 'long long' (valid in C++11 and later)
 #   -Wpedantic     enforce strict ISO C++17.  The codebase now uses [[maybe_unused]]
-#                  (C++17) instead of __attribute__((__unused__)).  The only
-#                  exception is evaluator_tab.cpp + so_eval.ic, which are
-#                  pre-generated Bison/flex outputs committed to the repository
-#                  (bison/flex are NOT re-run during the build); -Wshadow is
-#                  suppressed for that file alone via set_source_files_properties
-#                  in src/engines/CMakeLists.txt.
+#                  (C++17) instead of __attribute__((__unused__)).  The generated
+#                  parser files (evaluator_tab.cpp + so_eval.ic) use internal
+#                  __attribute__ annotations from the bison/flex skeletons; these
+#                  are guarded by the tools' own ifdef machinery and do not require
+#                  any suppression.
 #
 # Flags intentionally NOT applied and why:
 #   -Wfloat-equal  Not viable: 3D geometry code legitimately compares floating-
