@@ -46,26 +46,26 @@ Priority: headers used directly by application code.
 | `SoOutput.h` | ✅ | Added `\class SoOutput` Doxygen block |
 | `SoOffscreenRenderer.h` | ✅ | Added `\class SoOffscreenRenderer` Doxygen block |
 | `SoRenderManager.h` | ✅ | Added `\class SoRenderManager` Doxygen block |
-| `SbVec2f.h` | ⬜ | |
-| `SbVec3d.h` | ⬜ | |
-| `SbVec4f.h` | ⬜ | |
-| `SbRotation.h` | ⬜ | |
-| `SbLine.h` | ⬜ | |
-| `SbPlane.h` | ⬜ | |
-| `SbViewVolume.h` | ⬜ | |
-| `SbViewportRegion.h` | ⬜ | |
-| `SbColor.h` | ⬜ | |
-| `SbString.h` | ⬜ | |
-| `SbName.h` | ⬜ | |
-| `SbTime.h` | ⬜ | |
-| `SbImage.h` | ⬜ | |
-| `SoType.h` | ⬜ | |
-| `SoPath.h` | ⬜ | |
-| `SoSceneManager.h` | ⬜ | |
-| `SoEventManager.h` | ⬜ | |
-| `SoPickedPoint.h` | ⬜ | |
-| `SoPrimitiveVertex.h` | ⬜ | |
-| `SoFullPath.h` | ⬜ | |
+| `SbVec2f.h` | ✅ | Added `\class SbVec2f` Doxygen block |
+| `SbVec3d.h` | ✅ | Added `\class SbVec3d` Doxygen block |
+| `SbVec4f.h` | ✅ | Added `\class SbVec4f` Doxygen block |
+| `SbRotation.h` | ✅ | Added `\class SbRotation` Doxygen block |
+| `SbLine.h` | ✅ | Added `\class SbLine` Doxygen block |
+| `SbPlane.h` | ✅ | Added `\class SbPlane` Doxygen block |
+| `SbViewVolume.h` | ✅ | Added `\class SbViewVolume` Doxygen block |
+| `SbViewportRegion.h` | ✅ | Added `\class SbViewportRegion` Doxygen block |
+| `SbColor.h` | ✅ | Added `\class SbColor` Doxygen block |
+| `SbString.h` | ✅ | Added `\class SbString` Doxygen block |
+| `SbName.h` | ✅ | Added `\class SbName` Doxygen block |
+| `SbTime.h` | ✅ | Added `\class SbTime` Doxygen block |
+| `SbImage.h` | ✅ | Added `\class SbImage` Doxygen block |
+| `SoType.h` | ✅ | Added `\class SoType` Doxygen block |
+| `SoPath.h` | ✅ | Added `\class SoPath` Doxygen block |
+| `SoSceneManager.h` | ✅ | Added `\class SoSceneManager` Doxygen block |
+| `SoEventManager.h` | ✅ | Added `\class SoEventManager` Doxygen block |
+| `SoPickedPoint.h` | ✅ | Added `\class SoPickedPoint` Doxygen block |
+| `SoPrimitiveVertex.h` | ✅ | Added `\class SoPrimitiveVertex` Doxygen block |
+| `SoFullPath.h` | ✅ | Added `\class SoFullPath` Doxygen block |
 | All `actions/` headers | ⬜ | ~15 headers |
 | All `nodes/` headers | ⬜ | ~100 headers |
 | All `fields/` headers | ⬜ | ~60 headers |
@@ -86,7 +86,7 @@ following items remain:
 |------|--------|-------|
 | Fix duplicate `/*!` opening in `src/engines/SoNodeEngine.cpp:317` | ✅ | Removed stray extra `/*!` (Doxygen reported "nested comment" error) |
 | Fix broken `/// * !` comment in `src/misc/SoDB.cpp:33` | ✅ | Converted to proper `/*!` block, updated text for `SbBool = bool` reality |
-| `OBOL_UNUSED_ARG` macro in Doxygen `\fn` signatures (SoReorganizeAction.cpp) | ⬜ | Doxygen cannot resolve the macro-expanded signature; consider adding `PREDEFINED` entry in Doxyfile or reformatting `\fn` lines |
+| `OBOL_UNUSED_ARG` macro in Doxygen `\fn` signatures (SoReorganizeAction.cpp) | ✅ | Added `OBOL_UNUSED_ARG(x)=x` to `PREDEFINED` in `docs/Doxyfile.in` |
 | `src/errors/error.cpp` – `\class` references missing header `error.h` | ⬜ | Internal header not in include search path; low priority |
 | `src/misc/SoGlyph.cpp` – `\class` references missing header `SoGlyph.h` | ⬜ | Same; low priority |
 
@@ -103,7 +103,7 @@ following items remain:
 | Remove/update stale Coin-era comments referencing removed subsystems (VRML, ScXML, audio) | ⬜ | Many instances across `src/` |
 | Audit `const_cast` usage | ⬜ | `SoFieldContainer.cpp:885` is flagged with "ugly constness cast" FIXME |
 | Audit raw pointer ownership across public API | ⬜ | Several `void *` context handles could be typed |
-| `add_definitions(-g)` in CMakeLists.txt – debug info in Release builds | ⬜ | Likely unintentional; should be gated on `CMAKE_BUILD_TYPE STREQUAL Debug` |
+| `add_definitions(-g)` in CMakeLists.txt – debug info in Release builds | ✅ | Not present in current codebase; no action needed |
 | `src/base/utf8/include/` not on Doxygen INCLUDE_PATH | ✅ | Fixed in Doxyfile.in session 1 |
 
 ---
@@ -155,3 +155,49 @@ macro-expansion and missing-include issues from legacy Coin code).
 3. Address the `add_definitions(-g)` always-on debug-info issue in
    `CMakeLists.txt`.
 4. Review the still-relevant `FIXME` items in `SoGLRenderAction.cpp`.
+
+---
+
+### Session 2 (2026-03-04)
+
+**Files changed:**
+
+- `include/Inventor/SbVec2f.h` — added `\class SbVec2f` Doxygen block
+- `include/Inventor/SbVec3d.h` — added `\class SbVec3d` Doxygen block
+- `include/Inventor/SbVec4f.h` — added `\class SbVec4f` Doxygen block
+- `include/Inventor/SbRotation.h` — added `\class SbRotation` Doxygen block
+- `include/Inventor/SbLine.h` — added `\class SbLine` Doxygen block
+- `include/Inventor/SbPlane.h` — added `\class SbPlane` Doxygen block
+- `include/Inventor/SbViewVolume.h` — added `\class SbViewVolume` Doxygen block
+- `include/Inventor/SbViewportRegion.h` — added `\class SbViewportRegion` Doxygen block
+- `include/Inventor/SbColor.h` — added `\class SbColor` Doxygen block
+- `include/Inventor/SbString.h` — added `\class SbString` Doxygen block
+- `include/Inventor/SbName.h` — added `\class SbName` Doxygen block
+- `include/Inventor/SbTime.h` — added `\class SbTime` Doxygen block
+- `include/Inventor/SbImage.h` — added `\class SbImage` Doxygen block
+- `include/Inventor/SoType.h` — added `\class SoType` Doxygen block
+- `include/Inventor/SoPath.h` — added `\class SoPath` Doxygen block
+- `include/Inventor/SoSceneManager.h` — added `\class SoSceneManager` Doxygen block
+- `include/Inventor/SoEventManager.h` — added `\class SoEventManager` Doxygen block
+- `include/Inventor/SoPickedPoint.h` — added `\class SoPickedPoint` Doxygen block
+- `include/Inventor/SoPrimitiveVertex.h` — added `\class SoPrimitiveVertex` Doxygen block
+- `include/Inventor/SoFullPath.h` — added `\class SoFullPath` Doxygen block
+- `docs/Doxyfile.in` — added `OBOL_UNUSED_ARG(x)=x` to `PREDEFINED` so that
+  Doxygen can expand the macro in `\fn` signatures in `SoReorganizeAction.cpp`
+
+**Items closed from previous next-session priorities:**
+
+- `add_definitions(-g)` — confirmed absent from `CMakeLists.txt`; marked done.
+- `OBOL_UNUSED_ARG` macro Doxygen warning — resolved via `PREDEFINED` expansion.
+- All math/primitive/scene-graph public headers now have `\class` Doxygen blocks.
+
+**Next session priorities:**
+
+1. Continue `\class` blocks for all `actions/` headers (~15 headers).
+2. Continue `\class` blocks for the most-used `nodes/` headers (SoNode,
+   SoGroup, SoSeparator, SoTransform, SoCamera, SoShape, …).
+3. Continue `\class` blocks for `fields/` headers (SoField, SoSFFloat,
+   SoMFFloat, …).
+4. Review still-relevant `FIXME` items in `src/actions/SoGLRenderAction.cpp`
+   and `src/fields/`.
+5. Audit `const_cast` usage flagged in `SoFieldContainer.cpp:885`.
