@@ -40,8 +40,8 @@
  *   - GLX on X11 / Linux
  *
  * A single hidden 1×1 Fl_Gl_Window is created lazily on the first render
- * request and kept alive for the lifetime of the manager.  All offscreen
- * rendering targets framebuffer objects (FBOs) managed by the Obol library;
+ * request and kept alive for the lifetime of the manager.  Offscreen
+ * rendering uses framebuffer objects (FBOs) managed by the Obol library;
  * the FLTK window surface itself is never drawn to.
  *
  * This header provides drop-in replacements for the same functions that
@@ -179,6 +179,10 @@ public:
         }
         return p;
 #elif defined(__APPLE__)
+        /* The OpenGL framework is always present on macOS.  The static handle
+         * is intentional: dlopen with RTLD_LAZY is idempotent and the
+         * framework either exists at this path or it does not – retrying
+         * would not help. */
         static void* lib = dlopen(
             "/System/Library/Frameworks/OpenGL.framework/OpenGL", RTLD_LAZY);
         return lib ? dlsym(lib, funcName) : nullptr;

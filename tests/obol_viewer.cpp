@@ -1496,6 +1496,12 @@ public:
 
 private:
     /* ---- coin panel label, chosen at compile time ---- */
+    /* CMake ensures these macros are mutually exclusive:
+     *   OBOL_BUILD_DUAL_GL: set when dual-GL build; FLTK GL may also be set
+     *   OBOL_OSMESA_BUILD:  set when pure-OSMesa; FLTK GL is never set
+     *   OBOL_VIEWER_FLTK_GL: set for cross-platform builds (not OSMesa)
+     * Conditions are ordered by precedence: dual-GL first, then OSMesa, then
+     * FLTK GL, then the legacy GLX fallback. */
     static const char* coinLabel() {
 #if defined(OBOL_BUILD_DUAL_GL)
         return "System GL";
