@@ -398,7 +398,7 @@ mfield_buffer_realloc(void * bufptr, size_t size)
   Return the value at \a index in the \a valuestring string.
 */
 void
-SoMField::get1(const int index, SbString & valuestring)
+SoMField::get1(const int index, SbString & valuestring) const
 {
   // Note: this code has an almost verbatim copy in SoField::get(), so
   // remember to update both places if any fixes are done.

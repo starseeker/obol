@@ -118,7 +118,9 @@ protected:
 
 private:
   static SoType classTypeId;
-  // Note: donotify is used as a bitmask, so it needs to be int, not SbBool
+  // donotify stores bit flags: bit 0 = notification enabled.
+  // Stored as int (not SbBool) to accommodate future flag additions
+  // without needing a separate type change.
   int donotify;
 
 }; // SoFieldContainer

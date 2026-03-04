@@ -120,7 +120,6 @@ sofieldcontainer_userdata_cleanup(void)
 // *************************************************************************
 
 #define FLAG_DONOTIFY      0x01
-#define FLAG_FIRSTINSTANCE 0x02
 
 // *************************************************************************
 
@@ -128,7 +127,7 @@ sofieldcontainer_userdata_cleanup(void)
   Constructor.
 */
 SoFieldContainer::SoFieldContainer(void)
-  : isBuiltIn(TRUE), donotify(FLAG_DONOTIFY) // HACK warning: donotify is used as a bitmask
+  : isBuiltIn(TRUE), donotify(FLAG_DONOTIFY)
 {
 }
 /*!
@@ -1283,4 +1282,3 @@ SoFieldContainer::getUserData(void) const
 }
 
 #undef FLAG_DONOTIFY
-#undef FLAG_FIRSTINSTANCE

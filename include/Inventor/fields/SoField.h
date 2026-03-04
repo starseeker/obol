@@ -108,7 +108,7 @@ public:
   SoFieldContainer * getContainer(void) const;
 
   SbBool set(const char * valuestring);
-  void get(SbString & valuestring);
+  void get(SbString & valuestring) const;
 
   SbBool shouldWrite(void) const;
 

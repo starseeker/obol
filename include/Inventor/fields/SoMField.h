@@ -67,7 +67,7 @@ public:
   virtual void insertSpace(int start, int num);
 
   SbBool set1(const int index, const char * const valuestring);
-  void get1(const int index, SbString & valuestring);
+  void get1(const int index, SbString & valuestring) const;
 
   static void initClass(void);
 

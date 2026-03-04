@@ -68,8 +68,8 @@ Priority: headers used directly by application code.
 | `SoFullPath.h` | ✅ | Added `\class SoFullPath` Doxygen block |
 | All `actions/` headers | ✅ | All 15 class headers documented (session 3) |
 | All `nodes/` headers | 🔄 | ~115/116 class headers documented; `SoBumpMappingProperty.h` is a stub with no class yet |
-| All `fields/` headers | 🔄 | SoField, SoFieldContainer, SoFieldData, SoSField, SoMField documented; ~89 concrete SF/MF types not yet documented |
-| All `elements/` headers | ⬜ | ~70 headers |
+| All `fields/` headers | ✅ | All 89 concrete SoSF*/SoMF* headers documented (session 4); core bases done session 3 |
+| All `elements/` headers | ✅ | All 111 element headers documented (session 4); 2 deprecated `#error` stubs skipped |
 | All `engines/` headers | ✅ | All 37 class headers documented (session 3) |
 | All `sensors/` headers | ✅ | All 12 class headers documented (session 3) |
 | All `events/` headers | ✅ | All 7 class headers documented (session 3) |
@@ -97,14 +97,15 @@ following items remain:
 | Item | Status | Notes |
 |------|--------|-------|
 | `FIXME` comments in `src/actions/` (SoCallbackAction, SoReorganizeAction, SoGLRenderAction, etc.) | 🔄 | Most are legacy todos from Coin era (texture unit binding, >8-bit channels, pbuffer) – not actionable without major refactoring; left in place |
-| `FIXME` in `src/fields/` (SoField, SoFieldContainer, SoFieldData) | 🔄 | `SoFieldContainer.cpp` const_cast FIXME resolved (session 3); remaining FIXMEs in SoField.cpp are mutex/const/implementation notes |
-| `HACK` comment in `SoFieldContainer.cpp:131` – bitmask misuse of `donotify` | ⬜ | Possibly clean up with a dedicated bitfield struct |
+| `FIXME` in `src/fields/` (SoField, SoFieldContainer, SoFieldData) | ✅ | All actionable FIXMEs in SoField.cpp resolved (session 4): const-correctness, doc quality, stale implementation questions, hashing note updated; SoFieldContainer.cpp FIXME resolved session 3 |
+| `HACK` comment in `SoFieldContainer.cpp` – bitmask misuse of `donotify` | ✅ | Removed HACK comment; dead `FLAG_FIRSTINSTANCE` macro removed; header comment improved to explain the int type (session 4) |
 | `SoDB.cpp` SbBool typedef doc (was broken `/// * !`) | ✅ | Fixed session 1 |
-| Remove/update stale Coin-era comments referencing removed subsystems (VRML, ScXML, audio) | ⬜ | Many instances across `src/` |
+| Remove/update stale Coin-era comments referencing removed subsystems (VRML, ScXML, audio) | ✅ | Updated all user-visible "Coin3D" strings to "Obol" in SoInteraction.cpp, SoEventManager.cpp, SoInput.cpp, SoNodeKit.cpp, SbFont.cpp, SoText3.cpp; VRML-removal notes updated to reference Obol fork (session 4) |
 | Audit `const_cast` usage | ✅ | `SoFieldContainer.cpp` const_cast FIXMEs resolved: changed `SoFieldContainerCopyMap` value type to non-const, eliminating all but the inherent `this`-cast in `copyThroughConnection()` |
-| Audit raw pointer ownership across public API | ⬜ | Several `void *` context handles could be typed |
+| Audit raw pointer ownership across public API | ⬜ | Several `void *` context handles could be typed; deferred |
 | `add_definitions(-g)` in CMakeLists.txt – debug info in Release builds | ✅ | Not present in current codebase; no action needed |
 | `src/base/utf8/include/` not on Doxygen INCLUDE_PATH | ✅ | Fixed in Doxyfile.in session 1 |
+| `SoField::get()` and `SoMField::get1()` should be `const` | ✅ | Both declarations and definitions updated to `const` (session 4); build verified |
 
 ---
 
@@ -299,3 +300,85 @@ Engines (`include/Inventor/engines/`) — all 37 class headers documented:
    (`donotify` bitmask) — clean up with a dedicated bitfield struct.
 4. Audit remaining FIXMEs in `src/fields/SoField.cpp` for actionability.
 5. Review/remove stale Coin-era comments referencing VRML, ScXML, audio.
+
+---
+
+### Session 4 (2026-03-04)
+
+**Files changed (documentation):**
+
+SF/MF concrete field headers (`include/Inventor/fields/SoSF*.h`, `SoMF*.h`)
+— all 89 headers now documented:
+- SoSFBitMask, SoSFBool, SoSFBox2d/2f/2i32/2s, SoSFBox3d/3f/3i32/3s,
+  SoSFColor, SoSFColorRGBA, SoSFDouble, SoSFEngine, SoSFEnum, SoSFFloat,
+  SoSFImage, SoSFImage3, SoSFInt32, SoSFMatrix, SoSFName, SoSFNode, SoSFPath,
+  SoSFPlane, SoSFRotation, SoSFShort, SoSFString, SoSFTime, SoSFTrigger,
+  SoSFUInt32, SoSFUShort, SoSFVec2b/2d/2f/2i32/2s, SoSFVec3b/3d/3f/3i32/3s,
+  SoSFVec4b/4d/4f/4i32/4s/4ub/4ui32/4us (50 SoSF* headers)
+- SoMFBitMask, SoMFBool, SoMFColor, SoMFColorRGBA, SoMFDouble, SoMFEngine,
+  SoMFEnum, SoMFFloat, SoMFInt32, SoMFMatrix, SoMFName, SoMFNode, SoMFPath,
+  SoMFPlane, SoMFRotation, SoMFShort, SoMFString, SoMFTime, SoMFUInt32,
+  SoMFUShort, SoMFVec2b/2d/2f/2i32/2s, SoMFVec3b/3d/3f/3i32/3s,
+  SoMFVec4b/4d/4f/4i32/4s/4ub/4ui32/4us (39 SoMF* headers)
+
+Elements (`include/Inventor/elements/`) — all 111 documented headers:
+- All element base classes: SoElement, SoReplacedElement, SoAccumulatedElement,
+  SoFloatElement, SoInt32Element
+- All concrete element classes (102 `\class` blocks + 8 `\typedef` blocks for
+  compat-alias headers)
+- 2 `#error`-deprecated stubs (SoTexture3EnabledElement, SoGLTexture3EnabledElement)
+  deliberately left undocumented
+
+**Files changed (code quality):**
+
+- `src/fields/SoFieldContainer.cpp` + `include/Inventor/fields/SoFieldContainer.h`:
+  - Removed dead `#define FLAG_FIRSTINSTANCE 0x02` and corresponding `#undef`
+    (macro was defined but never used)
+  - Removed `// HACK warning:` comment on constructor; updated header
+    comment on `donotify` to clearly explain the `int` type rationale
+
+- `src/fields/SoField.cpp`:
+  - **`SoField::get()` made `const`** — removed 2005-era FIXME; matching change
+    in `include/Inventor/fields/SoField.h`
+  - **`SoMField::get1()` made `const`** — same rationale; matching change
+    in `include/Inventor/fields/SoMField.h`
+  - Eager initialization of `SoFieldP::ptrhash` in `SoField::initClass()`;
+    the lazy-init guard is retained as fallback but no longer needed in
+    normal usage — resolves the "protect with mutex?" FIXME
+  - Improved `getTypeId()` Doxygen to include a usage example; removed stale
+    FIXME requesting a "better version"
+  - Removed stale FIXMEs: notification type, engine writeInstance, engine
+    output name API, fan-in evaluation strategy — all were stale implementation
+    questions answered by 25 years of working code
+  - Replaced FIXME about pointer alignment in hash with an accurate note
+
+- Stale "Coin3D" string cleanup:
+  - `src/misc/SoInteraction.cpp` — error message → "Obol"
+  - `src/misc/SoEventManager.cpp` — Doxygen class description → "Obol"
+  - `src/io/SoInput.cpp` — inline comment + error message → "Obol"
+  - `src/nodekits/SoNodeKit.cpp` — error message → "Obol"
+  - `src/base/SbFont.cpp` — class description + inline comment → "Obol"
+  - `src/shapenodes/SoText3.cpp` — example scene string "Coin3D" → "Obol"
+  - `src/misc/SoProto.cpp` + `src/nodes/SoListener.cpp` — VRML-removal notes
+    updated to say "removed from Obol (the open-source fork of Coin3D)"
+
+**Overall documentation status after session 4:**
+
+All public header groups are now documented:
+| Group | Headers | Status |
+|---|---|---|
+| `include/Inventor/*.h` | 28 | ✅ |
+| `include/Inventor/actions/*.h` | 15 | ✅ |
+| `include/Inventor/nodes/*.h` | ~115 | ✅ (1 empty stub) |
+| `include/Inventor/fields/*.h` | 94 | ✅ |
+| `include/Inventor/elements/*.h` | 111 | ✅ (2 `#error` stubs) |
+| `include/Inventor/engines/*.h` | 37 | ✅ |
+| `include/Inventor/sensors/*.h` | 12 | ✅ |
+| `include/Inventor/events/*.h` | 7 | ✅ |
+
+**Remaining items:**
+
+- `include/Inventor/misc/`, `include/Inventor/details/`, `include/Inventor/lists/`,
+  `include/Inventor/annex/`, `include/Inventor/nodekits/` — not yet inventoried
+- `src/errors/error.cpp` and `src/misc/SoGlyph.cpp` — internal-header low-priority items
+- Audit raw pointer ownership across public API (`void *` context handles)
