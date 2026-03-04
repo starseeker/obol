@@ -40,6 +40,19 @@ class SoFieldData;
 class SoFieldList;
 class SoOutput;
 
+/*!
+  \class SoFieldContainer SoFieldContainer.h Inventor/fields/SoFieldContainer.h
+  \brief Base class for objects that own fields (nodes and engines).
+
+  \ingroup coin_fields
+
+  SoFieldContainer is the base for SoNode and SoEngine.  It manages a
+  set of SoField members (exposed through SoFieldData) and handles
+  the notification, copying, and I/O for those fields.  It provides
+  the common getField() / getFieldName() introspection API.
+
+  \sa SoField, SoNode, SoEngine
+*/
 class OBOL_DLL_API SoFieldContainer : public SoBase {
   typedef SoBase inherited;
 
