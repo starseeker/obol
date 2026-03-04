@@ -76,6 +76,12 @@ SoSeparator* createText(int width = 800, int height = 600);
 /** Multiple SoText2 (2-D billboard) labels at different positions and sizes. */
 SoSeparator* createText2(int width = 800, int height = 600);
 
+/** Multiple SoText2 (2-D billboard) labels rendered with the Iosevka Aile font. */
+SoSeparator* createIosevkaText2(int width = 800, int height = 600);
+
+/** SoText3 extruded 3-D text rendered with the Iosevka Aile font. */
+SoSeparator* createIosevkaText3(int width = 800, int height = 600);
+
 /** Background gradient using a callback node. */
 SoSeparator* createGradient(int width = 800, int height = 600);
 

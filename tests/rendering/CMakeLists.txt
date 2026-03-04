@@ -63,6 +63,8 @@ add_testlib_rendering_test(render_drawstyle)
 add_testlib_rendering_test(render_texture)
 add_testlib_rendering_test(render_text2)
 add_testlib_rendering_test(render_text3)
+add_testlib_rendering_test(render_iosevka_text2)
+add_testlib_rendering_test(render_iosevka_text3)
 # Moved from top-level SIMPLE_TESTS: these need a rendering context to run
 add_testlib_rendering_test(render_gradient)
 add_rendering_test(render_background_gradient)
@@ -348,6 +350,39 @@ set_tests_properties(stt_reference PROPERTIES
     TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
 )
 
+# ---- stb_truetype direct-render test for Iosevka Aile TTC font ---------------
+# stt_iosevka loads the Iosevka Aile Regular .ttc font via SbFont::loadFont()
+# and renders text strings directly to PNG — no OpenGL or display server needed.
+# It validates that struetype correctly uses stt_GetFontOffsetForIndex for TTC
+# files and that the rendered glyphs are Iosevka-shaped.
+add_executable(stt_iosevka stt_iosevka.cpp)
+target_include_directories(stt_iosevka PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/tests/utils
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+    ${PROJECT_BINARY_DIR}/include
+    ${OBOL_TARGET_INCLUDE_DIRECTORIES}
+    ${PROJECT_SOURCE_DIR}/external/nanort
+)
+target_compile_definitions(stt_iosevka PRIVATE
+    OBOL_FONTS_DIR="${CMAKE_SOURCE_DIR}/fonts"
+)
+target_link_libraries(stt_iosevka ${PROJECT_NAME} ${OBOL_TARGET_LINK_LIBRARIES})
+set_target_properties(stt_iosevka PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
+)
+add_test(
+    NAME stt_iosevka
+    COMMAND "${CMAKE_COMMAND}"
+        -DEXECUTABLE=$<TARGET_FILE:stt_iosevka>
+        -DTEST_TIMEOUT=${IMAGE_COMPARISON_TEST_TIMEOUT}
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/run_rendering_test.cmake"
+)
+set_tests_properties(stt_iosevka PROPERTIES
+    TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
+)
+
 # ---- CTest image-comparison integration --------------------------------------
 # Control images live in the shared tests/control_images/ directory.
 # The run_image_test.cmake driver handles Xvfb wrapping for GLX builds.
@@ -537,9 +572,11 @@ set(OBOL_GL_RENDER_TESTS "${OBOL_GL_RENDER_TESTS}" PARENT_SCOPE)
 
 # Text rendering: control images generated with Obol's ProFont baseline.
 # Higher RMSE threshold to accommodate subpixel differences between platforms.
-add_rendering_image_test(render_text2      RMSE_THRESHOLD 20.0)
-add_rendering_image_test(render_text3      RMSE_THRESHOLD 20.0)
-add_rendering_image_test(render_ascii_text RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_text2           RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_text3           RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_ascii_text      RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_iosevka_text2   RMSE_THRESHOLD 20.0)
+add_rendering_image_test(render_iosevka_text3   RMSE_THRESHOLD 20.0)
 add_rendering_image_test(render_gradient    RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_colored_cube RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_coordinates RMSE_THRESHOLD 10.0)
