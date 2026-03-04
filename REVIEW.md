@@ -73,6 +73,11 @@ Priority: headers used directly by application code.
 | All `engines/` headers | ✅ | All 37 class headers documented (session 3) |
 | All `sensors/` headers | ✅ | All 12 class headers documented (session 3) |
 | All `events/` headers | ✅ | All 7 class headers documented (session 3) |
+| All `misc/` headers | ✅ | 16/20 have `\class` blocks; 4 remaining are redirect/compat shims or namespace headers (session 5) |
+| All `details/` headers | ✅ | 9/11 have `\class` blocks; 2 remaining are aggregate-include and macros-only (session 5) |
+| All `lists/` headers | ✅ | 17/18 have `\class` blocks; `SbList.h` is template-only with no OBOL_DLL_API class (session 5) |
+| All `nodekits/` headers | ✅ | 12/13 have `\class` blocks; `SoSubKit.h` is macros-only (session 5) |
+| All `annex/` headers | ✅ | All 28 headers documented (session 5) |
 
 ---
 
@@ -96,8 +101,8 @@ following items remain:
 
 | Item | Status | Notes |
 |------|--------|-------|
-| `FIXME` comments in `src/actions/` (SoCallbackAction, SoReorganizeAction, SoGLRenderAction, etc.) | 🔄 | Most are legacy todos from Coin era (texture unit binding, >8-bit channels, pbuffer) – not actionable without major refactoring; left in place |
-| `FIXME` in `src/fields/` (SoField, SoFieldContainer, SoFieldData) | ✅ | All actionable FIXMEs in SoField.cpp resolved (session 4): const-correctness, doc quality, stale implementation questions, hashing note updated; SoFieldContainer.cpp FIXME resolved session 3 |
+| `FIXME` comments in `src/actions/` (SoCallbackAction, SoReorganizeAction, SoGLRenderAction, etc.) | ✅ | Actionable stale FIXMEs resolved (session 5): redrawSensorCB node-reference, push/pop state, line-width max, BBox design note; non-actionable refactoring items left in place |
+| `FIXME` in `src/fields/` (SoField, SoFieldContainer, SoFieldData) | ✅ | All actionable FIXMEs in SoField.cpp resolved (session 4); SoMField.cpp notification FIXMEs resolved (session 5) |
 | `HACK` comment in `SoFieldContainer.cpp` – bitmask misuse of `donotify` | ✅ | Removed HACK comment; dead `FLAG_FIRSTINSTANCE` macro removed; header comment improved to explain the int type (session 4) |
 | `SoDB.cpp` SbBool typedef doc (was broken `/// * !`) | ✅ | Fixed session 1 |
 | Remove/update stale Coin-era comments referencing removed subsystems (VRML, ScXML, audio) | ✅ | Updated all user-visible "Coin3D" strings to "Obol" in SoInteraction.cpp, SoEventManager.cpp, SoInput.cpp, SoNodeKit.cpp, SbFont.cpp, SoText3.cpp; VRML-removal notes updated to reference Obol fork (session 4) |
@@ -106,6 +111,9 @@ following items remain:
 | `add_definitions(-g)` in CMakeLists.txt – debug info in Release builds | ✅ | Not present in current codebase; no action needed |
 | `src/base/utf8/include/` not on Doxygen INCLUDE_PATH | ✅ | Fixed in Doxyfile.in session 1 |
 | `SoField::get()` and `SoMField::get1()` should be `const` | ✅ | Both declarations and definitions updated to `const` (session 4); build verified |
+| `src/misc/SoDB.cpp` stale FIXMEs | ✅ | Removed/resolved 5 stale FIXMEs: "never cleaned up", "probably temporary", TGS version comments, v1.x header, timer drift (session 5) |
+| `SoSubField.h` macro documentation | ✅ | Added `\file` Doxygen block to SoSubField.h explaining SO_SFIELD_HEADER and SO_MFIELD_HEADER macros (session 5) |
+| `src/actions/SoRayPickAction.cpp objectspacevalid` | ✅ | Replaced stale "why not a flag?" FIXME with explanatory comment (session 5) |
 
 ---
 
@@ -381,4 +389,104 @@ All public header groups are now documented:
 - `include/Inventor/misc/`, `include/Inventor/details/`, `include/Inventor/lists/`,
   `include/Inventor/annex/`, `include/Inventor/nodekits/` — not yet inventoried
 - `src/errors/error.cpp` and `src/misc/SoGlyph.cpp` — internal-header low-priority items
+- Audit raw pointer ownership across public API (`void *` context handles)
+
+---
+
+### Session 5 (2026-03-04)
+
+**Documentation — all remaining public header groups documented:**
+
+- `include/Inventor/misc/` — 15 class/namespace headers: SoBase, SoState, SoChildList,
+  SoContextHandler, SoGLImage, SoGLBigImage, SoGLCubeMapImage, SoGLDriverDatabase,
+  SoLightPath, SoNormalGenerator, SoNotList (in SoNotification.h), SoNotRec, SoProto,
+  SoProtoInstance, SoScriptEngine, SoTempPath (16 headers documented; 4 redirect/compat
+  shims intentionally left without `\class`)
+
+- `include/Inventor/details/` — all 9 concrete detail classes documented: SoDetail,
+  SoConeDetail, SoCubeDetail, SoCylinderDetail, SoFaceDetail, SoLineDetail,
+  SoNodeKitDetail, SoPointDetail, SoTextDetail (2 non-class headers intentionally skipped)
+
+- `include/Inventor/lists/` — all 16 typed list classes documented: SbPList,
+  SbStringList, SbVec3fList, SbIntList, SoActionMethodList, SoAuditorList,
+  SoBaseList, SoCallbackList, SoDetailList, SoEnabledElementsList, SoEngineList,
+  SoEngineOutputList, SoFieldList, SoNodeList, SoPathList, SoPickedPointList,
+  SoTypeList (`SbList.h` is template-only, skipped)
+
+- `include/Inventor/nodekits/` — all 12 nodekit class headers documented: SoNodeKit,
+  SoNodekitCatalog, SoBaseKit, SoNodeKitListPart, SoAppearanceKit, SoCameraKit,
+  SoInteractionKit, SoLightKit, SoSceneKit, SoSeparatorKit, SoShapeKit, SoWrapperKit
+  (`SoSubKit.h` is macros-only, skipped)
+
+- `include/Inventor/annex/` — all 28 headers documented (24 new in session 5):
+  HardCopy (SoHardCopy, SoVectorOutput, SoPSVectorOutput, SoVectorizeAction,
+  SoVectorizePSAction), Profiler (SbProfilingData, SoProfiler, SoProfilerElement,
+  SoProfilerStats, SoProfilerTopEngine, SoProfilingReportGenerator,
+  SoNodeVisualize, SoScrollingGraphKit, SoProfilerVisualizeKit,
+  SoProfilerOverlayKit, SoProfilerTopKit), ForeignFiles (SoForeignFileKit),
+  FXViz (SoShadowGroup, SoShadowCulling, SoShadowDirectionalLight, SoShadowSpotLight,
+  SoShadowStyle, SoShadowStyleElement, SoGLShadowCullingElement),
+  HUD (SoHUD, SoHUDButton, SoHUDLabel, SoHUDKit — already done in earlier session)
+
+**Documentation — new `\file` block added:**
+
+- `include/Inventor/fields/SoSubField.h` — added `\file` Doxygen block documenting
+  the `SO_SFIELD_HEADER`, `SO_SFIELD_SOURCE`, `SO_MFIELD_HEADER`, `SO_MFIELD_SOURCE`,
+  and init-class convenience macros for extending Obol with new field types.
+
+**Code quality — stale FIXMEs resolved in `src/misc/SoDB.cpp`:**
+
+- Replaced "never cleaned up" FIXME with accurate note: cleaned up via `SoDBP::clean()`
+- Removed "probably temporary" FIXME from `SoShadowGroup::init()` call
+- Replaced TGS v2.4/2.5 header comment with accurate description
+- Replaced v1.x file header FIXME with a straightforward compatibility note
+- Replaced two timer-sensor FIXMEs with single accurate explanation
+
+**Code quality — stale FIXMEs resolved in `src/fields/SoMField.cpp`:**
+
+- Replaced "temporary disable notification" FIXME with explanation of intentional design
+- Replaced "major slowdowns at import" FIXME with explanation that valueChanged is a no-op
+  when notifications are disabled
+- Replaced "unnecessary work" FIXME with explanation that valueChanged → startNotify →
+  notify checks isNotifyEnabled() and short-circuits
+
+**Code quality — other stale FIXMEs resolved:**
+
+- `src/actions/SoGLRenderAction.cpp:1167` — replaced "node needs ref" FIXME with
+  explanation that deleteNodeCB already handles the deletion race
+- `src/actions/SoGLRenderAction.cpp:1929` — removed "push/pop state" FIXME; renamed
+  comment to "re-enable depth writing after transparent-pass"
+- `src/actions/SoLineHighlightRenderAction.cpp:371` — replaced "check max line width"
+  FIXME with note that GL implementation clamps the value
+- `src/actions/SoGetBoundingBoxAction.cpp:99` — reformatted 120-line block of
+  FIXME+snip comments into a concise design-note comment with inline test cases
+- `src/fields/SoSField.cpp:85` — removed macro-doc FIXME; now covered by SoSubField.h
+- `src/actions/SoRayPickAction.cpp:214` — replaced "why not a flag?" with explanation
+
+**Complete header documentation status after session 5:**
+
+| Group | Headers | Status |
+|---|---|---|
+| `include/Inventor/*.h` | 28 | ✅ |
+| `include/Inventor/actions/*.h` | 15 | ✅ |
+| `include/Inventor/nodes/*.h` | ~115 | ✅ (1 empty stub) |
+| `include/Inventor/fields/*.h` | 94 | ✅ |
+| `include/Inventor/elements/*.h` | 111 | ✅ (2 `#error` stubs) |
+| `include/Inventor/engines/*.h` | 37 | ✅ |
+| `include/Inventor/sensors/*.h` | 12 | ✅ |
+| `include/Inventor/events/*.h` | 7 | ✅ |
+| `include/Inventor/misc/*.h` | 20 | ✅ (4 redirect/compat shims) |
+| `include/Inventor/details/*.h` | 11 | ✅ (2 non-class headers) |
+| `include/Inventor/lists/*.h` | 18 | ✅ (1 template-only) |
+| `include/Inventor/nodekits/*.h` | 13 | ✅ (1 macros-only) |
+| `include/Inventor/annex/**/*.h` | 28 | ✅ |
+
+All public class headers with actual class/typedef declarations now have Doxygen
+`\class` or `\typedef` blocks.  The remaining undocumented headers are intentionally
+deferred: redirect shims, aggregate-include headers, and macros-only headers.
+
+**Remaining items:**
+
+- `src/errors/error.cpp` and `src/misc/SoGlyph.cpp` — internal-header Doxygen issues;
+  low priority
 - Audit raw pointer ownership across public API (`void *` context handles)
