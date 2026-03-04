@@ -79,6 +79,15 @@ endif()
 # Core build options
 option(BUILD_SHARED_LIBS "Build shared library when ON, static when OFF" ON)
 option(OBOL_BUILD_TESTS "Build unit tests" ON)
+
+# FLTK GL context manager for obol_viewer.
+# Defined here (before FLTK detection) so it can drive FLTK_BUILD_GL when
+# building the bundled FLTK.  The actual compile-definition is set for the
+# obol_viewer target in tests/CMakeLists.txt.
+option(OBOL_VIEWER_USE_FLTK_GL
+    "Use FLTK GL context for obol_viewer system-GL panel (portable; disable for CI/headless)"
+    ON)
+
 find_package(FLTK QUIET)
 if(OBOL_BUILD_TESTS AND NOT FLTK_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/external/fltk/CMakeLists.txt")
   message(STATUS "System FLTK not found; building bundled FLTK from external/fltk")
@@ -87,11 +96,23 @@ if(OBOL_BUILD_TESTS AND NOT FLTK_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/externa
   set(FLTK_BUILD_TEST         OFF CACHE BOOL "Build FLTK test/demo programs"  FORCE)
   set(FLTK_BUILD_EXAMPLES     OFF CACHE BOOL "Build FLTK example programs"    FORCE)
   set(FLTK_BUILD_FORMS        OFF CACHE BOOL "Build FLTK forms library"       FORCE)
-  set(FLTK_BUILD_GL           OFF CACHE BOOL "Build FLTK OpenGL library"      FORCE)
+  # Enable the FLTK OpenGL library when the viewer will use Fl_Gl_Window for
+  # its cross-platform GL context manager; disable otherwise to keep the
+  # bundled FLTK build as lean as possible.
+  if(OBOL_VIEWER_USE_FLTK_GL)
+    set(FLTK_BUILD_GL         ON  CACHE BOOL "Build FLTK OpenGL library"      FORCE)
+  else()
+    set(FLTK_BUILD_GL         OFF CACHE BOOL "Build FLTK OpenGL library"      FORCE)
+  endif()
   set(FLTK_BUILD_SHARED_LIBS  OFF CACHE BOOL "Build FLTK shared libraries"    FORCE)
   add_subdirectory("${PROJECT_SOURCE_DIR}/external/fltk" fltk_build EXCLUDE_FROM_ALL)
   set(FLTK_FOUND TRUE)
   set(FLTK_LIBRARIES fltk::fltk)
+  # When the FLTK GL library is built, add it to FLTK_LIBRARIES so that
+  # targets linking ${FLTK_LIBRARIES} automatically get Fl_Gl_Window support.
+  if(OBOL_VIEWER_USE_FLTK_GL AND TARGET fltk::gl)
+    list(APPEND FLTK_LIBRARIES fltk::gl)
+  endif()
   set(FLTK_INCLUDE_DIRS
       "${PROJECT_SOURCE_DIR}/external/fltk"
       "${CMAKE_BINARY_DIR}/fltk_build")
