@@ -105,15 +105,26 @@ public:
     FLTKGLContextWindow()
         : Fl_Gl_Window(1, 1, "obol_ctx")
     {
-        /* Request a double-buffered RGBA8 context with a 24-bit depth
-         * buffer.  FL_DOUBLE ensures the context is compatible with the
-         * rest of FLTK on all platforms; actual rendering uses FBOs and
-         * never touches the front/back buffers. */
-        mode(FL_RGB8 | FL_DEPTH | FL_DOUBLE);
+        /* Single-buffered RGBA8 context with a 24-bit depth buffer.
+         * We use FBOs for all offscreen rendering and never draw to the
+         * window surface, so double-buffering is unnecessary.  Using
+         * FL_SINGLE avoids FLTK calling glXSwapBuffers() on this hidden
+         * window which can leave stale GL errors in the queue that are
+         * then mis-attributed to subsequent glUseProgramObjectARB calls
+         * (manifesting as spurious GL_INVALID_OPERATION after a camera
+         * drag in scenes that use SoShadowGroup). */
+        mode(FL_RGB8 | FL_DEPTH | FL_SINGLE);
     }
 
     /* Required override; rendering targets FBOs so nothing is drawn here. */
     void draw() override {}
+
+    /* Suppress FLTK's automatic flush/swap cycle for this hidden window.
+     * We never render to the window surface; all rendering is FBO-based.
+     * Without this override, FLTK's expose-event handling calls flush()
+     * which calls make_current() + swap_buffers(), potentially corrupting
+     * the GL context state between offscreen renders. */
+    void flush() override { clear_damage(0); }
 };
 
 /* =========================================================================
