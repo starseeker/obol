@@ -298,7 +298,7 @@ else()
           DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/Inventor 
           COMPONENT development 
           FILES_MATCHING PATTERN "*.h")
-  install(FILES ${PROJECT_SOURCE_DIR}/include/SoWinEnterScope.h ${PROJECT_SOURCE_DIR}/include/SoWinLeaveScope.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT development)
+
 
 # ############################################################################
 # Install target
