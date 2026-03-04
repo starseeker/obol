@@ -282,8 +282,8 @@ if(embree_FOUND OR TARGET embree4)
     # Embree rendering tests (parallel to the NanoRT suite; same source files,
     # different context manager via the OBOL_EMBREE_BUILD compile definition)
     add_embree_rendering_test(render_embree)
-    add_embree_rendering_test(render_rt_proxy_shapes)
-    add_embree_rendering_test(render_background_gradient)
+    add_embree_testlib_rendering_test(render_rt_proxy_shapes)
+    add_embree_testlib_rendering_test(render_background_gradient)
     add_embree_testlib_rendering_test(render_primitives)
     add_embree_testlib_rendering_test(render_materials)
     add_embree_testlib_rendering_test(render_colored_cube)
@@ -306,12 +306,12 @@ add_nanort_testlib_rendering_test(render_materials)
 add_nanort_testlib_rendering_test(render_transforms)
 add_nanort_testlib_rendering_test(render_colored_cube)
 add_nanort_testlib_rendering_test(render_scene)
-add_nanort_rendering_test(render_rt_proxy_shapes)
-add_nanort_rendering_test(render_background_gradient)
+add_nanort_testlib_rendering_test(render_rt_proxy_shapes)
+add_nanort_testlib_rendering_test(render_background_gradient)
 # NanoRT procedural shape test: validates that SoProceduralShape with
 # DrawStyle LINES emits thin-cylinder proxy triangles (wireframe-as-cylinders)
 # so that the wireframe cone is visible in the NanoRT ray-tracing output.
-add_nanort_rendering_test(render_procedural_shape)
+add_nanort_testlib_rendering_test(render_procedural_shape)
 # NanoRT shadow test: validates shadow-ray casting via SoRaytracingParams.
 # Uses SoDirectionalLight + SoRaytracingParams(shadowsEnabled=TRUE); does NOT
 # use SoShadowGroup (which requires OpenGL GLSL shaders).  The pixel-level
