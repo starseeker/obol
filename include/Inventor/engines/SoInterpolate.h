@@ -39,7 +39,7 @@
 #include <Inventor/fields/SoSFFloat.h>
 
 /*!
-  \class SoInterpolate.h Inventor/engines/SoInterpolate.h
+  \class SoInterpolate SoInterpolate.h Inventor/engines/SoInterpolate.h
   \brief Abstract base class for linear interpolation engines.
 
   \ingroup coin_engines

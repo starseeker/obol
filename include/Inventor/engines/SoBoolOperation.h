@@ -40,7 +40,7 @@
 
 
 /*!
-  \class SoBoolOperation.h Inventor/engines/SoBoolOperation.h
+  \class SoBoolOperation SoBoolOperation.h Inventor/engines/SoBoolOperation.h
   \brief Applies a boolean operation element-wise to two boolean input arrays.
 
   \ingroup coin_engines

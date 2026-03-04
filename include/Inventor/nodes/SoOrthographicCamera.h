@@ -37,7 +37,7 @@
 #include <Inventor/nodes/SoCamera.h>
 
 /*!
-  \class SoOrthographicCamera.h Inventor/nodes/SoOrthographicCamera.h
+  \class SoOrthographicCamera SoOrthographicCamera.h Inventor/nodes/SoOrthographicCamera.h
   \brief Camera with an orthographic (parallel) projection.
 
   \ingroup coin_nodes

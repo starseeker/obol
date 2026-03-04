@@ -46,7 +46,7 @@
 
 
 /*!
-  \class SoDecomposeMatrix.h Inventor/engines/SoDecomposeMatrix.h
+  \class SoDecomposeMatrix SoDecomposeMatrix.h Inventor/engines/SoDecomposeMatrix.h
   \brief Decomposes a 4×4 matrix into translation, rotation, scale components.
 
   \ingroup coin_engines

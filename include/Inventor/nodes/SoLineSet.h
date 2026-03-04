@@ -41,7 +41,7 @@ class SoCoordinateElement;
 class SoSeparator;
 
 /*!
-  \class SoLineSet.h Inventor/nodes/SoLineSet.h
+  \class SoLineSet SoLineSet.h Inventor/nodes/SoLineSet.h
   \brief Renders a set of polylines from sequential vertex coordinates.
 
   \ingroup coin_nodes

@@ -47,7 +47,7 @@
 
 
 /*!
-  \class SoComposeMatrix.h Inventor/engines/SoComposeMatrix.h
+  \class SoComposeMatrix SoComposeMatrix.h Inventor/engines/SoComposeMatrix.h
   \brief Assembles a 4×4 matrix from translation, rotation, scale, etc. components.
 
   \ingroup coin_engines

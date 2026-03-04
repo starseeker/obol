@@ -42,7 +42,7 @@
 
 
 /*!
-  \class SoElapsedTime.h Inventor/engines/SoElapsedTime.h
+  \class SoElapsedTime SoElapsedTime.h Inventor/engines/SoElapsedTime.h
   \brief Outputs the elapsed time since the engine was created or reset.
 
   \ingroup coin_engines

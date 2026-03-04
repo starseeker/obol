@@ -38,7 +38,7 @@
 #include <Inventor/fields/SoSFEnum.h>
 
 /*!
-  \class SoUnits.h Inventor/nodes/SoUnits.h
+  \class SoUnits SoUnits.h Inventor/nodes/SoUnits.h
   \brief Converts subsequent geometry from a specified measurement unit to meters.
 
   \ingroup coin_nodes

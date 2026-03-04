@@ -40,7 +40,7 @@
 #include <Inventor/nodes/SoSubNode.h>
 
 /*!
-  \class SoShapeHints.h Inventor/nodes/SoShapeHints.h
+  \class SoShapeHints SoShapeHints.h Inventor/nodes/SoShapeHints.h
   \brief Provides rendering hints about the winding and convexity of subsequent shapes.
 
   \ingroup coin_nodes

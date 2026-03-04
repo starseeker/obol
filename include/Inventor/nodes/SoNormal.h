@@ -40,7 +40,7 @@ class SbVec3f;
 class SoNormalP;
 
 /*!
-  \class SoNormal.h Inventor/nodes/SoNormal.h
+  \class SoNormal SoNormal.h Inventor/nodes/SoNormal.h
   \brief Stores surface normal vectors for subsequent shape nodes.
 
   \ingroup coin_nodes

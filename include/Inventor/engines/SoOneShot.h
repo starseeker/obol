@@ -42,7 +42,7 @@
 
 
 /*!
-  \class SoOneShot.h Inventor/engines/SoOneShot.h
+  \class SoOneShot SoOneShot.h Inventor/engines/SoOneShot.h
   \brief Generates a single timed output pulse when triggered.
 
   \ingroup coin_engines

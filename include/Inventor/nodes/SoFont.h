@@ -38,7 +38,7 @@
 #include <Inventor/fields/SoSFFloat.h>
 
 /*!
-  \class SoFont.h Inventor/nodes/SoFont.h
+  \class SoFont SoFont.h Inventor/nodes/SoFont.h
   \brief Sets the font name and size for subsequent text nodes.
 
   \ingroup coin_nodes

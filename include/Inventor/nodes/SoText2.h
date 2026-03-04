@@ -42,7 +42,7 @@
 #include <vector>
 
 /*!
-  \class SoText2.h Inventor/nodes/SoText2.h
+  \class SoText2 SoText2.h Inventor/nodes/SoText2.h
   \brief Renders 2D text always facing the camera (screen-aligned).
 
   \ingroup coin_nodes

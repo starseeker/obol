@@ -37,7 +37,7 @@
 #include <Inventor/nodes/SoCamera.h>
 
 /*!
-  \class SoPerspectiveCamera.h Inventor/nodes/SoPerspectiveCamera.h
+  \class SoPerspectiveCamera SoPerspectiveCamera.h Inventor/nodes/SoPerspectiveCamera.h
   \brief Camera with a perspective (frustum) projection.
 
   \ingroup coin_nodes

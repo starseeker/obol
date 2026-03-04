@@ -40,7 +40,7 @@
 class SoFaceSetP;
 
 /*!
-  \class SoFaceSet.h Inventor/nodes/SoFaceSet.h
+  \class SoFaceSet SoFaceSet.h Inventor/nodes/SoFaceSet.h
   \brief Renders a set of polygonal faces from sequential vertex coordinates.
 
   \ingroup coin_nodes

@@ -39,7 +39,7 @@
 class SoTextureCoordinate2P;
 
 /*!
-  \class SoTextureCoordinate2.h Inventor/nodes/SoTextureCoordinate2.h
+  \class SoTextureCoordinate2 SoTextureCoordinate2.h Inventor/nodes/SoTextureCoordinate2.h
   \brief Stores 2D texture coordinates for indexed and non-indexed shape nodes.
 
   \ingroup coin_nodes

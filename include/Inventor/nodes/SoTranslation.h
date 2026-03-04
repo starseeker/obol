@@ -38,7 +38,7 @@
 #include <Inventor/nodes/SoTransformation.h>
 
 /*!
-  \class SoTranslation.h Inventor/nodes/SoTranslation.h
+  \class SoTranslation SoTranslation.h Inventor/nodes/SoTranslation.h
   \brief Applies a translation to the current transformation matrix.
 
   \ingroup coin_nodes

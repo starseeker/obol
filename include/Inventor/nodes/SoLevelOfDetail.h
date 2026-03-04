@@ -40,7 +40,7 @@
 class SoLevelOfDetailP;
 
 /*!
-  \class SoLevelOfDetail.h Inventor/nodes/SoLevelOfDetail.h
+  \class SoLevelOfDetail SoLevelOfDetail.h Inventor/nodes/SoLevelOfDetail.h
   \brief Selects a child representation based on projected screen area (detail level).
 
   \ingroup coin_nodes

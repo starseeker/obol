@@ -40,7 +40,7 @@
 
 
 /*!
-  \class SoCounter.h Inventor/engines/SoCounter.h
+  \class SoCounter SoCounter.h Inventor/engines/SoCounter.h
   \brief Counts trigger events and outputs the current count.
 
   \ingroup coin_engines

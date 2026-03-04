@@ -46,7 +46,7 @@
 
 
 /*!
-  \class SoComposeRotation.h Inventor/engines/SoComposeRotation.h
+  \class SoComposeRotation SoComposeRotation.h Inventor/engines/SoComposeRotation.h
   \brief Assembles an SbRotation from an axis vector and an angle.
 
   \ingroup coin_engines

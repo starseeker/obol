@@ -72,7 +72,7 @@ class SoState;
  * **************************************************************************/
 
 /*!
-  \class SoShaderParameter.h Inventor/nodes/SoShaderParameter.h
+  \class SoShaderParameter SoShaderParameter.h Inventor/nodes/SoShaderParameter.h
   \brief Supplies a named uniform variable to a shader program.
 
   \ingroup coin_nodes

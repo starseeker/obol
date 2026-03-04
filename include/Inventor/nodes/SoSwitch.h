@@ -44,7 +44,7 @@
 class SoSwitchP;
 
 /*!
-  \class SoSwitch.h Inventor/nodes/SoSwitch.h
+  \class SoSwitch SoSwitch.h Inventor/nodes/SoSwitch.h
   \brief Selectively traverses one or all children based on a switch index.
 
   \ingroup coin_nodes

@@ -37,7 +37,7 @@
 #include <Inventor/fields/SoMFRotation.h>
 
 /*!
-  \class SoInterpolateRotation.h Inventor/engines/SoInterpolateRotation.h
+  \class SoInterpolateRotation SoInterpolateRotation.h Inventor/engines/SoInterpolateRotation.h
   \brief Spherically interpolates between two rotations (slerp).
 
   \ingroup coin_engines

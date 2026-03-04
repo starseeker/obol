@@ -39,7 +39,7 @@
 
 
 /*!
-  \class SoOnOff.h Inventor/engines/SoOnOff.h
+  \class SoOnOff SoOnOff.h Inventor/engines/SoOnOff.h
   \brief Latches a boolean output that is set and cleared by trigger inputs.
 
   \ingroup coin_engines

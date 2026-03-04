@@ -48,7 +48,7 @@ typedef void SoShaderProgramEnableCB(void * closure,
 // *************************************************************************
 
 /*!
-  \class SoShaderProgram.h Inventor/nodes/SoShaderProgram.h
+  \class SoShaderProgram SoShaderProgram.h Inventor/nodes/SoShaderProgram.h
   \brief Activates a collection of shader objects for subsequent geometry rendering.
 
   \ingroup coin_nodes

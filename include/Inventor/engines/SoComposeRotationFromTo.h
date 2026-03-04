@@ -46,7 +46,7 @@
 
 
 /*!
-  \class SoComposeRotationFromTo.h Inventor/engines/SoComposeRotationFromTo.h
+  \class SoComposeRotationFromTo SoComposeRotationFromTo.h Inventor/engines/SoComposeRotationFromTo.h
   \brief Computes the rotation that maps one vector to another.
 
   \ingroup coin_engines

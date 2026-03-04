@@ -41,7 +41,7 @@ class SoCoordinateElement;
 class SoSeparator;
 
 /*!
-  \class SoPointSet.h Inventor/nodes/SoPointSet.h
+  \class SoPointSet SoPointSet.h Inventor/nodes/SoPointSet.h
   \brief Renders a set of points at vertex coordinates.
 
   \ingroup coin_nodes

@@ -37,7 +37,7 @@
 #include <Inventor/fields/SoSFName.h>
 
 /*!
-  \class SoLabel.h Inventor/nodes/SoLabel.h
+  \class SoLabel SoLabel.h Inventor/nodes/SoLabel.h
   \brief Attaches a named label to the current traversal state.
 
   \ingroup coin_nodes

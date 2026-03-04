@@ -40,7 +40,7 @@ class SoEngineOutputList;
 class SoEngineOutputData;
 
 /*!
-  \class SoNodeEngine.h Inventor/engines/SoNodeEngine.h
+  \class SoNodeEngine SoNodeEngine.h Inventor/engines/SoNodeEngine.h
   \brief Abstract base class for engines that behave as scene-graph nodes.
 
   \ingroup coin_engines

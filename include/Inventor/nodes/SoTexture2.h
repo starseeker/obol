@@ -47,7 +47,7 @@ class SoSensor;
 class SoTexture2P;
 
 /*!
-  \class SoTexture2.h Inventor/nodes/SoTexture2.h
+  \class SoTexture2 SoTexture2.h Inventor/nodes/SoTexture2.h
   \brief Applies a 2D texture map to subsequent shape nodes.
 
   \ingroup coin_nodes

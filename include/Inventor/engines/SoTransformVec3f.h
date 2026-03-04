@@ -39,7 +39,7 @@
 #include <Inventor/fields/SoMFMatrix.h>
 
 /*!
-  \class SoTransformVec3f.h Inventor/engines/SoTransformVec3f.h
+  \class SoTransformVec3f SoTransformVec3f.h Inventor/engines/SoTransformVec3f.h
   \brief Transforms a 3D vector by a matrix.
 
   \ingroup coin_engines

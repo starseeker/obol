@@ -41,7 +41,7 @@ class SoGroup;
 class SoSensor;
 
 /*!
-  \class SoFile.h Inventor/nodes/SoFile.h
+  \class SoFile SoFile.h Inventor/nodes/SoFile.h
   \brief Loads an external Inventor file and inserts its scene graph.
 
   \ingroup coin_nodes

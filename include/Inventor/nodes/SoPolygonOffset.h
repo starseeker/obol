@@ -40,7 +40,7 @@
 #include <Inventor/elements/SoPolygonOffsetElement.h>
 
 /*!
-  \class SoPolygonOffset.h Inventor/nodes/SoPolygonOffset.h
+  \class SoPolygonOffset SoPolygonOffset.h Inventor/nodes/SoPolygonOffset.h
   \brief Applies an OpenGL polygon offset to reduce z-fighting.
 
   \ingroup coin_nodes

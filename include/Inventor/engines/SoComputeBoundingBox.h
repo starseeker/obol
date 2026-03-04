@@ -43,7 +43,7 @@ class SoGetBoundingBoxAction;
 
 
 /*!
-  \class SoComputeBoundingBox.h Inventor/engines/SoComputeBoundingBox.h
+  \class SoComputeBoundingBox SoComputeBoundingBox.h Inventor/engines/SoComputeBoundingBox.h
   \brief Computes the bounding box of a scene graph and exposes it as engine outputs.
 
   \ingroup coin_engines

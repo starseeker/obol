@@ -43,7 +43,7 @@
 class SoCalculatorP;
 
 /*!
-  \class SoCalculator.h Inventor/engines/SoCalculator.h
+  \class SoCalculator SoCalculator.h Inventor/engines/SoCalculator.h
   \brief General-purpose expression evaluator engine.
 
   \ingroup coin_engines

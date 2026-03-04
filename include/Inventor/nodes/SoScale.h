@@ -38,7 +38,7 @@
 #include <Inventor/nodes/SoTransformation.h>
 
 /*!
-  \class SoScale.h Inventor/nodes/SoScale.h
+  \class SoScale SoScale.h Inventor/nodes/SoScale.h
   \brief Applies a scale to the current transformation matrix.
 
   \ingroup coin_nodes

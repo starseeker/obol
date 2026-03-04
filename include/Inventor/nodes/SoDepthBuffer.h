@@ -40,7 +40,7 @@
 #include <Inventor/elements/SoDepthBufferElement.h>
 
 /*!
-  \class SoDepthBuffer.h Inventor/nodes/SoDepthBuffer.h
+  \class SoDepthBuffer SoDepthBuffer.h Inventor/nodes/SoDepthBuffer.h
   \brief Controls the OpenGL depth buffer settings.
 
   \ingroup coin_nodes

@@ -38,7 +38,7 @@
 #include <Inventor/nodes/SoSubNode.h>
 
 /*!
-  \class SoMaterialBinding.h Inventor/nodes/SoMaterialBinding.h
+  \class SoMaterialBinding SoMaterialBinding.h Inventor/nodes/SoMaterialBinding.h
   \brief Controls how material values are bound to geometry.
 
   \ingroup coin_nodes

@@ -43,7 +43,7 @@
 #endif // !OBOL_INTERNAL
 
 /*!
-  \class SoFontStyle.h Inventor/nodes/SoFontStyle.h
+  \class SoFontStyle SoFontStyle.h Inventor/nodes/SoFontStyle.h
   \brief Sets the font family, style, and size for text nodes (VRML-style API).
 
   \ingroup coin_nodes

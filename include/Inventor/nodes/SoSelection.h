@@ -48,7 +48,7 @@ typedef void SoSelectionClassCB(void * data, SoSelection * sel);
 typedef SoPath * SoSelectionPickCB(void * data, const SoPickedPoint * pick);
 
 /*!
-  \class SoSelection.h Inventor/nodes/SoSelection.h
+  \class SoSelection SoSelection.h Inventor/nodes/SoSelection.h
   \brief A group node that tracks user-selected objects in the scene.
 
   \ingroup coin_nodes

@@ -38,7 +38,7 @@
 #include <Inventor/fields/SoSFBitMask.h>
 
 /*!
-  \class SoResetTransform.h Inventor/nodes/SoResetTransform.h
+  \class SoResetTransform SoResetTransform.h Inventor/nodes/SoResetTransform.h
   \brief Resets the current transformation and/or bounding-box state.
 
   \ingroup coin_nodes

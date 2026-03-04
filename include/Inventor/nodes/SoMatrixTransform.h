@@ -38,7 +38,7 @@
 #include <Inventor/nodes/SoTransformation.h>
 
 /*!
-  \class SoMatrixTransform.h Inventor/nodes/SoMatrixTransform.h
+  \class SoMatrixTransform SoMatrixTransform.h Inventor/nodes/SoMatrixTransform.h
   \brief Applies an arbitrary 4×4 matrix transformation.
 
   \ingroup coin_nodes

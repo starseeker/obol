@@ -38,7 +38,7 @@
 #include <Inventor/fields/SoSFBool.h>
 
 /*!
-  \class SoClipPlane.h Inventor/nodes/SoClipPlane.h
+  \class SoClipPlane SoClipPlane.h Inventor/nodes/SoClipPlane.h
   \brief Activates a user-defined OpenGL clipping plane.
 
   \ingroup coin_nodes

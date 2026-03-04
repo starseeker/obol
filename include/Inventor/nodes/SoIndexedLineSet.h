@@ -45,7 +45,7 @@ class SoSeparator;
 class SoIndexedLineSetP;
 
 /*!
-  \class SoIndexedLineSet.h Inventor/nodes/SoIndexedLineSet.h
+  \class SoIndexedLineSet SoIndexedLineSet.h Inventor/nodes/SoIndexedLineSet.h
   \brief Renders polylines using an index array into a coordinate node.
 
   \ingroup coin_nodes

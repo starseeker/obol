@@ -41,7 +41,7 @@ class SoEngineOutput;
 
 
 /*!
-  \class SoSelectOne.h Inventor/engines/SoSelectOne.h
+  \class SoSelectOne SoSelectOne.h Inventor/engines/SoSelectOne.h
   \brief Selects a single element from a multi-valued field.
 
   \ingroup coin_engines

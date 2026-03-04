@@ -42,7 +42,7 @@ class SoEngineOutput;
 
 
 /*!
-  \class SoGate.h Inventor/engines/SoGate.h
+  \class SoGate SoGate.h Inventor/engines/SoGate.h
   \brief Passes or blocks a typed field value based on a boolean enable input.
 
   \ingroup coin_engines

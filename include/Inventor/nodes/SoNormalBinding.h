@@ -38,7 +38,7 @@
 #include <Inventor/nodes/SoSubNode.h>
 
 /*!
-  \class SoNormalBinding.h Inventor/nodes/SoNormalBinding.h
+  \class SoNormalBinding SoNormalBinding.h Inventor/nodes/SoNormalBinding.h
   \brief Controls how normal vectors are bound to geometry.
 
   \ingroup coin_nodes

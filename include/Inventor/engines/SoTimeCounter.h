@@ -43,7 +43,7 @@
 #include <Inventor/fields/SoSFShort.h>
 
 /*!
-  \class SoTimeCounter.h Inventor/engines/SoTimeCounter.h
+  \class SoTimeCounter SoTimeCounter.h Inventor/engines/SoTimeCounter.h
   \brief Counts integer steps at a configurable rate.
 
   \ingroup coin_engines

@@ -38,7 +38,7 @@
 // *************************************************************************
 
 /*!
-  \class SoFragmentShader.h Inventor/nodes/SoFragmentShader.h
+  \class SoFragmentShader SoFragmentShader.h Inventor/nodes/SoFragmentShader.h
   \brief Specifies the source or binary of a fragment (pixel) shader stage.
 
   \ingroup coin_nodes

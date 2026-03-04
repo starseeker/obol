@@ -47,7 +47,7 @@ class SoState;
 // *************************************************************************
 
 /*!
-  \class SoShaderObject.h Inventor/nodes/SoShaderObject.h
+  \class SoShaderObject SoShaderObject.h Inventor/nodes/SoShaderObject.h
   \brief Abstract base class for shader stage nodes.
 
   \ingroup coin_nodes

@@ -44,7 +44,7 @@ class SoVertexPropertyP;
 class SoState;
 
 /*!
-  \class SoVertexProperty.h Inventor/nodes/SoVertexProperty.h
+  \class SoVertexProperty SoVertexProperty.h Inventor/nodes/SoVertexProperty.h
   \brief Compact node that bundles vertex coordinates, normals, colors, and texture coordinates.
 
   \ingroup coin_nodes

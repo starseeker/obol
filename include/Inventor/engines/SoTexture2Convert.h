@@ -39,7 +39,7 @@
 #include <Inventor/fields/SoSFImage.h>
 
 /*!
-  \class SoTexture2Convert.h Inventor/engines/SoTexture2Convert.h
+  \class SoTexture2Convert SoTexture2Convert.h Inventor/engines/SoTexture2Convert.h
   \brief Performs image format conversion on a 2D texture.
 
   \ingroup coin_engines

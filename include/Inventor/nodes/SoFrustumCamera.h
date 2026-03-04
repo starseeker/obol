@@ -38,7 +38,7 @@
 #include <Inventor/fields/SoSFFloat.h>
 
 /*!
-  \class SoFrustumCamera.h Inventor/nodes/SoFrustumCamera.h
+  \class SoFrustumCamera SoFrustumCamera.h Inventor/nodes/SoFrustumCamera.h
   \brief Camera with an arbitrary asymmetric perspective frustum.
 
   \ingroup coin_nodes

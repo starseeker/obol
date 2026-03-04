@@ -39,7 +39,7 @@
 
 
 /*!
-  \class SoTriggerAny.h Inventor/engines/SoTriggerAny.h
+  \class SoTriggerAny SoTriggerAny.h Inventor/engines/SoTriggerAny.h
   \brief Outputs a trigger when any of up to ten inputs fires.
 
   \ingroup coin_engines

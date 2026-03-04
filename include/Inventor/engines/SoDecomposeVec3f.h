@@ -46,7 +46,7 @@
 
 
 /*!
-  \class SoDecomposeVec3f.h Inventor/engines/SoDecomposeVec3f.h
+  \class SoDecomposeVec3f SoDecomposeVec3f.h Inventor/engines/SoDecomposeVec3f.h
   \brief Splits an SbVec3f into its scalar x, y, and z components.
 
   \ingroup coin_engines

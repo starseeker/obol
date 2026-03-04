@@ -38,7 +38,7 @@
 #include <Inventor/nodes/SoTransformation.h>
 
 /*!
-  \class SoRotation.h Inventor/nodes/SoRotation.h
+  \class SoRotation SoRotation.h Inventor/nodes/SoRotation.h
   \brief Applies a rotation to the current transformation matrix.
 
   \ingroup coin_nodes

@@ -40,7 +40,7 @@
 class SbImage;
 
 /*!
-  \class SoHeightMapToNormalMap.h Inventor/engines/SoHeightMapToNormalMap.h
+  \class SoHeightMapToNormalMap SoHeightMapToNormalMap.h Inventor/engines/SoHeightMapToNormalMap.h
   \brief Converts a gray-scale height-map image to a tangent-space normal map.
 
   \ingroup coin_engines

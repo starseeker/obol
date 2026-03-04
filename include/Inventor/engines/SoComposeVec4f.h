@@ -46,7 +46,7 @@
 
 
 /*!
-  \class SoComposeVec4f.h Inventor/engines/SoComposeVec4f.h
+  \class SoComposeVec4f SoComposeVec4f.h Inventor/engines/SoComposeVec4f.h
   \brief Assembles an SbVec4f from four scalar components.
 
   \ingroup coin_engines

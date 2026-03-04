@@ -39,7 +39,7 @@
 #include <Inventor/fields/SoSFFloat.h>
 
 /*!
-  \class SoSpotLight.h Inventor/nodes/SoSpotLight.h
+  \class SoSpotLight SoSpotLight.h Inventor/nodes/SoSpotLight.h
   \brief A positional light source with a cone-shaped beam.
 
   \ingroup coin_nodes

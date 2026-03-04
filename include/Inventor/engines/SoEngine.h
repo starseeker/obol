@@ -41,7 +41,7 @@ class SoEngineOutputList;
 class SoEngineOutputData;
 
 /*!
-  \class SoEngine.h Inventor/engines/SoEngine.h
+  \class SoEngine SoEngine.h Inventor/engines/SoEngine.h
   \brief Abstract base class for all data-flow computation engines.
 
   \ingroup coin_engines

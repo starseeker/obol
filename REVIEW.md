@@ -66,13 +66,13 @@ Priority: headers used directly by application code.
 | `SoPickedPoint.h` | ✅ | Added `\class SoPickedPoint` Doxygen block |
 | `SoPrimitiveVertex.h` | ✅ | Added `\class SoPrimitiveVertex` Doxygen block |
 | `SoFullPath.h` | ✅ | Added `\class SoFullPath` Doxygen block |
-| All `actions/` headers | ⬜ | ~15 headers |
-| All `nodes/` headers | ⬜ | ~100 headers |
-| All `fields/` headers | ⬜ | ~60 headers |
+| All `actions/` headers | ✅ | All 15 class headers documented (session 3) |
+| All `nodes/` headers | 🔄 | ~115/116 class headers documented; `SoBumpMappingProperty.h` is a stub with no class yet |
+| All `fields/` headers | 🔄 | SoField, SoFieldContainer, SoFieldData, SoSField, SoMField documented; ~89 concrete SF/MF types not yet documented |
 | All `elements/` headers | ⬜ | ~70 headers |
-| All `engines/` headers | ⬜ | ~30 headers |
-| All `sensors/` headers | ⬜ | ~15 headers |
-| All `events/` headers | ⬜ | ~15 headers |
+| All `engines/` headers | ✅ | All 37 class headers documented (session 3) |
+| All `sensors/` headers | ✅ | All 12 class headers documented (session 3) |
+| All `events/` headers | ✅ | All 7 class headers documented (session 3) |
 
 ---
 
@@ -96,12 +96,12 @@ following items remain:
 
 | Item | Status | Notes |
 |------|--------|-------|
-| `FIXME` comments in `src/actions/` (SoCallbackAction, SoReorganizeAction, SoGLRenderAction, etc.) | ⬜ | Many date from Coin era; evaluate which are still relevant |
-| `FIXME` in `src/fields/` (SoField, SoFieldContainer, SoFieldData) | ⬜ | Several are still actionable |
+| `FIXME` comments in `src/actions/` (SoCallbackAction, SoReorganizeAction, SoGLRenderAction, etc.) | 🔄 | Most are legacy todos from Coin era (texture unit binding, >8-bit channels, pbuffer) – not actionable without major refactoring; left in place |
+| `FIXME` in `src/fields/` (SoField, SoFieldContainer, SoFieldData) | 🔄 | `SoFieldContainer.cpp` const_cast FIXME resolved (session 3); remaining FIXMEs in SoField.cpp are mutex/const/implementation notes |
 | `HACK` comment in `SoFieldContainer.cpp:131` – bitmask misuse of `donotify` | ⬜ | Possibly clean up with a dedicated bitfield struct |
 | `SoDB.cpp` SbBool typedef doc (was broken `/// * !`) | ✅ | Fixed session 1 |
 | Remove/update stale Coin-era comments referencing removed subsystems (VRML, ScXML, audio) | ⬜ | Many instances across `src/` |
-| Audit `const_cast` usage | ⬜ | `SoFieldContainer.cpp:885` is flagged with "ugly constness cast" FIXME |
+| Audit `const_cast` usage | ✅ | `SoFieldContainer.cpp` const_cast FIXMEs resolved: changed `SoFieldContainerCopyMap` value type to non-const, eliminating all but the inherent `this`-cast in `copyThroughConnection()` |
 | Audit raw pointer ownership across public API | ⬜ | Several `void *` context handles could be typed |
 | `add_definitions(-g)` in CMakeLists.txt – debug info in Release builds | ✅ | Not present in current codebase; no action needed |
 | `src/base/utf8/include/` not on Doxygen INCLUDE_PATH | ✅ | Fixed in Doxyfile.in session 1 |
@@ -201,3 +201,101 @@ macro-expansion and missing-include issues from legacy Coin code).
 4. Review still-relevant `FIXME` items in `src/actions/SoGLRenderAction.cpp`
    and `src/fields/`.
 5. Audit `const_cast` usage flagged in `SoFieldContainer.cpp:885`.
+
+---
+
+### Session 3 (2026-03-04)
+
+**Files changed (documentation):**
+
+Actions (`include/Inventor/actions/`):
+- Added `\class` blocks to: SoAction, SoCallbackAction, SoGLRenderAction,
+  SoGetBoundingBoxAction, SoGetMatrixAction, SoGetPrimitiveCountAction,
+  SoHandleEventAction, SoPickAction, SoRayPickAction, SoReorganizeAction,
+  SoSearchAction, SoSimplifyAction, SoWriteAction, SoBoxHighlightRenderAction,
+  SoLineHighlightRenderAction (15 headers)
+
+Sensors (`include/Inventor/sensors/`):
+- Added `\class` blocks to: SoSensor, SoSensorManager, SoDelayQueueSensor,
+  SoTimerQueueSensor, SoDataSensor, SoAlarmSensor, SoFieldSensor, SoNodeSensor,
+  SoPathSensor, SoIdleSensor, SoOneShotSensor, SoTimerSensor (12 headers)
+
+Events (`include/Inventor/events/`):
+- Added `\class` blocks to: SoEvent, SoButtonEvent, SoKeyboardEvent,
+  SoMouseButtonEvent, SoLocation2Event, SoMotion3Event, SoSpaceballButtonEvent
+  (7 headers)
+
+Core fields (`include/Inventor/fields/`):
+- Added `\class` blocks to: SoField, SoFieldContainer, SoFieldData, SoSField,
+  SoMField (5 headers; ~89 concrete SoSF*/SoMF* headers deferred)
+
+Nodes (`include/Inventor/nodes/`) — 115 headers documented:
+- Base classes: SoNode, SoGroup, SoSeparator, SoShape, SoCamera, SoTransformation,
+  SoVertexShape, SoNonIndexedShape, SoIndexedShape
+- Transforms: SoTransform, SoTranslation, SoRotation, SoRotationXYZ, SoScale,
+  SoMatrixTransform, SoResetTransform, SoAntiSquish, SoSurroundScale
+- Cameras: SoPerspectiveCamera, SoOrthographicCamera, SoFrustumCamera,
+  SoReversePerspectiveCamera
+- Lights: SoLight, SoDirectionalLight, SoPointLight, SoSpotLight, SoEnvironment
+- Shapes: SoCone, SoCube, SoCylinder, SoSphere, SoAsciiText, SoText2, SoText3,
+  SoImage, SoIndexedFaceSet, SoIndexedLineSet, SoIndexedTriangleStripSet,
+  SoIndexedPointSet, SoIndexedMarkerSet, SoFaceSet, SoLineSet, SoPointSet,
+  SoQuadMesh, SoTriangleStripSet, SoMarkerSet
+- Properties: SoMaterial, SoBaseColor, SoPackedColor, SoColorIndex, SoDrawStyle,
+  SoComplexity, SoShapeHints, SoLightModel, SoNormal, SoNormalBinding,
+  SoMaterialBinding, SoCoordinate3, SoCoordinate4, SoVertexProperty,
+  SoVertexAttribute, SoVertexAttributeBinding, SoPickStyle, SoPolygonOffset,
+  SoAlphaTest, SoDepthBuffer, SoClipPlane, SoTransparencyType
+- Textures: SoTexture, SoTexture2, SoTexture3, SoTextureCubeMap, SoSceneTexture2,
+  SoSceneTextureCubeMap, SoTexture2Transform, SoTexture3Transform,
+  SoTextureCombine, SoTextureMatrixTransform, SoTextureScalePolicy, SoTextureUnit,
+  SoTextureCoordinate2, SoTextureCoordinate3, SoTextureCoordinateBinding,
+  SoTextureCoordinateFunction, SoTextureCoordinatePlane, SoTextureCoordinateSphere,
+  SoTextureCoordinateCube, SoTextureCoordinateCylinder, SoTextureCoordinateDefault,
+  SoTextureCoordinateEnvironment, SoTextureCoordinateObject,
+  SoTextureCoordinateNormalMap, SoTextureCoordinateReflectionMap
+- Font: SoFont, SoFontStyle
+- Shaders: SoShaderObject, SoShaderProgram, SoVertexShader, SoFragmentShader,
+  SoGeometryShader, SoShaderParameter
+- Scene structure: SoSwitch, SoSelection, SoExtSelection, SoLocateHighlight,
+  SoTransformSeparator, SoAnnotation, SoPathSwitch, SoLOD, SoLevelOfDetail,
+  SoArray, SoMultipleCopy, SoBlinker, SoLocateHighlight
+- Animation: SoRotor, SoPendulum, SoShuttle
+- Misc: SoCallback, SoEventCallback, SoInfo, SoLabel, SoUnits, SoFile,
+  SoWWWAnchor, SoWWWInline, SoListener, SoCacheHint
+- BumpMap: SoBumpMap, SoBumpMapCoordinate, SoBumpMapTransform
+- Other: SoProfile, SoLinearProfile, SoProfileCoordinate2, SoProfileCoordinate3
+
+Engines (`include/Inventor/engines/`) — all 37 class headers documented:
+- SoEngine, SoEngineOutput, SoNodeEngine, SoEngineOutputData, SoFieldConverter,
+  SoCalculator, SoElapsedTime, SoTimeCounter, SoCounter, SoOnOff, SoGate,
+  SoSelectOne, SoConcatenate, SoOneShot, SoBoolOperation, SoTriggerAny,
+  SoInterpolate, SoInterpolateFloat, SoInterpolateRotation,
+  SoInterpolateVec2f/3f/4f, SoComposeVec2f/3f/4f, SoDecomposeVec2f/3f/4f,
+  SoComposeRotation, SoComposeRotationFromTo, SoDecomposeRotation,
+  SoComposeMatrix, SoDecomposeMatrix, SoTransformVec3f, SoComputeBoundingBox,
+  SoHeightMapToNormalMap, SoTexture2Convert
+
+**Files changed (code quality):**
+
+- `src/fields/SoFieldContainer.cpp` — eliminated the long-standing "ugly constness
+  cast" FIXME at `checkCopy()`:
+  - Changed `SoFieldContainerCopyMap` value type from
+    `const SoFieldContainer *` → `SoFieldContainer *` so that `checkCopy()`
+    can return a mutable pointer directly without a cast.
+  - `addCopy()` now explicitly casts when storing into the map
+    (`const_cast<SoFieldContainer*>(copy)` at the one appropriate callsite).
+  - A second gratuitous `const_cast` in `getCopy()` was replaced by calling
+    `checkCopy()` directly.
+  - Also removed a spurious `const_cast<char*>` in `set()` because
+    `SoInput::setBuffer()` correctly takes `const void *`.
+  - Build verified clean after all changes.
+
+**Next session priorities:**
+
+1. Document remaining ~89 concrete SF/MF field headers (SoSFFloat, SoMFFloat, …).
+2. Document `elements/` headers (~70 headers).
+3. Evaluate the `HACK` comment in `SoFieldContainer.cpp:131`
+   (`donotify` bitmask) — clean up with a dedicated bitfield struct.
+4. Audit remaining FIXMEs in `src/fields/SoField.cpp` for actionability.
+5. Review/remove stale Coin-era comments referencing VRML, ScXML, audio.

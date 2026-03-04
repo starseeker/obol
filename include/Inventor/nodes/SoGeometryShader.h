@@ -40,7 +40,7 @@
 // *************************************************************************
 
 /*!
-  \class SoGeometryShader.h Inventor/nodes/SoGeometryShader.h
+  \class SoGeometryShader SoGeometryShader.h Inventor/nodes/SoGeometryShader.h
   \brief Specifies the source or binary of a geometry shader stage.
 
   \ingroup coin_nodes

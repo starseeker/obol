@@ -37,7 +37,7 @@
 #include <Inventor/fields/SoMFVec4f.h>
 
 /*!
-  \class SoInterpolateVec4f.h Inventor/engines/SoInterpolateVec4f.h
+  \class SoInterpolateVec4f SoInterpolateVec4f.h Inventor/engines/SoInterpolateVec4f.h
   \brief Linearly interpolates between two 4D vectors.
 
   \ingroup coin_engines

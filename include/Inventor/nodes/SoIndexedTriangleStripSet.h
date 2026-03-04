@@ -43,7 +43,7 @@
 #define SO_END_STRIP_INDEX (-1)
 
 /*!
-  \class SoIndexedTriangleStripSet.h Inventor/nodes/SoIndexedTriangleStripSet.h
+  \class SoIndexedTriangleStripSet SoIndexedTriangleStripSet.h Inventor/nodes/SoIndexedTriangleStripSet.h
   \brief Renders indexed triangle strips.
 
   \ingroup coin_nodes

@@ -45,7 +45,7 @@ class SoSensor;
 class SoFieldSensor;
 
 /*!
-  \class SoText3.h Inventor/nodes/SoText3.h
+  \class SoText3 SoText3.h Inventor/nodes/SoText3.h
   \brief Renders extruded 3D text geometry.
 
   \ingroup coin_nodes

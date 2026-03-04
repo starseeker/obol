@@ -39,7 +39,7 @@ class SoEngineOutput;
 
 
 /*!
-  \class SoFieldConverter.h Inventor/engines/SoFieldConverter.h
+  \class SoFieldConverter SoFieldConverter.h Inventor/engines/SoFieldConverter.h
   \brief Engine that automatically converts between incompatible connected field types.
 
   \ingroup coin_engines

@@ -37,7 +37,7 @@
 #include <Inventor/fields/SoMFVec3f.h>
 
 /*!
-  \class SoInterpolateVec3f.h Inventor/engines/SoInterpolateVec3f.h
+  \class SoInterpolateVec3f SoInterpolateVec3f.h Inventor/engines/SoInterpolateVec3f.h
   \brief Linearly interpolates between two 3D vectors.
 
   \ingroup coin_engines

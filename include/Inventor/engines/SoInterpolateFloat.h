@@ -37,7 +37,7 @@
 #include <Inventor/fields/SoMFFloat.h>
 
 /*!
-  \class SoInterpolateFloat.h Inventor/engines/SoInterpolateFloat.h
+  \class SoInterpolateFloat SoInterpolateFloat.h Inventor/engines/SoInterpolateFloat.h
   \brief Linearly interpolates between two float values.
 
   \ingroup coin_engines

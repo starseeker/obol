@@ -38,7 +38,7 @@
 #include <Inventor/nodes/SoLight.h>
 
 /*!
-  \class SoPointLight.h Inventor/nodes/SoPointLight.h
+  \class SoPointLight SoPointLight.h Inventor/nodes/SoPointLight.h
   \brief A positional (omnidirectional) point light source.
 
   \ingroup coin_nodes

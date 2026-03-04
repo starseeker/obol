@@ -37,7 +37,7 @@
 #include <Inventor/nodes/SoGroup.h>
 
 /*!
-  \class SoTransformSeparator.h Inventor/nodes/SoTransformSeparator.h
+  \class SoTransformSeparator SoTransformSeparator.h Inventor/nodes/SoTransformSeparator.h
   \brief A separator that saves and restores only the transformation state.
 
   \ingroup coin_nodes

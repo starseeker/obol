@@ -45,7 +45,7 @@
 
 
 /*!
-  \class SoDecomposeRotation.h Inventor/engines/SoDecomposeRotation.h
+  \class SoDecomposeRotation SoDecomposeRotation.h Inventor/engines/SoDecomposeRotation.h
   \brief Splits an SbRotation into an axis vector and an angle.
 
   \ingroup coin_engines

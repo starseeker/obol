@@ -37,7 +37,7 @@
 #include <Inventor/nodes/SoSeparator.h>
 
 /*!
-  \class SoAnnotation.h Inventor/nodes/SoAnnotation.h
+  \class SoAnnotation SoAnnotation.h Inventor/nodes/SoAnnotation.h
   \brief Renders children on top of all other geometry by disabling depth testing.
 
   \ingroup coin_nodes

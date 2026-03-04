@@ -36,7 +36,7 @@
 #include <Inventor/nodes/SoShaderObject.h>
 
 /*!
-  \class SoVertexShader.h Inventor/nodes/SoVertexShader.h
+  \class SoVertexShader SoVertexShader.h Inventor/nodes/SoVertexShader.h
   \brief Specifies the source or binary of a vertex shader stage.
 
   \ingroup coin_nodes

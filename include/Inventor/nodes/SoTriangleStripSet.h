@@ -38,7 +38,7 @@
 #include <Inventor/fields/SoMFInt32.h>
 
 /*!
-  \class SoTriangleStripSet.h Inventor/nodes/SoTriangleStripSet.h
+  \class SoTriangleStripSet SoTriangleStripSet.h Inventor/nodes/SoTriangleStripSet.h
   \brief Renders a set of triangle strips from sequential vertex coordinates.
 
   \ingroup coin_nodes

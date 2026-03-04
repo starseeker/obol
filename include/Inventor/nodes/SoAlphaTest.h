@@ -38,7 +38,7 @@
 #include <Inventor/nodes/SoSubNode.h>
 
 /*!
-  \class SoAlphaTest.h Inventor/nodes/SoAlphaTest.h
+  \class SoAlphaTest SoAlphaTest.h Inventor/nodes/SoAlphaTest.h
   \brief Controls OpenGL alpha testing for subsequent geometry.
 
   \ingroup coin_nodes
