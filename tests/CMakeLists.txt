@@ -171,6 +171,70 @@ if(OBOL_BUILD_VIEWER)
 endif() # OBOL_BUILD_VIEWER
 
 # -----------------------------------------------------------------------
+# Qt scene viewer  (obol_qt_viewer)
+# Placed here so obol_testlib (scene catalogue) is already defined.
+# Enabled by -DOBOL_BUILD_QT_VIEWER=ON at CMake configure time (auto-
+# detected when Qt6 is found; requires OBOL_BUILD_TESTS=ON).
+# -----------------------------------------------------------------------
+if(OBOL_BUILD_QT_VIEWER)
+    add_executable(obol_qt_viewer obol_qt_viewer.cpp)
+
+    # Enable Qt's automatic MOC/UIC/RCC processing for this target.
+    set_target_properties(obol_qt_viewer PROPERTIES
+        AUTOMOC ON
+        AUTOUIC ON
+    )
+
+    target_include_directories(obol_qt_viewer PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}           # testlib/test_registry.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/utils     # qt_context_manager.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/testlib   # test_registry.h (direct)
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+        ${PROJECT_BINARY_DIR}/include
+        ${OBOL_TARGET_INCLUDE_DIRECTORIES}
+    )
+
+    # Link against obol_testlib (with --whole-archive to preserve static
+    # initialisers), the Obol library, and Qt6 Widgets + Gui.
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_link_libraries(obol_qt_viewer
+            PRIVATE
+                -Wl,--whole-archive obol_testlib -Wl,--no-whole-archive
+                ${PROJECT_NAME}
+                ${OBOL_TARGET_LINK_LIBRARIES}
+                Qt6::Widgets
+                Qt6::Gui
+        )
+    else()
+        target_link_libraries(obol_qt_viewer
+            PRIVATE
+                obol_testlib
+                ${PROJECT_NAME}
+                ${OBOL_TARGET_LINK_LIBRARIES}
+                Qt6::Widgets
+                Qt6::Gui
+        )
+    endif()
+
+    # On Linux, link OpenGL explicitly (for glXGetProcAddress used by
+    # qt_context_manager.h on X11/Linux).
+    if(UNIX AND NOT APPLE)
+        if(X11_FOUND)
+            target_link_libraries(obol_qt_viewer PRIVATE ${X11_X11_LIB})
+        endif()
+        if(TARGET OpenGL::GL)
+            target_link_libraries(obol_qt_viewer PRIVATE OpenGL::GL)
+        elseif(OPENGL_gl_LIBRARY)
+            target_link_libraries(obol_qt_viewer PRIVATE ${OPENGL_gl_LIBRARY})
+        endif()
+    endif()
+
+    install(TARGETS obol_qt_viewer RUNTIME DESTINATION bin)
+    message(STATUS "obol_qt_viewer: enabled (Qt6 ${Qt6_VERSION})")
+endif() # OBOL_BUILD_QT_VIEWER
+
+# -----------------------------------------------------------------------
 # Unified CLI runner (legacy – kept for backward compatibility)
 # -----------------------------------------------------------------------
 add_executable(obol_test obol_test.cpp)
