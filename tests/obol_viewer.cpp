@@ -633,27 +633,46 @@ public:
              * size without repeating the step-in hunt. */
             if (!doRender_(pw, ph, pw, ph)) { redraw(); return; }
         } else {
-            /* Invalidate the cached coarse resolution when the camera focal
-             * distance has changed by more than 2× since calibration was
-             * measured.  A large zoom change alters the effective ray density
-             * enough to make the old calibration unreliable. */
-            if (coarseRW_ != 0 && calFocalDist_ > 0.0f && cam) {
-                float fd = cam->focalDistance.getValue();
-                if (fd < calFocalDist_ * 0.5f || fd > calFocalDist_ * 2.0f) {
-                    coarseRW_ = 0; coarseRH_ = 0; stepInComplete_ = false;
-                    calFocalDist_ = 0.0f;
-                }
-            }
-            if (coarseRW_ == 0 || calPanelW_ != pw || calPanelH_ != ph ||
-                       !stepInComplete_) {
-                /* Step-in calibration needed or still in progress: run one round.
-                 * timedStepIn_ returns true when the optimal level has been found,
-                 * false when it ran out of per-call search budget and should be
-                 * resumed next time. */
-                stepInComplete_ = timedStepIn_(pw, ph);
+            /* OSPRay-inspired: when the scene specifies a fixed
+             * navResolutionScale (> 0), use it directly instead of
+             * auto-calibrating.  This mirrors OSPRay's navRenderResolutionScale
+             * design where the author controls the navigation render fraction
+             * via the scene graph (SoRaytracingParams::navResolutionScale). */
+            const float sceneNavScale = s_nanort_mgr.getNavResolutionScale();
+            if (sceneNavScale > 0.0f) {
+                const int rw = std::max(1, static_cast<int>(pw * sceneNavScale));
+                const int rh = std::max(1, static_cast<int>(ph * sceneNavScale));
+                if (!doRender_(pw, ph, rw, rh)) { redraw(); return; }
+                /* Sync the calibration state so the next full-res render does
+                 * not trigger a spurious step-in hunt. */
+                coarseRW_    = rw;  coarseRH_    = rh;
+                calPanelW_   = pw;  calPanelH_   = ph;
+                stepInComplete_ = true;
+                calFocalDist_ = cam ? cam->focalDistance.getValue() : 0.0f;
             } else {
-                /* Subsequent coarse renders: reuse calibrated size. */
-                if (!doRender_(pw, ph, coarseRW_, coarseRH_)) { redraw(); return; }
+                /* Auto-calibrate: invalidate the cached coarse resolution when
+                 * the camera focal distance has changed by more than 2× since
+                 * calibration was measured.  A large zoom change alters the
+                 * effective ray density enough to make the old calibration
+                 * unreliable. */
+                if (coarseRW_ != 0 && calFocalDist_ > 0.0f && cam) {
+                    float fd = cam->focalDistance.getValue();
+                    if (fd < calFocalDist_ * 0.5f || fd > calFocalDist_ * 2.0f) {
+                        coarseRW_ = 0; coarseRH_ = 0; stepInComplete_ = false;
+                        calFocalDist_ = 0.0f;
+                    }
+                }
+                if (coarseRW_ == 0 || calPanelW_ != pw || calPanelH_ != ph ||
+                           !stepInComplete_) {
+                    /* Step-in calibration needed or still in progress: run one round.
+                     * timedStepIn_ returns true when the optimal level has been found,
+                     * false when it ran out of per-call search budget and should be
+                     * resumed next time. */
+                    stepInComplete_ = timedStepIn_(pw, ph);
+                } else {
+                    /* Subsequent coarse renders: reuse calibrated size. */
+                    if (!doRender_(pw, ph, coarseRW_, coarseRH_)) { redraw(); return; }
+                }
             }
         }
         redraw();

@@ -383,6 +383,7 @@ public:
         cachedMaxBouncesAllowed_ = 0;
         cachedSamplesPerPixel_   = 1;
         cachedAmbientFill_       = 0.20f;
+        cachedNavResScale_       = 0.0f;
     }
 
     // -----------------------------------------------------------------------
@@ -397,6 +398,14 @@ public:
         displayVpW_ = w;
         displayVpH_ = h;
     }
+
+    // Returns the navResolutionScale hint read from SoRaytracingParams during
+    // the most recent renderScene() rebuild.  0.0 means auto-calibrate (the
+    // default); a positive value in (0, 1] is the fixed navigation render
+    // scale requested by the scene author (OSPRay navRenderResolutionScale
+    // design).  Call after at least one renderScene() so the scene has been
+    // traversed and the params cached.
+    float getNavResolutionScale() const { return cachedNavResScale_; }
 
     // -----------------------------------------------------------------------
     // Rendering path
@@ -446,6 +455,7 @@ public:
             cachedMaxBouncesAllowed_ = 0;
             cachedSamplesPerPixel_   = 1;
             cachedAmbientFill_       = 0.20f;
+            cachedNavResScale_       = 0.0f;
             {
                 SoSearchAction sa;
                 sa.setType(SoRaytracingParams::getClassTypeId());
@@ -463,10 +473,14 @@ public:
                         rp->samplesPerPixel.getValue();
                     cachedAmbientFill_       =
                         rp->ambientIntensity.getValue();
+                    cachedNavResScale_       =
+                        rp->navResolutionScale.getValue();
                     if (cachedSamplesPerPixel_ < 1) cachedSamplesPerPixel_ = 1;
                     if (cachedMaxBouncesAllowed_ < 0) cachedMaxBouncesAllowed_ = 0;
                     if (cachedAmbientFill_ < 0.0f) cachedAmbientFill_ = 0.0f;
                     if (cachedAmbientFill_ > 1.0f) cachedAmbientFill_ = 1.0f;
+                    if (cachedNavResScale_ < 0.0f) cachedNavResScale_ = 0.0f;
+                    if (cachedNavResScale_ > 1.0f) cachedNavResScale_ = 1.0f;
                 }
             }
 
@@ -631,6 +645,7 @@ private:
     int                       cachedMaxBouncesAllowed_ = 0;
     int                       cachedSamplesPerPixel_   = 1;
     float                     cachedAmbientFill_       = 0.20f;
+    float                     cachedNavResScale_       = 0.0f;
     unsigned int              displayVpW_              = 0;
     unsigned int              displayVpH_              = 0;
 };

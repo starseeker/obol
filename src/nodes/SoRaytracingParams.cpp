@@ -66,6 +66,7 @@ SoRaytracingParams::SoRaytracingParams(void)
   SO_NODE_ADD_FIELD(maxReflectionBounces,   (0));
   SO_NODE_ADD_FIELD(samplesPerPixel,        (1));
   SO_NODE_ADD_FIELD(ambientIntensity,       (0.2f));
+  SO_NODE_ADD_FIELD(navResolutionScale,     (0.0f));
 }
 
 /*!

@@ -75,6 +75,7 @@
         maxReflectionBounces   0
         samplesPerPixel        1
         ambientIntensity       0.2
+        navResolutionScale     0.0
     }
   \endcode
 
@@ -131,6 +132,35 @@ public:
     Range: [0, 1].  Default: 0.2.
   */
   SoSFFloat ambientIntensity;
+
+  /*!
+    Scale factor applied to the render dimensions during interactive
+    navigation (camera drag/pan/zoom) to keep the frame rate responsive.
+
+    Inspired by OSPRay's \c navRenderResolutionScale design: the viewer
+    renders at \c windowWidth×navResolutionScale by
+    \c windowHeight×navResolutionScale while the camera is moving, then
+    upscales the result with nearest-neighbour filtering for immediate
+    display.  A full-resolution render is triggered automatically once
+    the camera has been stationary for a short settle delay.
+
+    \li 0.0 (default) — auto-calibrate: the viewer measures actual frame
+        time and steps up from a 2 px seed until the render approaches the
+        interactive budget (~40 ms per frame).  This is the safest choice
+        when the scene complexity is unknown at authoring time.
+    \li 0 < \c navResolutionScale <= 1.0 — use the specified fraction of
+        the display resolution as the fixed navigation render size.
+        For example, 0.25 renders navigation frames at ¼ the display
+        dimensions (1/16 of the pixels), matching OSPRay's default "0.25×"
+        navigation mode.
+    \li Values > 1.0 — clamped to 1.0 (no super-sampling during nav).
+
+    Typical values: 0.25 (very fast, visibly blocky), 0.5 (good balance),
+    0.75 (high quality, slower).
+
+    Default: 0.0 (auto-calibrate; backward-compatible).
+  */
+  SoSFFloat navResolutionScale;
 
 protected:
   virtual ~SoRaytracingParams();
