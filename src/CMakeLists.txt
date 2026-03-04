@@ -122,9 +122,9 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     OBOL_DEBUG=$<CONFIG:Debug>
 )
 
-# Enable compiler warnings for GCC/Clang builds
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra)
+# Apply warning flags (controlled by OBOL_WARNINGS option in the top-level CMakeLists.txt)
+if(OBOL_WARNING_FLAGS)
+    target_compile_options(${PROJECT_NAME} PRIVATE ${OBOL_WARNING_FLAGS})
 endif()
 
 # Target-specific include directories (modern approach)

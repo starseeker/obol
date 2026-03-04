@@ -53,7 +53,9 @@ message(STATUS "Setting C++ standard: C++${CMAKE_CXX_STANDARD} (required)")
 list(PREPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 # Standard CMake modules
+include(CheckCCompilerFlag)
 include(CheckCSourceRuns)
+include(CheckCXXCompilerFlag)
 include(CheckCXXSourceCompiles)
 include(CheckIncludeFile)
 include(CheckIncludeFileCXX)
@@ -195,6 +197,48 @@ option(USE_EXCEPTIONS "Compile with exceptions (g++ only)" ON)
 # Code coverage (GCC/Clang only; builds with --coverage flags and provides a
 # 'coverage' target that runs CTest then generates an lcov HTML report)
 option(OBOL_COVERAGE "Enable code coverage instrumentation (GCC/Clang)" OFF)
+
+# Extra warning flags for the Obol library target (GCC/Clang only).
+# Applied via target_compile_options so external dependencies are unaffected.
+#
+# Flags applied when OBOL_WARNINGS=ON:
+#   -Wall         catch a broad set of common problems
+#   -Wextra       additional checks beyond -Wall
+#   -Wundef       warn when an undefined identifier is used in #if
+#   -Wshadow      warn when a local variable shadows a member or outer variable
+#   -Wno-long-long suppress warnings about 'long long' (valid in C++11 and later)
+#
+# Flags intentionally NOT applied and why:
+#   -Wfloat-equal  Not viable: 3D geometry code legitimately compares floating-
+#                  point values against exact constants (0.0, 1.0) to test for
+#                  degenerate cases (zero-length vectors, identity matrices, etc.).
+#                  Suppressing all 300+ such comparisons would bloat the code
+#                  with meaningless casts and obscure the intent.
+#   -pedantic      Not viable: the codebase uses several GCC/Clang extensions
+#                  (e.g. zero-length arrays, __attribute__ annotations) that
+#                  -pedantic would flag as errors; fixing them all is out of
+#                  scope and would risk breaking platform-specific paths.
+#   -Wbad-function-cast  C-only flag; not applicable to the C++ Obol library.
+#   -Wc++-compat         C-only flag; not applicable.
+#   -Winline       Too noisy: many functions are marked inline for API
+#                  compatibility reasons even when the compiler cannot inline
+#                  them; the warnings provide no actionable signal.
+option(OBOL_WARNINGS "Enable extra warning flags (-Wall -Wextra -Wundef -Wshadow) on the Obol target" ON)
+
+if(OBOL_WARNINGS AND NOT MSVC)
+  set(_obol_warning_flags "")
+  foreach(_flag Wall Wextra Wundef Wshadow Wno-long-long)
+    check_cxx_compiler_flag("-${_flag}" OBOL_CXX_HAS_${_flag})
+    if(OBOL_CXX_HAS_${_flag})
+      list(APPEND _obol_warning_flags "-${_flag}")
+    endif()
+  endforeach()
+  set(OBOL_WARNING_FLAGS "${_obol_warning_flags}" CACHE INTERNAL
+      "Compiler warning flags applied to the Obol library target")
+  if(OBOL_WARNING_FLAGS)
+    message(STATUS "Obol warning flags: ${OBOL_WARNING_FLAGS}")
+  endif()
+endif()
 
 # Build optimization options
 option(OBOL_USE_UNITY_BUILD "Batch source files into unity build units for faster compilation (CMake 3.16+)" ON)

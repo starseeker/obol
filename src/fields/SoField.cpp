@@ -143,6 +143,12 @@
 
 #endif // !OBOL_THREADSAFE
 
+// OBOL_DEBUG_EXTRA enables verbose field-level debug output; define as 1
+// to activate (not defined by the build system, so default to 0 here).
+#ifndef OBOL_DEBUG_EXTRA
+#define OBOL_DEBUG_EXTRA 0
+#endif
+
 static const int SOFIELD_GET_STACKBUFFER_SIZE = 1024;
 // need one static mutex for field_buffer in SoField::get(SbString &)
 
