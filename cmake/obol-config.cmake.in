@@ -14,7 +14,7 @@ if(NOT OBOL_BUILD_MAC_FRAMEWORK)
   set_and_check(Obol_LIB_DIR "@PACKAGE_OBOL_LIB_DIR@")
 
   # optional documentation directory
-  if(EXISTS "@PACKAGE_OBOL_DOC_DIR@/")
+  if(EXISTS "@PACKAGE_OBOL_DOC_DIR@")
     set(Obol_DOC_DIR "@PACKAGE_OBOL_DOC_DIR@")
   endif()
 
