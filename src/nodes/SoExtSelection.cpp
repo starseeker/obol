@@ -1193,8 +1193,8 @@ SoExtSelection::GLRenderBelowPath(SoGLRenderAction * action)
     // are available when a selection event fires (which may happen before any
     // lasso draw, when draw() would otherwise be the only place they are set).
     PRIVATE(this)->cachedGlue = SoGLContext_instance(action->getCacheContext());
-    SoDB::ContextManager * stateMgr = SoContextManagerElement::get(state);
-    if (stateMgr) PRIVATE(this)->contextManager = stateMgr;
+    SoDB::ContextManager * delayedMgr = SoContextManagerElement::get(state);
+    if (delayedMgr) PRIVATE(this)->contextManager = delayedMgr;
 
     if (PRIVATE(this)->runningselection.mode != SoExtSelectionP::SelectionState::NONE) {
       action->addDelayedPath(action->getCurPath()->copy());
