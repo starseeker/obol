@@ -7,9 +7,18 @@
  * public API to build and render scenes into off-screen pixel buffers
  * displayed via FLTK.
  *
- * No bridge libraries or dlopen are involved.  The context manager
- * (OSMesa for headless/dual builds, GLX for sys-only builds) is set up
- * via headless_utils.h, exactly as the rendering tests do.
+ * No bridge libraries or dlopen are involved.  The context manager used for
+ * the main (System GL) panel is selected at compile time via CMake:
+ *
+ *   OBOL_VIEWER_FLTK_GL (default ON)
+ *     fltk_context_manager.h: FLTK Fl_Gl_Window provides the OpenGL context.
+ *     This is portable across all platforms that FLTK supports (Linux/X11,
+ *     Windows, macOS) without requiring Xvfb or a direct X11 connection.
+ *
+ *   OBOL_VIEWER_USE_FLTK_GL=OFF (legacy / CI fallback)
+ *     headless_utils.h: GLX pbuffer/pixmap/window fallback on X11/Linux,
+ *     or a stub context manager on other platforms.  Use this if FLTK's
+ *     OpenGL cannot obtain a context in the CI environment.
  *
  * OSMesa panel (dual-GL builds only: OBOL_BUILD_DUAL_GL)
  * ─────────────────────────────────────────────────────────
@@ -86,8 +95,16 @@
 /* ---- Unified test registry (scene factories + nanort_ok flags) ---- */
 #include "testlib/test_registry.h"
 
-/* ---- Context manager (OSMesa for dual/headless, GLX for sys-only) ---- */
-#include "headless_utils.h"
+/* ---- Context manager selection ---- */
+/* OBOL_VIEWER_FLTK_GL: FLTK-based cross-platform GL context (Fl_Gl_Window).  */
+/* Default (no define):  system-GL / GLX context via headless_utils.h.        */
+/* The CI environment may need the GLX path if FLTK's OpenGL cannot obtain a  */
+/* context without a real display (set -DOBOL_VIEWER_USE_FLTK_GL=OFF for CI). */
+#ifdef OBOL_VIEWER_FLTK_GL
+#  include "fltk_context_manager.h"
+#else
+#  include "headless_utils.h"
+#endif
 
 /* ---- Optional OSMesa panel: only available in dual-GL builds ----------- */
 /* SoDB::createOSMesaContextManager() provides the OSMesa backend without   */
@@ -1484,6 +1501,8 @@ private:
         return "System GL";
 #elif defined(OBOL_OSMESA_BUILD)
         return "OSMesa (headless)";
+#elif defined(OBOL_VIEWER_FLTK_GL)
+        return "FLTK GL";
 #else
         return "System OpenGL";
 #endif
