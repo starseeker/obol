@@ -890,7 +890,7 @@ private:
 
     /* Maximum render time (ms) per coarse frame; targets ~10 fps for
      * interactive feel.  Step-in stops when a level reaches 75% of this. */
-    static constexpr double kCoarseBudgetMs = 5.0;
+    static constexpr double kCoarseBudgetMs = 20.0;
     /* Fraction of kCoarseBudgetMs at which step-in stops doubling resolution.
      * 0.75 gives headroom so the chosen level reliably stays within budget. */
     static constexpr double kBudgetThreshold = 0.75;
