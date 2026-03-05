@@ -658,7 +658,7 @@ public:
         // --- 4. Composite text/HUD overlays ---------------------------------
         collector_.compositeOverlays(pixels, width, height, nrcomponents);
 
-        collector_.updateCameraId(cam);
+        collector_.updateCameraId(cam, scene);
         return TRUE;
     }
 

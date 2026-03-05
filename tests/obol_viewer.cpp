@@ -1032,12 +1032,21 @@ private:
             double ms = std::chrono::duration<double, std::milli>(
                             clock::now() - t0).count();
             if (!ok) break;
-            bestRW = rw;
-            bestRH = rh;
-            /* Stop when this level is approaching the per-frame budget or the
-             * full panel size has been reached: optimal level found. */
-            if (ms >= kCoarseBudgetMs * kBudgetThreshold ||
-                    rw >= pw || rh >= ph) {
+            /* Only record this resolution as "best" when it fits within the
+             * per-frame budget.  This prevents the calibration from storing a
+             * slow full-resolution level as the coarse target: when rw reaches
+             * pw, the loop exits regardless (no higher level exists), but if
+             * that final render was too slow we want to keep the last fast
+             * level, not the newly exceeded one. */
+            const bool withinBudget =
+                ms < kCoarseBudgetMs * kBudgetThreshold;
+            if (withinBudget) {
+                bestRW = rw;
+                bestRH = rh;
+            }
+            /* Stop when this level exceeds the per-frame budget or the full
+             * panel size has been reached: optimal level found. */
+            if (!withinBudget || rw >= pw || rh >= ph) {
                 optimal = true;
                 break;
             }
@@ -1424,10 +1433,13 @@ private:
             double ms = std::chrono::duration<double, std::milli>(
                             clock::now() - t0).count();
             if (!ok) break;
-            bestRW = rw;
-            bestRH = rh;
-            if (ms >= kCoarseBudgetMs * kBudgetThreshold ||
-                    rw >= pw || rh >= ph) {
+            const bool withinBudget =
+                ms < kCoarseBudgetMs * kBudgetThreshold;
+            if (withinBudget) {
+                bestRW = rw;
+                bestRH = rh;
+            }
+            if (!withinBudget || rw >= pw || rh >= ph) {
                 optimal = true;
                 break;
             }

@@ -256,9 +256,10 @@ SoRaytracerSceneCollector::updateCacheKeysAfterRebuild(SoNode *  root,
 }
 
 void
-SoRaytracerSceneCollector::updateCameraId(SoCamera * cam)
+SoRaytracerSceneCollector::updateCameraId(SoCamera * cam, SoNode * root)
 {
-    cachedCamId_ = cam ? cam->getNodeId() : 0;
+    cachedCamId_  = cam  ? cam->getNodeId()  : 0;
+    if (root) cachedRootId_ = root->getNodeId();
 }
 
 void
