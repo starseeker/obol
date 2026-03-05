@@ -39,7 +39,8 @@ set(OBOL_ENGINES_FILES
 	SoTexture2Convert.cpp
 	SoHeightMapToNormalMap.cpp
 	evaluator.cpp
-	evaluator_tab.cpp
+	# Note: evaluator_tab.cpp is added to OBOL_SOURCE separately below
+	#       (it may come from the build directory when bison/flex regenerate it).
 )
 
 # Files excluded from public API documentation, included in complete documentation.
@@ -76,49 +77,74 @@ endif()
 
 if(BISON_FOUND AND FLEX_FOUND AND NOT OBOL_USE_BUILTIN_PARSER)
   message(STATUS "Bison ${BISON_VERSION} and flex ${FLEX_VERSION} found - "
-                 "regenerating evaluator_tab.cpp and so_eval.ic from grammar sources")
+                 "regenerating evaluator_tab.cpp and so_eval.ic into build directory")
 
   # Generate the lexer first (so_eval.ic) because the bison output #includes it.
-  # The output is written directly to the source tree so that:
-  #   (a) it is always up-to-date for source-only distributions, and
-  #   (b) we do not have to manage build-dir vs source-dir include paths.
+  # Outputs go to the build directory so the source tree is never modified.
   add_custom_command(
-    OUTPUT  "${CMAKE_CURRENT_SOURCE_DIR}/so_eval.ic"
-    COMMAND ${FLEX_EXECUTABLE} -o so_eval.ic -L evaluator.l
+    OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/so_eval.ic"
+    COMMAND ${FLEX_EXECUTABLE}
+              -o "${CMAKE_CURRENT_BINARY_DIR}/so_eval.ic"
+              -L "${CMAKE_CURRENT_SOURCE_DIR}/evaluator.l"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/evaluator.l"
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    COMMENT "Regenerating so_eval.ic from evaluator.l"
+    COMMENT "Regenerating so_eval.ic from evaluator.l (build dir)"
     VERBATIM
   )
 
   add_custom_command(
-    OUTPUT  "${CMAKE_CURRENT_SOURCE_DIR}/evaluator_tab.cpp"
-    COMMAND ${BISON_EXECUTABLE} -o evaluator_tab.cpp -l evaluator.y
+    OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/evaluator_tab.cpp"
+    COMMAND ${BISON_EXECUTABLE}
+              -o "${CMAKE_CURRENT_BINARY_DIR}/evaluator_tab.cpp"
+              -l "${CMAKE_CURRENT_SOURCE_DIR}/evaluator.y"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/evaluator.y"
-            "${CMAKE_CURRENT_SOURCE_DIR}/so_eval.ic"
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    COMMENT "Regenerating evaluator_tab.cpp from evaluator.y"
+            "${CMAKE_CURRENT_BINARY_DIR}/so_eval.ic"
+    COMMENT "Regenerating evaluator_tab.cpp from evaluator.y (build dir)"
     VERBATIM
   )
 
   # Custom target so dependent targets rebuild when the grammar changes
   add_custom_target(obol_parser_gen
     DEPENDS
-      "${CMAKE_CURRENT_SOURCE_DIR}/so_eval.ic"
-      "${CMAKE_CURRENT_SOURCE_DIR}/evaluator_tab.cpp"
+      "${CMAKE_CURRENT_BINARY_DIR}/so_eval.ic"
+      "${CMAKE_CURRENT_BINARY_DIR}/evaluator_tab.cpp"
   )
+
+  # Warn (non-fatally) when the freshly generated files differ from the
+  # committed source-tree copies, so developers know to update them.
+  add_custom_command(
+    TARGET obol_parser_gen POST_BUILD
+    COMMAND ${CMAKE_COMMAND}
+              -DGENERATED=${CMAKE_CURRENT_BINARY_DIR}/evaluator_tab.cpp
+              -DREFERENCE=${CMAKE_CURRENT_SOURCE_DIR}/evaluator_tab.cpp
+              -P ${PROJECT_SOURCE_DIR}/cmake/warn_if_different.cmake
+    COMMAND ${CMAKE_COMMAND}
+              -DGENERATED=${CMAKE_CURRENT_BINARY_DIR}/so_eval.ic
+              -DREFERENCE=${CMAKE_CURRENT_SOURCE_DIR}/so_eval.ic
+              -P ${PROJECT_SOURCE_DIR}/cmake/warn_if_different.cmake
+    COMMENT "Checking generated parser files against source-tree copies"
+    VERBATIM
+  )
+
+  # Use the build-directory copy as the compilation unit.
+  set(EVALUATOR_TAB_SRC "${CMAKE_CURRENT_BINARY_DIR}/evaluator_tab.cpp")
 else()
   if(OBOL_USE_BUILTIN_PARSER)
     message(STATUS "OBOL_USE_BUILTIN_PARSER=ON: using committed evaluator_tab.cpp/so_eval.ic")
   else()
     message(STATUS "bison/flex not found - using committed evaluator_tab.cpp/so_eval.ic")
   endif()
+
+  # Use the committed (pre-generated) source-tree copy.
+  set(EVALUATOR_TAB_SRC "${CMAKE_CURRENT_SOURCE_DIR}/evaluator_tab.cpp")
 endif()
 
 # build library
 foreach(SRCFILE ${OBOL_ENGINES_FILES})
 	set(OBOL_SOURCE ${OBOL_SOURCE} engines/${SRCFILE} CACHE INTERNAL "OBOL_SOURCE")
 endforeach(SRCFILE)
+# evaluator_tab.cpp is kept out of OBOL_ENGINES_FILES so we can supply either
+# the source-tree copy or the freshly generated build-dir copy as appropriate.
+set(OBOL_SOURCE ${OBOL_SOURCE} "${EVALUATOR_TAB_SRC}" CACHE INTERNAL "OBOL_SOURCE")
 
 # define documentation
 foreach(SRCFILE ${OBOL_ENGINES_FILES})

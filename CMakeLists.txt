@@ -14,6 +14,9 @@ cmake_policy(SET CMP0072 NEW)  # FindOpenGL prefers GLVND
 cmake_policy(SET CMP0075 NEW)  # Include CMAKE_REQUIRED_LIBRARIES in CheckIncludeFile
 cmake_policy(SET CMP0077 NEW)  # option() honors normal variables
 cmake_policy(SET CMP0079 NEW)  # target_link_libraries() allows use with targets in other directories
+if(POLICY CMP0118)
+  cmake_policy(SET CMP0118 NEW)  # GENERATED property is globally visible (needed for build-dir parser files)
+endif()
 
 # Project variables for compatibility
 set(OBOL_MAJOR_VERSION ${PROJECT_VERSION_MAJOR})
