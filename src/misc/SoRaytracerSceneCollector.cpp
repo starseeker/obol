@@ -99,9 +99,7 @@ struct ScRaytracerCbData {
     SbMatrix  normalMat;      /* corresponding inverse-transpose */
     bool      normalMatValid; /* false until the first triangle is processed */
 
-    ScRaytracerCbData() : normalMatValid(false) {
-        std::memset(lastMM, 0, sizeof(lastMM));
-    }
+    ScRaytracerCbData() : normalMatValid(false) {}
 };
 
 // Forward-declare all file-scope callbacks so they can be registered in

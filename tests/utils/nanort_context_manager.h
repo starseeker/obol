@@ -533,7 +533,10 @@ public:
             for (int yi = 0; yi < static_cast<int>(height); ++yi) {
                 const unsigned int y = static_cast<unsigned int>(yi);
                 /* Each thread/row uses its own RNG state seeded from y so
-                 * AA jitter is deterministic and threads don't share state. */
+                 * AA jitter is deterministic and threads don't share state.
+                 * 2654435761 is the Knuth multiplicative hash constant
+                 * (2^32 / phi ≈ 2654435769 rounded to nearest odd prime) which
+                 * spreads row indices across the 32-bit range before XOR. */
                 uint32_t rngState = 0xDEADBEEFu ^ (static_cast<uint32_t>(y) * 2654435761u);
 
                 for (unsigned int x = 0; x < width; ++x) {
