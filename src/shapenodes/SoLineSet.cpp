@@ -485,7 +485,7 @@ SoLineSet::GLRender(SoGLRenderAction * action)
     SoLazyElement::setLightModel(state, SoLazyElement::BASE_COLOR);
   }
 
-  const SoGLCoordinateElement * coords = const_cast<SoGLCoordinateElement*>(static_cast<const SoGLCoordinateElement*>(tmp));
+  const SoGLCoordinateElement * coords = static_cast<const SoGLCoordinateElement*>(tmp);
 
   Binding mbind = findMaterialBinding(action->getState());
 

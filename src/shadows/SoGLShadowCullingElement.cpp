@@ -120,7 +120,7 @@ SoGLShadowCullingElement::push(SoState * OBOL_UNUSED_ARG(state))
 void 
 SoGLShadowCullingElement::pop(SoState * OBOL_UNUSED_ARG(state), const SoElement * prevTopElement)
 {
-  SoGLShadowCullingElement * prev = const_cast<SoGLShadowCullingElement*>(static_cast<const SoGLShadowCullingElement*>(prevTopElement));
+  const SoGLShadowCullingElement * prev = static_cast<const SoGLShadowCullingElement*>(prevTopElement);
   if (prev->data != this->data) {
     this->updateGL(prev->data, this->data);
   }

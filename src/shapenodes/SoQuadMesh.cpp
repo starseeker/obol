@@ -877,7 +877,7 @@ SoQuadMesh::GLRender(SoGLRenderAction * action)
   SoVertexShape::getVertexData(action->getState(), tmp, normals,
                                needNormals);
 
-  const SoGLCoordinateElement * coords = const_cast<SoGLCoordinateElement*>(static_cast<const SoGLCoordinateElement*>(tmp));
+  const SoGLCoordinateElement * coords = static_cast<const SoGLCoordinateElement*>(tmp);
 
   const int start = this->startIndex.getValue();
 

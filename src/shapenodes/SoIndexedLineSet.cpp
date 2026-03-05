@@ -380,7 +380,7 @@ SoIndexedLineSet::GLRender(SoGLRenderAction * action)
   }
   else {
     sogl_render_lineset(sogl_glue_from_state(state),
-                        const_cast<SoGLCoordinateElement*>(static_cast<const SoGLCoordinateElement*>(coords)),
+                        static_cast<const SoGLCoordinateElement*>(coords),
                         cindices,
                         numindices,
                         normals,

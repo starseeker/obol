@@ -123,7 +123,7 @@ SoGLLineWidthElement::push(SoState * stateptr)
 void
 SoGLLineWidthElement::pop(SoState * OBOL_UNUSED_ARG(stateptr), const SoElement * prevTopElement)
 {
-  SoGLLineWidthElement * prev = const_cast<SoGLLineWidthElement*>(static_cast<const SoGLLineWidthElement*>(prevTopElement));
+  const SoGLLineWidthElement * prev = static_cast<const SoGLLineWidthElement*>(prevTopElement);
   if (this->data != prev->data) {
     this->updategl();
   }

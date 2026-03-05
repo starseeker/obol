@@ -210,7 +210,7 @@ SoGLVBOElement::getElement(SoState * state)
 const SoGLVBOElement *
 SoGLVBOElement::getInstance(SoState * state)
 {
-  return const_cast<SoGLVBOElement*>(static_cast<const SoGLVBOElement*>(state->getConstElement(classStackIndex)));
+  return static_cast<const SoGLVBOElement*>(state->getConstElement(classStackIndex));
 }
 
 SoVBO *

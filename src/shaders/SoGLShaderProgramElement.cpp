@@ -117,11 +117,11 @@ SoGLShaderProgramElement::set(SoState* const state, SoNode *const node,
 }
 
 SoGLShaderProgram *
-SoGLShaderProgramElement::get(SoState *state)
+SoGLShaderProgramElement::get(const SoState *state)
 {
-  const SoElement *element = getConstElement(state, classStackIndex);
+  const SoElement *element = state->getConstElement(classStackIndex);
   assert(element);
-  return ((const SoGLShaderProgramElement *)element)->shaderProgram;
+  return static_cast<const SoGLShaderProgramElement *>(element)->shaderProgram;
 }
 
 void
@@ -164,7 +164,7 @@ SoGLShaderProgramElement::pop(SoState * state, const SoElement * prevTopElement)
 SbBool
 SoGLShaderProgramElement::matches(const SoElement * element) const
 {
-  SoGLShaderProgramElement * elem = const_cast<SoGLShaderProgramElement*>(static_cast<const SoGLShaderProgramElement*>(element));
+  const SoGLShaderProgramElement * elem = static_cast<const SoGLShaderProgramElement*>(element);
   return (this->enabled == elem->enabled) && (this->objectids == elem->objectids);
 }
 
