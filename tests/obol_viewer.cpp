@@ -602,6 +602,7 @@ public:
 
     ~NanoRTPanel() {
         Fl::remove_timeout(doRefine, this);
+        Fl::remove_timeout(doStepIn, this);
         delete fltk_img;
     }
 
@@ -615,10 +616,14 @@ public:
          * completely changed.  Without an explicit reset the stale BVH would
          * be reused for the new scene (e.g. a cube rendered as a sphere). */
         coarseRW_ = 0; coarseRH_ = 0; calFocalDist_ = 0.0f;
+        stepInComplete_ = false;
+        Fl::remove_timeout(doRefine, this);
+        Fl::remove_timeout(doStepIn, this);
         s_nanort_mgr.resetCache();
         if (!nanort_ok_) {
             status_text = "Not supported (NanoRT)";
             delete fltk_img; fltk_img = nullptr;
+            coarse_ = false;
             redraw(); return;
         }
         /* Compute scene bounding-box centre for orbit/dolly */
@@ -630,6 +635,10 @@ public:
             if (!bbox.isEmpty())
                 scene_center_ = bbox.getCenter();
         }
+        /* Start in coarse mode so step-in calibration begins immediately on
+         * load, giving the user visible pixel refinement as the renderer finds
+         * its optimal interactive resolution. */
+        coarse_ = true;
         refreshRender();
     }
 
@@ -654,15 +663,37 @@ public:
                     calFocalDist_ = 0.0f;
                 }
             }
-            if (coarseRW_ == 0 || calPanelW_ != pw || calPanelH_ != ph ||
-                       !stepInComplete_) {
-                /* Step-in calibration needed or still in progress: run one round.
-                 * timedStepIn_ returns true when the optimal level has been found,
-                 * false when it ran out of per-call search budget and should be
-                 * resumed next time. */
+            if (coarseRW_ == 0 || calPanelW_ != pw || calPanelH_ != ph) {
+                /* No calibration yet: timedStepIn_ must find the initial level.
+                 * This path is also taken after a panel resize. */
+                Fl::remove_timeout(doStepIn, this);
                 stepInComplete_ = timedStepIn_(pw, ph);
+                if (!stepInComplete_) {
+                    Fl::add_timeout(0.0, doStepIn, this);
+                } else if (!dragging_) {
+                    Fl::remove_timeout(doRefine, this);
+                    Fl::add_timeout(kRefineDelaySec, doRefine, this);
+                }
+            } else if (!stepInComplete_ && dragging_) {
+                /* Active drag with partial calibration: render at the best
+                 * known coarse level for maximum responsiveness.  The doStepIn
+                 * timer advances calibration in idle time between drag events
+                 * so each successive drag frame can be slightly better quality. */
+                if (!doRender_(pw, ph, coarseRW_, coarseRH_)) { redraw(); return; }
+                Fl::remove_timeout(doStepIn, this);
+                Fl::add_timeout(0.0, doStepIn, this);
+            } else if (!stepInComplete_) {
+                /* Not dragging: advance calibration one pass and show result. */
+                Fl::remove_timeout(doStepIn, this);
+                stepInComplete_ = timedStepIn_(pw, ph);
+                if (!stepInComplete_) {
+                    Fl::add_timeout(0.0, doStepIn, this);
+                } else if (!dragging_) {
+                    Fl::remove_timeout(doRefine, this);
+                    Fl::add_timeout(kRefineDelaySec, doRefine, this);
+                }
             } else {
-                /* Subsequent coarse renders: reuse calibrated size. */
+                /* Calibration complete: render at the calibrated coarse size. */
                 if (!doRender_(pw, ph, coarseRW_, coarseRH_)) { redraw(); return; }
             }
         }
@@ -902,6 +933,30 @@ private:
         p->refreshRender();
     }
 
+    /* FLTK timer callback: advance step-in calibration while idle.
+     * Scheduled with timeout=0 so it runs as soon as the event queue drains,
+     * providing visible pixel refinement between drag events and on initial
+     * scene load as the renderer finds its optimal coarse level.
+     * Stops automatically once calibration converges (stepInComplete_=true),
+     * the panel is no longer in coarse mode, or no calibration exists yet. */
+    static void doStepIn(void* data) {
+        NanoRTPanel* p = static_cast<NanoRTPanel*>(data);
+        if (!p->root || !p->nanort_ok_ || !p->coarse_ || p->stepInComplete_) return;
+        int pw = std::max(p->w(), 1), ph = std::max(p->h(), 1);
+        /* If panel was resized or never calibrated, let the next refreshRender()
+         * (triggered by user input or resize handler) restart step-in properly. */
+        if (p->coarseRW_ == 0 || p->calPanelW_ != pw || p->calPanelH_ != ph) return;
+        p->stepInComplete_ = p->timedStepIn_(pw, ph);
+        p->redraw();
+        if (p->on_rendered) p->on_rendered();
+        if (!p->stepInComplete_) {
+            Fl::add_timeout(0.0, doStepIn, p);
+        } else if (!p->dragging_) {
+            Fl::remove_timeout(doRefine, p);
+            Fl::add_timeout(kRefineDelaySec, doRefine, p);
+        }
+    }
+
     /* Render the scene at (rw×rh), upscale nearest-neighbour to (pw×ph),
      * and update fltk_img.  Returns false on render failure. */
     bool doRender_(int pw, int ph, int rw, int rh) {
@@ -1119,6 +1174,7 @@ public:
 
     ~EmbreePanel() {
         Fl::remove_timeout(doRefine, this);
+        Fl::remove_timeout(doStepIn, this);
         delete fltk_img;
     }
 
@@ -1132,10 +1188,14 @@ public:
          * completely changed.  Without an explicit reset the stale BVH would
          * be reused for the new scene. */
         coarseRW_ = 0; coarseRH_ = 0; calFocalDist_ = 0.0f;
+        stepInComplete_ = false;
+        Fl::remove_timeout(doRefine, this);
+        Fl::remove_timeout(doStepIn, this);
         s_embree_mgr.resetCache();
         if (!embree_ok_) {
             status_text = "Not supported (Embree)";
             delete fltk_img; fltk_img = nullptr;
+            coarse_ = false;
             redraw(); return;
         }
         /* Compute scene bounding-box centre for orbit/dolly */
@@ -1147,6 +1207,10 @@ public:
             if (!bbox.isEmpty())
                 scene_center_ = bbox.getCenter();
         }
+        /* Start in coarse mode so step-in calibration begins immediately on
+         * load, giving the user visible pixel refinement as the renderer finds
+         * its optimal interactive resolution. */
+        coarse_ = true;
         refreshRender();
     }
 
@@ -1164,10 +1228,36 @@ public:
                     calFocalDist_ = 0.0f;
                 }
             }
-            if (coarseRW_ == 0 || calPanelW_ != pw || calPanelH_ != ph ||
-                       !stepInComplete_) {
+            if (coarseRW_ == 0 || calPanelW_ != pw || calPanelH_ != ph) {
+                /* No calibration yet: timedStepIn_ must find the initial level.
+                 * This path is also taken after a panel resize. */
+                Fl::remove_timeout(doStepIn, this);
                 stepInComplete_ = timedStepIn_(pw, ph);
+                if (!stepInComplete_) {
+                    Fl::add_timeout(0.0, doStepIn, this);
+                } else if (!dragging_) {
+                    Fl::remove_timeout(doRefine, this);
+                    Fl::add_timeout(kRefineDelaySec, doRefine, this);
+                }
+            } else if (!stepInComplete_ && dragging_) {
+                /* Active drag with partial calibration: render at the best
+                 * known coarse level for maximum responsiveness.  The doStepIn
+                 * timer advances calibration in idle time between drag events. */
+                if (!doRender_(pw, ph, coarseRW_, coarseRH_)) { redraw(); return; }
+                Fl::remove_timeout(doStepIn, this);
+                Fl::add_timeout(0.0, doStepIn, this);
+            } else if (!stepInComplete_) {
+                /* Not dragging: advance calibration one pass and show result. */
+                Fl::remove_timeout(doStepIn, this);
+                stepInComplete_ = timedStepIn_(pw, ph);
+                if (!stepInComplete_) {
+                    Fl::add_timeout(0.0, doStepIn, this);
+                } else if (!dragging_) {
+                    Fl::remove_timeout(doRefine, this);
+                    Fl::add_timeout(kRefineDelaySec, doRefine, this);
+                }
             } else {
+                /* Calibration complete: render at the calibrated coarse size. */
                 if (!doRender_(pw, ph, coarseRW_, coarseRH_)) { redraw(); return; }
             }
         }
@@ -1359,6 +1449,30 @@ private:
         EmbreePanel* p = static_cast<EmbreePanel*>(data);
         p->coarse_ = false;
         p->refreshRender();
+    }
+
+    /* FLTK timer callback: advance step-in calibration while idle.
+     * Scheduled with timeout=0 so it runs as soon as the event queue drains,
+     * providing visible pixel refinement between drag events and on initial
+     * scene load as the renderer finds its optimal coarse level.
+     * Stops automatically once calibration converges (stepInComplete_=true),
+     * the panel is no longer in coarse mode, or no calibration exists yet. */
+    static void doStepIn(void* data) {
+        EmbreePanel* p = static_cast<EmbreePanel*>(data);
+        if (!p->root || !p->embree_ok_ || !p->coarse_ || p->stepInComplete_) return;
+        int pw = std::max(p->w(), 1), ph = std::max(p->h(), 1);
+        /* If panel was resized or never calibrated, let the next refreshRender()
+         * (triggered by user input or resize handler) restart step-in properly. */
+        if (p->coarseRW_ == 0 || p->calPanelW_ != pw || p->calPanelH_ != ph) return;
+        p->stepInComplete_ = p->timedStepIn_(pw, ph);
+        p->redraw();
+        if (p->on_rendered) p->on_rendered();
+        if (!p->stepInComplete_) {
+            Fl::add_timeout(0.0, doStepIn, p);
+        } else if (!p->dragging_) {
+            Fl::remove_timeout(doRefine, p);
+            Fl::add_timeout(kRefineDelaySec, doRefine, p);
+        }
     }
 
     bool doRender_(int pw, int ph, int rw, int rh) {
