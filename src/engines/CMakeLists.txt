@@ -62,9 +62,23 @@ set(OBOL_ENGINES_INTERNAL_FILES
 # both tools ARE present the build regenerates them from evaluator.y/.l to
 # keep the grammar sources from going stale.
 #
+# cmake/parser_hashes.cmake stores the SHA-256 hashes of evaluator.y and
+# evaluator.l that correspond to the committed generated files.  A non-fatal
+# warning is emitted at build time only when the current .y/.l hashes differ
+# from the stored values, indicating that the grammar has been edited but the
+# source-tree copies haven't been updated yet.
+#
+# To regenerate the source-tree files and record the new hashes run:
+#   cmake --build <build_dir> --target update_parser_sources
+#
 # Use -DOBOL_USE_BUILTIN_PARSER=ON to force the committed files even when
 # bison/flex are available (useful for testing the shipped fallback).
 # ############################################################################
+
+# Load the stored SHA-256 hashes for evaluator.y and evaluator.l.
+# These reflect the .y/.l content at the time the committed generated files
+# (evaluator_tab.cpp, so_eval.ic) were last produced.
+include(${PROJECT_SOURCE_DIR}/cmake/parser_hashes.cmake)
 
 option(OBOL_USE_BUILTIN_PARSER
   "Use the pre-generated evaluator_tab.cpp/so_eval.ic instead of regenerating from the grammar (default: OFF when bison+flex are found)"
@@ -102,31 +116,55 @@ if(BISON_FOUND AND FLEX_FOUND AND NOT OBOL_USE_BUILTIN_PARSER)
     VERBATIM
   )
 
-  # Custom target so dependent targets rebuild when the grammar changes
+  # Custom target so dependent targets rebuild when the grammar changes.
   add_custom_target(obol_parser_gen
     DEPENDS
       "${CMAKE_CURRENT_BINARY_DIR}/so_eval.ic"
       "${CMAKE_CURRENT_BINARY_DIR}/evaluator_tab.cpp"
   )
 
-  # Warn (non-fatally) when the freshly generated files differ from the
-  # committed source-tree copies, so developers know to update them.
+  # After generating, compare the current .y/.l hashes to the values stored in
+  # cmake/parser_hashes.cmake.  Warn only when they differ so that repeated
+  # builds on an unchanged grammar are silent.
   add_custom_command(
     TARGET obol_parser_gen POST_BUILD
     COMMAND ${CMAKE_COMMAND}
-              -DGENERATED=${CMAKE_CURRENT_BINARY_DIR}/evaluator_tab.cpp
-              -DREFERENCE=${CMAKE_CURRENT_SOURCE_DIR}/evaluator_tab.cpp
-              -P ${PROJECT_SOURCE_DIR}/cmake/warn_if_different.cmake
+              -DGRAMMAR_FILE=${CMAKE_CURRENT_SOURCE_DIR}/evaluator.y
+              -DSTORED_HASH=${EVALUATOR_Y_HASH}
+              -P ${PROJECT_SOURCE_DIR}/cmake/check_grammar_hash.cmake
     COMMAND ${CMAKE_COMMAND}
-              -DGENERATED=${CMAKE_CURRENT_BINARY_DIR}/so_eval.ic
-              -DREFERENCE=${CMAKE_CURRENT_SOURCE_DIR}/so_eval.ic
-              -P ${PROJECT_SOURCE_DIR}/cmake/warn_if_different.cmake
-    COMMENT "Checking generated parser files against source-tree copies"
+              -DGRAMMAR_FILE=${CMAKE_CURRENT_SOURCE_DIR}/evaluator.l
+              -DSTORED_HASH=${EVALUATOR_L_HASH}
+              -P ${PROJECT_SOURCE_DIR}/cmake/check_grammar_hash.cmake
+    COMMENT "Checking grammar source hashes"
     VERBATIM
   )
 
   # Use the build-directory copy as the compilation unit.
   set(EVALUATOR_TAB_SRC "${CMAKE_CURRENT_BINARY_DIR}/evaluator_tab.cpp")
+
+  # update_parser_sources: regenerate source-tree files and record new hashes.
+  # Excluded from the default build; run explicitly when grammar files change:
+  #   cmake --build <build_dir> --target update_parser_sources
+  add_custom_target(update_parser_sources
+    EXCLUDE_FROM_ALL
+    # 1. Regenerate so_eval.ic in the source tree.
+    COMMAND ${FLEX_EXECUTABLE}
+              -o "${CMAKE_CURRENT_SOURCE_DIR}/so_eval.ic"
+              -L "${CMAKE_CURRENT_SOURCE_DIR}/evaluator.l"
+    # 2. Regenerate evaluator_tab.cpp in the source tree.
+    COMMAND ${BISON_EXECUTABLE}
+              -o "${CMAKE_CURRENT_SOURCE_DIR}/evaluator_tab.cpp"
+              -l "${CMAKE_CURRENT_SOURCE_DIR}/evaluator.y"
+    # 3. Update the stored hashes in cmake/parser_hashes.cmake.
+    COMMAND ${CMAKE_COMMAND}
+              -DEVALUATOR_Y=${CMAKE_CURRENT_SOURCE_DIR}/evaluator.y
+              -DEVALUATOR_L=${CMAKE_CURRENT_SOURCE_DIR}/evaluator.l
+              -DHASHES_FILE=${PROJECT_SOURCE_DIR}/cmake/parser_hashes.cmake
+              -P ${PROJECT_SOURCE_DIR}/cmake/update_parser_hashes.cmake
+    COMMENT "Updating source-tree parser files and recording grammar hashes"
+    VERBATIM
+  )
 else()
   if(OBOL_USE_BUILTIN_PARSER)
     message(STATUS "OBOL_USE_BUILTIN_PARSER=ON: using committed evaluator_tab.cpp/so_eval.ic")
