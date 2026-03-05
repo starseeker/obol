@@ -199,22 +199,14 @@ if(OBOL_BUILD_VIEWER)
         endif()
     endif()
 
-    # Optional OpenMP parallelism for the CPU raytracing pixel loop.
-    # When present, the NanoRT and Embree panels parallelise rows across cores,
-    # giving a significant speedup on multi-core machines with no runtime cost
-    # on single-core builds (the #pragma omp ... is guarded by #ifdef _OPENMP).
-    find_package(OpenMP)
-    if(OpenMP_CXX_FOUND AND TARGET OpenMP::CXX)
-        target_link_libraries(obol_viewer PRIVATE OpenMP::CXX)
-        message(STATUS "obol_viewer: OpenMP found – CPU raytracing pixel loop will be parallelised")
-    elseif(OpenMP_CXX_FOUND AND OpenMP_CXX_FLAGS)
-        # Older CMake: target may not be created; apply flags manually.
-        target_compile_options(obol_viewer PRIVATE ${OpenMP_CXX_FLAGS})
-        target_link_libraries(obol_viewer PRIVATE ${OpenMP_CXX_FLAGS})
-        message(STATUS "obol_viewer: OpenMP found (legacy) – CPU raytracing pixel loop will be parallelised")
-    else()
-        message(STATUS "obol_viewer: OpenMP not found – CPU raytracing pixel loop is single-threaded")
-    endif()
+    # C++17 std::thread is used for parallel CPU raytracing; ensure the platform
+    # threading library is linked.  Threads::Threads is already in
+    # OBOL_TARGET_LINK_LIBRARIES (via the top-level find_package(Threads)) so
+    # it is transitively available; this explicit link guards against future
+    # refactors that might drop it from the umbrella variable.
+    find_package(Threads REQUIRED)
+    target_link_libraries(obol_viewer PRIVATE Threads::Threads)
+    message(STATUS "obol_viewer: C++17 std::thread parallel CPU raytracing enabled (${CMAKE_THREAD_LIBS_INIT})")
 
     install(TARGETS obol_viewer RUNTIME DESTINATION bin)
 endif() # OBOL_BUILD_VIEWER

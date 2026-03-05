@@ -70,11 +70,7 @@
 #include <cmath>
 #include <cstdint>
 #include <algorithm>
-
-// ---- Optional OpenMP parallelism --------------------------------------------
-#ifdef _OPENMP
-#  include <omp.h>
-#endif
+#include <thread>
 
 // ==========================================================================
 // NrtScene: nanort BVH built from SoRtTriangle data
@@ -501,9 +497,10 @@ public:
             if (aspect_ratio < 1.0f) vv.scale(1.0f / aspect_ratio);
 
             NrtScene & nrtScene = cachedNrtScene_;
-            nanort::TriangleIntersector<float> intersector(
-                nrtScene.vertices.data(), nrtScene.faces.data(),
-                sizeof(float) * 3);
+            /* NOTE: TriangleIntersector has mutable per-call state (ray_org_,
+             * ray_coeff_, etc.) so it MUST NOT be shared across threads.
+             * Each worker thread creates its own intersector from the same
+             * (read-only) vertex/face pointers; construction is O(1). */
 
             /* Precompute 4 corner rays once per frame.
              * projectPointToLine() is linear in (nx,ny) for both perspective
@@ -527,11 +524,30 @@ public:
             const float fw = static_cast<float>(width);
             const float fh = static_cast<float>(height);
 
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-            for (int yi = 0; yi < static_cast<int>(height); ++yi) {
-                const unsigned int y = static_cast<unsigned int>(yi);
+            /* Parallel pixel loop using C++17 std::thread (fork-join per frame).
+             * Each worker thread processes a contiguous band of rows; threads
+             * are joined before returning so pixels[] is fully written on exit.
+             * Hardware concurrency is queried once; on single-core machines this
+             * resolves to 1 and no extra threads are spawned. */
+            const unsigned int nthreads = std::max(1u,
+                std::thread::hardware_concurrency());
+            /* Cap thread count to the number of rows to avoid empty workers. */
+            const unsigned int effective_threads = std::min(nthreads, height);
+            const unsigned int rows_per_thread =
+                (height + effective_threads - 1) / effective_threads;
+
+            /* Lambda: render rows [y0, y1) into pixels[]. All captures are by
+             * value or reference to variables that outlive the join() call.
+             * A thread-local TriangleIntersector is created inside the lambda
+             * because nanort::TriangleIntersector holds mutable per-call state
+             * (ray coefficients, hit record) that is not thread-safe to share. */
+            auto renderBand = [&](unsigned int y0, unsigned int y1) {
+                /* Per-thread intersector – constructed from the same read-only
+                 * vertex/face arrays that live in nrtScene (O(1) to create). */
+                nanort::TriangleIntersector<float> intersector(
+                    nrtScene.vertices.data(), nrtScene.faces.data(),
+                    sizeof(float) * 3);
+                for (unsigned int y = y0; y < y1; ++y) {
                 /* Each thread/row uses its own RNG state seeded from y so
                  * AA jitter is deterministic and threads don't share state.
                  * 2654435761 is the Knuth multiplicative hash constant
@@ -667,7 +683,18 @@ public:
                         nrt_clamp01(accum[2] * inv_s) * 255.0f);
                     if (nrcomponents == 4) pixels[idx + 3] = 255;
                 }
+                } /* end row loop inside renderBand */
+            }; /* end renderBand lambda */
+
+            /* Spawn worker threads – one per row-band. */
+            std::vector<std::thread> workers;
+            workers.reserve(effective_threads);
+            for (unsigned int t = 0; t < effective_threads; ++t) {
+                const unsigned int y0 = t * rows_per_thread;
+                const unsigned int y1 = std::min(y0 + rows_per_thread, height);
+                workers.emplace_back(renderBand, y0, y1);
             }
+            for (auto & w : workers) w.join();
         }
 
         // --- 5. Composite text/HUD overlays ---------------------------------

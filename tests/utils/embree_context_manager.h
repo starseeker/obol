@@ -59,11 +59,7 @@
 #include <cstdint>
 #include <algorithm>
 #include <cstring>
-
-// ---- Optional OpenMP parallelism --------------------------------------------
-#ifdef _OPENMP
-#  include <omp.h>
-#endif
+#include <thread>
 
 // ==========================================================================
 // Math helpers (shared with nanort path; kept minimal and self-contained)
@@ -547,11 +543,16 @@ public:
             const float fw = static_cast<float>(width);
             const float fh = static_cast<float>(height);
 
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-            for (int yi = 0; yi < static_cast<int>(height); ++yi) {
-                const unsigned int y = static_cast<unsigned int>(yi);
+            /* Parallel pixel loop using C++17 std::thread (fork-join per frame).
+             * See nanort_context_manager.h for the threading pattern rationale. */
+            const unsigned int nthreads = std::max(1u,
+                std::thread::hardware_concurrency());
+            const unsigned int effective_threads = std::min(nthreads, height);
+            const unsigned int rows_per_thread =
+                (height + effective_threads - 1) / effective_threads;
+
+            auto renderBand = [&](unsigned int y0, unsigned int y1) {
+                for (unsigned int y = y0; y < y1; ++y) {
                 /* Each thread/row uses its own RNG state seeded from y so
                  * AA jitter is deterministic and threads don't share state.
                  * 2654435761 is the Knuth multiplicative hash constant
@@ -691,7 +692,17 @@ public:
                         emb_clamp01(accum[2] * inv_s) * 255.0f);
                     if (nrcomponents == 4) pixels[idx + 3] = 255;
                 }
+                } /* end row loop inside renderBand */
+            }; /* end renderBand lambda */
+
+            std::vector<std::thread> workers;
+            workers.reserve(effective_threads);
+            for (unsigned int t = 0; t < effective_threads; ++t) {
+                const unsigned int y0 = t * rows_per_thread;
+                const unsigned int y1 = std::min(y0 + rows_per_thread, height);
+                workers.emplace_back(renderBand, y0, y1);
             }
+            for (auto & w : workers) w.join();
         }
 
         // --- 4. Composite text/HUD overlays ---------------------------------
