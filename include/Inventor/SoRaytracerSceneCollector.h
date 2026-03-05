@@ -300,11 +300,17 @@ public:
     void updateCacheKeysAfterRebuild(SoNode * root, SoCamera * cam);
 
     /*!
-      Update the cached camera node ID after each render (including cache
-      hits).  Required so that the next \c needsRebuild() call can
+      Update the cached camera and root node IDs after each render (including
+      cache hits).  Required so that the next \c needsRebuild() call can
       distinguish a camera-only move from a true geometry change.
+
+      \a root should always be provided so that \c cachedRootId_ tracks the
+      scene's current node ID.  Without it, \c cachedRootId_ stays at the
+      value from the last BVH rebuild; when the camera later stops moving,
+      \c cameraOnlyMoved becomes \c FALSE while \c rootChanged stays \c TRUE,
+      triggering a spurious BVH rebuild on every static frame.
     */
-    void updateCameraId(SoCamera * cam);
+    void updateCameraId(SoCamera * cam, SoNode * root = nullptr);
 
     /*!
       Force the next \c needsRebuild() call to return \c TRUE.
