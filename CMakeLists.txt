@@ -202,19 +202,24 @@ option(OBOL_COVERAGE "Enable code coverage instrumentation (GCC/Clang)" OFF)
 # Applied via target_compile_options so external dependencies are unaffected.
 #
 # Flags applied when OBOL_WARNINGS=ON:
-#   -Wall          catch a broad set of common problems
-#   -Wextra        additional checks beyond -Wall
-#   -Wundef        warn when an undefined identifier is used in #if
-#   -Wshadow       warn when a local variable shadows a member or outer variable
-#   -Wno-long-long suppress warnings about 'long long' (valid in C++11 and later)
-#   -Wpedantic     enforce strict ISO C++17.  The codebase now uses [[maybe_unused]]
-#                  (C++17) instead of __attribute__((__unused__)).  The generated
-#                  parser files (evaluator_tab.cpp + so_eval.ic) use internal
-#                  __attribute__ annotations from the bison/flex skeletons; these
-#                  are guarded by the tools' own ifdef machinery and do not require
-#                  any suppression.
+#   -Wall               catch a broad set of common problems
+#   -Wextra             additional checks beyond -Wall
+#   -Wundef             warn when an undefined identifier is used in #if
+#   -Wshadow            warn when a local variable shadows a member or outer variable
+#   -Wno-long-long      suppress warnings about 'long long' (valid in C++11 and later)
+#   -Wpedantic          enforce strict ISO C++17.  The codebase now uses [[maybe_unused]]
+#                       (C++17) instead of __attribute__((__unused__)).  The generated
+#                       parser files (evaluator_tab.cpp + so_eval.ic) use internal
+#                       __attribute__ annotations from the bison/flex skeletons; these
+#                       are guarded by the tools' own ifdef machinery and do not require
+#                       any suppression.
+#   -Wformat-nonliteral warn when a format string argument to printf/strftime is not a
+#                       string literal and cannot be checked at compile time.  The two
+#                       intentional pass-through strftime calls in SbTime::formatDate()
+#                       are suppressed with a local GCC diagnostic pragma.
+#   -Wmaybe-uninitialized  warn when a variable may be used before it is initialized.
 #
-# Flags intentionally NOT applied and why:
+# Flags intentionally NOT applied and why (sourced from brlcad_CMakeLists.txt):
 #   -Wfloat-equal  Not viable: 3D geometry code legitimately compares floating-
 #                  point values against exact constants (0.0, 1.0) to test for
 #                  degenerate cases (zero-length vectors, identity matrices, etc.).
@@ -222,14 +227,21 @@ option(OBOL_COVERAGE "Enable code coverage instrumentation (GCC/Clang)" OFF)
 #                  with meaningless casts and obscure the intent.
 #   -Wbad-function-cast  C-only flag; not applicable to the C++ Obol library.
 #   -Wc++-compat         C-only flag; not applicable.
-#   -Winline       Too noisy: many functions are marked inline for API
-#                  compatibility reasons even when the compiler cannot inline
-#                  them; the warnings provide no actionable signal.
-option(OBOL_WARNINGS "Enable extra warning flags (-Wall -Wextra -Wundef -Wshadow -Wpedantic) on the Obol target" ON)
+#   -Winline       Too noisy: brlcad explicitly uses -Wno-inline for g++ because
+#                  GCC spews unquellable bogus warnings on default constructors.
+#   -Wdocumentation  Clang only; currently produces ~9000 warnings against the
+#                    Doxygen comment headers.  Not viable until the doc comments
+#                    are brought into conformance.
+#   -Wmissing-declarations  ~277 warnings; too many to enable without a dedicated
+#                           clean-up pass.
+#   -Wredundant-decls       ~123 warnings; deferred to a future clean-up pass.
+#   -Wcast-qual             ~550 warnings; deferred to a future clean-up pass.
+#   -Wmissing-field-initializers  ~207 warnings; deferred to a future clean-up pass.
+option(OBOL_WARNINGS "Enable extra warning flags (-Wall -Wextra -Wundef -Wshadow -Wpedantic -Wformat-nonliteral -Wmaybe-uninitialized) on the Obol target" ON)
 
 if(OBOL_WARNINGS AND NOT MSVC)
   set(_obol_warning_flags "")
-  foreach(_flag Wall Wextra Wundef Wshadow Wno-long-long Wpedantic)
+  foreach(_flag Wall Wextra Wundef Wshadow Wno-long-long Wpedantic Wformat-nonliteral Wmaybe-uninitialized)
     check_cxx_compiler_flag("-${_flag}" OBOL_CXX_HAS_${_flag})
     if(OBOL_CXX_HAS_${_flag})
       list(APPEND _obol_warning_flags "-${_flag}")

@@ -202,7 +202,7 @@ void
 SoNotList::print([[maybe_unused]] FILE * const file) const
 {
 #if OBOL_DEBUG
-  (void)fprintf(file, "SoNotList: %p\n", this);
+  (void)fprintf(file, "SoNotList: %p\n", (const void *)this);
   const SoNotRec * ptr = this->tail;
   while (ptr) {
     ptr->print(file);
@@ -217,7 +217,7 @@ SoNotList::print([[maybe_unused]] FILE * const file) const
   }
 
   (void)fprintf(file, "\tfirstAtNode = %p, lastField = %p (\"%s\")\n",
-                this->getFirstRecAtNode(),
-                this->getLastField(), fname.getString());
+                (const void *)this->getFirstRecAtNode(),
+                (const void *)this->getLastField(), fname.getString());
 #endif // OBOL_DEBUG
 }
