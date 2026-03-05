@@ -90,6 +90,16 @@ struct ScRaytracerCbData {
     std::vector<SoRtLightInfo> *   lights;
     std::vector<SoRtTextOverlay> * overlays;
     SbViewportRegion               proxyVp;
+
+    /* Normal-matrix cache: recompute inverse-transpose only when the model
+     * matrix changes between triangles.  All triangles of the same shape
+     * share the same model matrix, so this avoids one expensive matrix
+     * inverse per triangle (O(n) inverse calls → O(shapes) inverse calls). */
+    float     lastMM[16];     /* flat row-major copy of last seen model matrix */
+    SbMatrix  normalMat;      /* corresponding inverse-transpose */
+    bool      normalMatValid; /* false until the first triangle is processed */
+
+    ScRaytracerCbData() : normalMatValid(false) {}
 };
 
 // Forward-declare all file-scope callbacks so they can be registered in
@@ -511,7 +521,20 @@ src_triangleCB(void * ud,
     ScRaytracerCbData * cbdata = static_cast<ScRaytracerCbData *>(ud);
 
     const SbMatrix & mm = action->getModelMatrix();
-    SbMatrix normalMat   = mm.inverse().transpose();
+
+    /* Recompute the normal matrix (inverse-transpose) only when the model
+     * matrix has actually changed.  All triangles in the same shape share
+     * an identical model matrix, so this reduces O(triangles) expensive
+     * matrix inversions to O(shapes) inversions during scene collection. */
+    const SbMat & mmv = mm.getValue();   /* const float[4][4] */
+    if (!cbdata->normalMatValid ||
+        std::memcmp(cbdata->lastMM, mmv, sizeof(float) * 16) != 0)
+    {
+        cbdata->normalMat       = mm.inverse().transpose();
+        std::memcpy(cbdata->lastMM, mmv, sizeof(float) * 16);
+        cbdata->normalMatValid  = true;
+    }
+    const SbMatrix & normalMat = cbdata->normalMat;
 
     SoRtTriangle tri;
     const SoPrimitiveVertex * verts[3] = { v0, v1, v2 };
