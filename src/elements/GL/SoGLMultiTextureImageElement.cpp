@@ -258,8 +258,9 @@ SoGLMultiTextureImageElement::set(SoState * const state, SoNode * const node,
 void
 SoGLMultiTextureImageElement::restore(SoState * state, const int unit)
 {
-  SoGLMultiTextureImageElement * elem = static_cast<SoGLMultiTextureImageElement*>(
-    state->getElement(classStackIndex));
+  SoGLMultiTextureImageElement * elem = const_cast<SoGLMultiTextureImageElement*>(
+    static_cast<const SoGLMultiTextureImageElement*>(
+      state->getConstElement(classStackIndex)));
   
   elem->updateGL(unit);
 }

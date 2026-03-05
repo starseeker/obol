@@ -199,6 +199,7 @@
 #include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/elements/SoCoordinateElement.h>
 #include <Inventor/elements/SoCreaseAngleElement.h>
+#include <Inventor/elements/SoGLCoordinateElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
 #include <Inventor/elements/SoGLLazyElement.h>
 #include <Inventor/elements/SoGLVBOElement.h>

@@ -206,7 +206,8 @@ SoGLLazyElement::~SoGLLazyElement()
 SoGLLazyElement *
 SoGLLazyElement::getInstance(SoState *state)
 {
-  return static_cast<SoGLLazyElement*>(state->getElement(classStackIndex));
+  return const_cast<SoGLLazyElement*>(static_cast<const SoGLLazyElement*>(
+    state->getConstElement(classStackIndex)));
 }
 
 inline void
