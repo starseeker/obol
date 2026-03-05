@@ -122,8 +122,40 @@ if(OBOL_BUILD_VIEWER)
         endif()
     endif()
 
-    # Optional NanoRT panel: enabled when nanort.h is found in external/nanort/
-    if(EXISTS "${PROJECT_SOURCE_DIR}/external/nanort/nanort.h")
+    # Optional CPU raytracing panel: Embree (preferred) or NanoRT fallback.
+    #
+    # OBOL_VIEWER_USE_EMBREE (default ON when embree 4 is found on the system)
+    # selects the Embree 4 CPU raytracing panel as an alternative to NanoRT.
+    # When Embree is enabled, the NanoRT panel is skipped.  If neither backend
+    # is available the viewer builds without a CPU raytracing panel.
+    find_package(embree 4 QUIET
+        HINTS /usr/lib/x86_64-linux-gnu/cmake/embree-4.3.0
+              /usr/lib/cmake/embree4
+              /usr/local/lib/cmake/embree4)
+    if(embree_FOUND OR TARGET embree4)
+        if(TARGET embree4)
+            set(_obol_embree_link embree4)
+        else()
+            set(_obol_embree_link embree)
+        endif()
+        option(OBOL_VIEWER_USE_EMBREE
+            "Use Embree (rather than NanoRT) as the CPU raytracing panel in obol_viewer"
+            ON)
+    else()
+        option(OBOL_VIEWER_USE_EMBREE
+            "Use Embree (rather than NanoRT) as the CPU raytracing panel in obol_viewer"
+            OFF)
+    endif()
+
+    if(OBOL_VIEWER_USE_EMBREE AND (embree_FOUND OR TARGET embree4))
+        target_compile_definitions(obol_viewer PRIVATE OBOL_VIEWER_EMBREE)
+        target_include_directories(obol_viewer PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/utils"   # embree_context_manager.h
+        )
+        target_link_libraries(obol_viewer PRIVATE ${_obol_embree_link})
+        message(STATUS "obol_viewer: Embree panel enabled (replaces NanoRT)")
+    elseif(EXISTS "${PROJECT_SOURCE_DIR}/external/nanort/nanort.h")
+        # Embree not available or disabled – fall back to NanoRT if present.
         target_compile_definitions(obol_viewer PRIVATE OBOL_VIEWER_NANORT)
         target_include_directories(obol_viewer PRIVATE
             "${PROJECT_SOURCE_DIR}/external/nanort"
@@ -131,7 +163,7 @@ if(OBOL_BUILD_VIEWER)
         )
         message(STATUS "obol_viewer: NanoRT panel enabled (external/nanort/nanort.h found)")
     else()
-        message(STATUS "obol_viewer: NanoRT panel disabled (external/nanort/nanort.h not found)")
+        message(STATUS "obol_viewer: No CPU raytracing panel (neither Embree nor NanoRT found)")
     endif()
 
     # Link against obol_testlib (with --whole-archive so REGISTER_TEST static
