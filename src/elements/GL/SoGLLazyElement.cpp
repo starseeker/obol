@@ -500,7 +500,7 @@ SoGLLazyElement::sendDiffuseByIndex(const int index) const
   if (index < 0 || index >= this->coinstate.numdiffuse) {
     static int first = 1;
     if (first) {
-      SoFullPath * path = const_cast<SoFullPath*>(static_cast<const SoFullPath*>(this->state->getAction()->getCurPath()));
+      const SoFullPath * path = static_cast<const SoFullPath*>(this->state->getAction()->getCurPath());
       SoNode * tail = path->getTail();
       SbName name = tail->getName();
       SoDebugError::postWarning("SoGLLazyElement::sendDiffuseByIndex",

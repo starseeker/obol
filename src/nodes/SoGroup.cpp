@@ -517,7 +517,7 @@ SoGroup::removeChild(int childindex)
 int
 SoGroup::findChild(const SoNode * node) const
 {
-  return this->getChildren()->find(const_cast<SoNode*>(node));
+  return this->getChildren()->find(node);
 }
 
 /*!
@@ -785,7 +785,7 @@ SoGroup::search(SoSearchAction * action)
 SoChildList *
 SoGroup::getChildren(void) const
 {
-  return const_cast<SoGroup*>(this)->children;
+  return this->children;
 }
 
 /*!
