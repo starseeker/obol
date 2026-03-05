@@ -66,6 +66,7 @@
 #include <Inventor/SoOffscreenRenderer.h>
 #include <Inventor/SbViewportRegion.h>
 
+#include <QCoreApplication>
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
 #include <QSurfaceFormat>
@@ -96,9 +97,15 @@ struct QtOffscreenCtx {
  * ======================================================================= */
 class QtContextManager : public SoDB::ContextManager {
 public:
-    QtContextManager() : context_(nullptr), surface_(nullptr) {}
+    QtContextManager() : context_(nullptr), surface_(nullptr), cleaned_(false) {}
 
-    virtual ~QtContextManager() {
+    /* Release GL resources while Qt is still alive.
+     * Registered via qAddPostRoutine so it runs during QCoreApplication
+     * destruction, before Qt's thread-local storage is torn down.
+     * Safe to call multiple times. */
+    void cleanup() {
+        if (cleaned_) return;
+        cleaned_ = true;
         if (context_) {
             context_->doneCurrent();
             delete context_;
@@ -106,6 +113,21 @@ public:
         }
         if (surface_) {
             surface_->destroy();
+            delete surface_;
+            surface_ = nullptr;
+        }
+    }
+
+    virtual ~QtContextManager() {
+        /* Normally cleanup() has already been called by the qAddPostRoutine
+         * registered in initCoinHeadless(), while Qt is still valid.
+         * If it hasn't been called yet (e.g. context manager was constructed
+         * but initCoinHeadless was not used), skip Qt calls to avoid
+         * crashing into already-torn-down Qt internals. */
+        if (!cleaned_) {
+            cleaned_ = true;
+            delete context_;
+            context_ = nullptr;
             delete surface_;
             surface_ = nullptr;
         }
@@ -141,6 +163,7 @@ public:
 private:
     QOpenGLContext*    context_;
     QOffscreenSurface* surface_;
+    bool               cleaned_;
 
     /* Create the QOpenGLContext + QOffscreenSurface on first use.
      * Deferred so that QApplication is fully initialised before we
@@ -194,6 +217,11 @@ namespace {
         static QtContextManager instance;
         return instance;
     }
+
+    /* Plain function pointer required by qAddPostRoutine. */
+    void qt_context_manager_cleanup() {
+        qt_context_manager_singleton().cleanup();
+    }
 } // anonymous namespace
 
 /**
@@ -204,6 +232,9 @@ inline void initCoinHeadless() {
     SoDB::init(&qt_context_manager_singleton());
     SoNodeKit::init();
     SoInteraction::init();
+    /* Ensure GL context is released while Qt is still alive, before its
+     * thread-local storage is torn down on application exit. */
+    qAddPostRoutine(qt_context_manager_cleanup);
 }
 
 /**
