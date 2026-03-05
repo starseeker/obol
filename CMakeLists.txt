@@ -218,6 +218,18 @@ option(OBOL_COVERAGE "Enable code coverage instrumentation (GCC/Clang)" OFF)
 #                       intentional pass-through strftime calls in SbTime::formatDate()
 #                       are suppressed with a local GCC diagnostic pragma.
 #   -Wmaybe-uninitialized  warn when a variable may be used before it is initialized.
+#   -Wmissing-declarations  warn when a non-static function has no prior declaration.
+#                           All 30 instances were fixed: static functions gained the
+#                           static keyword; cross-TU helpers gained forward declarations;
+#                           missing header declarations were added to glp.h and
+#                           SoNodeKitPath.h.
+#   -Wredundant-decls       warn when a symbol is declared more than once in the same
+#                           scope.  All 80 instances were fixed: the duplicate
+#                           SbAtexitStaticInternal declaration was removed from
+#                           CoinTidbits.h (SuUtils.h is now included instead);
+#                           redundant forward decls in SoGLDriverDatabase.cpp and glp.h
+#                           were removed; the flex-generated so_eval.ic include is
+#                           wrapped with a diagnostic pragma.
 #
 # Flags intentionally NOT applied and why (sourced from brlcad_CMakeLists.txt):
 #   -Wfloat-equal  Not viable: 3D geometry code legitimately compares floating-
@@ -232,16 +244,13 @@ option(OBOL_COVERAGE "Enable code coverage instrumentation (GCC/Clang)" OFF)
 #   -Wdocumentation  Clang only; currently produces ~9000 warnings against the
 #                    Doxygen comment headers.  Not viable until the doc comments
 #                    are brought into conformance.
-#   -Wmissing-declarations  ~277 warnings; too many to enable without a dedicated
-#                           clean-up pass.
-#   -Wredundant-decls       ~123 warnings; deferred to a future clean-up pass.
 #   -Wcast-qual             ~550 warnings; deferred to a future clean-up pass.
 #   -Wmissing-field-initializers  ~207 warnings; deferred to a future clean-up pass.
-option(OBOL_WARNINGS "Enable extra warning flags (-Wall -Wextra -Wundef -Wshadow -Wpedantic -Wformat-nonliteral -Wmaybe-uninitialized) on the Obol target" ON)
+option(OBOL_WARNINGS "Enable extra warning flags (-Wall -Wextra -Wundef -Wshadow -Wpedantic -Wformat-nonliteral -Wmaybe-uninitialized -Wmissing-declarations -Wredundant-decls) on the Obol target" ON)
 
 if(OBOL_WARNINGS AND NOT MSVC)
   set(_obol_warning_flags "")
-  foreach(_flag Wall Wextra Wundef Wshadow Wno-long-long Wpedantic Wformat-nonliteral Wmaybe-uninitialized)
+  foreach(_flag Wall Wextra Wundef Wshadow Wno-long-long Wpedantic Wformat-nonliteral Wmaybe-uninitialized Wmissing-declarations Wredundant-decls)
     check_cxx_compiler_flag("-${_flag}" OBOL_CXX_HAS_${_flag})
     if(OBOL_CXX_HAS_${_flag})
       list(APPEND _obol_warning_flags "-${_flag}")
