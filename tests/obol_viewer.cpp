@@ -773,6 +773,10 @@ public:
             SbViewportRegion vp(std::max(w(),1), std::max(h(),1));
             SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(root);
             dragger_active_ = ha.isHandled();
+            /* Entering a manip drag: invalidate coarse calibration so
+             * timedStepIn_'s dragger warm-up can re-calibrate with
+             * BVH rebuild overhead included in the timing. */
+            if (dragger_active_) stepInComplete_ = false;
             return 1;
         }
         case FL_RELEASE: {
@@ -1259,6 +1263,10 @@ public:
             SbViewportRegion vp(std::max(w(),1), std::max(h(),1));
             SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(root);
             dragger_active_ = ha.isHandled();
+            /* Entering a manip drag: invalidate coarse calibration so
+             * timedStepIn_'s dragger warm-up can re-calibrate with
+             * BVH rebuild overhead included in the timing. */
+            if (dragger_active_) stepInComplete_ = false;
             return 1;
         }
         case FL_RELEASE: {
