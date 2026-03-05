@@ -414,9 +414,9 @@ public:
 
     this->path = light_path->copy();
     this->path->ref();
-    assert(((SoFullPath*)light_path)->getTail()->isOfType(SoLight::getClassTypeId()));
+    assert(const_cast<SoFullPath*>(static_cast<const SoFullPath*>(light_path))->getTail()->isOfType(SoLight::getClassTypeId()));
 
-    this->light = (SoLight*)((SoFullPath*)light_path)->getTail();
+    this->light = (SoLight*)const_cast<SoFullPath*>(static_cast<const SoFullPath*>(light_path))->getTail();
     this->light->ref();
 
     this->createVSMProgram();

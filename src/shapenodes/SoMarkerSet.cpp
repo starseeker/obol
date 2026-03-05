@@ -1166,7 +1166,7 @@ SoMarkerSet::GLRender(SoGLRenderAction * action)
 
   SoGLCacheContextElement::shouldAutoCache(state, SoGLCacheContextElement::DONT_AUTO_CACHE);
 
-  const SoGLCoordinateElement * coords = (SoGLCoordinateElement *)tmpcoord;
+  const SoGLCoordinateElement * coords = const_cast<SoGLCoordinateElement*>(static_cast<const SoGLCoordinateElement*>(tmpcoord));
 
   Binding mbind = this->findMaterialBinding(action->getState());
 

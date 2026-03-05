@@ -244,13 +244,12 @@ option(OBOL_COVERAGE "Enable code coverage instrumentation (GCC/Clang)" OFF)
 #   -Wdocumentation  Clang only; currently produces ~9000 warnings against the
 #                    Doxygen comment headers.  Not viable until the doc comments
 #                    are brought into conformance.
-#   -Wcast-qual             ~550 warnings; deferred to a future clean-up pass.
 #   -Wmissing-field-initializers  ~207 warnings; deferred to a future clean-up pass.
-option(OBOL_WARNINGS "Enable extra warning flags (-Wall -Wextra -Wundef -Wshadow -Wpedantic -Wformat-nonliteral -Wmaybe-uninitialized -Wmissing-declarations -Wredundant-decls) on the Obol target" ON)
+option(OBOL_WARNINGS "Enable extra warning flags (-Wall -Wextra -Wundef -Wshadow -Wpedantic -Wformat-nonliteral -Wmaybe-uninitialized -Wmissing-declarations -Wredundant-decls -Wcast-qual) on the Obol target" ON)
 
 if(OBOL_WARNINGS AND NOT MSVC)
   set(_obol_warning_flags "")
-  foreach(_flag Wall Wextra Wundef Wshadow Wno-long-long Wpedantic Wformat-nonliteral Wmaybe-uninitialized Wmissing-declarations Wredundant-decls)
+  foreach(_flag Wall Wextra Wundef Wshadow Wno-long-long Wpedantic Wformat-nonliteral Wmaybe-uninitialized Wmissing-declarations Wredundant-decls Wcast-qual)
     check_cxx_compiler_flag("-${_flag}" OBOL_CXX_HAS_${_flag})
     if(OBOL_CXX_HAS_${_flag})
       list(APPEND _obol_warning_flags "-${_flag}")

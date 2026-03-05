@@ -107,7 +107,7 @@ void
 SoGLLinePatternElement::pop(SoState * OBOL_UNUSED_ARG(state),
                             const SoElement * prevTopElement)
 {
-  SoGLLinePatternElement * prev = (SoGLLinePatternElement*) prevTopElement;
+  SoGLLinePatternElement * prev = const_cast<SoGLLinePatternElement*>(static_cast<const SoGLLinePatternElement*>(prevTopElement));
   if (this->data != prev->data) this->updategl();
 }
 

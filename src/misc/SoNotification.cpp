@@ -213,7 +213,7 @@ SoNotList::print([[maybe_unused]] FILE * const file) const
   const SoField * f = this->getLastField();
   SbName fname("");
   if (n && n->isOfType(SoNode::getClassTypeId()) && f) {
-    (void)((SoNode *)n)->getFieldName(f, fname);
+    (void)(const_cast<SoNode*>(static_cast<const SoNode*>(n)))->getFieldName(f, fname);
   }
 
   (void)fprintf(file, "\tfirstAtNode = %p, lastField = %p (\"%s\")\n",

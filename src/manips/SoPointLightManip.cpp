@@ -416,7 +416,7 @@ void
 SoPointLightManip::copyContents(const SoFieldContainer * fromfc, SbBool copyconnections)
 {
   assert(fromfc->isOfType(SoPointLightManip::getClassTypeId()));
-  this->setDragger(((SoPointLightManip *)fromfc)->getDragger());
+  this->setDragger(const_cast<SoPointLightManip*>(static_cast<const SoPointLightManip*>(fromfc))->getDragger());
   inherited::copyContents(fromfc, copyconnections);
 }
 

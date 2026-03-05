@@ -91,7 +91,7 @@ void
 SoGLDrawStyleElement::pop(SoState * OBOL_UNUSED_ARG(state),
                           const SoElement * prevTopElement)
 {
-  SoGLDrawStyleElement * prev = (SoGLDrawStyleElement*) prevTopElement;
+  SoGLDrawStyleElement * prev = const_cast<SoGLDrawStyleElement*>(static_cast<const SoGLDrawStyleElement*>(prevTopElement));
   if (this->data != prev->data) this->updategl();
 }
 

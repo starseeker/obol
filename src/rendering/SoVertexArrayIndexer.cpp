@@ -285,9 +285,9 @@ SoVertexArrayIndexer::render(const SoGLContext * glue, const SbBool renderasvbo,
     if (SoGLDriverDatabase::isSupported(glue, SO_GL_MULTIDRAW_ELEMENTS)) {
       SoGLContext_glMultiDrawElements(glue,
                                     this->target,
-                                    (GLsizei*) this->countarray.getArrayPtr(),
+                                    const_cast<GLsizei*>(this->countarray.getArrayPtr()),
                                     GL_UNSIGNED_INT,
-                                    (const GLvoid**) this->ciarray.getArrayPtr(),
+                                    reinterpret_cast<const GLvoid**>(const_cast<const int**>(this->ciarray.getArrayPtr())),
                                     this->countarray.getLength());
     }
     else {
@@ -371,8 +371,8 @@ static int
 compare_triangle(const void * v0, const void * v1)
 {
   int i;
-  int32_t * t0 = (int32_t*) v0;
-  int32_t * t1 = (int32_t*) v1;
+  int32_t * t0 = const_cast<int32_t*>(static_cast<const int32_t*>(v0));
+  int32_t * t1 = const_cast<int32_t*>(static_cast<const int32_t*>(v1));
 
   int32_t ti0[3];
   int32_t ti1[3];
@@ -397,8 +397,8 @@ static int
 compare_line(const void * v0, const void * v1)
 {
   int i;
-  int32_t * t0 = (int32_t*) v0;
-  int32_t * t1 = (int32_t*) v1;
+  int32_t * t0 = const_cast<int32_t*>(static_cast<const int32_t*>(v0));
+  int32_t * t1 = const_cast<int32_t*>(static_cast<const int32_t*>(v1));
 
   int32_t ti0[2];
   int32_t ti1[2];
@@ -428,7 +428,7 @@ SoVertexArrayIndexer::sort_triangles(void)
   // pretty well. Example: bunny.iv (~70000 triangles) went from 238
   // fps with no sorting to 380 fps with sorting.
   if (this->indexarray.getLength()) {
-    qsort((void*) this->indexarray.getArrayPtr(),
+    qsort(const_cast<void*>(static_cast<const void*>(this->indexarray.getArrayPtr())),
           this->indexarray.getLength() / 3,
           sizeof(int32_t) * 3,
           compare_triangle);
@@ -444,7 +444,7 @@ SoVertexArrayIndexer::sort_lines(void)
   // sort lines based on vertex indices to get more hits in the
   // GPU vertex cache.
   if (this->indexarray.getLength()) {
-    qsort((void*) this->indexarray.getArrayPtr(),
+    qsort(const_cast<void*>(static_cast<const void*>(this->indexarray.getArrayPtr())),
           this->indexarray.getLength() / 2,
           sizeof(int32_t) * 2,
           compare_line);
@@ -481,5 +481,5 @@ SoVertexArrayIndexer::getWriteableIndices(void)
 {
   delete this->vbo;
   this->vbo = NULL;
-  return (GLint*) this->indexarray.getArrayPtr();
+  return const_cast<GLint*>(this->indexarray.getArrayPtr());
 }

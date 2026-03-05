@@ -520,7 +520,7 @@ void
 SoTransformManip::copyContents(const SoFieldContainer * fromfc, SbBool copyconnections)
 {
   assert(fromfc->isOfType(SoTransformManip::getClassTypeId()));
-  SoDragger *dragger = ((SoTransformManip*)fromfc)->getDragger();
+  SoDragger *dragger = const_cast<SoTransformManip*>(static_cast<const SoTransformManip*>(fromfc))->getDragger();
   this->setDragger(dragger ? (SoDragger*) dragger->copy() : NULL);
   inherited::copyContents(fromfc, copyconnections);
 }

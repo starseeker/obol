@@ -471,7 +471,7 @@ void
 SoSpotLightManip::copyContents(const SoFieldContainer * fromfc, SbBool copyconnections)
 {
   assert(fromfc->isOfType(SoSpotLightManip::getClassTypeId()));
-  SoDragger * dragger = ((SoSpotLightManip*)fromfc)->getDragger();
+  SoDragger * dragger = const_cast<SoSpotLightManip*>(static_cast<const SoSpotLightManip*>(fromfc))->getDragger();
   this->setDragger(dragger ? (SoDragger*)dragger->copy() : NULL);
   inherited::copyContents(fromfc, copyconnections);
 }

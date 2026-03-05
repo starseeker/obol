@@ -609,7 +609,7 @@ SoIndexedFaceSet::GLRender(SoGLRenderAction * action)
     }
 
     sogl_render_faceset(sogl_glue_from_state(state),
-                        (SoGLCoordinateElement *)coords,
+                        const_cast<SoGLCoordinateElement*>(static_cast<const SoGLCoordinateElement*>(coords)),
                         cindices,
                         numindices,
                         normals,

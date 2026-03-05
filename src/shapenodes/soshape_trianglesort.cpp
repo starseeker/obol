@@ -93,8 +93,8 @@ extern "C" {
 static int
 compare_triangles(const void * ptr1, const void * ptr2)
 {
-  soshape_trianglesort::sorted_triangle * tri1 = (soshape_trianglesort::sorted_triangle*) ptr1;
-  soshape_trianglesort::sorted_triangle * tri2 = (soshape_trianglesort::sorted_triangle*) ptr2;
+  soshape_trianglesort::sorted_triangle * tri1 = const_cast<soshape_trianglesort::sorted_triangle*>(static_cast<const soshape_trianglesort::sorted_triangle*>(ptr1));
+  soshape_trianglesort::sorted_triangle * tri2 = const_cast<soshape_trianglesort::sorted_triangle*>(static_cast<const soshape_trianglesort::sorted_triangle*>(ptr2));
 
   if (tri1->dist > tri2->dist) return -1;
   if (tri1->dist == tri2->dist) return tri2->backface - tri1->backface;
@@ -180,7 +180,7 @@ soshape_trianglesort::endShape(SoState * state, SoMaterialBundle & mb)
   }
 
   const sorted_triangle * tarray = this->trianglelist->getArrayPtr();
-  qsort((void*)tarray, n, sizeof(sorted_triangle), compare_triangles);
+  qsort(const_cast<void*>(static_cast<const void*>(tarray)), n, sizeof(sorted_triangle), compare_triangles);
 
   int idx;
 

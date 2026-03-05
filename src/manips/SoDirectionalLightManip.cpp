@@ -407,7 +407,7 @@ SoDirectionalLightManip::copyContents(const SoFieldContainer * fromfc,
                                       SbBool copyconnections)
 {
   assert(fromfc->isOfType(SoDirectionalLightManip::getClassTypeId()));
-  this->setDragger(((SoDirectionalLightManip *)fromfc)->getDragger());
+  this->setDragger(const_cast<SoDirectionalLightManip*>(static_cast<const SoDirectionalLightManip*>(fromfc))->getDragger());
   inherited::copyContents(fromfc, copyconnections);
 }
 

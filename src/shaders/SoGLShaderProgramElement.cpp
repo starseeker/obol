@@ -141,7 +141,7 @@ SoGLShaderProgramElement::push(SoState * state)
 void
 SoGLShaderProgramElement::pop(SoState * state, const SoElement * prevTopElement)
 {
-  SoGLShaderProgramElement * elem = (SoGLShaderProgramElement *)prevTopElement;
+  SoGLShaderProgramElement * elem = const_cast<SoGLShaderProgramElement*>(static_cast<const SoGLShaderProgramElement*>(prevTopElement));
   if (this->shaderProgram != elem->shaderProgram) {
     if (elem->shaderProgram) {
       elem->shaderProgram->disable(state);
@@ -164,7 +164,7 @@ SoGLShaderProgramElement::pop(SoState * state, const SoElement * prevTopElement)
 SbBool
 SoGLShaderProgramElement::matches(const SoElement * element) const
 {
-  SoGLShaderProgramElement * elem = (SoGLShaderProgramElement*) element;
+  SoGLShaderProgramElement * elem = const_cast<SoGLShaderProgramElement*>(static_cast<const SoGLShaderProgramElement*>(element));
   return (this->enabled == elem->enabled) && (this->objectids == elem->objectids);
 }
 

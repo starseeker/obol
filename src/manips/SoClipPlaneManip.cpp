@@ -291,7 +291,7 @@ void
 SoClipPlaneManip::copyContents(const SoFieldContainer * fromfc, SbBool copyconnections)
 {
   assert(fromfc->isOfType(SoClipPlaneManip::getClassTypeId()));
-  this->setDragger(((SoClipPlaneManip*)fromfc)->getDragger());
+  this->setDragger(const_cast<SoClipPlaneManip*>(static_cast<const SoClipPlaneManip*>(fromfc))->getDragger());
   inherited::copyContents(fromfc, copyconnections);
 }
 
