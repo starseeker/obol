@@ -1862,17 +1862,15 @@ get_regname(char reg, int regtype)
 }
 
 
-/* so_eval.ic is a flex-generated lexer included directly as a translation unit.
-   It redundantly redeclares yylex (= so_evallex) which was already declared
-   static in the bison-generated prologue above; suppress the diagnostic. */
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wredundant-decls"
+
+/* Define YY_DECL before including so_eval.ic so the flex-generated file skips
+   its #ifndef YY_DECL block, which would otherwise emit a redundant
+   'extern int yylex()' forward declaration that conflicts with the static
+   so_evallex declaration in the bison-generated prologue above. */
+#ifndef YY_DECL
+#define YY_DECL int yylex(void)
 #endif
 #include "so_eval.ic" /* our lexical scanner */
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
 /* some very simple error handling for now :) */
 static char *myerrorptr;

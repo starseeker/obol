@@ -147,7 +147,6 @@ if(BISON_FOUND AND FLEX_FOUND AND NOT OBOL_USE_BUILTIN_PARSER)
   # Excluded from the default build; run explicitly when grammar files change:
   #   cmake --build <build_dir> --target update_parser_sources
   add_custom_target(update_parser_sources
-    EXCLUDE_FROM_ALL
     # 1. Regenerate so_eval.ic in the source tree.
     COMMAND ${FLEX_EXECUTABLE}
               -o "${CMAKE_CURRENT_SOURCE_DIR}/so_eval.ic"
