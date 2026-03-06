@@ -147,6 +147,11 @@ static SoEmbreeContextManager s_embree_mgr;
 #ifdef OBOL_VIEWER_FLTK_GL
 /* Fl_Gl_Window is already included via fltk_context_manager.h */
 #  include <FL/gl.h>     /* gl_color(), gl_font(), gl_draw() for text overlays */
+/* FL/platform.H exposes fl_display (X11 Display*) used by XSync in
+ * primeGLContexts() to synchronise the X server before make_current(). */
+#  if !defined(_WIN32) && !defined(__APPLE__)
+#    include <FL/platform.H>
+#  endif
 #endif
 
 #include <cstdio>
@@ -2005,19 +2010,36 @@ public:
          * servers – including Xvfb used in CI – glXMakeCurrent() fails
          * silently if the mapping has not yet been confirmed. */
         Fl::check();
+#if !defined(_WIN32) && !defined(__APPLE__)
+        /* On X11/GLX, synchronise with the X server so that the window
+         * mapping issued by show() is fully processed before make_current()
+         * calls glXMakeCurrent().  Fl::check() processes FLTK events but
+         * does NOT call XSync, meaning the X server may still have pending
+         * XMapWindow commands queued.  Without this sync, Mesa's software
+         * renderer (Xvfb/CI) returns True from glXMakeCurrent but leaves
+         * glGetString(GL_VERSION) returning NULL because the drawable's
+         * back buffer has not been allocated yet.
+         *
+         * headless_utils.h uses the same XMapWindow → XSync pattern for
+         * its fallback hidden window, where it reliably initialises GL on
+         * Xvfb/Mesa. */
+        if (fl_display)
+            XSync(fl_display, False);
+#endif
         /* Report state before attempting make_current() so that problems
          * with the X11 window mapping (shown==false) are visible. */
         fprintf(stderr,
-                "[primeGLContexts] after show()+check():"
+                "[primeGLContexts] after show()+check()+sync():"
                 " coin_panel shown=%d context=%p\n",
                 (int)coin_panel_->shown(),
                 (void*)coin_panel_->context());
         fflush(stderr);
         /* Attempt to activate the GL context and report its state.  At
-         * this stage the native window handle has been allocated; if the
-         * context is already valid here we know FLTK set it up during
-         * show()+check(); if it is still NULL wait_for_expose() (below)
-         * must finish the initialisation. */
+         * this stage the native window handle has been allocated and the
+         * X server has confirmed the mapping; if the context is already
+         * valid here we know FLTK set it up during show()+check()+sync();
+         * if it is still NULL wait_for_expose() (below) must finish the
+         * initialisation. */
         coin_panel_->make_current();
         reportGL("ObolViewerWindow::primeGLContexts (after coin_panel_->show())");
     }

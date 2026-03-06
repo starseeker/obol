@@ -103,6 +103,9 @@
 #else
 /* Linux / X11: glXGetProcAddress is always available via libGL. */
 #  include <GL/glx.h>
+/* FL/platform.H exposes fl_display (the X11 Display* FLTK uses) which is
+ * needed for XSync() in ensureWindow(). */
+#  include <FL/platform.H>
 #endif
 
 /* Match default dimensions used in headless_utils.h */
@@ -360,6 +363,21 @@ private:
         /* Flush the FLTK event queue so the native GL context is fully
          * initialised before the first make_current() call. */
         Fl::check();
+#if !defined(_WIN32) && !defined(__APPLE__)
+        /* On X11/GLX, synchronise with the X server before calling
+         * make_current().  Fl::check() processes FLTK events but does NOT
+         * call XSync, so the X server may not have processed the XMapWindow
+         * that show() issued internally.  Without this sync, Mesa's software
+         * renderer (used with Xvfb in CI) returns True from glXMakeCurrent
+         * but leaves glGetString(GL_VERSION) returning NULL because the
+         * window's rendering surface has not been allocated yet.
+         *
+         * This mirrors the pattern used by headless_utils.h which calls
+         * XMapWindow() followed by XSync(dpy, False) before glXCreateContext
+         * – the combination that reliably initialises GL on Xvfb/Mesa. */
+        if (fl_display)
+            XSync(fl_display, False);
+#endif
         /* Activate the context once to confirm it is valid and to
          * trigger any deferred GL initialisation inside FLTK. */
         own_win_->make_current();
