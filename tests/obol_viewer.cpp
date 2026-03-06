@@ -105,6 +105,7 @@
 /* context without a real display (set -DOBOL_VIEWER_USE_FLTK_GL=OFF for CI). */
 #ifdef OBOL_VIEWER_FLTK_GL
 #  include "fltk_context_manager.h"
+/* Fl_Gl_Window is already included by fltk_context_manager.h */
 #else
 #  include "headless_utils.h"
 #endif
@@ -143,6 +144,10 @@ static SoEmbreeContextManager s_embree_mgr;
 #include <FL/fl_draw.H>
 #include <FL/Fl_Tile.H>
 #include <FL/Fl_Check_Button.H>
+#ifdef OBOL_VIEWER_FLTK_GL
+/* Fl_Gl_Window is already included via fltk_context_manager.h */
+#  include <FL/gl.h>     /* gl_color(), gl_font(), gl_draw() for text overlays */
+#endif
 
 #include <cstdio>
 #include <cstdlib>
@@ -283,8 +288,32 @@ static SoOffscreenRenderer* getRenderer(int w, int h) {
 
 /* =========================================================================
  * CoinPanel  –  FLTK widget that renders a Coin scene
+ *
+ * When compiled with OBOL_VIEWER_FLTK_GL (default), CoinPanel extends
+ * Fl_Gl_Window so that FLTK creates a real GL context for it as part of
+ * the normal window hierarchy – exactly the same way cube.cxx creates its
+ * GL windows.  The panel's GL context is registered with FLTKContextManager
+ * via setExternalWindow() in the constructor, replacing the old hidden 1×1
+ * window approach that failed in some CI / headless environments.
+ *
+ * Rendering remains offscreen (FBO-based, managed by Obol); the visible
+ * window surface is used to draw the rendered pixels via FLTK's draw_begin/
+ * draw_end mechanism which allows standard FLTK drawing calls inside a GL
+ * window.
+ *
+ * Without OBOL_VIEWER_FLTK_GL (headless/GLX path) the panel keeps its
+ * original Fl_Box base class; the GL context is managed by headless_utils.h.
  * ======================================================================= */
+#ifdef OBOL_VIEWER_FLTK_GL
+/* CoinPanel uses Fl_Gl_Window as its base so FLTK creates a proper GL
+ * context that is part of the visible widget hierarchy.  This is the
+ * "create a window the same way cube.cxx does" approach requested in the
+ * issue: instead of a hidden off-screen window, the rendering panel itself
+ * IS the GL window whose context Obol uses. */
+class CoinPanel : public Fl_Gl_Window {
+#else
 class CoinPanel : public Fl_Box {
+#endif
 public:
     std::unique_ptr<SceneState> state;
     std::string label_text;
@@ -299,11 +328,36 @@ public:
     std::function<void(SoOffscreenRenderer*)> configure_renderer_fn;
 
     explicit CoinPanel(int X, int Y, int W, int H, const char* lbl = "")
-        : Fl_Box(X, Y, W, H, ""), label_text(lbl ? lbl : ""),
+        :
+#ifdef OBOL_VIEWER_FLTK_GL
+          Fl_Gl_Window(X, Y, W, H),
+#else
+          Fl_Box(X, Y, W, H, ""),
+#endif
+          label_text(lbl ? lbl : ""),
           gl_context_failed_(false)
     {
+#ifdef OBOL_VIEWER_FLTK_GL
+        /* Fl_Gl_Window::end() stops FLTK from treating subsequently-created
+         * widgets as children of this GL window.  CoinPanel is a pure
+         * rendering surface with no child widgets; calling end() here keeps
+         * the widget hierarchy clean and prevents accidental widget capture. */
+        end();
+        /* Double-buffered RGBA8 with depth – same as a typical GL widget.
+         * Double buffering ensures smooth display when FLTK swaps buffers
+         * after draw_begin()/draw_end() draws the rendered frame. */
+        mode(FL_RGB8 | FL_DEPTH | FL_DOUBLE);
+        /* Register this panel's window as the GL context source.
+         * FLTKContextManager will call make_current() on this window
+         * instead of creating a separate hidden 1×1 context window.
+         * This is the key change: Obol uses the context from the
+         * visible panel widget, just as cube.cxx uses the context from
+         * its Fl_Gl_Window instances. */
+        fltk_context_manager_singleton().setExternalWindow(this);
+#else
         box(FL_FLAT_BOX);
         color(FL_BLACK);
+#endif
     }
 
     ~CoinPanel() { delete fltk_img; }
@@ -417,6 +471,17 @@ public:
     /* ---- FLTK overrides ---- */
 
     void draw() override {
+#ifdef OBOL_VIEWER_FLTK_GL
+        /* In Fl_Gl_Window mode, use draw_begin()/draw_end() to enable FLTK
+         * drawing functions (fl_rectf, Fl_RGB_Image::draw, fl_draw, etc.)
+         * inside the GL window.  draw_begin() sets up a 2-D ortho projection
+         * matching the window size and activates the OpenGL surface device so
+         * that FLTK's drawing primitives emit correct GL commands.
+         * draw_end() restores the previous GL state (via glPopAttrib / matrix
+         * pops) so that the next FBO-based Obol render starts from a clean
+         * state. */
+        draw_begin();
+#endif
         fl_rectf(x(),y(),w(),h(),FL_BLACK);
         if (fltk_img) {
             fltk_img->draw(x(),y(),w(),h(),0,0);
@@ -432,10 +497,17 @@ public:
             fl_color(fl_rgb_color(255,80,80)); fl_font(FL_HELVETICA,12);
             fl_draw(status_text.c_str(), x()+6, y()+h()-6);
         }
+#ifdef OBOL_VIEWER_FLTK_GL
+        draw_end();
+#endif
     }
 
     int handle(int event) override {
+#ifdef OBOL_VIEWER_FLTK_GL
+        if (!state || !state->root) return Fl_Gl_Window::handle(event);
+#else
         if (!state || !state->root) return Fl_Box::handle(event);
+#endif
         int h_ = h();
         switch (event) {
         case FL_PUSH:
@@ -549,11 +621,19 @@ public:
         case FL_FOCUS: case FL_UNFOCUS: return 1;
         default: break;
         }
+#ifdef OBOL_VIEWER_FLTK_GL
+        return Fl_Gl_Window::handle(event);
+#else
         return Fl_Box::handle(event);
+#endif
     }
 
     void resize(int X, int Y, int W, int H) override {
+#ifdef OBOL_VIEWER_FLTK_GL
+        Fl_Gl_Window::resize(X, Y, W, H);
+#else
         Fl_Box::resize(X, Y, W, H);
+#endif
         if (state) { state->width = W; state->height = H; }
         refreshRender();
     }
@@ -2087,11 +2167,11 @@ private:
     }
 
     static void closeCB(Fl_Widget*, void*) {
-        /* Hide every FLTK window so Fl::run() returns.  This is necessary
-         * because FLTKContextManager keeps a hidden 1×1 Fl_Gl_Window shown
-         * for the lifetime of the program; without this callback that window
-         * would keep the event loop alive after the user closes the main
-         * window. */
+        /* Hide all FLTK windows so Fl::run() returns cleanly when the user
+         * closes the main window.  Hiding all windows covers both the
+         * FLTK_GL build (where CoinPanel is an Fl_Gl_Window subwindow) and
+         * any fallback hidden context window that FLTKContextManager may
+         * have created. */
         while (Fl_Window* w = Fl::first_window())
             w->hide();
     }
@@ -2268,6 +2348,18 @@ int main(int argc, char** argv)
 
     ObolViewerWindow* win = new ObolViewerWindow(1100, 700);
     win->show(argc, argv);
+
+    /* Wait for the window (and its Fl_Gl_Window subwidgets, including
+     * CoinPanel) to be fully exposed before attempting the first render.
+     * This mirrors the cube.cxx FLTK example pattern:
+     *
+     *   form->wait_for_expose();   // cube.cxx line 431
+     *   Fl::add_timeout(...);      // start using GL
+     *
+     * Without wait_for_expose(), make_current() may be called before the
+     * OS has mapped the GL window, causing glGetString(GL_VERSION) to
+     * return NULL and the first render to fail silently. */
+    win->wait_for_expose();
 
     /* Load the first visual scene automatically */
     {
