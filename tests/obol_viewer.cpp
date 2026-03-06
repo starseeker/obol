@@ -2369,9 +2369,6 @@ private:
  * ======================================================================= */
 int main(int argc, char** argv)
 {
-    /* Initialise Obol using the same context manager pattern as the tests */
-    initCoinHeadless();
-
     Fl::scheme("gtk+");
     /* Request a double-buffered RGB visual.  Fall back to single-buffer if
      * the display does not support a double-buffered OpenGL visual so that
@@ -2413,6 +2410,11 @@ int main(int argc, char** argv)
      * OS has mapped the GL window, causing glGetString(GL_VERSION) to
      * return NULL and the first render to fail silently. */
     win->wait_for_expose();
+
+    /* Initialise Obol using the same context manager pattern as the tests.
+     * We've got to let the FLTK OpenGL setup do its bit first, or we
+     * don't have any viable OpenGL we can use for Obol. */
+    initCoinHeadless();
 
     /* Load the first visual scene automatically */
     {
