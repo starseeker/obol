@@ -39,10 +39,24 @@
  *   - CGL / NSOpenGL on macOS
  *   - GLX on X11 / Linux
  *
- * A single hidden 1×1 Fl_Gl_Window is created lazily on the first render
- * request and kept alive for the lifetime of the manager.  Offscreen
- * rendering uses framebuffer objects (FBOs) managed by the Obol library;
- * the FLTK window surface itself is never drawn to.
+ * Preferred mode (setExternalWindow):
+ *   The caller (obol_viewer) passes its own Fl_Gl_Window – typically the
+ *   CoinPanel rendering widget – via setExternalWindow() before the first
+ *   render.  The manager then calls make_current() on that window instead
+ *   of creating a separate hidden context window.  This mirrors the pattern
+ *   used by cube.cxx in the FLTK test suite: a real, visible Fl_Gl_Window
+ *   is created and shown by the caller; FLTK's GL context lifetime is then
+ *   tied to that visible widget rather than to a synthetic off-screen window.
+ *
+ * Fallback mode (own hidden window):
+ *   If setExternalWindow() is never called the manager creates a small
+ *   hidden 1×1 Fl_Gl_Window lazily on the first render request, as before.
+ *   This preserves backward compatibility for environments that do not use
+ *   the external-window path.
+ *
+ * Offscreen rendering uses framebuffer objects (FBOs) managed by the Obol
+ * library; the FLTK window surface itself is never drawn to directly by
+ * this context manager.
  *
  * This header provides drop-in replacements for the same functions that
  * headless_utils.h exposes for the system-GL / GLX path:
@@ -144,17 +158,51 @@ struct FLTKOffscreenCtx {
  *
  * Implements SoDB::ContextManager using FLTK's Fl_Gl_Window so that
  * context creation is handled by FLTK on every supported platform.
+ *
+ * Two operating modes:
+ *
+ *   External-window mode (preferred):
+ *     The caller invokes setExternalWindow(w) before the first render,
+ *     passing a real Fl_Gl_Window that is already part of the application's
+ *     visible widget hierarchy.  On the first makeContextCurrent() call the
+ *     manager simply calls w->make_current() on that window.  This mirrors
+ *     the cube.cxx FLTK example pattern and avoids the off-screen hidden-
+ *     window approach that can fail in certain CI / headless environments.
+ *
+ *   Fallback / hidden-window mode:
+ *     If setExternalWindow() is never called a small hidden 1×1
+ *     FLTKGLContextWindow is created lazily on the first render request
+ *     (the original behaviour), preserving backward compatibility.
  * ======================================================================= */
 class FLTKContextManager : public SoDB::ContextManager {
 public:
-    FLTKContextManager() : win_(nullptr) {}
+    FLTKContextManager() : win_(nullptr), own_win_(nullptr) {}
 
     virtual ~FLTKContextManager() {
-        if (win_) {
-            win_->hide();
-            delete win_;
-            win_ = nullptr;
+        /* Only destroy the window we created ourselves; the external window
+         * is owned by the caller (e.g. CoinPanel in obol_viewer). */
+        if (own_win_) {
+            own_win_->hide();
+            delete own_win_;
+            own_win_ = nullptr;
         }
+        win_ = nullptr;
+    }
+
+    /**
+     * Register an externally-owned Fl_Gl_Window as the GL context source.
+     *
+     * Must be called before the first render attempt (i.e., before the
+     * first makeContextCurrent() call).  The window must remain alive for
+     * the lifetime of this manager.  The caller retains ownership.
+     *
+     * Typical usage in obol_viewer: call this in CoinPanel's constructor
+     * so the panel's own GL context is used instead of a hidden window.
+     */
+    void setExternalWindow(Fl_Gl_Window* w) {
+        /* Ignore if the fallback hidden window was already created. */
+        if (own_win_) return;
+        win_ = w;
     }
 
     virtual void* createOffscreenContext(unsigned int width,
@@ -204,26 +252,40 @@ public:
     }
 
 private:
-    FLTKGLContextWindow* win_;
+    /* Active window used by makeContextCurrent() – points to either
+     * own_win_ (fallback) or the externally-provided window (preferred). */
+    Fl_Gl_Window*        win_;
 
-    /* Create and show the hidden GL context window on first use.
-     * Deferred until the first render request so that FLTK's display
-     * connection (Fl::visual / Fl_Window::show) is already established
-     * before we try to create a GL context. */
+    /* Hidden 1×1 fallback window created by ensureWindow() when no
+     * external window has been registered.  Owned by this manager.
+     * Non-null only in fallback mode; null when an external window is used. */
+    FLTKGLContextWindow* own_win_;
+
+    /* Ensure a valid GL context window is available.
+     *
+     * If an external window was registered via setExternalWindow() it is
+     * used directly – the caller is responsible for showing it before the
+     * first render (main() calls wait_for_expose() after win->show()).
+     *
+     * Otherwise, fall back to creating a hidden 1×1 FLTKGLContextWindow
+     * (original behaviour). */
     bool ensureWindow() {
         if (win_) return true;
-        win_ = new FLTKGLContextWindow();
+
+        /* Fallback: create a hidden 1×1 context window. */
+        own_win_ = new FLTKGLContextWindow();
+        win_     = own_win_;
         /* Position the 1×1 window off-screen.  show() creates the native
          * window handle and the platform GL context without making the
          * window visible to the user. */
-        win_->position(-100, -100);
-        win_->show();
+        own_win_->position(-100, -100);
+        own_win_->show();
         /* Flush the FLTK event queue so the native GL context is fully
          * initialised before the first make_current() call. */
         Fl::check();
         /* Activate the context once to confirm it is valid and to
          * trigger any deferred GL initialisation inside FLTK. */
-        win_->make_current();
+        own_win_->make_current();
         return true;
     }
 };
