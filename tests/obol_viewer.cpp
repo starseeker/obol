@@ -494,9 +494,21 @@ public:
          * make_current() before draw(), but since we override draw() directly
          * there may be call paths that reach draw() without flush() having run
          * first (e.g., the initial expose while the subwindow is still being
-         * realized).  Calling make_current() here mirrors what flush() does and
-         * prevents gl_font() from calling glGetString(GL_VERSION) on a NULL
-         * context (which crashes via sscanf(NULL, ...)). */
+         * realized).
+         *
+         * Calling make_current() here also provides a second glXMakeCurrent
+         * call within the same flush() cycle.  On some older Mesa builds
+         * (observed on Rocky Linux), the first glXMakeCurrent called by
+         * flush()'s make_current() can partially bind the context – returning
+         * True and updating glXGetCurrentContext() – but leave glDrawBuffer
+         * (called between flush()'s make_current() and draw()) in a state that
+         * de-activates the rendering pipeline.  The second glXMakeCurrent
+         * call triggered here re-establishes the binding properly.
+         * Fl_X11_Gl_Window_Driver::set_gl_context() no longer skips this call
+         * based on cached state; Mesa's driver detects a redundant bind and
+         * returns True immediately when context and drawable are genuinely
+         * unchanged, so the extra call carries negligible overhead on
+         * correctly-functioning platforms. */
         {
             /* Diagnostic: log the first several draw() calls unconditionally
              * so that context lifecycle problems are visible in crash logs.
