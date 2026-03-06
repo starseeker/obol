@@ -263,10 +263,31 @@ public:
         if (!ensureWindow()) return FALSE;
         win_->make_current();
         /* Verify the context is actually current after make_current().
-         * When OBOL_GL_DIAG=1 this prints GL_VERSION to stderr so you can
-         * see whether make_current() succeeded at every render call. */
+         * On some display servers (including Xvfb used in CI) the external
+         * Fl_Gl_Window context may not be available at this point – e.g.,
+         * glXMakeCurrent() fails silently because the window is not yet
+         * fully realised by the X server.  If that happens, fall back to
+         * the hidden 1×1 window approach (same as the no-external-window
+         * path) so that offscreen FBO rendering can still proceed.
+         *
+         * Returning FALSE – instead of the previous unconditional TRUE –
+         * when the context is genuinely unavailable prevents the segfault
+         * in SoOffscreenRenderer::renderFromBase() that occurs when Coin
+         * calls glGetString(GL_VERSION) on a NULL context and then passes
+         * the result to sscanf(). */
+        if (!glGetString(GL_VERSION) && win_ != own_win_) {
+            /* External window failed.  Clear win_ so ensureWindow() will
+             * create the hidden 1×1 fallback window on the next call. */
+            win_ = nullptr;
+            if (!ensureWindow()) {
+                reportGL("FLTKContextManager::makeContextCurrent");
+                return FALSE;
+            }
+            /* ensureWindow() has already called make_current() on own_win_;
+             * the context (if available) is already current. */
+        }
         reportGL("FLTKContextManager::makeContextCurrent");
-        return TRUE;
+        return glGetString(GL_VERSION) ? TRUE : FALSE;
     }
 
     virtual void restorePreviousContext(void* /*context*/) override {

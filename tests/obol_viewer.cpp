@@ -1933,11 +1933,19 @@ public:
      */
     void primeGLContexts() {
         coin_panel_->show();
-        /* Immediately after show(), attempt to activate the GL context and
-         * report its state.  At this stage the native window handle has been
-         * allocated but the window may not yet be exposed.  If the context
-         * is already valid here we know FLTK set it up during show(); if it
-         * is NULL we know we must wait for wait_for_expose() (or later). */
+        /* Flush the FLTK event queue so the X server has a chance to map
+         * the GL subwindow and confirm its visual before make_current() is
+         * called.  This mirrors the pattern used by FLTKContextManager's
+         * own fallback hidden window (ensureWindow() calls Fl::check()
+         * after show()) and the cube.cxx FLTK example.  On some display
+         * servers – including Xvfb used in CI – glXMakeCurrent() fails
+         * silently if the mapping has not yet been confirmed. */
+        Fl::check();
+        /* Attempt to activate the GL context and report its state.  At
+         * this stage the native window handle has been allocated; if the
+         * context is already valid here we know FLTK set it up during
+         * show()+check(); if it is still NULL wait_for_expose() (below)
+         * must finish the initialisation. */
         coin_panel_->make_current();
         reportGL("ObolViewerWindow::primeGLContexts (after coin_panel_->show())");
     }
