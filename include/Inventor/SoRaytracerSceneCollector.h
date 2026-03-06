@@ -360,8 +360,14 @@ public:
     // ------------------------------------------------------------------
 
     /*!
-      Compute the world-space radius that corresponds to \a sizePx pixels
-      at the depth of the current shape.
+      Compute the local-space proxy radius that corresponds to \a sizePx
+      pixels at the depth of the current shape.
+
+      The returned value is suitable for passing directly to
+      \c createCylinderProxy() or \c createSphereProxy().  It accounts for
+      any \c Scale nodes in the current model matrix so that after
+      \c collectProxy() (or \c src_collectProxy) re-applies the full model
+      matrix the net world-space radius matches the pixel-size target.
 
       Used internally for line/point proxy sizing but exposed here so
       custom backends can size their own proxy geometry consistently.
