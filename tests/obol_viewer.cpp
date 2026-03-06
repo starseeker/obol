@@ -397,6 +397,14 @@ public:
          * repeated failed GLX operations on every user interaction (resize,
          * camera drag, scene reload) after the initial context failure. */
         if (gl_context_failed_) { redraw(); return; }
+#ifdef OBOL_VIEWER_FLTK_GL
+        /* Activate the GL context before probing so that glGetString reflects
+         * the true state of *this* panel's context rather than whatever
+         * context happened to be current.  This also mirrors what draw() does
+         * and ensures the context is warm before the offscreen render below. */
+        make_current();
+        reportGL("CoinPanel::refreshRender (before render)");
+#endif
         int pw = std::max(w(), 1);
         int ph = std::max(h(), 1);
         SoOffscreenRenderer* r = getRenderer(pw, ph);
@@ -1925,6 +1933,32 @@ public:
      */
     void primeGLContexts() {
         coin_panel_->show();
+        /* Immediately after show(), attempt to activate the GL context and
+         * report its state.  At this stage the native window handle has been
+         * allocated but the window may not yet be exposed.  If the context
+         * is already valid here we know FLTK set it up during show(); if it
+         * is NULL we know we must wait for wait_for_expose() (or later). */
+        coin_panel_->make_current();
+        reportGL("ObolViewerWindow::primeGLContexts (after coin_panel_->show())");
+    }
+
+    /**
+     * Probe and report the current GL context status.
+     *
+     * Activates the CoinPanel's GL context via make_current() and calls
+     * glGetString(GL_VERSION) to determine whether the context is valid.
+     * Prints a diagnostic line to stderr when OBOL_GL_DIAG=1.
+     *
+     * Returns true if the context is current and valid, false otherwise.
+     * Use this at key checkpoints in main() to trace context lifecycle:
+     *
+     *   win->probeGLContext("after primeGLContexts");
+     *   win->wait_for_expose();
+     *   win->probeGLContext("after wait_for_expose");
+     */
+    bool probeGLContext(const char* where) {
+        coin_panel_->make_current();
+        return reportGL(where);
     }
 #endif /* OBOL_VIEWER_FLTK_GL */
 
@@ -2400,6 +2434,10 @@ int main(int argc, char** argv)
      * causing glGetString(GL_VERSION) to return NULL 20+ times in the
      * activateGLContext() fallback loop. */
     win->primeGLContexts();
+    /* Diagnostic checkpoint 1: immediately after show(), before expose.
+     * If OBOL_GL_DIAG=1 this reports whether the GL context is already live
+     * at this point (it may not be if the OS hasn't mapped the window yet). */
+    win->probeGLContext("main: after primeGLContexts, before wait_for_expose");
 #endif /* OBOL_VIEWER_FLTK_GL */
 
     /* Wait for the window (and its Fl_Gl_Window subwidgets, including
@@ -2413,6 +2451,14 @@ int main(int argc, char** argv)
      * OS has mapped the GL window, causing glGetString(GL_VERSION) to
      * return NULL and the first render to fail silently. */
     win->wait_for_expose();
+
+#ifdef OBOL_VIEWER_FLTK_GL
+    /* Diagnostic checkpoint 2: after full expose.
+     * The GL context must be valid here before the first loadScene() call.
+     * If OBOL_GL_DIAG=1 and this still prints NULL, the window system has
+     * not allocated a context even after expose – that is the root cause. */
+    win->probeGLContext("main: after wait_for_expose, before loadScene");
+#endif /* OBOL_VIEWER_FLTK_GL */
 
     /* Load the first visual scene automatically */
     {
