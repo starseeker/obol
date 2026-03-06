@@ -479,7 +479,17 @@ public:
          * that FLTK's drawing primitives emit correct GL commands.
          * draw_end() restores the previous GL state (via glPopAttrib / matrix
          * pops) so that the next FBO-based Obol render starts from a clean
-         * state. */
+         * state.
+         *
+         * make_current() must be called before draw_begin() to ensure the GL
+         * context is active.  FLTK's own Fl_Gl_Window::flush() calls
+         * make_current() before draw(), but since we override draw() directly
+         * there may be call paths that reach draw() without flush() having run
+         * first (e.g., the initial expose while the subwindow is still being
+         * realized).  Calling make_current() here mirrors what flush() does and
+         * prevents gl_font() from calling glGetString(GL_VERSION) on a NULL
+         * context (which crashes via sscanf(NULL, ...)). */
+        make_current();
         draw_begin();
 #endif
         fl_rectf(x(),y(),w(),h(),FL_BLACK);
@@ -1894,6 +1904,30 @@ public:
         callback(closeCB);
     }
 
+#ifdef OBOL_VIEWER_FLTK_GL
+    /**
+     * Explicitly show and prime the Fl_Gl_Window subwindows.
+     *
+     * FLTK Fl_Window children (subwindows) are NOT automatically shown when
+     * the parent window is shown – each subwindow needs its own show() call
+     * to allocate a native window handle (X11 XID / HWND / etc.).  Without
+     * a valid native handle, glXMakeCurrent() (called inside make_current())
+     * receives XID==0, which behaves like releasing the context, causing
+     * glGetString(GL_VERSION) to return NULL.
+     *
+     * This mirrors the pattern used by cube.cxx in the FLTK test suite:
+     *   form->show(argc,argv);  // show parent
+     *   lt_cube->show();        // explicitly show each GL subwindow
+     *   rt_cube->show();        // ...
+     *   form->wait_for_expose();
+     *
+     * Call this in main() after win->show() and before win->wait_for_expose().
+     */
+    void primeGLContexts() {
+        coin_panel_->show();
+    }
+#endif /* OBOL_VIEWER_FLTK_GL */
+
     void loadScene(const char* name) {
         coin_panel_->loadScene(name);
 
@@ -2348,6 +2382,25 @@ int main(int argc, char** argv)
 
     ObolViewerWindow* win = new ObolViewerWindow(1100, 700);
     win->show(argc, argv);
+
+#ifdef OBOL_VIEWER_FLTK_GL
+    /* Explicitly show the Fl_Gl_Window subwidgets after the parent, mirroring
+     * the cube.cxx FLTK example:
+     *
+     *   form->show(argc,argv);  // cube.cxx line 403
+     *   lt_cube->show();        // cube.cxx line 404 – show each GL subwindow
+     *   rt_cube->show();        // cube.cxx line 405
+     *   form->wait_for_expose(); // cube.cxx line 431
+     *
+     * FLTK does not automatically show Fl_Window subchildren when the parent
+     * is shown.  Each Fl_Gl_Window child must be shown separately so that its
+     * native window handle (XID on X11, HWND on Windows) is allocated before
+     * make_current() is called.  Without this, make_current() passes XID==0
+     * to glXMakeCurrent() which releases rather than sets the context,
+     * causing glGetString(GL_VERSION) to return NULL 20+ times in the
+     * activateGLContext() fallback loop. */
+    win->primeGLContexts();
+#endif /* OBOL_VIEWER_FLTK_GL */
 
     /* Wait for the window (and its Fl_Gl_Window subwidgets, including
      * CoinPanel) to be fully exposed before attempting the first render.
