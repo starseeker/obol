@@ -497,7 +497,59 @@ public:
          * realized).  Calling make_current() here mirrors what flush() does and
          * prevents gl_font() from calling glGetString(GL_VERSION) on a NULL
          * context (which crashes via sscanf(NULL, ...)). */
+        {
+            /* Diagnostic: log the first several draw() calls unconditionally
+             * so that context lifecycle problems are visible in crash logs.
+             * After draw_call_count exceeds kDiagDraws the static bool
+             * diag_always becomes false and only OBOL_GL_DIAG=1 printing
+             * remains. */
+            static int draw_call_count = 0;
+            static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
+            ++draw_call_count;
+            const bool diag_always = (draw_call_count <= 5);
+            if (diag_always || diag_env) {
+                fprintf(stderr,
+                        "[CoinPanel::draw #%d] pre-make_current:"
+                        " context=%p shown=%d valid=%d w=%d h=%d\n",
+                        draw_call_count,
+                        (void*)context(),
+                        (int)shown(),
+                        (int)valid(),
+                        w(), h());
+                fflush(stderr);
+            }
+        }
         make_current();
+        /* Verify the GL context is actually current after make_current().
+         * This always prints for the first 5 draws and whenever
+         * OBOL_GL_DIAG=1 is set; if glGetString returns NULL here that
+         * means make_current() failed to bind the context (e.g. because
+         * the X11 window XID was not yet allocated). */
+        {
+            static int mc_count = 0;
+            static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
+            ++mc_count;
+            const bool diag_always = (mc_count <= 5);
+            if (diag_always || diag_env) {
+                const GLubyte* ver = glGetString(GL_VERSION);
+                if (ver) {
+                    const GLubyte* ren = glGetString(GL_RENDERER);
+                    fprintf(stderr,
+                            "[CoinPanel::draw #%d] post-make_current:"
+                            " GL_VERSION=\"%s\" GL_RENDERER=\"%s\"\n",
+                            mc_count,
+                            (const char*)ver,
+                            ren ? (const char*)ren : "(null)");
+                } else {
+                    fprintf(stderr,
+                            "[CoinPanel::draw #%d] post-make_current:"
+                            " glGetString(GL_VERSION)=NULL"
+                            " (GL context not current!)\n",
+                            mc_count);
+                }
+                fflush(stderr);
+            }
+        }
         draw_begin();
 #endif
         fl_rectf(x(),y(),w(),h(),FL_BLACK);
@@ -1941,6 +1993,14 @@ public:
          * servers – including Xvfb used in CI – glXMakeCurrent() fails
          * silently if the mapping has not yet been confirmed. */
         Fl::check();
+        /* Report state before attempting make_current() so that problems
+         * with the X11 window mapping (shown==false) are visible. */
+        fprintf(stderr,
+                "[primeGLContexts] after show()+check():"
+                " coin_panel shown=%d context=%p\n",
+                (int)coin_panel_->shown(),
+                (void*)coin_panel_->context());
+        fflush(stderr);
         /* Attempt to activate the GL context and report its state.  At
          * this stage the native window handle has been allocated; if the
          * context is already valid here we know FLTK set it up during

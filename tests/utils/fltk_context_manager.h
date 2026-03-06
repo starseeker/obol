@@ -115,24 +115,29 @@
  * GL diagnostic helper
  *
  * reportGL(where) checks whether a valid OpenGL context is current by
- * calling glGetString(GL_VERSION).  It is activated by setting the
- * environment variable OBOL_GL_DIAG=1 at runtime; when the variable is
- * absent the function is a no-op (returns the context-validity result
- * without printing).
+ * calling glGetString(GL_VERSION).
  *
- * Call this after any operation that is supposed to have activated a GL
- * context (make_current, show, wait_for_expose, …) to confirm the context
- * is actually current.  The output goes to stderr immediately (flushed)
- * so it appears even if the process crashes shortly after.
+ * Printing policy:
+ *   - Always prints for the first kAlwaysPrintCalls invocations so that
+ *     GL context lifecycle problems appear in crash logs unconditionally.
+ *   - Always prints when glGetString returns NULL (that is always a bug).
+ *   - Prints on all subsequent calls when OBOL_GL_DIAG=1 is set.
+ *
+ * The output goes to stderr immediately (flushed) so it appears even if
+ * the process crashes shortly after.
  *
  * Returns true if a GL context is current, false otherwise.
  * ======================================================================= */
 inline bool reportGL(const char* where)
 {
+    static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
+    static int call_count = 0;
+    ++call_count;
+    /* Always print the first few calls and any NULL-context event. */
+    static const int kAlwaysPrintCalls = 5;
     const GLubyte* ver = glGetString(GL_VERSION);
-    /* Only print when OBOL_GL_DIAG is set in the environment. */
-    static const bool diag = (getenv("OBOL_GL_DIAG") != nullptr);
-    if (diag) {
+    const bool always = (call_count <= kAlwaysPrintCalls) || !ver;
+    if (diag_env || always) {
         if (ver) {
             const GLubyte* ren = glGetString(GL_RENDERER);
             fprintf(stderr,
