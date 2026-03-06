@@ -90,12 +90,16 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Gl_Window.H>
 
+#include <cstdio>
+#include <cstdlib>
+
 /* Platform-specific GL function pointer loader */
 #if defined(_WIN32)
 #  include <windows.h>
 #  include <GL/gl.h>
 #elif defined(__APPLE__)
 #  include <dlfcn.h>
+#  include <OpenGL/gl.h>
 #else
 /* Linux / X11: glXGetProcAddress is always available via libGL. */
 #  include <GL/glx.h>
@@ -106,6 +110,49 @@
 #  define DEFAULT_WIDTH  800
 #  define DEFAULT_HEIGHT 600
 #endif
+
+/* =========================================================================
+ * GL diagnostic helper
+ *
+ * reportGL(where) checks whether a valid OpenGL context is current by
+ * calling glGetString(GL_VERSION).  It is activated by setting the
+ * environment variable OBOL_GL_DIAG=1 at runtime; when the variable is
+ * absent the function is a no-op (returns the context-validity result
+ * without printing).
+ *
+ * Call this after any operation that is supposed to have activated a GL
+ * context (make_current, show, wait_for_expose, …) to confirm the context
+ * is actually current.  The output goes to stderr immediately (flushed)
+ * so it appears even if the process crashes shortly after.
+ *
+ * Returns true if a GL context is current, false otherwise.
+ * ======================================================================= */
+inline bool reportGL(const char* where)
+{
+    const GLubyte* ver = glGetString(GL_VERSION);
+    /* Only print when OBOL_GL_DIAG is set in the environment. */
+    static const bool diag = (getenv("OBOL_GL_DIAG") != nullptr);
+    if (diag) {
+        if (ver) {
+            const GLubyte* ren = glGetString(GL_RENDERER);
+            fprintf(stderr,
+                    "[GL diag] %s:\n"
+                    "          GL_VERSION  = \"%s\"\n"
+                    "          GL_RENDERER = \"%s\"\n",
+                    where,
+                    (const char*)ver,
+                    ren ? (const char*)ren : "(null)");
+        } else {
+            fprintf(stderr,
+                    "[GL diag] %s:\n"
+                    "          glGetString(GL_VERSION) = NULL"
+                    "\n          (no current GL context!)\n",
+                    where);
+        }
+        fflush(stderr);
+    }
+    return (ver != nullptr);
+}
 
 /* =========================================================================
  * FLTKGLContextWindow
@@ -215,6 +262,10 @@ public:
     virtual SbBool makeContextCurrent(void* /*context*/) override {
         if (!ensureWindow()) return FALSE;
         win_->make_current();
+        /* Verify the context is actually current after make_current().
+         * When OBOL_GL_DIAG=1 this prints GL_VERSION to stderr so you can
+         * see whether make_current() succeeded at every render call. */
+        reportGL("FLTKContextManager::makeContextCurrent");
         return TRUE;
     }
 
@@ -286,6 +337,8 @@ private:
         /* Activate the context once to confirm it is valid and to
          * trigger any deferred GL initialisation inside FLTK. */
         own_win_->make_current();
+        /* Confirm the fallback hidden-window context is actually active. */
+        reportGL("FLTKContextManager::ensureWindow (fallback hidden window)");
         return true;
     }
 };
