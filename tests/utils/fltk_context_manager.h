@@ -142,14 +142,20 @@ inline bool reportGL(const char* where)
     const bool always = (call_count <= kAlwaysPrintCalls) || !ver;
     if (diag_env || always) {
         if (ver) {
-            const GLubyte* ren = glGetString(GL_RENDERER);
+            const GLubyte* ren  = glGetString(GL_RENDERER);
+            const GLubyte* vend = glGetString(GL_VENDOR);
+            const GLubyte* glsl = glGetString(GL_SHADING_LANGUAGE_VERSION);
             fprintf(stderr,
                     "[GL diag] %s:\n"
-                    "          GL_VERSION  = \"%s\"\n"
-                    "          GL_RENDERER = \"%s\"\n",
+                    "          GL_VERSION                  = \"%s\"\n"
+                    "          GL_RENDERER                 = \"%s\"\n"
+                    "          GL_VENDOR                   = \"%s\"\n"
+                    "          GL_SHADING_LANGUAGE_VERSION = \"%s\"\n",
                     where,
                     (const char*)ver,
-                    ren ? (const char*)ren : "(null)");
+                    ren  ? (const char*)ren  : "(null)",
+                    vend ? (const char*)vend : "(null)",
+                    glsl ? (const char*)glsl : "(null)");
         } else {
             fprintf(stderr,
                     "[GL diag] %s:\n"
@@ -256,19 +262,58 @@ public:
      */
     void setExternalWindow(Fl_Gl_Window* w) {
         /* Ignore if the fallback hidden window was already created. */
-        if (own_win_) return;
+        if (own_win_) {
+            fprintf(stderr,
+                    "[FLTKContextManager::setExternalWindow] ignored: own_win_=%p"
+                    " already created (fallback mode active); w=%p rejected.\n",
+                    (void*)own_win_, (void*)w);
+            fflush(stderr);
+            return;
+        }
+        fprintf(stderr,
+                "[FLTKContextManager::setExternalWindow] registered external"
+                " window %p (replacing %p).\n",
+                (void*)w, (void*)win_);
+        fflush(stderr);
         win_ = w;
     }
 
     virtual void* createOffscreenContext(unsigned int width,
                                          unsigned int height) override
     {
+        static const bool diag = (getenv("OBOL_GL_DIAG") != nullptr);
+        static int ctx_count = 0;
+        ++ctx_count;
+        if (diag || ctx_count <= 3) {
+            fprintf(stderr,
+                    "[FLTKContextManager::createOffscreenContext #%d]"
+                    " %ux%u  win_=%p\n",
+                    ctx_count, width, height, (void*)win_);
+            fflush(stderr);
+        }
         if (!ensureWindow()) return nullptr;
         return new FLTKOffscreenCtx{width, height};
     }
 
     virtual SbBool makeContextCurrent(void* /*context*/) override {
+        static const bool diag = (getenv("OBOL_GL_DIAG") != nullptr);
+        static int mcc_count = 0;
+        ++mcc_count;
+        const bool verbose = diag || (mcc_count <= 5);
+
         if (!ensureWindow()) return FALSE;
+
+        if (verbose) {
+            const bool is_own = (win_ == own_win_);
+            fprintf(stderr,
+                    "[FLTKContextManager::makeContextCurrent #%d]"
+                    " win_=%p (%s) context=%p shown=%d\n",
+                    mcc_count, (void*)win_,
+                    is_own ? "own/fallback" : "external",
+                    (void*)win_->context(), (int)win_->shown());
+            fflush(stderr);
+        }
+
         win_->make_current();
         /* Verify the context is actually current after make_current().
          * On some display servers (including Xvfb used in CI) the external
@@ -284,11 +329,17 @@ public:
          * calls glGetString(GL_VERSION) on a NULL context and then passes
          * the result to sscanf(). */
         if (!glGetString(GL_VERSION) && win_ != own_win_) {
+            fprintf(stderr,
+                    "[FLTKContextManager::makeContextCurrent #%d]"
+                    " external window context unavailable after make_current(),"
+                    " falling back to hidden window.\n",
+                    mcc_count);
+            fflush(stderr);
             /* External window failed.  Clear win_ so ensureWindow() will
              * create the hidden 1×1 fallback window on the next call. */
             win_ = nullptr;
             if (!ensureWindow()) {
-                reportGL("FLTKContextManager::makeContextCurrent");
+                reportGL("FLTKContextManager::makeContextCurrent (fallback failed)");
                 return FALSE;
             }
             /* ensureWindow() has already called make_current() on own_win_;
@@ -350,19 +401,45 @@ private:
      * Otherwise, fall back to creating a hidden 1×1 FLTKGLContextWindow
      * (original behaviour). */
     bool ensureWindow() {
-        if (win_) return true;
+        static const bool diag = (getenv("OBOL_GL_DIAG") != nullptr);
+        if (win_) {
+            if (diag) {
+                const bool is_own = (win_ == own_win_);
+                fprintf(stderr,
+                        "[FLTKContextManager::ensureWindow] win_=%p (%s)"
+                        " already set, skipping window creation.\n",
+                        (void*)win_, is_own ? "own/fallback" : "external");
+                fflush(stderr);
+            }
+            return true;
+        }
 
         /* Fallback: create a hidden 1×1 context window. */
+        fprintf(stderr,
+                "[FLTKContextManager::ensureWindow] no window set;"
+                " creating fallback hidden 1x1 FLTKGLContextWindow.\n");
+        fflush(stderr);
+
         own_win_ = new FLTKGLContextWindow();
         win_     = own_win_;
         /* Position the 1×1 window off-screen.  show() creates the native
          * window handle and the platform GL context without making the
          * window visible to the user. */
         own_win_->position(-100, -100);
+
+        fprintf(stderr,
+                "[FLTKContextManager::ensureWindow] calling own_win_->show()"
+                " on %p...\n", (void*)own_win_);
+        fflush(stderr);
         own_win_->show();
+
         /* Flush the FLTK event queue so the native GL context is fully
          * initialised before the first make_current() call. */
+        fprintf(stderr,
+                "[FLTKContextManager::ensureWindow] calling Fl::check()...\n");
+        fflush(stderr);
         Fl::check();
+
 #if !defined(_WIN32) && !defined(__APPLE__)
         /* On X11/GLX, synchronise with the X server before calling
          * make_current().  Fl::check() processes FLTK events but does NOT
@@ -375,11 +452,20 @@ private:
          * This mirrors the pattern used by headless_utils.h which calls
          * XMapWindow() followed by XSync(dpy, False) before glXCreateContext
          * – the combination that reliably initialises GL on Xvfb/Mesa. */
-        if (fl_display)
+        if (fl_display) {
+            fprintf(stderr,
+                    "[FLTKContextManager::ensureWindow] calling"
+                    " XSync(fl_display=%p, False)...\n", (void*)fl_display);
+            fflush(stderr);
             XSync(fl_display, False);
+        }
 #endif
         /* Activate the context once to confirm it is valid and to
          * trigger any deferred GL initialisation inside FLTK. */
+        fprintf(stderr,
+                "[FLTKContextManager::ensureWindow] calling own_win_->make_current()"
+                " on %p...\n", (void*)own_win_);
+        fflush(stderr);
         own_win_->make_current();
         /* Confirm the fallback hidden-window context is actually active. */
         reportGL("FLTKContextManager::ensureWindow (fallback hidden window)");
