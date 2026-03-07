@@ -359,6 +359,11 @@ public:
          * visible panel widget, just as cube.cxx uses the context from
          * its Fl_Gl_Window instances. */
         fltk_context_manager_singleton().setExternalWindow(this);
+        fprintf(stderr,
+                "[CoinPanel::CoinPanel] created %p label=\"%s\" %dx%d"
+                " mode=FL_RGB8|FL_DEPTH|FL_DOUBLE\n",
+                (void*)this, label_text.c_str(), W, H);
+        fflush(stderr);
 #else
         box(FL_FLAT_BOX);
         color(FL_BLACK);
@@ -2507,17 +2512,30 @@ int main(int argc, char** argv)
 {
     /* Initialise Obol using the same context manager pattern as the tests */
     initCoinHeadless();
+    fprintf(stderr, "[obol_viewer main] initCoinHeadless() complete.\n");
+    fflush(stderr);
 
     Fl::scheme("gtk+");
     /* Request a double-buffered RGB visual.  Fall back to single-buffer if
      * the display does not support a double-buffered OpenGL visual so that
      * the viewer still opens and functions (rendering uses SoOffscreenRenderer,
      * not a FLTK GL window). */
-    if (!Fl::visual(FL_RGB | FL_DOUBLE))
+    if (!Fl::visual(FL_RGB | FL_DOUBLE)) {
+        fprintf(stderr,
+                "[obol_viewer main] Fl::visual(FL_RGB|FL_DOUBLE) failed;"
+                " falling back to FL_RGB.\n");
+        fflush(stderr);
         Fl::visual(FL_RGB);
+    } else {
+        fprintf(stderr,
+                "[obol_viewer main] Fl::visual(FL_RGB|FL_DOUBLE) succeeded.\n");
+        fflush(stderr);
+    }
 
     ObolViewerWindow* win = new ObolViewerWindow(1100, 700);
+    fprintf(stderr, "[obol_viewer main] calling win->show()...\n"); fflush(stderr);
     win->show(argc, argv);
+    fprintf(stderr, "[obol_viewer main] win->show() returned.\n"); fflush(stderr);
 
 #ifdef OBOL_VIEWER_FLTK_GL
     /* Explicitly show the Fl_Gl_Window subwidgets after the parent, mirroring
@@ -2552,7 +2570,11 @@ int main(int argc, char** argv)
      * Without wait_for_expose(), make_current() may be called before the
      * OS has mapped the GL window, causing glGetString(GL_VERSION) to
      * return NULL and the first render to fail silently. */
+    fprintf(stderr, "[obol_viewer main] calling win->wait_for_expose()...\n");
+    fflush(stderr);
     win->wait_for_expose();
+    fprintf(stderr, "[obol_viewer main] win->wait_for_expose() returned.\n");
+    fflush(stderr);
 
 #ifdef OBOL_VIEWER_FLTK_GL
     /* Diagnostic checkpoint 2: after full expose.

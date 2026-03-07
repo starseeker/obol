@@ -78,6 +78,67 @@ public:
 #else
 #include <FL/Fl_Gl_Window.H>
 #include <FL/gl.h>
+#include <cstdio>
+#include <cstdlib>
+
+/* -----------------------------------------------------------------------
+ * GL diagnostic helper for the cube demo.
+ *
+ * cube_report_gl(tag, win) prints the GL context state of the given
+ * Fl_Gl_Window to stderr.  When win is non-null it also prints the
+ * window's context pointer, shown() and valid() flags, and pixel size.
+ *
+ * Printing policy (mirrors fltk_context_manager.h::reportGL):
+ *   – Always prints for the first kAlways invocations (across all
+ *     call sites) so that lifecycle problems appear unconditionally.
+ *   – Always prints when glGetString(GL_VERSION) returns NULL.
+ *   – Prints all subsequent calls when OBOL_GL_DIAG=1 is set.
+ *
+ * A GL context MUST be current when this function is called; call it
+ * only from inside draw() or after an explicit make_current().
+ * ----------------------------------------------------------------------- */
+static bool cube_report_gl(const char* tag, Fl_Gl_Window* win = nullptr) {
+  static const bool diag = (getenv("OBOL_GL_DIAG") != nullptr);
+  static int n = 0;
+  ++n;
+  static const int kAlways = 8;
+  const GLubyte* ver = glGetString(GL_VERSION);
+  const bool always  = (n <= kAlways) || !ver;
+  if (!diag && !always) return ver != nullptr;
+
+  if (win) {
+    fprintf(stderr,
+            "[cube GL] %s:\n"
+            "          window=%p context=%p shown=%d valid=%d"
+            " w=%d h=%d pixel_w=%d pixel_h=%d\n",
+            tag,
+            (void*)win, (void*)win->context(),
+            (int)win->shown(), (int)win->valid(),
+            win->w(), win->h(), win->pixel_w(), win->pixel_h());
+  } else {
+    fprintf(stderr, "[cube GL] %s:\n", tag);
+  }
+  if (ver) {
+    const GLubyte* rend = glGetString(GL_RENDERER);
+    const GLubyte* vend = glGetString(GL_VENDOR);
+    const GLubyte* glsl = glGetString(GL_SHADING_LANGUAGE_VERSION);
+    fprintf(stderr,
+            "          GL_VERSION                  = \"%s\"\n"
+            "          GL_RENDERER                 = \"%s\"\n"
+            "          GL_VENDOR                   = \"%s\"\n"
+            "          GL_SHADING_LANGUAGE_VERSION = \"%s\"\n",
+            (const char*)ver,
+            rend ? (const char*)rend : "(null)",
+            vend ? (const char*)vend : "(null)",
+            glsl ? (const char*)glsl : "(null)");
+  } else {
+    fprintf(stderr,
+            "          glGetString(GL_VERSION) = NULL"
+            " (no current GL context)\n");
+  }
+  fflush(stderr);
+  return ver != nullptr;
+}
 
 class cube_box : public Fl_Gl_Window {
   void draw() FL_OVERRIDE;
@@ -130,8 +191,33 @@ void drawcube(int wire) {
 }
 
 void cube_box::draw() {
+  static const bool diag = (getenv("OBOL_GL_DIAG") != nullptr);
+  static int dc = 0;
+  ++dc;
+  const bool verbose = diag || (dc <= 5);
+
+  if (verbose) {
+    fprintf(stderr,
+            "[cube_box::draw #%d] entry: context=%p shown=%d valid=%d"
+            " w=%d h=%d pixel_w=%d pixel_h=%d wire=%d\n",
+            dc, (void*)context(), (int)shown(), (int)valid(),
+            w(), h(), pixel_w(), pixel_h(), wire);
+    fflush(stderr);
+    cube_report_gl("cube_box::draw (GL context should be current)", this);
+  }
+
   lasttime = lasttime + speed;
   if (!valid()) {
+    if (verbose) {
+      fprintf(stderr,
+              "[cube_box::draw #%d] !valid(): initializing GL state\n"
+              "          glViewport(0, 0, %d, %d)\n"
+              "          glFrustum(-1, 1, -1, 1, 2, 10000)\n"
+              "          glTranslatef(0, 0, -10)\n"
+              "          glClearColor(0.4, 0.4, 0.4, 0)\n",
+              dc, pixel_w(), pixel_h());
+      fflush(stderr);
+    }
     glLoadIdentity();
     glViewport(0,0,pixel_w(),pixel_h());
     glEnable(GL_DEPTH_TEST);
@@ -226,14 +312,22 @@ void exit_cb(Fl_Widget *w = NULL, void *v = NULL) {
 #if HAVE_GL
 
 void timer_cb(void *data) {
+  static const bool diag = (getenv("OBOL_GL_DIAG") != nullptr);
   static Fl_Timestamp last = Fl::now();
   static Fl_Timestamp now;
   count++;
   if (count == 0) {
     start = Fl::now();
     last  = start;
+    fprintf(stderr, "[cube timer_cb] first real tick (count=0): timer started.\n");
+    fflush(stderr);
   } else if (count > 0) {
     now = Fl::now();
+    if (diag || count <= 3) {
+      fprintf(stderr, "[cube timer_cb] count=%d  lt_cube valid=%d  rt_cube valid=%d\n",
+              count, (int)lt_cube->valid(), (int)rt_cube->valid());
+      fflush(stderr);
+    }
 #if (DEBUG_TIMER)
     double delta = Fl::seconds_since(last);
     if ((delta < d_min || delta > d_max) && count > 1) {
@@ -382,9 +476,18 @@ void makeform(const char *name) {
 }
 
 int main(int argc, char **argv) {
+  fprintf(stderr, "[cube main] starting, argc=%d\n", argc);
+  fflush(stderr);
   Fl::use_high_res_GL(1);
+  fprintf(stderr, "[cube main] Fl::use_high_res_GL(1) called\n");
+  fflush(stderr);
   Fl::set_color(FL_FREE_COLOR, 255, 255, 0, 75);
   makeform(argv[0]);
+  fprintf(stderr,
+          "[cube main] makeform() done:"
+          " lt_cube=%p rt_cube=%p\n",
+          (void*)lt_cube, (void*)rt_cube);
+  fflush(stderr);
 
   speed->bounds(6, 0);
   speed->value(lt_cube->speed = rt_cube->speed = 2.0);
@@ -400,9 +503,26 @@ int main(int argc, char **argv) {
   wire->callback(wire_cb);
 
   form->label("Cube Demo");
+  fprintf(stderr, "[cube main] calling form->show()...\n"); fflush(stderr);
   form->show(argc,argv);
+  fprintf(stderr,
+          "[cube main] form->show() returned."
+          "  Calling lt_cube->show()...\n");
+  fflush(stderr);
   lt_cube->show();
+  fprintf(stderr,
+          "[cube main] lt_cube->show() returned:"
+          " context=%p shown=%d w=%d h=%d\n",
+          (void*)lt_cube->context(), (int)lt_cube->shown(),
+          lt_cube->w(), lt_cube->h());
+  fflush(stderr);
   rt_cube->show();
+  fprintf(stderr,
+          "[cube main] rt_cube->show() returned:"
+          " context=%p shown=%d w=%d h=%d\n",
+          (void*)rt_cube->context(), (int)rt_cube->shown(),
+          rt_cube->w(), rt_cube->h());
+  fflush(stderr);
 
   lt_cube->wire  = wire->value();
   rt_cube->wire  = !wire->value();
@@ -428,7 +548,26 @@ int main(int argc, char **argv) {
 
   // with GL: use a timer for drawing and measure performance
 
+  fprintf(stderr, "[cube main] calling form->wait_for_expose()...\n");
+  fflush(stderr);
   form->wait_for_expose();
+  fprintf(stderr,
+          "[cube main] form->wait_for_expose() returned."
+          "  lt_cube: context=%p shown=%d valid=%d"
+          "  rt_cube: context=%p shown=%d valid=%d\n",
+          (void*)lt_cube->context(), (int)lt_cube->shown(), (int)lt_cube->valid(),
+          (void*)rt_cube->context(), (int)rt_cube->shown(), (int)rt_cube->valid());
+  fflush(stderr);
+
+  /* Probe GL state for each cube by activating their contexts. */
+  lt_cube->make_current();
+  cube_report_gl("cube main: after wait_for_expose (lt_cube make_current)", lt_cube);
+  rt_cube->make_current();
+  cube_report_gl("cube main: after wait_for_expose (rt_cube make_current)", rt_cube);
+
+  fprintf(stderr,
+          "[cube main] GL setup complete; starting Fl::add_timeout + Fl::run().\n");
+  fflush(stderr);
   Fl::add_timeout(0.1, timer_cb);      // start timer
   int ret = Fl::run();
   return ret;
