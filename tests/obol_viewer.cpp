@@ -413,6 +413,23 @@ public:
          * context happened to be current.  This also mirrors what draw() does
          * and ensures the context is warm before the offscreen render below. */
         make_current();
+#if !defined(_WIN32) && !defined(__APPLE__)
+        {
+            static int rr_count = 0;
+            static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
+            ++rr_count;
+            if (rr_count <= 3 || diag_env) {
+                fprintf(stderr,
+                        "[CoinPanel::refreshRender #%d] fl_xid(this)=0x%lx"
+                        " context=%p shown=%d valid=%d\n",
+                        rr_count,
+                        (unsigned long)fl_xid(this),
+                        (void*)context(),
+                        (int)shown(), (int)valid());
+                fflush(stderr);
+            }
+        }
+#endif
         reportGL("CoinPanel::refreshRender (before render)");
 #endif
         int pw = std::max(w(), 1);
@@ -538,6 +555,11 @@ public:
                         (int)shown(),
                         (int)valid(),
                         w(), h());
+#if !defined(_WIN32) && !defined(__APPLE__)
+                fprintf(stderr,
+                        "[CoinPanel::draw #%d] fl_xid(this)=0x%lx\n",
+                        draw_call_count, (unsigned long)fl_xid(this));
+#endif
                 fflush(stderr);
             }
         }
@@ -568,6 +590,17 @@ public:
                             " glGetString(GL_VERSION)=NULL"
                             " (GL context not current!)\n",
                             mc_count);
+#if !defined(_WIN32) && !defined(__APPLE__)
+                    {
+                        GLXContext glxctx = glXGetCurrentContext();
+                        fprintf(stderr,
+                                "[CoinPanel::draw #%d] glXGetCurrentContext()=%p"
+                                " fl_xid(this)=0x%lx\n",
+                                mc_count,
+                                (void*)glxctx,
+                                (unsigned long)fl_xid(this));
+                    }
+#endif
                 }
                 fflush(stderr);
             }
@@ -2006,7 +2039,24 @@ public:
      * Call this in main() after win->show() and before win->wait_for_expose().
      */
     void primeGLContexts() {
+#if !defined(_WIN32) && !defined(__APPLE__)
+        fprintf(stderr,
+                "[primeGLContexts] before coin_panel_->show():"
+                " fl_xid(coin_panel_)=0x%lx shown=%d\n",
+                (unsigned long)fl_xid(coin_panel_),
+                (int)coin_panel_->shown());
+        fflush(stderr);
+#endif
         coin_panel_->show();
+#if !defined(_WIN32) && !defined(__APPLE__)
+        fprintf(stderr,
+                "[primeGLContexts] after coin_panel_->show():"
+                " fl_xid(coin_panel_)=0x%lx shown=%d context=%p\n",
+                (unsigned long)fl_xid(coin_panel_),
+                (int)coin_panel_->shown(),
+                (void*)coin_panel_->context());
+        fflush(stderr);
+#endif
         /* Flush the FLTK event queue so the X server has a chance to map
          * the GL subwindow and confirm its visual before make_current() is
          * called.  This mirrors the pattern used by FLTKContextManager's
@@ -2016,6 +2066,13 @@ public:
          * silently if the mapping has not yet been confirmed. */
         Fl::check();
 #if !defined(_WIN32) && !defined(__APPLE__)
+        fprintf(stderr,
+                "[primeGLContexts] after Fl::check():"
+                " fl_xid(coin_panel_)=0x%lx context=%p valid=%d\n",
+                (unsigned long)fl_xid(coin_panel_),
+                (void*)coin_panel_->context(),
+                (int)coin_panel_->valid());
+        fflush(stderr);
         /* On X11/GLX, synchronise with the X server so that the window
          * mapping issued by show() is fully processed before make_current()
          * calls glXMakeCurrent().  Fl::check() processes FLTK events but
@@ -2030,6 +2087,13 @@ public:
          * Xvfb/Mesa. */
         if (fl_display)
             XSync(fl_display, False);
+        fprintf(stderr,
+                "[primeGLContexts] after XSync():"
+                " fl_xid(coin_panel_)=0x%lx context=%p valid=%d\n",
+                (unsigned long)fl_xid(coin_panel_),
+                (void*)coin_panel_->context(),
+                (int)coin_panel_->valid());
+        fflush(stderr);
 #endif
         /* Report state before attempting make_current() so that problems
          * with the X11 window mapping (shown==false) are visible. */
@@ -2046,6 +2110,18 @@ public:
          * if it is still NULL wait_for_expose() (below) must finish the
          * initialisation. */
         coin_panel_->make_current();
+#if !defined(_WIN32) && !defined(__APPLE__)
+        {
+            GLXContext  glxctx  = glXGetCurrentContext();
+            GLXDrawable glxdraw = glXGetCurrentDrawable();
+            fprintf(stderr,
+                    "[primeGLContexts] after make_current():"
+                    " glXGetCurrentContext()=%p"
+                    " glXGetCurrentDrawable()=0x%lx\n",
+                    (void*)glxctx, (unsigned long)glxdraw);
+            fflush(stderr);
+        }
+#endif
         reportGL("ObolViewerWindow::primeGLContexts (after coin_panel_->show())");
     }
 
@@ -2065,6 +2141,21 @@ public:
      */
     bool probeGLContext(const char* where) {
         coin_panel_->make_current();
+#if !defined(_WIN32) && !defined(__APPLE__)
+        {
+            GLXContext  glxctx  = glXGetCurrentContext();
+            GLXDrawable glxdraw = glXGetCurrentDrawable();
+            fprintf(stderr,
+                    "[probeGLContext] %s\n"
+                    "                fl_xid(coin_panel_)=0x%lx"
+                    " glXGetCurrentContext()=%p"
+                    " glXGetCurrentDrawable()=0x%lx\n",
+                    where,
+                    (unsigned long)fl_xid(coin_panel_),
+                    (void*)glxctx, (unsigned long)glxdraw);
+            fflush(stderr);
+        }
+#endif
         return reportGL(where);
     }
 #endif /* OBOL_VIEWER_FLTK_GL */
