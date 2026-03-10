@@ -448,13 +448,16 @@ void Fl_Graphics_Driver::draw_fixed(Fl_RGB_Image *rgb,int XP, int YP, int WP, in
    *
    * Fl_OpenGL_Graphics_Driver does NOT override draw_fixed(Fl_RGB_Image*),
    * so calling Fl_RGB_Image::draw() inside Fl_Gl_Window::draw_begin()/
-   * draw_end() silently does nothing.  This is the root cause of the black
-   * CoinPanel window: the rendered frame is stored in display_buf and
-   * correctly converted to an Fl_RGB_Image, but the draw call is a no-op.
+   * draw_end() silently does nothing.
    *
-   * The "[FLTK draw_fixed(RGB) NO-OP]" log line below – paired with the
-   * "[CoinPanel::draw] post-fltk_img->draw() UNCHANGED" line in obol_viewer
-   * – confirms this code path is being taken. */
+   * CoinPanel::draw() in obol_viewer.cpp works around this by uploading
+   * display_buf directly as a GL texture and drawing a full-window textured
+   * quad instead of relying on Fl_RGB_Image::draw().  This function is
+   * therefore NOT called from the normal CoinPanel rendering path; it would
+   * only be reached if Fl_RGB_Image::draw() were called in a GL context
+   * from some other code path.
+   *
+   * The "[FLTK draw_fixed(RGB) NO-OP]" log line below confirms this path. */
   static const bool obol_diag = (getenv("OBOL_GL_DIAG") != nullptr);
   static int noop_count = 0;
   ++noop_count;
