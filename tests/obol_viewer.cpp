@@ -432,6 +432,41 @@ public:
 #endif
         make_current();
         const GLubyte* ver = glGetString(GL_VERSION);
+#ifdef OBOL_VIEWER_FLTK_GL
+        /* AMD/Mesa can produce a "partially-initialised" context: the first
+         * glXMakeCurrent call succeeds (context() becomes non-null) but
+         * glGetString(GL_VERSION) returns NULL because the driver's rendering
+         * pipeline was never fully wired up.  This has been observed on
+         * AMD Radeon Pro hardware with Mesa 23.x in dual-GL builds where an
+         * OSMesa panel is also present in the window.
+         *
+         * Recovery: destroy the broken context with context(nullptr,1), give
+         * FLTK a chance to process any outstanding expose events with
+         * Fl::check(), re-synchronise the X server, then create a fresh
+         * context with make_current().  A single retry is sufficient in
+         * practice. */
+        if (ver == nullptr && context()) {
+            fprintf(stderr,
+                    "[CoinPanel::initGLContext] broken context detected"
+                    " (context=%p but GL_VERSION=NULL);"
+                    " destroying and retrying.\n",
+                    (void*)context());
+            fflush(stderr);
+            context(nullptr, 1);   /* destroy the broken GLX context */
+            Fl::check();           /* process outstanding expose events */
+#if !defined(_WIN32) && !defined(__APPLE__)
+            if (fl_display) XSync(fl_display, False);
+#endif
+            make_current();
+            ver = glGetString(GL_VERSION);
+            fprintf(stderr,
+                    "[CoinPanel::initGLContext] after retry:"
+                    " context=%p GL_VERSION=%s\n",
+                    (void*)context(),
+                    ver ? (const char*)ver : "NULL");
+            fflush(stderr);
+        }
+#endif /* OBOL_VIEWER_FLTK_GL */
         if (ver != nullptr) {
             gl_context_primed_ = true;
             redraw();   /* queue the first real draw now that GL is ready */
@@ -525,6 +560,35 @@ public:
             uint8_t*       d = display_buf.data() + (size_t)row * pw * 3;
             for (int col = 0; col < pw; ++col) {
                 d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; s+=4; d+=3;
+            }
+        }
+        /* Pixel-content diagnostic: verify the rendered frame has non-zero
+         * data before handing it to draw().  Printed for the first few
+         * renders and whenever OBOL_GL_DIAG=1.
+         *
+         * If this shows all-zero pixels the render itself failed silently
+         * (bad GL context, FBO setup error, etc.).  If it shows non-zero
+         * pixels but the window stays black the problem is in the display
+         * path – draw_begin()/fltk_img->draw()/FBO state in draw(). */
+        {
+            static int pc_count = 0;
+            static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
+            ++pc_count;
+            if (diag_env || pc_count <= 3) {
+                size_t nonzero = 0;
+                uint8_t maxval = 0;
+                for (uint8_t v : display_buf) {
+                    if (v) { ++nonzero; if (v > maxval) maxval = v; }
+                }
+                const size_t total = display_buf.size();
+                fprintf(stderr,
+                        "[CoinPanel::refreshRender pixel-check #%d]"
+                        " display_buf: %zu bytes  non-zero=%zu (%.1f%%)"
+                        "  max=%u\n",
+                        pc_count, total, nonzero,
+                        total ? 100.0 * (double)nonzero / (double)total : 0.0,
+                        (unsigned)maxval);
+                fflush(stderr);
             }
         }
         delete fltk_img;
@@ -673,7 +737,56 @@ public:
                 fflush(stderr);
             }
         }
+        /* FBO-binding diagnostic: the window framebuffer (id=0) must be active
+         * when draw() runs.  A non-zero value means Obol's FBO render left a
+         * framebuffer object bound; all subsequent 2-D drawing would then go
+         * into the FBO instead of the visible window surface, producing a
+         * completely black window even when the rendered image is correct. */
+        {
+#ifndef GL_FRAMEBUFFER_BINDING
+#  define GL_FRAMEBUFFER_BINDING 0x8CA6
+#endif
+            static int fbo_count = 0;
+            static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
+            ++fbo_count;
+            if (diag_env || fbo_count <= 5) {
+                GLint fbo = -1;
+                glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
+                fprintf(stderr,
+                        "[CoinPanel::draw #%d] GL_FRAMEBUFFER_BINDING=%d"
+                        " (0=window framebuffer OK, non-zero=FBO still bound!)\n",
+                        fbo_count, fbo);
+                fflush(stderr);
+            }
+        }
         draw_begin();
+        /* Pre-draw pixel sample: read one pixel from the centre of the back
+         * buffer BEFORE calling fltk_img->draw() to establish a baseline.
+         * The post-draw sample (below) shows whether the call deposited any
+         * colour.  If pre==post the draw was a no-op.
+         *
+         * sx/sy are computed once and reused by the post-draw sample block.
+         * Note: glReadPixels uses window-pixel coordinates (x from left,
+         * y from BOTTOM of the window), independent of the ortho projection
+         * set up by draw_begin(). */
+        uint8_t pre_px[4] = {0,0,0,0};
+        const int sample_x = std::max(w(), 2) / 2;
+        const int sample_y = std::max(h(), 2) / 2;
+        {
+            static int pre_count = 0;
+            static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
+            ++pre_count;
+            if (diag_env || pre_count <= 5) {
+                glReadBuffer(GL_BACK);
+                glReadPixels(sample_x, sample_y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pre_px);
+                fprintf(stderr,
+                        "[CoinPanel::draw #%d] pre-fltk_img->draw()"
+                        " centre pixel RGBA=(%d,%d,%d,%d)\n",
+                        pre_count,
+                        pre_px[0], pre_px[1], pre_px[2], pre_px[3]);
+                fflush(stderr);
+            }
+        }
 #endif
         fl_rectf(x(),y(),w(),h(),FL_BLACK);
         if (fltk_img) {
@@ -682,6 +795,38 @@ public:
             fl_color(FL_WHITE); fl_font(FL_HELVETICA,14);
             fl_draw("(no scene)", x()+w()/2-40, y()+h()/2);
         }
+#ifdef OBOL_VIEWER_FLTK_GL
+        /* Post-draw pixel sample: compare centre pixel to pre-draw baseline.
+         * If the values are unchanged fltk_img->draw() was a no-op, which
+         * is the known behaviour of Fl_RGB_Image::draw() inside
+         * draw_begin()/draw_end() when the active graphics driver is
+         * Fl_OpenGL_Graphics_Driver: its draw_fixed(Fl_RGB_Image*) method
+         * is not implemented (empty base-class no-op).  The FLTK log lines
+         * "[FLTK draw_fixed(RGB)]" below confirm this path. */
+        {
+            static int post_count = 0;
+            static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
+            ++post_count;
+            if (diag_env || post_count <= 5) {
+                uint8_t post_px[4] = {0,0,0,0};
+                glReadBuffer(GL_BACK);
+                glReadPixels(sample_x, sample_y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, post_px);
+                const bool changed = (post_px[0] != pre_px[0] ||
+                                      post_px[1] != pre_px[1] ||
+                                      post_px[2] != pre_px[2] ||
+                                      post_px[3] != pre_px[3]);
+                fprintf(stderr,
+                        "[CoinPanel::draw #%d] post-fltk_img->draw()"
+                        " centre pixel RGBA=(%d,%d,%d,%d)  %s\n",
+                        post_count,
+                        post_px[0], post_px[1], post_px[2], post_px[3],
+                        changed ? "CHANGED (draw deposited pixels)"
+                                : "UNCHANGED (draw was a no-op:"
+                                  " Fl_RGB_Image::draw() broken in GL context)");
+                fflush(stderr);
+            }
+        }
+#endif /* OBOL_VIEWER_FLTK_GL – post-draw diagnostic */
         if (!label_text.empty()) {
             fl_color(fl_rgb_color(255,255,100)); fl_font(FL_HELVETICA_BOLD,13);
             fl_draw(label_text.c_str(), x()+6, y()+16);
