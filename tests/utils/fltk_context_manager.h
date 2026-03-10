@@ -212,6 +212,18 @@ public:
 struct FLTKOffscreenCtx {
     unsigned int width;
     unsigned int height;
+#if !defined(_WIN32) && !defined(__APPLE__)
+    /* Saved GLX context state so restorePreviousContext() can undo the
+     * glXMakeCurrent() call made by makeContextCurrent().  Without this
+     * save/restore, a temporary makeContextCurrent() (e.g. from
+     * SoGLContext_context_max_dimensions) leaves the FLTK window as the
+     * current GLX context and interferes with any OSMesa or other GLX
+     * context that was current before the call. */
+    GLXContext   prev_glx_ctx  = nullptr;
+    GLXDrawable  prev_glx_draw = 0;
+    GLXDisplay * prev_glx_dpy  = nullptr;
+    bool         saved         = false;
+#endif
 };
 
 /* =========================================================================
@@ -295,7 +307,7 @@ public:
         return new FLTKOffscreenCtx{width, height};
     }
 
-    virtual SbBool makeContextCurrent(void* /*context*/) override {
+    virtual SbBool makeContextCurrent(void* context) override {
         static const bool diag = (getenv("OBOL_GL_DIAG") != nullptr);
         static int mcc_count = 0;
         ++mcc_count;
@@ -320,6 +332,25 @@ public:
 #endif
             fflush(stderr);
         }
+
+#if !defined(_WIN32) && !defined(__APPLE__)
+        /* Save the current GLX context so restorePreviousContext() can
+         * reinstate it.  This is critical in dual-GL builds: when code
+         * running on behalf of an OSMesa render (e.g.
+         * SoGLContext_context_max_dimensions) temporarily activates the
+         * FLTK window context via this manager, the previous GLX state must
+         * be restored afterwards so that subsequent glXMakeCurrent calls
+         * for the system GL panel start from a known baseline.  Without this
+         * save/restore the CoinPanel context leaks into OSMesa operation
+         * windows and can prevent the system GL context from initialising
+         * correctly when coin_panel_->make_current() is called later. */
+        if (FLTKOffscreenCtx* fctx = static_cast<FLTKOffscreenCtx*>(context)) {
+            fctx->prev_glx_ctx  = glXGetCurrentContext();
+            fctx->prev_glx_draw = glXGetCurrentDrawable();
+            fctx->prev_glx_dpy  = fl_display;
+            fctx->saved         = true;
+        }
+#endif
 
         win_->make_current();
 #if !defined(_WIN32) && !defined(__APPLE__)
@@ -369,10 +400,38 @@ public:
         return glGetString(GL_VERSION) ? TRUE : FALSE;
     }
 
-    virtual void restorePreviousContext(void* /*context*/) override {
-        /* FLTK does not expose a context-stack API.  Offscreen FBO
-         * rendering does not require unbinding the context between calls,
-         * so this is intentionally a no-op. */
+    virtual void restorePreviousContext(void* context) override {
+#if !defined(_WIN32) && !defined(__APPLE__)
+        /* Restore the GLX context that was current before makeContextCurrent()
+         * was called.  This undoes the glXMakeCurrent() performed by
+         * win_->make_current() so that callers using a different GL backend
+         * (e.g. OSMesa) are not surprised by the FLTK window context being
+         * left active after a temporary context activation.
+         *
+         * In dual-GL builds this is the key fix: without this restore, a
+         * temporary activation of the FLTK context (from e.g.
+         * SoGLContext_context_max_dimensions) permanently switches the
+         * current GLX context to the CoinPanel window.  When the system GL
+         * panel then tries to initialise via coin_panel_->make_current(),
+         * some Mesa paths detect a "same context already current" condition
+         * and skip reinitialisation steps, leaving the context broken. */
+        FLTKOffscreenCtx* fctx = static_cast<FLTKOffscreenCtx*>(context);
+        if (fctx && fctx->saved && fctx->prev_glx_dpy) {
+            /* If the previous context was None (no context was current before
+             * our makeContextCurrent call), release the binding entirely.
+             * Otherwise restore the previous context + drawable. */
+            if (fctx->prev_glx_ctx) {
+                glXMakeCurrent(fctx->prev_glx_dpy,
+                               fctx->prev_glx_draw,
+                               fctx->prev_glx_ctx);
+            } else {
+                glXMakeCurrent(fctx->prev_glx_dpy, None, nullptr);
+            }
+            fctx->saved = false;
+        }
+#else
+        (void)context;
+#endif
     }
 
     virtual void destroyContext(void* context) override {
