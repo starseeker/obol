@@ -327,6 +327,13 @@ public:
     std::vector<uint8_t> pixel_buf;
     std::vector<uint8_t> display_buf;
     Fl_RGB_Image*        fltk_img = nullptr;
+#ifdef OBOL_VIEWER_FLTK_GL
+    /* Cached GL texture for display_buf.  Recreated only when the rendered
+     * frame changes (gl_tex_dirty_ set by refreshRender()).  Avoids uploading
+     * the full texture on every draw() call. */
+    GLuint               gl_tex_       = 0;
+    bool                 gl_tex_dirty_ = false;
+#endif
 
     std::function<void(CoinPanel*)> on_camera_changed;
     std::function<void()>           on_rendered;
@@ -370,7 +377,16 @@ public:
 #endif
     }
 
-    ~CoinPanel() { delete fltk_img; }
+    ~CoinPanel() {
+        delete fltk_img;
+#ifdef OBOL_VIEWER_FLTK_GL
+        if (gl_tex_) {
+            make_current();
+            glDeleteTextures(1, &gl_tex_);
+            gl_tex_ = 0;
+        }
+#endif
+    }
 
 #ifdef OBOL_VIEWER_FLTK_GL
     /**
@@ -500,6 +516,14 @@ public:
         state.reset();
         configure_renderer_fn = nullptr;
         delete fltk_img; fltk_img = nullptr;
+#ifdef OBOL_VIEWER_FLTK_GL
+        if (gl_tex_) {
+            make_current();
+            glDeleteTextures(1, &gl_tex_);
+            gl_tex_       = 0;
+            gl_tex_dirty_ = false;
+        }
+#endif
         redraw();
     }
 
@@ -593,6 +617,9 @@ public:
         }
         delete fltk_img;
         fltk_img = new Fl_RGB_Image(display_buf.data(), pw, ph, 3);
+#ifdef OBOL_VIEWER_FLTK_GL
+        gl_tex_dirty_ = true;   /* signal draw() to re-upload the GL texture */
+#endif
         redraw();
         if (on_rendered) on_rendered();
     }
@@ -639,14 +666,20 @@ public:
 
     void draw() override {
 #ifdef OBOL_VIEWER_FLTK_GL
-        /* In Fl_Gl_Window mode, use draw_begin()/draw_end() to enable FLTK
-         * drawing functions (fl_rectf, Fl_RGB_Image::draw, fl_draw, etc.)
-         * inside the GL window.  draw_begin() sets up a 2-D ortho projection
-         * matching the window size and activates the OpenGL surface device so
-         * that FLTK's drawing primitives emit correct GL commands.
-         * draw_end() restores the previous GL state (via glPopAttrib / matrix
-         * pops) so that the next FBO-based Obol render starts from a clean
-         * state.
+        /* In Fl_Gl_Window mode, use draw_begin()/draw_end() to set up a 2-D
+         * ortho projection (LOCAL coordinates: (0,0) = top-left of this GL
+         * window, (w(),h()) = bottom-right) and activate the OpenGL surface
+         * device so that FLTK text/shape calls (fl_draw, fl_rectf, etc.)
+         * work correctly.  draw_end() restores the previous GL state via
+         * glPopAttrib/matrix pops so that the next FBO-based Obol render
+         * starts from a clean state.
+         *
+         * NOTE: Fl_RGB_Image::draw() is a confirmed no-op in this context –
+         * Fl_OpenGL_Graphics_Driver::draw_fixed(Fl_RGB_Image*) is not
+         * implemented (falls through to the empty base class body in
+         * Fl_Graphics_Driver.cxx).  The rendered pixels are therefore
+         * uploaded directly as a GL texture and drawn as a full-window
+         * textured quad below.
          *
          * make_current() must be called before draw_begin() to ensure the GL
          * context is active.  FLTK's own Fl_Gl_Window::flush() calls
@@ -761,14 +794,13 @@ public:
         }
         draw_begin();
         /* Pre-draw pixel sample: read one pixel from the centre of the back
-         * buffer BEFORE calling fltk_img->draw() to establish a baseline.
-         * The post-draw sample (below) shows whether the call deposited any
-         * colour.  If pre==post the draw was a no-op.
+         * buffer BEFORE the GL texture draw to establish a baseline.
+         * The post-draw sample (below) shows whether the GL texture draw
+         * actually deposited any colour.  If pre==post the draw was a no-op.
          *
-         * sx/sy are computed once and reused by the post-draw sample block.
-         * Note: glReadPixels uses window-pixel coordinates (x from left,
-         * y from BOTTOM of the window), independent of the ortho projection
-         * set up by draw_begin(). */
+         * sample_x/sample_y are in FLTK coordinates (origin top-left).
+         * glReadPixels uses window-pixel coordinates (origin bottom-left), so
+         * the read position is (sample_x, h()-1-sample_y) in GL coords. */
         uint8_t pre_px[4] = {0,0,0,0};
         const int sample_x = std::max(w(), 2) / 2;
         const int sample_y = std::max(h(), 2) / 2;
@@ -778,55 +810,125 @@ public:
             ++pre_count;
             if (diag_env || pre_count <= 5) {
                 glReadBuffer(GL_BACK);
-                glReadPixels(sample_x, sample_y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pre_px);
+                glReadPixels(sample_x, h()-1-sample_y, 1, 1,
+                             GL_RGBA, GL_UNSIGNED_BYTE, pre_px);
                 fprintf(stderr,
-                        "[CoinPanel::draw #%d] pre-fltk_img->draw()"
+                        "[CoinPanel::draw #%d] pre-GL-draw"
                         " centre pixel RGBA=(%d,%d,%d,%d)\n",
                         pre_count,
                         pre_px[0], pre_px[1], pre_px[2], pre_px[3]);
                 fflush(stderr);
             }
         }
-#endif
-        fl_rectf(x(),y(),w(),h(),FL_BLACK);
+
+        /* draw_begin() sets up glOrtho(0, w(), h(), 0) so the LOCAL origin
+         * (0, 0) is the top-left of this GL window.  Do NOT use the FLTK
+         * parent-window coordinates x()/y() for GL drawing calls.
+         *
+         * Fl_RGB_Image::draw() is a confirmed no-op inside draw_begin()/
+         * draw_end(): Fl_OpenGL_Graphics_Driver::draw_fixed(Fl_RGB_Image*)
+         * is not implemented (it falls through to the empty base-class body
+         * in Fl_Graphics_Driver.cxx).  We therefore upload the rendered
+         * pixels directly as a GL texture and draw a full-window textured
+         * quad.
+         *
+         * The display_buf data is top-down (row 0 = image top).  After
+         * draw_begin() GL y=0 is also at the top (the ortho maps y=0 →
+         * screen top, y=h() → screen bottom), so texcoord (0,0) maps
+         * correctly to the image top-left without any flip. */
+        fl_rectf(0, 0, w(), h(), FL_BLACK);   /* clear background */
         if (fltk_img) {
-            fltk_img->draw(x(),y(),w(),h(),0,0);
+            const int pw = fltk_img->w();
+            const int ph = fltk_img->h();
+            /* Upload the texture only when display_buf was updated (dirty
+             * flag set by refreshRender()).  Re-using the cached texture
+             * object avoids the overhead of allocating and freeing GPU
+             * memory on every expose event; the texture is only re-uploaded
+             * when new render data is available. */
+            if (gl_tex_dirty_ || !gl_tex_) {
+                if (gl_tex_) glDeleteTextures(1, &gl_tex_);
+                glGenTextures(1, &gl_tex_);
+                glBindTexture(GL_TEXTURE_2D, gl_tex_);
+                glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, pw, ph, 0,
+                             GL_RGB, GL_UNSIGNED_BYTE, display_buf.data());
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                gl_tex_dirty_ = false;
+            } else {
+                glBindTexture(GL_TEXTURE_2D, gl_tex_);
+            }
+            /* GL_TEXTURE_ENV is part of GL_TEXTURE_BIT, saved/restored by
+             * draw_begin()/draw_end() via glPushAttrib/glPopAttrib.  Set it
+             * every frame so the correct mode is active regardless of what
+             * glPopAttrib restored from the previous frame. */
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+            glEnable(GL_TEXTURE_2D);
+            /* Vertex (0, 0) = top-left; vertex (pw, ph) = bottom-right.
+             * draw_begin() sets up a top-down ortho (y=0 at top, y=h() at
+             * bottom).  The display_buf is also top-down (row 0 = image top),
+             * so texcoord (s, t=0) maps to the image top row and (s, t=1)
+             * maps to the image bottom row — correct without any vertical
+             * flip. */
+            glBegin(GL_QUADS);
+                glTexCoord2f(0.0f, 0.0f); glVertex2i(0,  0 );
+                glTexCoord2f(1.0f, 0.0f); glVertex2i(pw, 0 );
+                glTexCoord2f(1.0f, 1.0f); glVertex2i(pw, ph);
+                glTexCoord2f(0.0f, 1.0f); glVertex2i(0,  ph);
+            glEnd();
+            glDisable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, 0);
+
+            /* Post-draw pixel sample: verify the GL texture draw deposited
+             * colour.  glReadPixels uses bottom-up coordinates, so sample_y
+             * from the top maps to h()-1-sample_y from the bottom. */
+            {
+                static int post_count = 0;
+                static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
+                ++post_count;
+                if (diag_env || post_count <= 5) {
+                    uint8_t post_px[4] = {0,0,0,0};
+                    glReadBuffer(GL_BACK);
+                    glReadPixels(sample_x, h()-1-sample_y, 1, 1,
+                                 GL_RGBA, GL_UNSIGNED_BYTE, post_px);
+                    const bool changed = (post_px[0] != pre_px[0] ||
+                                          post_px[1] != pre_px[1] ||
+                                          post_px[2] != pre_px[2] ||
+                                          post_px[3] != pre_px[3]);
+                    fprintf(stderr,
+                            "[CoinPanel::draw #%d] post-GL-texture-draw"
+                            " centre pixel RGBA=(%d,%d,%d,%d)  %s\n",
+                            post_count,
+                            post_px[0], post_px[1], post_px[2], post_px[3],
+                            changed ? "CHANGED (GL texture draw succeeded)"
+                                    : "UNCHANGED (GL texture draw was a no-op)");
+                    fflush(stderr);
+                }
+            }
         } else {
-            fl_color(FL_WHITE); fl_font(FL_HELVETICA,14);
+            fl_color(FL_WHITE); fl_font(FL_HELVETICA, 14);
+            fl_draw("(no scene)", w()/2-40, h()/2);
+        }
+        if (!label_text.empty()) {
+            fl_color(fl_rgb_color(255,255,100)); fl_font(FL_HELVETICA_BOLD,13);
+            fl_draw(label_text.c_str(), 6, 16);
+        }
+        if (!status_text.empty()) {
+            fl_color(fl_rgb_color(255,80,80)); fl_font(FL_HELVETICA,12);
+            fl_draw(status_text.c_str(), 6, h()-6);
+        }
+        draw_end();
+#else
+        /* Non-GL path (Fl_Box): use parent-window coordinates x()/y(). */
+        fl_rectf(x(), y(), w(), h(), FL_BLACK);
+        if (fltk_img) {
+            fltk_img->draw(x(), y(), w(), h(), 0, 0);
+        } else {
+            fl_color(FL_WHITE); fl_font(FL_HELVETICA, 14);
             fl_draw("(no scene)", x()+w()/2-40, y()+h()/2);
         }
-#ifdef OBOL_VIEWER_FLTK_GL
-        /* Post-draw pixel sample: compare centre pixel to pre-draw baseline.
-         * If the values are unchanged fltk_img->draw() was a no-op, which
-         * is the known behaviour of Fl_RGB_Image::draw() inside
-         * draw_begin()/draw_end() when the active graphics driver is
-         * Fl_OpenGL_Graphics_Driver: its draw_fixed(Fl_RGB_Image*) method
-         * is not implemented (empty base-class no-op).  The FLTK log lines
-         * "[FLTK draw_fixed(RGB)]" below confirm this path. */
-        {
-            static int post_count = 0;
-            static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
-            ++post_count;
-            if (diag_env || post_count <= 5) {
-                uint8_t post_px[4] = {0,0,0,0};
-                glReadBuffer(GL_BACK);
-                glReadPixels(sample_x, sample_y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, post_px);
-                const bool changed = (post_px[0] != pre_px[0] ||
-                                      post_px[1] != pre_px[1] ||
-                                      post_px[2] != pre_px[2] ||
-                                      post_px[3] != pre_px[3]);
-                fprintf(stderr,
-                        "[CoinPanel::draw #%d] post-fltk_img->draw()"
-                        " centre pixel RGBA=(%d,%d,%d,%d)  %s\n",
-                        post_count,
-                        post_px[0], post_px[1], post_px[2], post_px[3],
-                        changed ? "CHANGED (draw deposited pixels)"
-                                : "UNCHANGED (draw was a no-op:"
-                                  " Fl_RGB_Image::draw() broken in GL context)");
-                fflush(stderr);
-            }
-        }
-#endif /* OBOL_VIEWER_FLTK_GL – post-draw diagnostic */
         if (!label_text.empty()) {
             fl_color(fl_rgb_color(255,255,100)); fl_font(FL_HELVETICA_BOLD,13);
             fl_draw(label_text.c_str(), x()+6, y()+16);
@@ -835,8 +937,6 @@ public:
             fl_color(fl_rgb_color(255,80,80)); fl_font(FL_HELVETICA,12);
             fl_draw(status_text.c_str(), x()+6, y()+h()-6);
         }
-#ifdef OBOL_VIEWER_FLTK_GL
-        draw_end();
 #endif
     }
 
