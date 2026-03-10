@@ -372,6 +372,74 @@ public:
 
     ~CoinPanel() { delete fltk_img; }
 
+#ifdef OBOL_VIEWER_FLTK_GL
+    /**
+     * Suppress flushes until GL context is explicitly initialized by
+     * initGLContext() after wait_for_expose().
+     *
+     * On AMD/Mesa (real GPU), calling glXMakeCurrent on a window that is
+     * not yet fully exposed can create a "partially-initialized" context:
+     * glXMakeCurrent returns True and glXGetCurrentContext() is non-null, but
+     * glGetString(GL_VERSION) returns NULL because the Mesa driver's rendering
+     * pipeline was never fully set up.  Once created in this bad state the
+     * context cannot recover — subsequent glXMakeCurrent calls with the same
+     * context/drawable are treated as no-ops by Mesa's caching logic.
+     *
+     * FLTK's Fl_Gl_Window::flush() calls make_current() which creates and
+     * binds context_ on the very first flush.  If flush() is triggered
+     * prematurely (e.g. by Fl::check() inside primeGLContexts or by an Expose
+     * event processed during wait_for_expose) the context is created before the
+     * drawable is ready and ends up permanently broken.
+     *
+     * Returning early here when context_ is nil prevents any flush from
+     * creating the context prematurely.  The context is created exactly once,
+     * after wait_for_expose(), by the explicit make_current() call inside
+     * initGLContext().  This mirrors the pattern used by cube.cxx:
+     *
+     *   form->show(argc,argv);
+     *   lt_cube->show();          // shown but no flush yet
+     *   form->wait_for_expose();  // context still nil (flush skipped)
+     *   lt_cube->make_current();  // context created HERE – works correctly
+     */
+    void flush() override {
+        if (!context()) return;   /* defer until initGLContext() primes it */
+        Fl_Gl_Window::flush();    /* context ready, perform normal GL flush */
+    }
+
+    /**
+     * Explicitly initialize the GL context after the window has been fully
+     * exposed.  Must be called from main() after wait_for_expose().
+     *
+     * On X11/GLX this calls XSync() to ensure the X server has processed the
+     * window mapping before glXMakeCurrent is called, then calls make_current()
+     * to create and bind the context.  Mirrors cube.cxx:
+     *
+     *   form->wait_for_expose();
+     *   lt_cube->make_current();   // ← this is what initGLContext() does
+     *
+     * Returns true if the context is successfully initialized (glGetString
+     * returns non-NULL); false if the context is still not ready.
+     */
+    bool initGLContext() {
+#if !defined(_WIN32) && !defined(__APPLE__)
+        /* On X11/GLX, synchronise with the X server after wait_for_expose()
+         * to ensure the window mapping is confirmed before glXMakeCurrent.
+         * This is the same pattern used in headless_utils.h (XMapWindow +
+         * XSync) and in the previous Fl::check()+XSync path, but executed
+         * at a safer point in time: after the parent window is fully exposed
+         * rather than before. */
+        if (fl_display) XSync(fl_display, False);
+#endif
+        make_current();
+        const GLubyte* ver = glGetString(GL_VERSION);
+        if (ver != nullptr) {
+            gl_context_primed_ = true;
+            redraw();   /* queue the first real draw now that GL is ready */
+        }
+        return (ver != nullptr);
+    }
+#endif /* OBOL_VIEWER_FLTK_GL */
+
     void loadScene(const char* name) {
         /* Look up scene in the unified test registry. */
         const ObolTest::TestEntry* entry =
@@ -769,6 +837,13 @@ private:
      * CoinOffscreenGLCanvas::tilesizeroof) on every subsequent user
      * interaction such as resize, camera drag, or scene reload. */
     bool gl_context_failed_;
+#ifdef OBOL_VIEWER_FLTK_GL
+    /* Set to true by initGLContext() once the GL context has been
+     * successfully created and verified after wait_for_expose().  Used by
+     * flush() to suppress premature flushes that would create the context
+     * before the drawable is fully exposed (which breaks it on AMD/Mesa). */
+    bool gl_context_primed_ = false;
+#endif
     void notifyCameraChanged() { if (on_camera_changed) on_camera_changed(this); }
 };
 
@@ -2021,22 +2096,36 @@ public:
 
 #ifdef OBOL_VIEWER_FLTK_GL
     /**
-     * Explicitly show and prime the Fl_Gl_Window subwindows.
+     * Explicitly show the Fl_Gl_Window subwindows.
      *
-     * FLTK Fl_Window children (subwindows) are NOT automatically shown when
-     * the parent window is shown – each subwindow needs its own show() call
-     * to allocate a native window handle (X11 XID / HWND / etc.).  Without
-     * a valid native handle, glXMakeCurrent() (called inside make_current())
-     * receives XID==0, which behaves like releasing the context, causing
-     * glGetString(GL_VERSION) to return NULL.
+     * This is the first half of the two-step GL context initialization, called
+     * BEFORE win->wait_for_expose().  Its only job is to ensure coin_panel_ has
+     * a valid native window handle (XID on X11 / HWND on Windows) so that
+     * wait_for_expose() and the subsequent primeGLAfterExpose() can work
+     * correctly.
+     *
+     * NOTE: unlike the previous implementation, this method intentionally does
+     * NOT call Fl::check(), XSync, or make_current().  Calling Fl::check()
+     * here triggers a premature draw/flush cycle that creates the GL context
+     * before the window is fully exposed.  On AMD/Mesa (real GPU), this
+     * premature bind produces a "partially-initialized" context: glXMakeCurrent
+     * returns True and glXGetCurrentContext() is non-null, but glGetString() is
+     * NULL because the driver's rendering pipeline was never fully set up.
+     * That bad context cannot be recovered – subsequent glXMakeCurrent calls
+     * on the same context/drawable are no-ops in Mesa's caching layer.
+     *
+     * Instead, CoinPanel::flush() now returns early when context() is nil,
+     * so no premature flush can create the context.  The context is created
+     * exactly once, after wait_for_expose(), by primeGLAfterExpose().
      *
      * This mirrors the pattern used by cube.cxx in the FLTK test suite:
      *   form->show(argc,argv);  // show parent
-     *   lt_cube->show();        // explicitly show each GL subwindow
+     *   lt_cube->show();        // explicitly show each GL subwindow (step 1)
      *   rt_cube->show();        // ...
      *   form->wait_for_expose();
+     *   lt_cube->make_current(); // create context AFTER expose (step 2)
      *
-     * Call this in main() after win->show() and before win->wait_for_expose().
+     * Call this in main() after win->show() and BEFORE win->wait_for_expose().
      */
     void primeGLContexts() {
 #if !defined(_WIN32) && !defined(__APPLE__)
@@ -2057,90 +2146,66 @@ public:
                 (void*)coin_panel_->context());
         fflush(stderr);
 #endif
-        /* Flush the FLTK event queue so the X server has a chance to map
-         * the GL subwindow and confirm its visual before make_current() is
-         * called.  This mirrors the pattern used by FLTKContextManager's
-         * own fallback hidden window (ensureWindow() calls Fl::check()
-         * after show()) and the cube.cxx FLTK example.  On some display
-         * servers – including Xvfb used in CI – glXMakeCurrent() fails
-         * silently if the mapping has not yet been confirmed. */
-        Fl::check();
-#if !defined(_WIN32) && !defined(__APPLE__)
+    }
+
+    /**
+     * Initialize the GL context after the window is fully exposed.
+     *
+     * This is the second half of the two-step GL context initialization, called
+     * AFTER win->wait_for_expose().  It delegates to CoinPanel::initGLContext()
+     * which calls XSync() (on X11) followed by make_current() to create and
+     * bind the GL context now that the drawable is guaranteed to be ready.
+     *
+     * This mirrors what cube.cxx does after form->wait_for_expose():
+     *
+     *   form->wait_for_expose();
+     *   lt_cube->make_current();   // context created here – GL works
+     *
+     * On Xvfb/Mesa (CI), XSync after wait_for_expose() is even safer than
+     * the previous XSync-after-Fl::check() pattern because the Expose event
+     * confirms the window has been mapped before we synchronise.
+     *
+     * Call this in main() AFTER win->wait_for_expose().
+     */
+    void primeGLAfterExpose() {
         fprintf(stderr,
-                "[primeGLContexts] after Fl::check():"
-                " fl_xid(coin_panel_)=0x%lx context=%p valid=%d\n",
-                (unsigned long)fl_xid(coin_panel_),
-                (void*)coin_panel_->context(),
-                (int)coin_panel_->valid());
+                "[primeGLAfterExpose] calling coin_panel_->initGLContext()...\n");
         fflush(stderr);
-        /* On X11/GLX, synchronise with the X server so that the window
-         * mapping issued by show() is fully processed before make_current()
-         * calls glXMakeCurrent().  Fl::check() processes FLTK events but
-         * does NOT call XSync, meaning the X server may still have pending
-         * XMapWindow commands queued.  Without this sync, Mesa's software
-         * renderer (Xvfb/CI) returns True from glXMakeCurrent but leaves
-         * glGetString(GL_VERSION) returning NULL because the drawable's
-         * back buffer has not been allocated yet.
-         *
-         * headless_utils.h uses the same XMapWindow → XSync pattern for
-         * its fallback hidden window, where it reliably initialises GL on
-         * Xvfb/Mesa. */
-        if (fl_display)
-            XSync(fl_display, False);
+        bool ok = coin_panel_->initGLContext();
         fprintf(stderr,
-                "[primeGLContexts] after XSync():"
-                " fl_xid(coin_panel_)=0x%lx context=%p valid=%d\n",
-                (unsigned long)fl_xid(coin_panel_),
-                (void*)coin_panel_->context(),
-                (int)coin_panel_->valid());
+                "[primeGLAfterExpose] initGLContext() %s.\n",
+                ok ? "succeeded – GL context ready"
+                   : "FAILED – GL context still not available");
         fflush(stderr);
-#endif
-        /* Report state before attempting make_current() so that problems
-         * with the X11 window mapping (shown==false) are visible. */
-        fprintf(stderr,
-                "[primeGLContexts] after show()+check()+sync():"
-                " coin_panel shown=%d context=%p\n",
-                (int)coin_panel_->shown(),
-                (void*)coin_panel_->context());
-        fflush(stderr);
-        /* Attempt to activate the GL context and report its state.  At
-         * this stage the native window handle has been allocated and the
-         * X server has confirmed the mapping; if the context is already
-         * valid here we know FLTK set it up during show()+check()+sync();
-         * if it is still NULL wait_for_expose() (below) must finish the
-         * initialisation. */
-        coin_panel_->make_current();
-#if !defined(_WIN32) && !defined(__APPLE__)
-        {
-            GLXContext  glxctx  = glXGetCurrentContext();
-            GLXDrawable glxdraw = glXGetCurrentDrawable();
-            fprintf(stderr,
-                    "[primeGLContexts] after make_current():"
-                    " glXGetCurrentContext()=%p"
-                    " glXGetCurrentDrawable()=0x%lx\n",
-                    (void*)glxctx, (unsigned long)glxdraw);
-            fflush(stderr);
-        }
-#endif
-        reportGL("ObolViewerWindow::primeGLContexts (after coin_panel_->show())");
     }
 
     /**
      * Probe and report the current GL context status.
      *
-     * Activates the CoinPanel's GL context via make_current() and calls
-     * glGetString(GL_VERSION) to determine whether the context is valid.
-     * Prints a diagnostic line to stderr when OBOL_GL_DIAG=1.
+     * Calls glGetString(GL_VERSION) to determine whether a GL context is
+     * current.  If a context has already been created (context() is non-null),
+     * re-activates it via make_current() first so the query reflects this
+     * panel's context rather than whatever happened to be current.
      *
-     * Returns true if the context is current and valid, false otherwise.
+     * When context() is nil the GL context has not been initialized yet (i.e.,
+     * primeGLAfterExpose() has not been called yet); no make_current() is
+     * attempted in that case to avoid prematurely creating a bad context.
+     *
+     * Prints a diagnostic line to stderr when OBOL_GL_DIAG=1.
+     * Returns true if a GL context is current and valid, false otherwise.
+     *
      * Use this at key checkpoints in main() to trace context lifecycle:
      *
-     *   win->probeGLContext("after primeGLContexts");
      *   win->wait_for_expose();
-     *   win->probeGLContext("after wait_for_expose");
+     *   win->primeGLAfterExpose();
+     *   win->probeGLContext("after primeGLAfterExpose");
      */
     bool probeGLContext(const char* where) {
-        coin_panel_->make_current();
+        if (coin_panel_->context()) {
+            /* Re-activate only if context was already created; this avoids
+             * the premature-creation problem described in primeGLContexts(). */
+            coin_panel_->make_current();
+        }
 #if !defined(_WIN32) && !defined(__APPLE__)
         {
             GLXContext  glxctx  = glXGetCurrentContext();
@@ -2149,10 +2214,12 @@ public:
                     "[probeGLContext] %s\n"
                     "                fl_xid(coin_panel_)=0x%lx"
                     " glXGetCurrentContext()=%p"
-                    " glXGetCurrentDrawable()=0x%lx\n",
+                    " glXGetCurrentDrawable()=0x%lx"
+                    " coin_panel_->context()=%p\n",
                     where,
                     (unsigned long)fl_xid(coin_panel_),
-                    (void*)glxctx, (unsigned long)glxdraw);
+                    (void*)glxctx, (unsigned long)glxdraw,
+                    (void*)coin_panel_->context());
             fflush(stderr);
         }
 #endif
@@ -2629,38 +2696,30 @@ int main(int argc, char** argv)
     fprintf(stderr, "[obol_viewer main] win->show() returned.\n"); fflush(stderr);
 
 #ifdef OBOL_VIEWER_FLTK_GL
-    /* Explicitly show the Fl_Gl_Window subwidgets after the parent, mirroring
-     * the cube.cxx FLTK example:
+    /* Step 1 (pre-expose): explicitly show the Fl_Gl_Window subwidgets.
      *
-     *   form->show(argc,argv);  // cube.cxx line 403
-     *   lt_cube->show();        // cube.cxx line 404 – show each GL subwindow
-     *   rt_cube->show();        // cube.cxx line 405
-     *   form->wait_for_expose(); // cube.cxx line 431
+     * Mirrors the cube.cxx FLTK example:
+     *   form->show(argc,argv);  // show parent  (win->show() above)
+     *   lt_cube->show();        // show each GL subwindow (primeGLContexts)
+     *   form->wait_for_expose();
+     *   lt_cube->make_current(); // create context AFTER expose (primeGLAfterExpose)
      *
-     * FLTK does not automatically show Fl_Window subchildren when the parent
-     * is shown.  Each Fl_Gl_Window child must be shown separately so that its
-     * native window handle (XID on X11, HWND on Windows) is allocated before
-     * make_current() is called.  Without this, make_current() passes XID==0
-     * to glXMakeCurrent() which releases rather than sets the context,
-     * causing glGetString(GL_VERSION) to return NULL 20+ times in the
-     * activateGLContext() fallback loop. */
+     * CoinPanel::flush() returns early when context() is nil, so no premature
+     * draw will create the GL context between here and primeGLAfterExpose(). */
     win->primeGLContexts();
-    /* Diagnostic checkpoint 1: immediately after show(), before expose.
-     * If OBOL_GL_DIAG=1 this reports whether the GL context is already live
-     * at this point (it may not be if the OS hasn't mapped the window yet). */
-    win->probeGLContext("main: after primeGLContexts, before wait_for_expose");
 #endif /* OBOL_VIEWER_FLTK_GL */
 
     /* Wait for the window (and its Fl_Gl_Window subwidgets, including
-     * CoinPanel) to be fully exposed before attempting the first render.
+     * CoinPanel) to be fully exposed before creating the GL context.
      * This mirrors the cube.cxx FLTK example pattern:
      *
-     *   form->wait_for_expose();   // cube.cxx line 431
-     *   Fl::add_timeout(...);      // start using GL
+     *   form->wait_for_expose();   // cube.cxx – wait for full expose
+     *   lt_cube->make_current();   // cube.cxx – create context AFTER expose
      *
-     * Without wait_for_expose(), make_current() may be called before the
-     * OS has mapped the GL window, causing glGetString(GL_VERSION) to
-     * return NULL and the first render to fail silently. */
+     * With CoinPanel::flush() suppressing premature flushes (context nil guard),
+     * the GL context is guaranteed to still be nil when wait_for_expose returns,
+     * so primeGLAfterExpose() below creates a fresh context on a fully-exposed
+     * drawable. */
     fprintf(stderr, "[obol_viewer main] calling win->wait_for_expose()...\n");
     fflush(stderr);
     win->wait_for_expose();
@@ -2668,11 +2727,20 @@ int main(int argc, char** argv)
     fflush(stderr);
 
 #ifdef OBOL_VIEWER_FLTK_GL
-    /* Diagnostic checkpoint 2: after full expose.
-     * The GL context must be valid here before the first loadScene() call.
-     * If OBOL_GL_DIAG=1 and this still prints NULL, the window system has
-     * not allocated a context even after expose – that is the root cause. */
-    win->probeGLContext("main: after wait_for_expose, before loadScene");
+    /* Step 2 (post-expose): XSync + explicit make_current to create the GL
+     * context now that the window is fully exposed.  This is the second half
+     * of the two-step initialization that mirrors cube.cxx:
+     *
+     *   form->wait_for_expose();   ← done above
+     *   lt_cube->make_current();   ← done by primeGLAfterExpose()
+     *
+     * On AMD/Mesa (real GPU), creating the context here (rather than during
+     * a premature Fl::check() call before expose) avoids the partial-
+     * initialization issue where glXMakeCurrent returns True but glGetString
+     * returns NULL.  On Xvfb/Mesa (CI), XSync after a confirmed Expose event
+     * is even safer than the previous pre-expose XSync pattern. */
+    win->primeGLAfterExpose();
+    win->probeGLContext("main: after primeGLAfterExpose");
 #endif /* OBOL_VIEWER_FLTK_GL */
 
     /* Load the first visual scene automatically */
