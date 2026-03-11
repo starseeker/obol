@@ -100,6 +100,12 @@
 #elif defined(__APPLE__)
 #  include <dlfcn.h>
 #  include <OpenGL/gl.h>
+/* CGL (Core OpenGL) provides the C-level context save/restore API needed
+ * by restorePreviousContext() to undo the makeCurrentContext call that
+ * make_current() performs on the NSOpenGLContext.  CGLGetCurrentContext()
+ * and CGLSetCurrentContext() are available on every macOS version that
+ * FLTK supports and do not require Objective-C code. */
+#  include <OpenGL/OpenGL.h>
 #else
 /* Linux / X11: glXGetProcAddress is always available via libGL. */
 #  include <GL/glx.h>
@@ -212,7 +218,25 @@ public:
 struct FLTKOffscreenCtx {
     unsigned int width;
     unsigned int height;
-#if !defined(_WIN32) && !defined(__APPLE__)
+    bool         saved = false;  /* true when prev_* fields hold a valid saved state */
+#if defined(_WIN32)
+    /* Saved WGL context state so restorePreviousContext() can undo the
+     * wglMakeCurrent() call made by win_->make_current() (which calls
+     * Fl_WinAPI_Gl_Window_Driver::set_gl_context → wglMakeCurrent).
+     * Without this save/restore, a temporary makeContextCurrent() (e.g.
+     * from SoGLContext_context_max_dimensions) leaves the FLTK context
+     * as the current WGL context, which can interfere with other GL
+     * backends (e.g. OSMesa) that were active before the call. */
+    HGLRC        prev_wgl_ctx  = nullptr;
+    HDC          prev_wgl_dc   = nullptr;
+#elif defined(__APPLE__)
+    /* Saved CGL context handle so restorePreviousContext() can undo the
+     * NSOpenGLContext::makeCurrentContext call made by make_current().
+     * CGLGetCurrentContext / CGLSetCurrentContext are the C-level API
+     * that underpins NSOpenGLContext on all macOS versions FLTK supports,
+     * and can be used from C++ without Objective-C syntax. */
+    CGLContextObj prev_cgl_ctx = nullptr;
+#else
     /* Saved GLX context state so restorePreviousContext() can undo the
      * glXMakeCurrent() call made by makeContextCurrent().  Without this
      * save/restore, a temporary makeContextCurrent() (e.g. from
@@ -222,7 +246,6 @@ struct FLTKOffscreenCtx {
     GLXContext   prev_glx_ctx  = nullptr;
     GLXDrawable  prev_glx_draw = 0;
     Display *    prev_glx_dpy  = nullptr;
-    bool         saved         = false;
 #endif
 };
 
@@ -333,7 +356,22 @@ public:
             fflush(stderr);
         }
 
-#if !defined(_WIN32) && !defined(__APPLE__)
+#if defined(_WIN32)
+        /* Save the current WGL context so restorePreviousContext() can
+         * reinstate it.  Same rationale as the GLX path below. */
+        if (FLTKOffscreenCtx* fctx = static_cast<FLTKOffscreenCtx*>(context)) {
+            fctx->prev_wgl_ctx = wglGetCurrentContext();
+            fctx->prev_wgl_dc  = wglGetCurrentDC();
+            fctx->saved        = true;
+        }
+#elif defined(__APPLE__)
+        /* Save the current CGL context so restorePreviousContext() can
+         * reinstate it.  Same rationale as the GLX path below. */
+        if (FLTKOffscreenCtx* fctx = static_cast<FLTKOffscreenCtx*>(context)) {
+            fctx->prev_cgl_ctx = CGLGetCurrentContext();
+            fctx->saved        = true;
+        }
+#else
         /* Save the current GLX context so restorePreviousContext() can
          * reinstate it.  This is critical in dual-GL builds: when code
          * running on behalf of an OSMesa render (e.g.
@@ -353,7 +391,16 @@ public:
 #endif
 
         win_->make_current();
-#if !defined(_WIN32) && !defined(__APPLE__)
+#if defined(_WIN32)
+        if (verbose) {
+            HGLRC wglctx = wglGetCurrentContext();
+            fprintf(stderr,
+                    "[FLTKContextManager::makeContextCurrent #%d]"
+                    " after make_current(): wglGetCurrentContext()=%p\n",
+                    mcc_count, (void*)wglctx);
+            fflush(stderr);
+        }
+#elif !defined(__APPLE__)
         if (verbose) {
             GLXContext  glxctx  = glXGetCurrentContext();
             GLXDrawable glxdraw = glXGetCurrentDrawable();
@@ -401,25 +448,35 @@ public:
     }
 
     virtual void restorePreviousContext(void* context) override {
-#if !defined(_WIN32) && !defined(__APPLE__)
-        /* Restore the GLX context that was current before makeContextCurrent()
-         * was called.  This undoes the glXMakeCurrent() performed by
-         * win_->make_current() so that callers using a different GL backend
-         * (e.g. OSMesa) are not surprised by the FLTK window context being
-         * left active after a temporary context activation.
+        /* Restore the platform GL context that was current before
+         * makeContextCurrent() was called.  This undoes the platform
+         * MakeCurrent call performed by win_->make_current() so that
+         * callers using a different GL backend (e.g. OSMesa) are not
+         * surprised by the FLTK window context being left active after
+         * a temporary context activation.
          *
-         * In dual-GL builds this is the key fix: without this restore, a
-         * temporary activation of the FLTK context (from e.g.
-         * SoGLContext_context_max_dimensions) permanently switches the
-         * current GLX context to the CoinPanel window.  When the system GL
-         * panel then tries to initialise via coin_panel_->make_current(),
-         * some Mesa paths detect a "same context already current" condition
-         * and skip reinitialisation steps, leaving the context broken. */
+         * FLTK does not expose a cross-platform "get/restore current
+         * context" API — Fl_Gl_Window only provides make_current() on
+         * a given window object, with no way to query what context is
+         * currently active or to make an arbitrary saved context current
+         * again.  We therefore fall through to the native platform API
+         * (WGL / CGL / GLX) for the save/restore operation. */
         FLTKOffscreenCtx* fctx = static_cast<FLTKOffscreenCtx*>(context);
-        if (fctx && fctx->saved && fctx->prev_glx_dpy) {
-            /* If the previous context was None (no context was current before
-             * our makeContextCurrent call), release the binding entirely.
-             * Otherwise restore the previous context + drawable. */
+        if (!fctx || !fctx->saved) return;
+#if defined(_WIN32)
+        /* Restore the WGL context.  wglMakeCurrent(nullptr, nullptr)
+         * releases any current context when prev_wgl_ctx is null. */
+        wglMakeCurrent(fctx->prev_wgl_dc, fctx->prev_wgl_ctx);
+#elif defined(__APPLE__)
+        /* CGLSetCurrentContext(nullptr) releases the current context when
+         * prev_cgl_ctx is null, which is the correct "no context was active
+         * before our call" behaviour. */
+        CGLSetCurrentContext(fctx->prev_cgl_ctx);
+#else
+        /* GLX: if the previous context was None (no context was current
+         * before our makeContextCurrent call), release the binding
+         * entirely.  Otherwise restore the previous context + drawable. */
+        if (fctx->prev_glx_dpy) {
             if (fctx->prev_glx_ctx) {
                 glXMakeCurrent(fctx->prev_glx_dpy,
                                fctx->prev_glx_draw,
@@ -427,11 +484,9 @@ public:
             } else {
                 glXMakeCurrent(fctx->prev_glx_dpy, None, nullptr);
             }
-            fctx->saved = false;
         }
-#else
-        (void)context;
 #endif
+        fctx->saved = false;
     }
 
     virtual void destroyContext(void* context) override {
