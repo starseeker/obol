@@ -221,7 +221,7 @@ struct FLTKOffscreenCtx {
      * context that was current before the call. */
     GLXContext   prev_glx_ctx  = nullptr;
     GLXDrawable  prev_glx_draw = 0;
-    GLXDisplay * prev_glx_dpy  = nullptr;
+    Display *    prev_glx_dpy  = nullptr;
     bool         saved         = false;
 #endif
 };
