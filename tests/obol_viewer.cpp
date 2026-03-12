@@ -11,7 +11,9 @@
  * the main (System GL) panel is selected at compile time via CMake:
  *
  *   OBOL_VIEWER_FLTK_GL (default ON)
- *     fltk_context_manager.h: FLTK Fl_Gl_Window provides the OpenGL context.
+ *     fltk_context_manager.h: FLTKContextManager provides the OpenGL context
+ *     via a small hidden 1×1 Fl_Gl_Window.  CoinPanel is a plain Fl_Box like
+ *     all other panels; rendered pixels are delivered via fltk_img->draw().
  *     This is portable across all platforms that FLTK supports (Linux/X11,
  *     Windows, macOS) without requiring Xvfb or a direct X11 connection.
  *
@@ -112,13 +114,12 @@
 #include "testlib/test_registry.h"
 
 /* ---- Context manager selection ---- */
-/* OBOL_VIEWER_FLTK_GL: FLTK-based cross-platform GL context (Fl_Gl_Window).  */
+/* OBOL_VIEWER_FLTK_GL: FLTKContextManager (fltk_context_manager.h) provides  */
+/* the GL context via a small hidden 1×1 Fl_Gl_Window.  CoinPanel remains a   */
+/* plain Fl_Box; no Fl_Gl_Window widget is used for the rendering surface.    */
 /* Default (no define):  system-GL / GLX context via headless_utils.h.        */
-/* The CI environment may need the GLX path if FLTK's OpenGL cannot obtain a  */
-/* context without a real display (set -DOBOL_VIEWER_USE_FLTK_GL=OFF for CI). */
 #ifdef OBOL_VIEWER_FLTK_GL
 #  include "fltk_context_manager.h"
-/* Fl_Gl_Window is already included by fltk_context_manager.h */
 #else
 #  include "headless_utils.h"
 #endif
@@ -157,15 +158,7 @@ static SoEmbreeContextManager s_embree_mgr;
 #include <FL/fl_draw.H>
 #include <FL/Fl_Tile.H>
 #include <FL/Fl_Check_Button.H>
-#ifdef OBOL_VIEWER_FLTK_GL
-/* Fl_Gl_Window is already included via fltk_context_manager.h */
-#  include <FL/gl.h>     /* gl_color(), gl_font(), gl_draw() for text overlays */
-/* FL/platform.H exposes fl_display (X11 Display*) used by XSync in
- * initGLContext() to synchronize the X server before make_current(). */
-#  if !defined(_WIN32) && !defined(__APPLE__)
-#    include <FL/platform.H>
-#  endif
-#endif
+
 
 #include <cstdio>
 #include <cstdlib>
@@ -307,31 +300,21 @@ static SoOffscreenRenderer* getRenderer(int w, int h) {
 /* =========================================================================
  * CoinPanel  –  FLTK widget that renders a Coin scene
  *
- * When compiled with OBOL_VIEWER_FLTK_GL (default), CoinPanel extends
- * Fl_Gl_Window so that FLTK creates a real GL context for it as part of
- * the normal window hierarchy – exactly the same way cube.cxx creates its
- * GL windows.  The panel's GL context is registered with FLTKContextManager
- * via setExternalWindow() in the constructor, replacing the old hidden 1×1
- * window approach that failed in some CI / headless environments.
+ * CoinPanel is a plain Fl_Box like all other render panels (OSMesa, NanoRT,
+ * Embree).  Off-screen rendering is performed by SoOffscreenRenderer using
+ * an FBO managed by Obol; the resulting RGB pixels are delivered to FLTK
+ * via fltk_img->draw() in the same way as every other panel.
  *
- * Rendering remains offscreen (FBO-based, managed by Obol); the visible
- * window surface is used to draw the rendered pixels via FLTK's draw_begin/
- * draw_end mechanism which allows standard FLTK drawing calls inside a GL
- * window.
+ * When compiled with OBOL_VIEWER_FLTK_GL, the OpenGL context is provided by
+ * FLTKContextManager which creates a small hidden 1×1 Fl_Gl_Window for the
+ * sole purpose of owning the GLX/WGL/CGL context.  CoinPanel itself has no
+ * GL dependency and interacts with the context manager only indirectly,
+ * through SoOffscreenRenderer.
  *
- * Without OBOL_VIEWER_FLTK_GL (headless/GLX path) the panel keeps its
- * original Fl_Box base class; the GL context is managed by headless_utils.h.
+ * Without OBOL_VIEWER_FLTK_GL (headless/GLX path) the panel uses
+ * headless_utils.h for GL context management.
  * ======================================================================= */
-#ifdef OBOL_VIEWER_FLTK_GL
-/* CoinPanel uses Fl_Gl_Window as its base so FLTK creates a proper GL
- * context that is part of the visible widget hierarchy.  This is the
- * "create a window the same way cube.cxx does" approach requested in the
- * issue: instead of a hidden off-screen window, the rendering panel itself
- * IS the GL window whose context Obol uses. */
-class CoinPanel : public Fl_Gl_Window {
-#else
 class CoinPanel : public Fl_Box {
-#endif
 public:
     std::unique_ptr<SceneState> state;
     std::string label_text;
@@ -340,154 +323,23 @@ public:
     std::vector<uint8_t> pixel_buf;
     std::vector<uint8_t> display_buf;
     Fl_RGB_Image*        fltk_img = nullptr;
-#ifdef OBOL_VIEWER_FLTK_GL
-    /* Cached GL texture for display_buf.  Recreated only when the rendered
-     * frame changes (gl_tex_dirty_ set by refreshRender()).  Avoids uploading
-     * the full texture on every draw() call. */
-    GLuint               gl_tex_       = 0;
-    bool                 gl_tex_dirty_ = false;
-#endif
 
     std::function<void(CoinPanel*)> on_camera_changed;
     std::function<void()>           on_rendered;
     std::function<void(SoOffscreenRenderer*)> configure_renderer_fn;
 
     explicit CoinPanel(int X, int Y, int W, int H, const char* lbl = "")
-        :
-#ifdef OBOL_VIEWER_FLTK_GL
-          Fl_Gl_Window(X, Y, W, H),
-#else
-          Fl_Box(X, Y, W, H, ""),
-#endif
+        : Fl_Box(X, Y, W, H, ""),
           label_text(lbl ? lbl : ""),
           gl_context_failed_(false)
     {
-#ifdef OBOL_VIEWER_FLTK_GL
-        /* Fl_Gl_Window::end() stops FLTK from treating subsequently-created
-         * widgets as children of this GL window.  CoinPanel is a pure
-         * rendering surface with no child widgets; calling end() here keeps
-         * the widget hierarchy clean and prevents accidental widget capture. */
-        end();
-        /* Double-buffered RGBA8 with depth – same as a typical GL widget.
-         * Double buffering ensures smooth display when FLTK swaps buffers
-         * after draw_begin()/draw_end() draws the rendered frame. */
-        mode(FL_RGB8 | FL_DEPTH | FL_DOUBLE);
-        /* Register this panel's window as the GL context source.
-         * FLTKContextManager will call make_current() on this window
-         * instead of creating a separate hidden 1×1 context window.
-         * This is the key change: Obol uses the context from the
-         * visible panel widget, just as cube.cxx uses the context from
-         * its Fl_Gl_Window instances. */
-        fltk_context_manager_singleton().setExternalWindow(this);
-#else
         box(FL_FLAT_BOX);
         color(FL_BLACK);
-#endif
     }
 
     ~CoinPanel() {
         delete fltk_img;
-#ifdef OBOL_VIEWER_FLTK_GL
-        if (gl_tex_) {
-            make_current();
-            glDeleteTextures(1, &gl_tex_);
-            gl_tex_ = 0;
-        }
-#endif
     }
-
-#ifdef OBOL_VIEWER_FLTK_GL
-    /**
-     * Suppress flushes until GL context is explicitly initialized by
-     * initGLContext() after wait_for_expose().
-     *
-     * On AMD/Mesa (real GPU), calling glXMakeCurrent on a window that is
-     * not yet fully exposed can create a "partially-initialized" context:
-     * glXMakeCurrent returns True and glXGetCurrentContext() is non-null, but
-     * glGetString(GL_VERSION) returns NULL because the Mesa driver's rendering
-     * pipeline was never fully set up.  Once created in this bad state the
-     * context cannot recover — subsequent glXMakeCurrent calls with the same
-     * context/drawable are treated as no-ops by Mesa's caching logic.
-     *
-     * FLTK's Fl_Gl_Window::flush() calls make_current() which creates and
-     * binds context_ on the very first flush.  If flush() is triggered
-     * prematurely (e.g. by Fl::check() inside primeGLContexts or by an Expose
-     * event processed during wait_for_expose) the context is created before the
-     * drawable is ready and ends up permanently broken.
-     *
-     * Returning early here when context_ is nil prevents any flush from
-     * creating the context prematurely.  The context is created exactly once,
-     * after wait_for_expose(), by the explicit make_current() call inside
-     * initGLContext().  This mirrors the pattern used by cube.cxx:
-     *
-     *   form->show(argc,argv);
-     *   lt_cube->show();          // shown but no flush yet
-     *   form->wait_for_expose();  // context still nil (flush skipped)
-     *   lt_cube->make_current();  // context created HERE – works correctly
-     */
-    void flush() override {
-        if (!context()) return;   /* defer until initGLContext() primes it */
-        Fl_Gl_Window::flush();    /* context ready, perform normal GL flush */
-    }
-
-    /**
-     * Explicitly initialize the GL context after the window has been fully
-     * exposed.  Must be called from main() after wait_for_expose().
-     *
-     * On X11/GLX this calls XSync() to ensure the X server has processed the
-     * window mapping before glXMakeCurrent is called, then calls make_current()
-     * to create and bind the context.  Mirrors cube.cxx:
-     *
-     *   form->wait_for_expose();
-     *   lt_cube->make_current();   // ← this is what initGLContext() does
-     *
-     * Returns true if the context is successfully initialized (glGetString
-     * returns non-NULL); false if the context is still not ready.
-     */
-    bool initGLContext() {
-#if !defined(_WIN32) && !defined(__APPLE__)
-        /* On X11/GLX, synchronise with the X server after wait_for_expose()
-         * to ensure the window mapping is confirmed before glXMakeCurrent.
-         * This is the same pattern used in headless_utils.h (XMapWindow +
-         * XSync) and in the previous Fl::check()+XSync path, but executed
-         * at a safer point in time: after the parent window is fully exposed
-         * rather than before. */
-        if (fl_display) XSync(fl_display, False);
-#endif
-        make_current();
-        const GLubyte* ver = glGetString(GL_VERSION);
-#ifdef OBOL_VIEWER_FLTK_GL
-        /* AMD/Mesa can produce a "partially-initialised" context: the first
-         * glXMakeCurrent call succeeds (context() becomes non-null) but
-         * glGetString(GL_VERSION) returns NULL because the driver's rendering
-         * pipeline was never fully wired up.  This has been observed on
-         * AMD Radeon Pro hardware with Mesa 23.x in dual-GL builds where an
-         * OSMesa panel is also present in the window.
-         *
-         * Recovery: destroy the broken context with context(nullptr,1), give
-         * FLTK a chance to process any outstanding expose events with
-         * Fl::check(), re-synchronise the X server, then create a fresh
-         * context with make_current().  A single retry is sufficient in
-         * practice. */
-        if (ver == nullptr && context()) {
-            /* Recovery: destroy the broken context, process expose events,
-             * re-synchronise with the X server, then retry make_current(). */
-            context(nullptr, 1);   /* destroy the broken GLX context */
-            Fl::check();           /* process outstanding expose events */
-#if !defined(_WIN32) && !defined(__APPLE__)
-            if (fl_display) XSync(fl_display, False);
-#endif
-            make_current();
-            ver = glGetString(GL_VERSION);
-        }
-#endif /* OBOL_VIEWER_FLTK_GL */
-        if (ver != nullptr) {
-            gl_context_primed_ = true;
-            redraw();   /* queue the first real draw now that GL is ready */
-        }
-        return (ver != nullptr);
-    }
-#endif /* OBOL_VIEWER_FLTK_GL */
 
     void loadScene(const char* name) {
         /* Look up scene in the unified test registry. */
@@ -514,14 +366,6 @@ public:
         state.reset();
         configure_renderer_fn = nullptr;
         delete fltk_img; fltk_img = nullptr;
-#ifdef OBOL_VIEWER_FLTK_GL
-        if (gl_tex_) {
-            make_current();
-            glDeleteTextures(1, &gl_tex_);
-            gl_tex_       = 0;
-            gl_tex_dirty_ = false;
-        }
-#endif
         redraw();
     }
 
@@ -532,13 +376,6 @@ public:
          * repeated failed GLX operations on every user interaction (resize,
          * camera drag, scene reload) after the initial context failure. */
         if (gl_context_failed_) { redraw(); return; }
-#ifdef OBOL_VIEWER_FLTK_GL
-        /* Activate the GL context before probing so that glGetString reflects
-         * the true state of *this* panel's context rather than whatever
-         * context happened to be current.  This also mirrors what draw() does
-         * and ensures the context is warm before the offscreen render below. */
-        make_current();
-#endif
         int pw = std::max(w(), 1);
         int ph = std::max(h(), 1);
         SoOffscreenRenderer* r = getRenderer(pw, ph);
@@ -568,9 +405,6 @@ public:
         }
         delete fltk_img;
         fltk_img = new Fl_RGB_Image(display_buf.data(), pw, ph, 3);
-#ifdef OBOL_VIEWER_FLTK_GL
-        gl_tex_dirty_ = true;   /* signal draw() to re-upload the GL texture */
-#endif
         redraw();
         if (on_rendered) on_rendered();
     }
@@ -616,119 +450,7 @@ public:
     /* ---- FLTK overrides ---- */
 
     void draw() override {
-#ifdef OBOL_VIEWER_FLTK_GL
-        /* In Fl_Gl_Window mode, use draw_begin()/draw_end() to set up a 2-D
-         * ortho projection (LOCAL coordinates: (0,0) = top-left of this GL
-         * window, (w(),h()) = bottom-right) and activate the OpenGL surface
-         * device so that FLTK text/shape calls (fl_draw, fl_rectf, etc.)
-         * work correctly.  draw_end() restores the previous GL state via
-         * glPopAttrib/matrix pops so that the next FBO-based Obol render
-         * starts from a clean state.
-         *
-         * NOTE: Fl_RGB_Image::draw() is a confirmed no-op in this context –
-         * Fl_OpenGL_Graphics_Driver::draw_fixed(Fl_RGB_Image*) is not
-         * implemented (falls through to the empty base class body in
-         * Fl_Graphics_Driver.cxx).  The rendered pixels are therefore
-         * uploaded directly as a GL texture and drawn as a full-window
-         * textured quad below.
-         *
-         * make_current() must be called before draw_begin() to ensure the GL
-         * context is active.  FLTK's own Fl_Gl_Window::flush() calls
-         * make_current() before draw(), but since we override draw() directly
-         * there may be call paths that reach draw() without flush() having run
-         * first (e.g., the initial expose while the subwindow is still being
-         * realized).
-         *
-         * Calling make_current() here also provides a second glXMakeCurrent
-         * call within the same flush() cycle.  On some older Mesa builds
-         * (observed on Rocky Linux), the first glXMakeCurrent called by
-         * flush()'s make_current() can partially bind the context – returning
-         * True and updating glXGetCurrentContext() – but leave glDrawBuffer
-         * (called between flush()'s make_current() and draw()) in a state that
-         * de-activates the rendering pipeline.  The second glXMakeCurrent
-         * call triggered here re-establishes the binding properly.
-         * Fl_X11_Gl_Window_Driver::set_gl_context() no longer skips this call
-         * based on cached state; Mesa's driver detects a redundant bind and
-         * returns True immediately when context and drawable are genuinely
-         * unchanged, so the extra call carries negligible overhead on
-         * correctly-functioning platforms. */
-        make_current();
-        draw_begin();
-
-        /* draw_begin() sets up glOrtho(0, w(), h(), 0) so the LOCAL origin
-         * (0, 0) is the top-left of this GL window.  Do NOT use the FLTK
-         * parent-window coordinates x()/y() for GL drawing calls.
-         *
-         * Fl_RGB_Image::draw() is a confirmed no-op inside draw_begin()/
-         * draw_end(): Fl_OpenGL_Graphics_Driver::draw_fixed(Fl_RGB_Image*)
-         * is not implemented (it falls through to the empty base-class body
-         * in Fl_Graphics_Driver.cxx).  We therefore upload the rendered
-         * pixels directly as a GL texture and draw a full-window textured
-         * quad.
-         *
-         * The display_buf data is top-down (row 0 = image top).  After
-         * draw_begin() GL y=0 is also at the top (the ortho maps y=0 →
-         * screen top, y=h() → screen bottom), so texcoord (0,0) maps
-         * correctly to the image top-left without any flip. */
-        fl_rectf(0, 0, w(), h(), FL_BLACK);   /* clear background */
-        if (fltk_img) {
-            const int pw = fltk_img->w();
-            const int ph = fltk_img->h();
-            /* Upload the texture only when display_buf was updated (dirty
-             * flag set by refreshRender()).  Re-using the cached texture
-             * object avoids the overhead of allocating and freeing GPU
-             * memory on every expose event; the texture is only re-uploaded
-             * when new render data is available. */
-            if (gl_tex_dirty_ || !gl_tex_) {
-                if (gl_tex_) glDeleteTextures(1, &gl_tex_);
-                glGenTextures(1, &gl_tex_);
-                glBindTexture(GL_TEXTURE_2D, gl_tex_);
-                glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, pw, ph, 0,
-                             GL_RGB, GL_UNSIGNED_BYTE, display_buf.data());
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-                gl_tex_dirty_ = false;
-            } else {
-                glBindTexture(GL_TEXTURE_2D, gl_tex_);
-            }
-            /* GL_TEXTURE_ENV is part of GL_TEXTURE_BIT, saved/restored by
-             * draw_begin()/draw_end() via glPushAttrib/glPopAttrib.  Set it
-             * every frame so the correct mode is active regardless of what
-             * glPopAttrib restored from the previous frame. */
-            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-            glEnable(GL_TEXTURE_2D);
-            /* Vertex (0, 0) = top-left; vertex (pw, ph) = bottom-right.
-             * draw_begin() sets up a top-down ortho (y=0 at top, y=h() at
-             * bottom).  The display_buf is also top-down (row 0 = image top),
-             * so texcoord (s, t=0) maps to the image top row and (s, t=1)
-             * maps to the image bottom row — correct without any vertical
-             * flip. */
-            glBegin(GL_QUADS);
-                glTexCoord2f(0.0f, 0.0f); glVertex2i(0,  0 );
-                glTexCoord2f(1.0f, 0.0f); glVertex2i(pw, 0 );
-                glTexCoord2f(1.0f, 1.0f); glVertex2i(pw, ph);
-                glTexCoord2f(0.0f, 1.0f); glVertex2i(0,  ph);
-            glEnd();
-            glDisable(GL_TEXTURE_2D);
-            glBindTexture(GL_TEXTURE_2D, 0);
-        } else {
-            fl_color(FL_WHITE); fl_font(FL_HELVETICA, 14);
-            fl_draw("(no scene)", w()/2-40, h()/2);
-        }
-        if (!label_text.empty()) {
-            fl_color(fl_rgb_color(255,255,100)); fl_font(FL_HELVETICA_BOLD,13);
-            fl_draw(label_text.c_str(), 6, 16);
-        }
-        if (!status_text.empty()) {
-            fl_color(fl_rgb_color(255,80,80)); fl_font(FL_HELVETICA,12);
-            fl_draw(status_text.c_str(), 6, h()-6);
-        }
-        draw_end();
-#else
-        /* Non-GL path (Fl_Box): use parent-window coordinates x()/y(). */
+        /* Fl_Box path: use parent-window coordinates x()/y(). */
         fl_rectf(x(), y(), w(), h(), FL_BLACK);
         if (fltk_img) {
             fltk_img->draw(x(), y(), w(), h(), 0, 0);
@@ -744,35 +466,16 @@ public:
             fl_color(fl_rgb_color(255,80,80)); fl_font(FL_HELVETICA,12);
             fl_draw(status_text.c_str(), x()+6, y()+h()-6);
         }
-#endif
     }
 
     int handle(int event) override {
-#ifdef OBOL_VIEWER_FLTK_GL
-        if (!state || !state->root) return Fl_Gl_Window::handle(event);
-#else
         if (!state || !state->root) return Fl_Box::handle(event);
-#endif
         int h_ = h();
         /* Compute widget-local event coordinates.
-         *
-         * CoinPanel is an Fl_Gl_Window (IS a window).  FLTK's Fl_Group::send()
-         * subtracts o->x()/o->y() before calling handle() on child windows
-         * (see Fl_Group.cxx), so Fl::event_x/y() are already LOCAL to this
-         * widget in FLTK_GL mode.  Subtracting x()/y() again would double-
-         * subtract the panel offset and produce negative coordinates for any
-         * click in the left portion of the panel, causing SoHandleEventAction
-         * pick rays to miss all scene geometry.
-         *
-         * In the non-GL Fl_Box mode the adjustment is NOT made by FLTK, so
-         * x()/y() must be subtracted to obtain local coordinates. */
-#ifdef OBOL_VIEWER_FLTK_GL
-        const int ev_x = Fl::event_x();
-        const int ev_y = Fl::event_y();
-#else
+         * CoinPanel is a plain Fl_Box; x()/y() must be subtracted from
+         * Fl::event_x/y() to obtain local widget coordinates. */
         const int ev_x = Fl::event_x() - x();
         const int ev_y = Fl::event_y() - y();
-#endif
         switch (event) {
         case FL_PUSH:
             take_focus();
@@ -882,19 +585,11 @@ public:
         case FL_FOCUS: case FL_UNFOCUS: return 1;
         default: break;
         }
-#ifdef OBOL_VIEWER_FLTK_GL
-        return Fl_Gl_Window::handle(event);
-#else
         return Fl_Box::handle(event);
-#endif
     }
 
     void resize(int X, int Y, int W, int H) override {
-#ifdef OBOL_VIEWER_FLTK_GL
-        Fl_Gl_Window::resize(X, Y, W, H);
-#else
         Fl_Box::resize(X, Y, W, H);
-#endif
         if (state) { state->width = W; state->height = H; }
         refreshRender();
     }
@@ -905,13 +600,6 @@ private:
      * CoinOffscreenGLCanvas::tilesizeroof) on every subsequent user
      * interaction such as resize, camera drag, or scene reload. */
     bool gl_context_failed_;
-#ifdef OBOL_VIEWER_FLTK_GL
-    /* Set to true by initGLContext() once the GL context has been
-     * successfully created and verified after wait_for_expose().  Used by
-     * flush() to suppress premature flushes that would create the context
-     * before the drawable is fully exposed (which breaks it on AMD/Mesa). */
-    bool gl_context_primed_ = false;
-#endif
     void notifyCameraChanged() { if (on_camera_changed) on_camera_changed(this); }
 };
 
@@ -2204,68 +1892,6 @@ public:
         callback(closeCB);
     }
 
-#ifdef OBOL_VIEWER_FLTK_GL
-    /**
-     * Explicitly show the Fl_Gl_Window subwindows.
-     *
-     * This is the first half of the two-step GL context initialization, called
-     * BEFORE win->wait_for_expose().  Its only job is to ensure coin_panel_ has
-     * a valid native window handle (XID on X11 / HWND on Windows) so that
-     * wait_for_expose() and the subsequent primeGLAfterExpose() can work
-     * correctly.
-     *
-     * NOTE: unlike the previous implementation, this method intentionally does
-     * NOT call Fl::check(), XSync, or make_current().  Calling Fl::check()
-     * here triggers a premature draw/flush cycle that creates the GL context
-     * before the window is fully exposed.  On AMD/Mesa (real GPU), this
-     * premature bind produces a "partially-initialized" context: glXMakeCurrent
-     * returns True and glXGetCurrentContext() is non-null, but glGetString() is
-     * NULL because the driver's rendering pipeline was never fully set up.
-     * That bad context cannot be recovered – subsequent glXMakeCurrent calls
-     * on the same context/drawable are no-ops in Mesa's caching layer.
-     *
-     * Instead, CoinPanel::flush() now returns early when context() is nil,
-     * so no premature flush can create the context.  The context is created
-     * exactly once, after wait_for_expose(), by primeGLAfterExpose().
-     *
-     * This mirrors the pattern used by cube.cxx in the FLTK test suite:
-     *   form->show(argc,argv);  // show parent
-     *   lt_cube->show();        // explicitly show each GL subwindow (step 1)
-     *   rt_cube->show();        // ...
-     *   form->wait_for_expose();
-     *   lt_cube->make_current(); // create context AFTER expose (step 2)
-     *
-     * Call this in main() after win->show() and BEFORE win->wait_for_expose().
-     */
-    void primeGLContexts() {
-        coin_panel_->show();
-    }
-
-    /**
-     * Initialize the GL context after the window is fully exposed.
-     *
-     * This is the second half of the two-step GL context initialization, called
-     * AFTER win->wait_for_expose().  It delegates to CoinPanel::initGLContext()
-     * which calls XSync() (on X11) followed by make_current() to create and
-     * bind the GL context now that the drawable is guaranteed to be ready.
-     *
-     * This mirrors what cube.cxx does after form->wait_for_expose():
-     *
-     *   form->wait_for_expose();
-     *   lt_cube->make_current();   // context created here – GL works
-     *
-     * On Xvfb/Mesa (CI), XSync after wait_for_expose() is even safer than
-     * the previous XSync-after-Fl::check() pattern because the Expose event
-     * confirms the window has been mapped before we synchronise.
-     *
-     * Call this in main() AFTER win->wait_for_expose().
-     */
-    void primeGLAfterExpose() {
-        coin_panel_->initGLContext();
-    }
-
-#endif /* OBOL_VIEWER_FLTK_GL */
-
     void loadScene(const char* name) {
         coin_panel_->loadScene(name);
         current_scene_ = name;
@@ -2312,7 +1938,7 @@ private:
      *     also set so that the system-GL panel uses the same working Fl_Gl_Window
      *     context path as single-GL builds.
      *   OBOL_OSMESA_BUILD:  set when pure-OSMesa; FLTK GL is never set.
-     *   OBOL_VIEWER_FLTK_GL: set for portable (FLTK Fl_Gl_Window) context.
+     *   OBOL_VIEWER_FLTK_GL: set for portable (FLTKContextManager hidden window) context.
      * Conditions are ordered by precedence: dual-GL first, then OSMesa, then
      * FLTK GL, then the legacy GLX fallback. */
     static const char* coinLabel() {
@@ -2320,10 +1946,8 @@ private:
         return "System GL";
 #elif defined(OBOL_OSMESA_BUILD)
         return "OSMesa (headless)";
-#elif defined(OBOL_VIEWER_FLTK_GL)
-        return "FLTK GL";
 #else
-        return "System OpenGL";
+        return "System GL";
 #endif
     }
 
@@ -2839,48 +2463,12 @@ int main(int argc, char** argv)
     ObolViewerWindow* win = new ObolViewerWindow(1100, 700, opts);
     win->show(fltk_argc, fltk_argv);
 
-#ifdef OBOL_VIEWER_FLTK_GL
-    /* Step 1 (pre-expose): explicitly show the Fl_Gl_Window subwidgets.
-     *
-     * Mirrors the cube.cxx FLTK example:
-     *   form->show(argc,argv);  // show parent  (win->show() above)
-     *   lt_cube->show();        // show each GL subwindow (primeGLContexts)
-     *   form->wait_for_expose();
-     *   lt_cube->make_current(); // create context AFTER expose (primeGLAfterExpose)
-     *
-     * CoinPanel::flush() returns early when context() is nil, so no premature
-     * draw will create the GL context between here and primeGLAfterExpose(). */
-    win->primeGLContexts();
-#endif /* OBOL_VIEWER_FLTK_GL */
-
-    /* Wait for the window (and its Fl_Gl_Window subwidgets, including
-     * CoinPanel) to be fully exposed before creating the GL context.
-     * This mirrors the cube.cxx FLTK example pattern:
-     *
-     *   form->wait_for_expose();   // cube.cxx – wait for full expose
-     *   lt_cube->make_current();   // cube.cxx – create context AFTER expose
-     *
-     * With CoinPanel::flush() suppressing premature flushes (context nil guard),
-     * the GL context is guaranteed to still be nil when wait_for_expose returns,
-     * so primeGLAfterExpose() below creates a fresh context on a fully-exposed
-     * drawable. */
+    /* Wait for the main window to be fully exposed before loading scenes.
+     * FLTKContextManager creates its hidden 1×1 GL context window lazily on
+     * the first render request (inside loadScene → refreshRender → r->render).
+     * The Fl::check() + XSync in FLTKContextManager::ensureWindow() correctly
+     * initialises that hidden window without needing any explicit priming here. */
     win->wait_for_expose();
-
-#ifdef OBOL_VIEWER_FLTK_GL
-    /* Step 2 (post-expose): XSync + explicit make_current to create the GL
-     * context now that the window is fully exposed.  This is the second half
-     * of the two-step initialization that mirrors cube.cxx:
-     *
-     *   form->wait_for_expose();   ← done above
-     *   lt_cube->make_current();   ← done by primeGLAfterExpose()
-     *
-     * On AMD/Mesa (real GPU), creating the context here (rather than during
-     * a premature Fl::check() call before expose) avoids the partial-
-     * initialization issue where glXMakeCurrent returns True but glGetString
-     * returns NULL.  On Xvfb/Mesa (CI), XSync after a confirmed Expose event
-     * is even safer than the previous pre-expose XSync pattern. */
-    win->primeGLAfterExpose();
-#endif /* OBOL_VIEWER_FLTK_GL */
 
     /* Load the first visual scene automatically */
     {
