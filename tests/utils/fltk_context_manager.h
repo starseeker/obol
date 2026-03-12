@@ -140,13 +140,8 @@
 inline bool reportGL(const char* where)
 {
     static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
-    static int call_count = 0;
-    ++call_count;
-    /* Always print the first few calls and any NULL-context event. */
-    static const int kAlwaysPrintCalls = 5;
     const GLubyte* ver = glGetString(GL_VERSION);
-    const bool always = (call_count <= kAlwaysPrintCalls) || !ver;
-    if (diag_env || always) {
+    if (diag_env || !ver) {
         if (ver) {
             const GLubyte* ren  = glGetString(GL_RENDERER);
             const GLubyte* vend = glGetString(GL_VENDOR);
@@ -316,45 +311,12 @@ public:
     virtual void* createOffscreenContext(unsigned int width,
                                          unsigned int height) override
     {
-        static const bool diag = (getenv("OBOL_GL_DIAG") != nullptr);
-        static int ctx_count = 0;
-        ++ctx_count;
-        if (diag || ctx_count <= 3) {
-            fprintf(stderr,
-                    "[FLTKContextManager::createOffscreenContext #%d]"
-                    " %ux%u  win_=%p\n",
-                    ctx_count, width, height, (void*)win_);
-            fflush(stderr);
-        }
         if (!ensureWindow()) return nullptr;
         return new FLTKOffscreenCtx{width, height};
     }
 
     virtual SbBool makeContextCurrent(void* context) override {
-        static const bool diag = (getenv("OBOL_GL_DIAG") != nullptr);
-        static int mcc_count = 0;
-        ++mcc_count;
-        const bool verbose = diag || (mcc_count <= 5);
-
         if (!ensureWindow()) return FALSE;
-
-        if (verbose) {
-            const bool is_own = (win_ == own_win_);
-            fprintf(stderr,
-                    "[FLTKContextManager::makeContextCurrent #%d]"
-                    " win_=%p (%s) context=%p shown=%d valid=%d\n",
-                    mcc_count, (void*)win_,
-                    is_own ? "own/fallback" : "external",
-                    (void*)win_->context(), (int)win_->shown(),
-                    (int)win_->valid());
-#if !defined(_WIN32) && !defined(__APPLE__)
-            fprintf(stderr,
-                    "[FLTKContextManager::makeContextCurrent #%d]"
-                    " fl_xid(win_)=0x%lx\n",
-                    mcc_count, (unsigned long)fl_xid(win_));
-#endif
-            fflush(stderr);
-        }
 
 #if defined(_WIN32)
         /* Save the current WGL context so restorePreviousContext() can
@@ -391,59 +353,21 @@ public:
 #endif
 
         win_->make_current();
-#if defined(_WIN32)
-        if (verbose) {
-            HGLRC wglctx = wglGetCurrentContext();
-            fprintf(stderr,
-                    "[FLTKContextManager::makeContextCurrent #%d]"
-                    " after make_current(): wglGetCurrentContext()=%p\n",
-                    mcc_count, (void*)wglctx);
-            fflush(stderr);
-        }
-#elif !defined(__APPLE__)
-        if (verbose) {
-            GLXContext  glxctx  = glXGetCurrentContext();
-            GLXDrawable glxdraw = glXGetCurrentDrawable();
-            fprintf(stderr,
-                    "[FLTKContextManager::makeContextCurrent #%d]"
-                    " after make_current():"
-                    " glXGetCurrentContext()=%p"
-                    " glXGetCurrentDrawable()=0x%lx\n",
-                    mcc_count, (void*)glxctx, (unsigned long)glxdraw);
-            fflush(stderr);
-        }
-#endif
         /* Verify the context is actually current after make_current().
          * On some display servers (including Xvfb used in CI) the external
          * Fl_Gl_Window context may not be available at this point – e.g.,
          * glXMakeCurrent() fails silently because the window is not yet
          * fully realised by the X server.  If that happens, fall back to
          * the hidden 1×1 window approach (same as the no-external-window
-         * path) so that offscreen FBO rendering can still proceed.
-         *
-         * Returning FALSE – instead of the previous unconditional TRUE –
-         * when the context is genuinely unavailable prevents the segfault
-         * in SoOffscreenRenderer::renderFromBase() that occurs when Coin
-         * calls glGetString(GL_VERSION) on a NULL context and then passes
-         * the result to sscanf(). */
+         * path) so that offscreen FBO rendering can still proceed. */
         if (!glGetString(GL_VERSION) && win_ != own_win_) {
-            fprintf(stderr,
-                    "[FLTKContextManager::makeContextCurrent #%d]"
-                    " external window context unavailable after make_current(),"
-                    " falling back to hidden window.\n",
-                    mcc_count);
-            fflush(stderr);
             /* External window failed.  Clear win_ so ensureWindow() will
              * create the hidden 1×1 fallback window on the next call. */
             win_ = nullptr;
-            if (!ensureWindow()) {
-                reportGL("FLTKContextManager::makeContextCurrent (fallback failed)");
-                return FALSE;
-            }
+            if (!ensureWindow()) return FALSE;
             /* ensureWindow() has already called make_current() on own_win_;
              * the context (if available) is already current. */
         }
-        reportGL("FLTKContextManager::makeContextCurrent");
         return glGetString(GL_VERSION) ? TRUE : FALSE;
     }
 
@@ -535,112 +459,28 @@ private:
      * Otherwise, fall back to creating a hidden 1×1 FLTKGLContextWindow
      * (original behaviour). */
     bool ensureWindow() {
-        static const bool diag = (getenv("OBOL_GL_DIAG") != nullptr);
-        if (win_) {
-            if (diag) {
-                const bool is_own = (win_ == own_win_);
-                fprintf(stderr,
-                        "[FLTKContextManager::ensureWindow] win_=%p (%s)"
-                        " already set, skipping window creation.\n",
-                        (void*)win_, is_own ? "own/fallback" : "external");
-                fflush(stderr);
-            }
-            return true;
-        }
+        if (win_) return true;
 
         /* Fallback: create a hidden 1×1 context window. */
-        fprintf(stderr,
-                "[FLTKContextManager::ensureWindow] no window set;"
-                " creating fallback hidden 1x1 FLTKGLContextWindow.\n");
-        fflush(stderr);
-
         own_win_ = new FLTKGLContextWindow();
         win_     = own_win_;
         /* Position the 1×1 window off-screen.  show() creates the native
          * window handle and the platform GL context without making the
          * window visible to the user. */
         own_win_->position(-100, -100);
-
-        fprintf(stderr,
-                "[FLTKContextManager::ensureWindow] calling own_win_->show()"
-                " on %p...\n", (void*)own_win_);
-        fflush(stderr);
         own_win_->show();
-#if !defined(_WIN32) && !defined(__APPLE__)
-        fprintf(stderr,
-                "[FLTKContextManager::ensureWindow] after show():"
-                " fl_xid(own_win_)=0x%lx context=%p valid=%d shown=%d\n",
-                (unsigned long)fl_xid(own_win_),
-                (void*)own_win_->context(),
-                (int)own_win_->valid(),
-                (int)own_win_->shown());
-        fflush(stderr);
-#endif
-
         /* Flush the FLTK event queue so the native GL context is fully
          * initialised before the first make_current() call. */
-        fprintf(stderr,
-                "[FLTKContextManager::ensureWindow] calling Fl::check()...\n");
-        fflush(stderr);
         Fl::check();
 #if !defined(_WIN32) && !defined(__APPLE__)
-        fprintf(stderr,
-                "[FLTKContextManager::ensureWindow] after check():"
-                " fl_xid(own_win_)=0x%lx context=%p valid=%d\n",
-                (unsigned long)fl_xid(own_win_),
-                (void*)own_win_->context(),
-                (int)own_win_->valid());
-        fflush(stderr);
-#endif
-
-#if !defined(_WIN32) && !defined(__APPLE__)
         /* On X11/GLX, synchronise with the X server before calling
-         * make_current().  Fl::check() processes FLTK events but does NOT
-         * call XSync, so the X server may not have processed the XMapWindow
-         * that show() issued internally.  Without this sync, Mesa's software
-         * renderer (used with Xvfb in CI) returns True from glXMakeCurrent
-         * but leaves glGetString(GL_VERSION) returning NULL because the
-         * window's rendering surface has not been allocated yet.
-         *
-         * This mirrors the pattern used by headless_utils.h which calls
-         * XMapWindow() followed by XSync(dpy, False) before glXCreateContext
-         * – the combination that reliably initialises GL on Xvfb/Mesa. */
-        if (fl_display) {
-            fprintf(stderr,
-                    "[FLTKContextManager::ensureWindow] calling"
-                    " XSync(fl_display=%p, False)...\n", (void*)fl_display);
-            fflush(stderr);
-            XSync(fl_display, False);
-        }
-        fprintf(stderr,
-                "[FLTKContextManager::ensureWindow] after XSync():"
-                " fl_xid(own_win_)=0x%lx context=%p valid=%d\n",
-                (unsigned long)fl_xid(own_win_),
-                (void*)own_win_->context(),
-                (int)own_win_->valid());
-        fflush(stderr);
+         * make_current().  Without this sync, Mesa's software renderer
+         * (used with Xvfb in CI) returns True from glXMakeCurrent but
+         * leaves glGetString(GL_VERSION) returning NULL because the
+         * window's rendering surface has not been allocated yet. */
+        if (fl_display) XSync(fl_display, False);
 #endif
-        /* Activate the context once to confirm it is valid and to
-         * trigger any deferred GL initialisation inside FLTK. */
-        fprintf(stderr,
-                "[FLTKContextManager::ensureWindow] calling own_win_->make_current()"
-                " on %p...\n", (void*)own_win_);
-        fflush(stderr);
         own_win_->make_current();
-#if !defined(_WIN32) && !defined(__APPLE__)
-        {
-            GLXContext  glxctx  = glXGetCurrentContext();
-            GLXDrawable glxdraw = glXGetCurrentDrawable();
-            fprintf(stderr,
-                    "[FLTKContextManager::ensureWindow] after make_current():"
-                    " glXGetCurrentContext()=%p"
-                    " glXGetCurrentDrawable()=0x%lx"
-                    " fl_xid(own_win_)=0x%lx\n",
-                    (void*)glxctx, (unsigned long)glxdraw,
-                    (unsigned long)fl_xid(own_win_));
-            fflush(stderr);
-        }
-#endif
         /* Confirm the fallback hidden-window context is actually active. */
         reportGL("FLTKContextManager::ensureWindow (fallback hidden window)");
         return true;

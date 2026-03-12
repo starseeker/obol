@@ -161,7 +161,7 @@ static SoEmbreeContextManager s_embree_mgr;
 /* Fl_Gl_Window is already included via fltk_context_manager.h */
 #  include <FL/gl.h>     /* gl_color(), gl_font(), gl_draw() for text overlays */
 /* FL/platform.H exposes fl_display (X11 Display*) used by XSync in
- * primeGLContexts() to synchronise the X server before make_current(). */
+ * initGLContext() to synchronize the X server before make_current(). */
 #  if !defined(_WIN32) && !defined(__APPLE__)
 #    include <FL/platform.H>
 #  endif
@@ -379,11 +379,6 @@ public:
          * visible panel widget, just as cube.cxx uses the context from
          * its Fl_Gl_Window instances. */
         fltk_context_manager_singleton().setExternalWindow(this);
-        fprintf(stderr,
-                "[CoinPanel::CoinPanel] created %p label=\"%s\" %dx%d"
-                " mode=FL_RGB8|FL_DEPTH|FL_DOUBLE\n",
-                (void*)this, label_text.c_str(), W, H);
-        fflush(stderr);
 #else
         box(FL_FLAT_BOX);
         color(FL_BLACK);
@@ -475,12 +470,8 @@ public:
          * context with make_current().  A single retry is sufficient in
          * practice. */
         if (ver == nullptr && context()) {
-            fprintf(stderr,
-                    "[CoinPanel::initGLContext] broken context detected"
-                    " (context=%p but GL_VERSION=NULL);"
-                    " destroying and retrying.\n",
-                    (void*)context());
-            fflush(stderr);
+            /* Recovery: destroy the broken context, process expose events,
+             * re-synchronise with the X server, then retry make_current(). */
             context(nullptr, 1);   /* destroy the broken GLX context */
             Fl::check();           /* process outstanding expose events */
 #if !defined(_WIN32) && !defined(__APPLE__)
@@ -488,12 +479,6 @@ public:
 #endif
             make_current();
             ver = glGetString(GL_VERSION);
-            fprintf(stderr,
-                    "[CoinPanel::initGLContext] after retry:"
-                    " context=%p GL_VERSION=%s\n",
-                    (void*)context(),
-                    ver ? (const char*)ver : "NULL");
-            fflush(stderr);
         }
 #endif /* OBOL_VIEWER_FLTK_GL */
         if (ver != nullptr) {
@@ -553,24 +538,6 @@ public:
          * context happened to be current.  This also mirrors what draw() does
          * and ensures the context is warm before the offscreen render below. */
         make_current();
-#if !defined(_WIN32) && !defined(__APPLE__)
-        {
-            static int rr_count = 0;
-            static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
-            ++rr_count;
-            if (rr_count <= 3 || diag_env) {
-                fprintf(stderr,
-                        "[CoinPanel::refreshRender #%d] fl_xid(this)=0x%lx"
-                        " context=%p shown=%d valid=%d\n",
-                        rr_count,
-                        (unsigned long)fl_xid(this),
-                        (void*)context(),
-                        (int)shown(), (int)valid());
-                fflush(stderr);
-            }
-        }
-#endif
-        reportGL("CoinPanel::refreshRender (before render)");
 #endif
         int pw = std::max(w(), 1);
         int ph = std::max(h(), 1);
@@ -597,35 +564,6 @@ public:
             uint8_t*       d = display_buf.data() + (size_t)row * pw * 3;
             for (int col = 0; col < pw; ++col) {
                 d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; s+=4; d+=3;
-            }
-        }
-        /* Pixel-content diagnostic: verify the rendered frame has non-zero
-         * data before handing it to draw().  Printed for the first few
-         * renders and whenever OBOL_GL_DIAG=1.
-         *
-         * If this shows all-zero pixels the render itself failed silently
-         * (bad GL context, FBO setup error, etc.).  If it shows non-zero
-         * pixels but the window stays black the problem is in the display
-         * path – draw_begin()/fltk_img->draw()/FBO state in draw(). */
-        {
-            static int pc_count = 0;
-            static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
-            ++pc_count;
-            if (diag_env || pc_count <= 3) {
-                size_t nonzero = 0;
-                uint8_t maxval = 0;
-                for (uint8_t v : display_buf) {
-                    if (v) { ++nonzero; if (v > maxval) maxval = v; }
-                }
-                const size_t total = display_buf.size();
-                fprintf(stderr,
-                        "[CoinPanel::refreshRender pixel-check #%d]"
-                        " display_buf: %zu bytes  non-zero=%zu (%.1f%%)"
-                        "  max=%u\n",
-                        pc_count, total, nonzero,
-                        total ? 100.0 * (double)nonzero / (double)total : 0.0,
-                        (unsigned)maxval);
-                fflush(stderr);
             }
         }
         delete fltk_img;
@@ -714,125 +652,8 @@ public:
          * returns True immediately when context and drawable are genuinely
          * unchanged, so the extra call carries negligible overhead on
          * correctly-functioning platforms. */
-        {
-            /* Diagnostic: log the first several draw() calls unconditionally
-             * so that context lifecycle problems are visible in crash logs.
-             * After draw_call_count exceeds kDiagDraws the static bool
-             * diag_always becomes false and only OBOL_GL_DIAG=1 printing
-             * remains. */
-            static int draw_call_count = 0;
-            static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
-            ++draw_call_count;
-            const bool diag_always = (draw_call_count <= 5);
-            if (diag_always || diag_env) {
-                fprintf(stderr,
-                        "[CoinPanel::draw #%d] pre-make_current:"
-                        " context=%p shown=%d valid=%d w=%d h=%d\n",
-                        draw_call_count,
-                        (void*)context(),
-                        (int)shown(),
-                        (int)valid(),
-                        w(), h());
-#if !defined(_WIN32) && !defined(__APPLE__)
-                fprintf(stderr,
-                        "[CoinPanel::draw #%d] fl_xid(this)=0x%lx\n",
-                        draw_call_count, (unsigned long)fl_xid(this));
-#endif
-                fflush(stderr);
-            }
-        }
         make_current();
-        /* Verify the GL context is actually current after make_current().
-         * This always prints for the first 5 draws and whenever
-         * OBOL_GL_DIAG=1 is set; if glGetString returns NULL here that
-         * means make_current() failed to bind the context (e.g. because
-         * the X11 window XID was not yet allocated). */
-        {
-            static int mc_count = 0;
-            static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
-            ++mc_count;
-            const bool diag_always = (mc_count <= 5);
-            if (diag_always || diag_env) {
-                const GLubyte* ver = glGetString(GL_VERSION);
-                if (ver) {
-                    const GLubyte* ren = glGetString(GL_RENDERER);
-                    fprintf(stderr,
-                            "[CoinPanel::draw #%d] post-make_current:"
-                            " GL_VERSION=\"%s\" GL_RENDERER=\"%s\"\n",
-                            mc_count,
-                            (const char*)ver,
-                            ren ? (const char*)ren : "(null)");
-                } else {
-                    fprintf(stderr,
-                            "[CoinPanel::draw #%d] post-make_current:"
-                            " glGetString(GL_VERSION)=NULL"
-                            " (GL context not current!)\n",
-                            mc_count);
-#if !defined(_WIN32) && !defined(__APPLE__)
-                    {
-                        GLXContext glxctx = glXGetCurrentContext();
-                        fprintf(stderr,
-                                "[CoinPanel::draw #%d] glXGetCurrentContext()=%p"
-                                " fl_xid(this)=0x%lx\n",
-                                mc_count,
-                                (void*)glxctx,
-                                (unsigned long)fl_xid(this));
-                    }
-#endif
-                }
-                fflush(stderr);
-            }
-        }
-        /* FBO-binding diagnostic: the window framebuffer (id=0) must be active
-         * when draw() runs.  A non-zero value means Obol's FBO render left a
-         * framebuffer object bound; all subsequent 2-D drawing would then go
-         * into the FBO instead of the visible window surface, producing a
-         * completely black window even when the rendered image is correct. */
-        {
-#ifndef GL_FRAMEBUFFER_BINDING
-#  define GL_FRAMEBUFFER_BINDING 0x8CA6
-#endif
-            static int fbo_count = 0;
-            static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
-            ++fbo_count;
-            if (diag_env || fbo_count <= 5) {
-                GLint fbo = -1;
-                glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
-                fprintf(stderr,
-                        "[CoinPanel::draw #%d] GL_FRAMEBUFFER_BINDING=%d"
-                        " (0=window framebuffer OK, non-zero=FBO still bound!)\n",
-                        fbo_count, fbo);
-                fflush(stderr);
-            }
-        }
         draw_begin();
-        /* Pre-draw pixel sample: read one pixel from the centre of the back
-         * buffer BEFORE the GL texture draw to establish a baseline.
-         * The post-draw sample (below) shows whether the GL texture draw
-         * actually deposited any colour.  If pre==post the draw was a no-op.
-         *
-         * sample_x/sample_y are in FLTK coordinates (origin top-left).
-         * glReadPixels uses window-pixel coordinates (origin bottom-left), so
-         * the read position is (sample_x, h()-1-sample_y) in GL coords. */
-        uint8_t pre_px[4] = {0,0,0,0};
-        const int sample_x = std::max(w(), 2) / 2;
-        const int sample_y = std::max(h(), 2) / 2;
-        {
-            static int pre_count = 0;
-            static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
-            ++pre_count;
-            if (diag_env || pre_count <= 5) {
-                glReadBuffer(GL_BACK);
-                glReadPixels(sample_x, h()-1-sample_y, 1, 1,
-                             GL_RGBA, GL_UNSIGNED_BYTE, pre_px);
-                fprintf(stderr,
-                        "[CoinPanel::draw #%d] pre-GL-draw"
-                        " centre pixel RGBA=(%d,%d,%d,%d)\n",
-                        pre_count,
-                        pre_px[0], pre_px[1], pre_px[2], pre_px[3]);
-                fflush(stderr);
-            }
-        }
 
         /* draw_begin() sets up glOrtho(0, w(), h(), 0) so the LOCAL origin
          * (0, 0) is the top-left of this GL window.  Do NOT use the FLTK
@@ -893,33 +714,6 @@ public:
             glEnd();
             glDisable(GL_TEXTURE_2D);
             glBindTexture(GL_TEXTURE_2D, 0);
-
-            /* Post-draw pixel sample: verify the GL texture draw deposited
-             * colour.  glReadPixels uses bottom-up coordinates, so sample_y
-             * from the top maps to h()-1-sample_y from the bottom. */
-            {
-                static int post_count = 0;
-                static const bool diag_env = (getenv("OBOL_GL_DIAG") != nullptr);
-                ++post_count;
-                if (diag_env || post_count <= 5) {
-                    uint8_t post_px[4] = {0,0,0,0};
-                    glReadBuffer(GL_BACK);
-                    glReadPixels(sample_x, h()-1-sample_y, 1, 1,
-                                 GL_RGBA, GL_UNSIGNED_BYTE, post_px);
-                    const bool changed = (post_px[0] != pre_px[0] ||
-                                          post_px[1] != pre_px[1] ||
-                                          post_px[2] != pre_px[2] ||
-                                          post_px[3] != pre_px[3]);
-                    fprintf(stderr,
-                            "[CoinPanel::draw #%d] post-GL-texture-draw"
-                            " centre pixel RGBA=(%d,%d,%d,%d)  %s\n",
-                            post_count,
-                            post_px[0], post_px[1], post_px[2], post_px[3],
-                            changed ? "CHANGED (GL texture draw succeeded)"
-                                    : "UNCHANGED (GL texture draw was a no-op)");
-                    fflush(stderr);
-                }
-            }
         } else {
             fl_color(FL_WHITE); fl_font(FL_HELVETICA, 14);
             fl_draw("(no scene)", w()/2-40, h()/2);
@@ -960,21 +754,39 @@ public:
         if (!state || !state->root) return Fl_Box::handle(event);
 #endif
         int h_ = h();
+        /* Compute widget-local event coordinates.
+         *
+         * CoinPanel is an Fl_Gl_Window (IS a window).  FLTK's Fl_Group::send()
+         * subtracts o->x()/o->y() before calling handle() on child windows
+         * (see Fl_Group.cxx), so Fl::event_x/y() are already LOCAL to this
+         * widget in FLTK_GL mode.  Subtracting x()/y() again would double-
+         * subtract the panel offset and produce negative coordinates for any
+         * click in the left portion of the panel, causing SoHandleEventAction
+         * pick rays to miss all scene geometry.
+         *
+         * In the non-GL Fl_Box mode the adjustment is NOT made by FLTK, so
+         * x()/y() must be subtracted to obtain local coordinates. */
+#ifdef OBOL_VIEWER_FLTK_GL
+        const int ev_x = Fl::event_x();
+        const int ev_y = Fl::event_y();
+#else
+        const int ev_x = Fl::event_x() - x();
+        const int ev_y = Fl::event_y() - y();
+#endif
         switch (event) {
         case FL_PUSH:
             take_focus();
             if (state) {
                 state->dragging = true;
                 state->drag_btn = Fl::event_button();
-                state->last_x   = Fl::event_x() - x();
-                state->last_y   = Fl::event_y() - y();
+                state->last_x   = ev_x;
+                state->last_y   = ev_y;
                 SoMouseButtonEvent ev;
                 ev.setButton(state->drag_btn==1 ? SoMouseButtonEvent::BUTTON1 :
                              state->drag_btn==2 ? SoMouseButtonEvent::BUTTON2 :
                                                   SoMouseButtonEvent::BUTTON3);
                 ev.setState(SoButtonEvent::DOWN);
-                ev.setPosition(SbVec2s((short)(Fl::event_x()-x()),
-                                       (short)(h_-(Fl::event_y()-y()))));
+                ev.setPosition(SbVec2s((short)ev_x, (short)(h_-ev_y)));
                 ev.setTime(SbTime::getTimeOfDay());
                 SbViewportRegion vp(state->width, state->height);
                 SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(state->root);
@@ -990,8 +802,7 @@ public:
                              Fl::event_button()==2 ? SoMouseButtonEvent::BUTTON2 :
                                                      SoMouseButtonEvent::BUTTON3);
                 ev.setState(SoButtonEvent::UP);
-                ev.setPosition(SbVec2s((short)(Fl::event_x()-x()),
-                                       (short)(h_-(Fl::event_y()-y()))));
+                ev.setPosition(SbVec2s((short)ev_x, (short)(h_-ev_y)));
                 ev.setTime(SbTime::getTimeOfDay());
                 SbViewportRegion vp(state->width, state->height);
                 SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(state->root);
@@ -1001,11 +812,10 @@ public:
             return 1;
         case FL_DRAG:
             if (state && state->dragging && state->cam) {
-                int ex = Fl::event_x()-x(), ey = Fl::event_y()-y();
-                int dx = ex - state->last_x, dy = ey - state->last_y;
-                state->last_x = ex; state->last_y = ey;
+                int dx = ev_x - state->last_x, dy = ev_y - state->last_y;
+                state->last_x = ev_x; state->last_y = ev_y;
                 SoLocation2Event ev;
-                ev.setPosition(SbVec2s((short)ex,(short)(h_-ey)));
+                ev.setPosition(SbVec2s((short)ev_x,(short)(h_-ev_y)));
                 ev.setTime(SbTime::getTimeOfDay());
                 SbViewportRegion vp(state->width, state->height);
                 SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(state->root);
@@ -2428,24 +2238,7 @@ public:
      * Call this in main() after win->show() and BEFORE win->wait_for_expose().
      */
     void primeGLContexts() {
-#if !defined(_WIN32) && !defined(__APPLE__)
-        fprintf(stderr,
-                "[primeGLContexts] before coin_panel_->show():"
-                " fl_xid(coin_panel_)=0x%lx shown=%d\n",
-                (unsigned long)fl_xid(coin_panel_),
-                (int)coin_panel_->shown());
-        fflush(stderr);
-#endif
         coin_panel_->show();
-#if !defined(_WIN32) && !defined(__APPLE__)
-        fprintf(stderr,
-                "[primeGLContexts] after coin_panel_->show():"
-                " fl_xid(coin_panel_)=0x%lx shown=%d context=%p\n",
-                (unsigned long)fl_xid(coin_panel_),
-                (int)coin_panel_->shown(),
-                (void*)coin_panel_->context());
-        fflush(stderr);
-#endif
     }
 
     /**
@@ -2468,63 +2261,9 @@ public:
      * Call this in main() AFTER win->wait_for_expose().
      */
     void primeGLAfterExpose() {
-        fprintf(stderr,
-                "[primeGLAfterExpose] calling coin_panel_->initGLContext()...\n");
-        fflush(stderr);
-        bool ok = coin_panel_->initGLContext();
-        fprintf(stderr,
-                "[primeGLAfterExpose] initGLContext() %s.\n",
-                ok ? "succeeded – GL context ready"
-                   : "FAILED – GL context still not available");
-        fflush(stderr);
+        coin_panel_->initGLContext();
     }
 
-    /**
-     * Probe and report the current GL context status.
-     *
-     * Calls glGetString(GL_VERSION) to determine whether a GL context is
-     * current.  If a context has already been created (context() is non-null),
-     * re-activates it via make_current() first so the query reflects this
-     * panel's context rather than whatever happened to be current.
-     *
-     * When context() is nil the GL context has not been initialized yet (i.e.,
-     * primeGLAfterExpose() has not been called yet); no make_current() is
-     * attempted in that case to avoid prematurely creating a bad context.
-     *
-     * Prints a diagnostic line to stderr when OBOL_GL_DIAG=1.
-     * Returns true if a GL context is current and valid, false otherwise.
-     *
-     * Use this at key checkpoints in main() to trace context lifecycle:
-     *
-     *   win->wait_for_expose();
-     *   win->primeGLAfterExpose();
-     *   win->probeGLContext("after primeGLAfterExpose");
-     */
-    bool probeGLContext(const char* where) {
-        if (coin_panel_->context()) {
-            /* Re-activate only if context was already created; this avoids
-             * the premature-creation problem described in primeGLContexts(). */
-            coin_panel_->make_current();
-        }
-#if !defined(_WIN32) && !defined(__APPLE__)
-        {
-            GLXContext  glxctx  = glXGetCurrentContext();
-            GLXDrawable glxdraw = glXGetCurrentDrawable();
-            fprintf(stderr,
-                    "[probeGLContext] %s\n"
-                    "                fl_xid(coin_panel_)=0x%lx"
-                    " glXGetCurrentContext()=%p"
-                    " glXGetCurrentDrawable()=0x%lx"
-                    " coin_panel_->context()=%p\n",
-                    where,
-                    (unsigned long)fl_xid(coin_panel_),
-                    (void*)glxctx, (unsigned long)glxdraw,
-                    (void*)coin_panel_->context());
-            fflush(stderr);
-        }
-#endif
-        return reportGL(where);
-    }
 #endif /* OBOL_VIEWER_FLTK_GL */
 
     void loadScene(const char* name) {
@@ -3088,30 +2827,17 @@ int main(int argc, char** argv)
 
     /* Initialise Obol using the same context manager pattern as the tests */
     initCoinHeadless();
-    fprintf(stderr, "[obol_viewer main] initCoinHeadless() complete.\n");
-    fflush(stderr);
 
     Fl::scheme("gtk+");
     /* Request a double-buffered RGB visual.  Fall back to single-buffer if
      * the display does not support a double-buffered OpenGL visual so that
      * the viewer still opens and functions (rendering uses SoOffscreenRenderer,
      * not a FLTK GL window). */
-    if (!Fl::visual(FL_RGB | FL_DOUBLE)) {
-        fprintf(stderr,
-                "[obol_viewer main] Fl::visual(FL_RGB|FL_DOUBLE) failed;"
-                " falling back to FL_RGB.\n");
-        fflush(stderr);
+    if (!Fl::visual(FL_RGB | FL_DOUBLE))
         Fl::visual(FL_RGB);
-    } else {
-        fprintf(stderr,
-                "[obol_viewer main] Fl::visual(FL_RGB|FL_DOUBLE) succeeded.\n");
-        fflush(stderr);
-    }
 
     ObolViewerWindow* win = new ObolViewerWindow(1100, 700, opts);
-    fprintf(stderr, "[obol_viewer main] calling win->show()...\n"); fflush(stderr);
     win->show(fltk_argc, fltk_argv);
-    fprintf(stderr, "[obol_viewer main] win->show() returned.\n"); fflush(stderr);
 
 #ifdef OBOL_VIEWER_FLTK_GL
     /* Step 1 (pre-expose): explicitly show the Fl_Gl_Window subwidgets.
@@ -3138,11 +2864,7 @@ int main(int argc, char** argv)
      * the GL context is guaranteed to still be nil when wait_for_expose returns,
      * so primeGLAfterExpose() below creates a fresh context on a fully-exposed
      * drawable. */
-    fprintf(stderr, "[obol_viewer main] calling win->wait_for_expose()...\n");
-    fflush(stderr);
     win->wait_for_expose();
-    fprintf(stderr, "[obol_viewer main] win->wait_for_expose() returned.\n");
-    fflush(stderr);
 
 #ifdef OBOL_VIEWER_FLTK_GL
     /* Step 2 (post-expose): XSync + explicit make_current to create the GL
@@ -3158,7 +2880,6 @@ int main(int argc, char** argv)
      * returns NULL.  On Xvfb/Mesa (CI), XSync after a confirmed Expose event
      * is even safer than the previous pre-expose XSync pattern. */
     win->primeGLAfterExpose();
-    win->probeGLContext("main: after primeGLAfterExpose");
 #endif /* OBOL_VIEWER_FLTK_GL */
 
     /* Load the first visual scene automatically */
