@@ -39,20 +39,11 @@
  *   - CGL / NSOpenGL on macOS
  *   - GLX on X11 / Linux
  *
- * Preferred mode (setExternalWindow):
- *   The caller (obol_viewer) passes its own Fl_Gl_Window – typically the
- *   CoinPanel rendering widget – via setExternalWindow() before the first
- *   render.  The manager then calls make_current() on that window instead
- *   of creating a separate hidden context window.  This mirrors the pattern
- *   used by cube.cxx in the FLTK test suite: a real, visible Fl_Gl_Window
- *   is created and shown by the caller; FLTK's GL context lifetime is then
- *   tied to that visible widget rather than to a synthetic off-screen window.
- *
- * Fallback mode (own hidden window):
- *   If setExternalWindow() is never called the manager creates a small
- *   hidden 1×1 Fl_Gl_Window lazily on the first render request, as before.
- *   This preserves backward compatibility for environments that do not use
- *   the external-window path.
+ * The manager creates a small hidden 1×1 Fl_Gl_Window lazily on the first
+ * render request.  Its sole purpose is to own a valid GL context for use
+ * by SoOffscreenRenderer via FBOs.  CoinPanel is a plain Fl_Box and
+ * interacts with the context manager only indirectly through
+ * SoOffscreenRenderer; no visible Fl_Gl_Window widget is involved.
  *
  * Offscreen rendering uses framebuffer objects (FBOs) managed by the Obol
  * library; the FLTK window surface itself is never drawn to directly by
@@ -100,12 +91,6 @@
 #elif defined(__APPLE__)
 #  include <dlfcn.h>
 #  include <OpenGL/gl.h>
-/* CGL (Core OpenGL) provides the C-level context save/restore API needed
- * by restorePreviousContext() to undo the makeCurrentContext call that
- * make_current() performs on the NSOpenGLContext.  CGLGetCurrentContext()
- * and CGLSetCurrentContext() are available on every macOS version that
- * FLTK supports and do not require Objective-C code. */
-#  include <OpenGL/OpenGL.h>
 #else
 /* Linux / X11: glXGetProcAddress is always available via libGL. */
 #  include <GL/glx.h>
@@ -213,35 +198,6 @@ public:
 struct FLTKOffscreenCtx {
     unsigned int width;
     unsigned int height;
-    bool         saved = false;  /* true when prev_* fields hold a valid saved state */
-#if defined(_WIN32)
-    /* Saved WGL context state so restorePreviousContext() can undo the
-     * wglMakeCurrent() call made by win_->make_current() (which calls
-     * Fl_WinAPI_Gl_Window_Driver::set_gl_context → wglMakeCurrent).
-     * Without this save/restore, a temporary makeContextCurrent() (e.g.
-     * from SoGLContext_context_max_dimensions) leaves the FLTK context
-     * as the current WGL context, which can interfere with other GL
-     * backends (e.g. OSMesa) that were active before the call. */
-    HGLRC        prev_wgl_ctx  = nullptr;
-    HDC          prev_wgl_dc   = nullptr;
-#elif defined(__APPLE__)
-    /* Saved CGL context handle so restorePreviousContext() can undo the
-     * NSOpenGLContext::makeCurrentContext call made by make_current().
-     * CGLGetCurrentContext / CGLSetCurrentContext are the C-level API
-     * that underpins NSOpenGLContext on all macOS versions FLTK supports,
-     * and can be used from C++ without Objective-C syntax. */
-    CGLContextObj prev_cgl_ctx = nullptr;
-#else
-    /* Saved GLX context state so restorePreviousContext() can undo the
-     * glXMakeCurrent() call made by makeContextCurrent().  Without this
-     * save/restore, a temporary makeContextCurrent() (e.g. from
-     * SoGLContext_context_max_dimensions) leaves the FLTK window as the
-     * current GLX context and interferes with any OSMesa or other GLX
-     * context that was current before the call. */
-    GLXContext   prev_glx_ctx  = nullptr;
-    GLXDrawable  prev_glx_draw = 0;
-    Display *    prev_glx_dpy  = nullptr;
-#endif
 };
 
 /* =========================================================================
@@ -250,62 +206,20 @@ struct FLTKOffscreenCtx {
  * Implements SoDB::ContextManager using FLTK's Fl_Gl_Window so that
  * context creation is handled by FLTK on every supported platform.
  *
- * Two operating modes:
- *
- *   External-window mode (preferred):
- *     The caller invokes setExternalWindow(w) before the first render,
- *     passing a real Fl_Gl_Window that is already part of the application's
- *     visible widget hierarchy.  On the first makeContextCurrent() call the
- *     manager simply calls w->make_current() on that window.  This mirrors
- *     the cube.cxx FLTK example pattern and avoids the off-screen hidden-
- *     window approach that can fail in certain CI / headless environments.
- *
- *   Fallback / hidden-window mode:
- *     If setExternalWindow() is never called a small hidden 1×1
- *     FLTKGLContextWindow is created lazily on the first render request
- *     (the original behaviour), preserving backward compatibility.
+ * A small hidden 1×1 FLTKGLContextWindow is created lazily on the first
+ * render request.  All offscreen rendering is FBO-based; the window
+ * surface is never drawn to directly.
  * ======================================================================= */
 class FLTKContextManager : public SoDB::ContextManager {
 public:
-    FLTKContextManager() : win_(nullptr), own_win_(nullptr) {}
+    FLTKContextManager() : win_(nullptr) {}
 
     virtual ~FLTKContextManager() {
-        /* Only destroy the window we created ourselves; the external window
-         * is owned by the caller (e.g. CoinPanel in obol_viewer). */
-        if (own_win_) {
-            own_win_->hide();
-            delete own_win_;
-            own_win_ = nullptr;
+        if (win_) {
+            win_->hide();
+            delete win_;
+            win_ = nullptr;
         }
-        win_ = nullptr;
-    }
-
-    /**
-     * Register an externally-owned Fl_Gl_Window as the GL context source.
-     *
-     * Must be called before the first render attempt (i.e., before the
-     * first makeContextCurrent() call).  The window must remain alive for
-     * the lifetime of this manager.  The caller retains ownership.
-     *
-     * Typical usage in obol_viewer: call this in CoinPanel's constructor
-     * so the panel's own GL context is used instead of a hidden window.
-     */
-    void setExternalWindow(Fl_Gl_Window* w) {
-        /* Ignore if the fallback hidden window was already created. */
-        if (own_win_) {
-            fprintf(stderr,
-                    "[FLTKContextManager::setExternalWindow] ignored: own_win_=%p"
-                    " already created (fallback mode active); w=%p rejected.\n",
-                    (void*)own_win_, (void*)w);
-            fflush(stderr);
-            return;
-        }
-        fprintf(stderr,
-                "[FLTKContextManager::setExternalWindow] registered external"
-                " window %p (replacing %p).\n",
-                (void*)w, (void*)win_);
-        fflush(stderr);
-        win_ = w;
     }
 
     virtual void* createOffscreenContext(unsigned int width,
@@ -316,101 +230,16 @@ public:
     }
 
     virtual SbBool makeContextCurrent(void* context) override {
+        (void)context;
         if (!ensureWindow()) return FALSE;
-
-#if defined(_WIN32)
-        /* Save the current WGL context so restorePreviousContext() can
-         * reinstate it.  Same rationale as the GLX path below. */
-        if (FLTKOffscreenCtx* fctx = static_cast<FLTKOffscreenCtx*>(context)) {
-            fctx->prev_wgl_ctx = wglGetCurrentContext();
-            fctx->prev_wgl_dc  = wglGetCurrentDC();
-            fctx->saved        = true;
-        }
-#elif defined(__APPLE__)
-        /* Save the current CGL context so restorePreviousContext() can
-         * reinstate it.  Same rationale as the GLX path below. */
-        if (FLTKOffscreenCtx* fctx = static_cast<FLTKOffscreenCtx*>(context)) {
-            fctx->prev_cgl_ctx = CGLGetCurrentContext();
-            fctx->saved        = true;
-        }
-#else
-        /* Save the current GLX context so restorePreviousContext() can
-         * reinstate it.  This is critical in dual-GL builds: when code
-         * running on behalf of an OSMesa render (e.g.
-         * SoGLContext_context_max_dimensions) temporarily activates the
-         * FLTK window context via this manager, the previous GLX state must
-         * be restored afterwards so that subsequent glXMakeCurrent calls
-         * for the system GL panel start from a known baseline.  Without this
-         * save/restore the CoinPanel context leaks into OSMesa operation
-         * windows and can prevent the system GL context from initialising
-         * correctly when coin_panel_->make_current() is called later. */
-        if (FLTKOffscreenCtx* fctx = static_cast<FLTKOffscreenCtx*>(context)) {
-            fctx->prev_glx_ctx  = glXGetCurrentContext();
-            fctx->prev_glx_draw = glXGetCurrentDrawable();
-            fctx->prev_glx_dpy  = fl_display;
-            fctx->saved         = true;
-        }
-#endif
-
         win_->make_current();
-        /* Verify the context is actually current after make_current().
-         * On some display servers (including Xvfb used in CI) the external
-         * Fl_Gl_Window context may not be available at this point – e.g.,
-         * glXMakeCurrent() fails silently because the window is not yet
-         * fully realised by the X server.  If that happens, fall back to
-         * the hidden 1×1 window approach (same as the no-external-window
-         * path) so that offscreen FBO rendering can still proceed. */
-        if (!glGetString(GL_VERSION) && win_ != own_win_) {
-            /* External window failed.  Clear win_ so ensureWindow() will
-             * create the hidden 1×1 fallback window on the next call. */
-            win_ = nullptr;
-            if (!ensureWindow()) return FALSE;
-            /* ensureWindow() has already called make_current() on own_win_;
-             * the context (if available) is already current. */
-        }
         return glGetString(GL_VERSION) ? TRUE : FALSE;
     }
 
-    virtual void restorePreviousContext(void* context) override {
-        /* Restore the platform GL context that was current before
-         * makeContextCurrent() was called.  This undoes the platform
-         * MakeCurrent call performed by win_->make_current() so that
-         * callers using a different GL backend (e.g. OSMesa) are not
-         * surprised by the FLTK window context being left active after
-         * a temporary context activation.
-         *
-         * FLTK does not expose a cross-platform "get/restore current
-         * context" API — Fl_Gl_Window only provides make_current() on
-         * a given window object, with no way to query what context is
-         * currently active or to make an arbitrary saved context current
-         * again.  We therefore fall through to the native platform API
-         * (WGL / CGL / GLX) for the save/restore operation. */
-        FLTKOffscreenCtx* fctx = static_cast<FLTKOffscreenCtx*>(context);
-        if (!fctx || !fctx->saved) return;
-#if defined(_WIN32)
-        /* Restore the WGL context.  wglMakeCurrent(nullptr, nullptr)
-         * releases any current context when prev_wgl_ctx is null. */
-        wglMakeCurrent(fctx->prev_wgl_dc, fctx->prev_wgl_ctx);
-#elif defined(__APPLE__)
-        /* CGLSetCurrentContext(nullptr) releases the current context when
-         * prev_cgl_ctx is null, which is the correct "no context was active
-         * before our call" behaviour. */
-        CGLSetCurrentContext(fctx->prev_cgl_ctx);
-#else
-        /* GLX: if the previous context was None (no context was current
-         * before our makeContextCurrent call), release the binding
-         * entirely.  Otherwise restore the previous context + drawable. */
-        if (fctx->prev_glx_dpy) {
-            if (fctx->prev_glx_ctx) {
-                glXMakeCurrent(fctx->prev_glx_dpy,
-                               fctx->prev_glx_draw,
-                               fctx->prev_glx_ctx);
-            } else {
-                glXMakeCurrent(fctx->prev_glx_dpy, None, nullptr);
-            }
-        }
-#endif
-        fctx->saved = false;
+    virtual void restorePreviousContext(void* /*context*/) override {
+        /* No-op: the hidden 1×1 window is the sole GL context source.
+         * There is no prior context to restore, and the next
+         * makeContextCurrent() call will re-activate it as needed. */
     }
 
     virtual void destroyContext(void* context) override {
@@ -441,34 +270,21 @@ public:
     }
 
 private:
-    /* Active window used by makeContextCurrent() – points to either
-     * own_win_ (fallback) or the externally-provided window (preferred). */
-    Fl_Gl_Window*        win_;
-
-    /* Hidden 1×1 fallback window created by ensureWindow() when no
-     * external window has been registered.  Owned by this manager.
-     * Non-null only in fallback mode; null when an external window is used. */
-    FLTKGLContextWindow* own_win_;
+    /* Hidden 1×1 context window created lazily by ensureWindow(). */
+    FLTKGLContextWindow* win_;
 
     /* Ensure a valid GL context window is available.
      *
-     * If an external window was registered via setExternalWindow() it is
-     * used directly – the caller is responsible for showing it before the
-     * first render (main() calls wait_for_expose() after win->show()).
-     *
-     * Otherwise, fall back to creating a hidden 1×1 FLTKGLContextWindow
-     * (original behaviour). */
+     * Creates a hidden 1×1 FLTKGLContextWindow on the first call. */
     bool ensureWindow() {
         if (win_) return true;
 
-        /* Fallback: create a hidden 1×1 context window. */
-        own_win_ = new FLTKGLContextWindow();
-        win_     = own_win_;
+        win_ = new FLTKGLContextWindow();
         /* Position the 1×1 window off-screen.  show() creates the native
          * window handle and the platform GL context without making the
          * window visible to the user. */
-        own_win_->position(-100, -100);
-        own_win_->show();
+        win_->position(-100, -100);
+        win_->show();
         /* Flush the FLTK event queue so the native GL context is fully
          * initialised before the first make_current() call. */
         Fl::check();
@@ -480,9 +296,9 @@ private:
          * window's rendering surface has not been allocated yet. */
         if (fl_display) XSync(fl_display, False);
 #endif
-        own_win_->make_current();
-        /* Confirm the fallback hidden-window context is actually active. */
-        reportGL("FLTKContextManager::ensureWindow (fallback hidden window)");
+        win_->make_current();
+        /* Confirm the hidden-window context is actually active. */
+        reportGL("FLTKContextManager::ensureWindow");
         return true;
     }
 };
