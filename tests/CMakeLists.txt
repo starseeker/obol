@@ -112,10 +112,19 @@ if(OBOL_BUILD_VIEWER)
     # uses Fl_Gl_Window for cross-platform GL context creation.
     # Set OFF to fall back to headless_utils.h (GLX on Linux) for CI environments
     # where FLTK's OpenGL cannot obtain a context (headless / no display manager).
-    # This option does not apply to pure-OSMesa builds.
-    if(OBOL_VIEWER_USE_FLTK_GL AND NOT OBOL_USE_OSMESA)
+    #
+    # This option applies to both single-GL and dual-GL builds.  In a dual-GL
+    # build (OBOL_BUILD_DUAL_GL), the OSMesa panel uses its own independent
+    # context manager (SoDB::createOSMesaContextManager()), so enabling FLTK GL
+    # for the system-GL CoinPanel does not interfere with OSMesa rendering.
+    # Pure-OSMesa builds (OBOL_OSMESA_BUILD) always use the headless path.
+    if(OBOL_VIEWER_USE_FLTK_GL AND (OBOL_BUILD_DUAL_GL OR NOT OBOL_USE_OSMESA))
         target_compile_definitions(obol_viewer PRIVATE OBOL_VIEWER_FLTK_GL)
-        message(STATUS "obol_viewer: using FLTK GL context manager (portable)")
+        if(OBOL_BUILD_DUAL_GL)
+            message(STATUS "obol_viewer: using FLTK GL context manager for system-GL panel (dual-GL build)")
+        else()
+            message(STATUS "obol_viewer: using FLTK GL context manager (portable)")
+        endif()
     else()
         if(NOT OBOL_USE_OSMESA)
             message(STATUS "obol_viewer: using GLX context manager (headless_utils.h)")
