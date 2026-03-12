@@ -18,8 +18,6 @@
 \brief Implementation of class Fl_Graphics_Driver.
 */
 #include <config.h> // for HAVE_GL
-#include <cstdio>   // fprintf, fflush (Obol diagnostics)
-#include <cstdlib>  // getenv
 #include <FL/Fl_Graphics_Driver.H>
 /** Points to the driver that currently receives all graphics requests */
 FL_EXPORT Fl_Graphics_Driver *fl_graphics_driver;
@@ -292,27 +290,6 @@ void Fl_Graphics_Driver::draw_bitmap(Fl_Bitmap *bm, int XP, int YP, int WP, int 
  the image offset by the cx and cy arguments.
  */
 void Fl_Graphics_Driver::draw_rgb(Fl_RGB_Image *img, int XP, int YP, int WP, int HP, int cx, int cy) {
-  /* Obol diagnostic: log which graphics driver is handling this image draw
-   * and the image geometry.  Printed for the first few calls and whenever
-   * OBOL_GL_DIAG=1.  When the driver is Fl_OpenGL_Graphics_Driver the
-   * draw_fixed(Fl_RGB_Image*) call below is an empty no-op – see that
-   * function for the confirming "[FLTK draw_fixed(RGB)]" log line. */
-  {
-    static const bool obol_diag = (getenv("OBOL_GL_DIAG") != nullptr);
-    static int draw_rgb_count = 0;
-    ++draw_rgb_count;
-    if (obol_diag || draw_rgb_count <= 3) {
-      /* Use this->class_name() if available; fall back to a pointer tag so
-       * the log is useful even without RTTI. */
-      fprintf(stderr,
-              "[FLTK Fl_Graphics_Driver::draw_rgb #%d]"
-              " driver=%p img=%p %dx%d at XP=%d YP=%d WP=%d HP=%d\n",
-              draw_rgb_count, (void*)this, (void*)img,
-              img ? img->w() : -1, img ? img->h() : -1,
-              XP, YP, WP, HP);
-      fflush(stderr);
-    }
-  }
   // Don't draw an empty image...
   if (!img->d() || !img->array) {
     Fl_Graphics_Driver::draw_empty(img, XP, YP);
@@ -440,37 +417,8 @@ void Fl_Graphics_Driver::draw_fixed(Fl_Pixmap *pxm,int XP, int YP, int WP, int H
 
 void Fl_Graphics_Driver::draw_fixed(Fl_Bitmap *bm,int XP, int YP, int WP, int HP, int cx, int cy) {}
 
-void Fl_Graphics_Driver::draw_fixed(Fl_RGB_Image *rgb,int XP, int YP, int WP, int HP, int cx, int cy) {
-  /* Obol diagnostic: this base-class implementation is intentionally empty.
-   * Platform-specific drivers (Fl_Xlib_Graphics_Driver, Fl_GDI_Graphics_Driver,
-   * Fl_Quartz_Graphics_Driver, Fl_Cairo_Graphics_Driver) all override this
-   * function to actually blit or texture the image.
-   *
-   * Fl_OpenGL_Graphics_Driver does NOT override draw_fixed(Fl_RGB_Image*),
-   * so calling Fl_RGB_Image::draw() inside Fl_Gl_Window::draw_begin()/
-   * draw_end() silently does nothing.
-   *
-   * CoinPanel::draw() in obol_viewer.cpp works around this by uploading
-   * display_buf directly as a GL texture and drawing a full-window textured
-   * quad instead of relying on Fl_RGB_Image::draw().  This function is
-   * therefore NOT called from the normal CoinPanel rendering path; it would
-   * only be reached if Fl_RGB_Image::draw() were called in a GL context
-   * from some other code path.
-   *
-   * The "[FLTK draw_fixed(RGB) NO-OP]" log line below confirms this path. */
-  static const bool obol_diag = (getenv("OBOL_GL_DIAG") != nullptr);
-  static int noop_count = 0;
-  ++noop_count;
-  if (obol_diag || noop_count <= 3) {
-    fprintf(stderr,
-            "[FLTK draw_fixed(RGB) NO-OP #%d]"
-            " driver=%p rgb=%p %dx%d at (%d,%d) WxH=%dx%d\n",
-            noop_count, (void*)this, (void*)rgb,
-            rgb ? rgb->w() : -1, rgb ? rgb->h() : -1,
-            XP, YP, WP, HP);
-    fflush(stderr);
-  }
-}
+void Fl_Graphics_Driver::draw_fixed(Fl_RGB_Image *rgb,int XP, int YP, int WP, int HP, int cx, int cy) {}
+
 void Fl_Graphics_Driver::make_unused_color_(unsigned char &r, unsigned char &g, unsigned char &b, int color_count, void **data) {}
 
 /** Support function for Fl_Pixmap drawing */

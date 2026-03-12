@@ -24,8 +24,6 @@
 #if ! USE_XFT
 #  include "../Xlib/Fl_Font.H"
 #endif
-#include <cstdio>
-#include <cstdlib>
 
 
 // Describes crap needed to create a GLContext.
@@ -198,7 +196,6 @@ Fl_Gl_Choice *Fl_X11_Gl_Window_Driver::find(int m, const int *alistp)
 
 GLContext Fl_X11_Gl_Window_Driver::create_gl_context(Fl_Window* window,
                                                      const Fl_Gl_Choice* g) {
-  static const bool diag = (getenv("OBOL_GL_DIAG") != nullptr);
   (void)window;
   GLContext shared_ctx = 0;
   if (context_list && nContext) shared_ctx = context_list[0];
@@ -206,58 +203,16 @@ GLContext Fl_X11_Gl_Window_Driver::create_gl_context(Fl_Window* window,
   GLContext ctx = glXCreateContext(fl_display, ((Fl_X11_Gl_Choice*)g)->vis, (GLXContext)shared_ctx, true);
   if (ctx)
     add_context(ctx);
-  if (diag || !ctx) {
-    fprintf(stderr,
-            "[create_gl_context] glXCreateContext -> ctx=%p"
-            "  (window xid=0x%lx, shared_ctx=%p, vis=%p)\n",
-            (void*)ctx, (unsigned long)fl_xid(window),
-            (void*)shared_ctx, (void*)((Fl_X11_Gl_Choice*)g)->vis);
-    fflush(stderr);
-  }
 //glXMakeCurrent(fl_display, fl_xid(window), ctx);printf("%s\n", glGetString(GL_VERSION));
   return ctx;
 }
 
 
 void Fl_X11_Gl_Window_Driver::set_gl_context(Fl_Window* w, GLContext context) {
-  static const bool diag = (getenv("OBOL_GL_DIAG") != nullptr);
-  /* Capture previous state for diagnostics before any updates. */
-  Fl_Window* prev_win = cached_window;
-  GLContext   prev_ctx = glXGetCurrentContext();
-  GLXDrawable prev_draw = glXGetCurrentDrawable();
-
-  cached_window = w;
-  Window xid = fl_xid(w);
-
-  /* Always call glXMakeCurrent rather than relying on a cached comparison to
-   * skip the call.
-   *
-   * The original optimisation tested whether glXGetCurrentContext() already
-   * matched the requested context and whether cached_window matched w, and
-   * skipped the glXMakeCurrent call when both were true.  This is unsafe on
-   * some Mesa versions (observed on older Rocky Linux) where glXMakeCurrent
-   * can return True for a context whose underlying framebuffer is not yet
-   * ready (e.g. when the window has been created but not yet exposed by the
-   * X server).  In that state glXGetCurrentContext() still reports the
-   * context handle as current, but actual GL commands such as
-   * glGetString(GL_VERSION) return NULL because the rendering pipeline was
-   * never fully initialised.  When FLTK's flush() subsequently calls
-   * draw(), which calls make_current() again, the stale cached comparison
-   * causes the re-bind to be skipped – so the context never becomes truly
-   * active for that draw cycle.
-   *
-   * Mesa detects a redundant same-context/same-drawable call and returns
-   * True immediately with no driver overhead, so calling glXMakeCurrent on
-   * every set_gl_context invocation is both safe and correct. */
-  Bool ok = glXMakeCurrent(fl_display, xid, (GLXContext)context);
-  if (diag || !ok) {
-    fprintf(stderr,
-            "[set_gl_context] glXMakeCurrent(disp=%p, xid=0x%lx, ctx=%p) -> %s"
-            "  (prev_ctx=%p, prev_draw=0x%lx, prev_win=%p)\n",
-            (void*)fl_display, (unsigned long)xid, (void*)context,
-            ok ? "true" : "false(!)",
-            (void*)prev_ctx, (unsigned long)prev_draw, (void*)prev_win);
-    fflush(stderr);
+  GLContext current_context = glXGetCurrentContext();
+  if (context != current_context || w != cached_window) {
+    cached_window = w;
+    glXMakeCurrent(fl_display, fl_xid(w), (GLXContext)context);
   }
 }
 

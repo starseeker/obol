@@ -22,8 +22,6 @@
 // [\code in documentation/src/fluid.dox]
 #include "CubeView.h"
 #include <math.h>
-#include <cstdio>
-#include <cstdlib>
 
 #if HAVE_GL
 CubeView::CubeView(int x, int y, int w, int h, const char *l)
@@ -56,11 +54,6 @@ CubeView::CubeView(int x, int y, int w, int h, const char *l)
   label("OpenGL is required for this demo to operate.");
   align(FL_ALIGN_WRAP | FL_ALIGN_INSIDE);
 #endif /* !HAVE_GL */
-
-  fprintf(stderr,
-          "[CubeView::CubeView] created %p at (%d,%d) %dx%d label=\"%s\"\n",
-          (void*)this, x, y, w, h, l ? l : "");
-  fflush(stderr);
 }
 
 #if HAVE_GL
@@ -148,43 +141,7 @@ void CubeView::drawCube() {
 } // drawCube
 
 void CubeView::draw() {
-  static const bool diag = (getenv("OBOL_GL_DIAG") != nullptr);
-  static int dc = 0;
-  ++dc;
-  const bool verbose = diag || (dc <= 5);
-  if (verbose) {
-    fprintf(stderr,
-            "[CubeView::draw #%d] entry: context=%p shown=%d valid=%d"
-            " w=%d h=%d pixel_w=%d pixel_h=%d\n",
-            dc, (void*)context(), (int)shown(), (int)valid(),
-            w(), h(), pixel_w(), pixel_h());
-    const GLubyte* ver  = glGetString(GL_VERSION);
-    const GLubyte* rend = ver ? glGetString(GL_RENDERER) : nullptr;
-    const GLubyte* vend = ver ? glGetString(GL_VENDOR)   : nullptr;
-    const GLubyte* glsl = ver ? glGetString(GL_SHADING_LANGUAGE_VERSION) : nullptr;
-    if (ver)
-      fprintf(stderr,
-              "          GL_VERSION=\"%s\" GL_RENDERER=\"%s\""
-              " GL_VENDOR=\"%s\" GLSL=\"%s\"\n",
-              (const char*)ver,
-              rend ? (const char*)rend : "(null)",
-              vend ? (const char*)vend : "(null)",
-              glsl ? (const char*)glsl : "(null)");
-    else
-      fprintf(stderr, "          GL_VERSION=NULL (no current GL context)\n");
-    fflush(stderr);
-  }
-
   if (!valid()) {
-    if (verbose) {
-      fprintf(stderr,
-              "[CubeView::draw #%d] !valid(): initializing GL state\n"
-              "          glViewport(0, 0, %d, %d)\n"
-              "          glOrtho(-10, 10, -10, 10, -20050, 10000)\n"
-              "          glEnable(GL_BLEND)\n",
-              dc, pixel_w(), pixel_h());
-      fflush(stderr);
-    }
     glLoadIdentity();
     glViewport(0, 0, pixel_w(), pixel_h());
     glOrtho(-10, 10, -10, 10, -20050, 10000);
