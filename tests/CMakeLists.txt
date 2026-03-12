@@ -109,7 +109,9 @@ if(OBOL_BUILD_VIEWER)
 
     # Select the system-GL context manager for the viewer.
     # OBOL_VIEWER_USE_FLTK_GL (default ON) selects fltk_context_manager.h which
-    # uses Fl_Gl_Window for cross-platform GL context creation.
+    # uses a small hidden 1x1 Fl_Gl_Window to own the GL context.  CoinPanel
+    # itself is a plain Fl_Box (consistent with all other panels); rendered
+    # pixels are delivered via fltk_img->draw().
     # Set OFF to fall back to headless_utils.h (GLX on Linux) for CI environments
     # where FLTK's OpenGL cannot obtain a context (headless / no display manager).
     #
@@ -123,7 +125,7 @@ if(OBOL_BUILD_VIEWER)
         if(OBOL_BUILD_DUAL_GL)
             message(STATUS "obol_viewer: using FLTK GL context manager for system-GL panel (dual-GL build)")
         else()
-            message(STATUS "obol_viewer: using FLTK GL context manager (portable)")
+            message(STATUS "obol_viewer: using FLTK GL context manager (portable, hidden 1x1 window)")
         endif()
     else()
         if(NOT OBOL_USE_OSMESA)
