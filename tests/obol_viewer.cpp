@@ -29,36 +29,49 @@
  * to that specific renderer without touching the global singleton, so both GL
  * paths render simultaneously without any global state mutation.
  *
- * CPU raytracing optional panel (NanoRT or Embree)
- * ─────────────────────────────────────────────────
+ * CPU raytracing optional panels (NanoRT and/or Embree)
+ * ──────────────────────────────────────────────────────
  * When OBOL_VIEWER_EMBREE is defined at compile time (set by CMake when
- * Embree 4 is found and OBOL_VIEWER_USE_EMBREE=ON), an additional CPU-
- * raytracing panel is shown using SoEmbreeContextManager::renderScene().
- * When OBOL_VIEWER_NANORT is defined instead (Embree unavailable / disabled,
- * external/nanort/nanort.h found), the same panel uses NanoRT.  Only one of
- * these two backends can be active at a time (CMake enforces mutual exclusion).
+ * Embree 4 is found and OBOL_VIEWER_USE_EMBREE=ON), a CPU-raytracing panel
+ * is available using SoEmbreeContextManager::renderScene().
+ * When OBOL_VIEWER_NANORT is defined (external/nanort/nanort.h found), a
+ * NanoRT CPU-raytracing panel is also available.  Both can be compiled in
+ * simultaneously; each has its own runtime toggle checkbox.
  * Scenes that require GL-only features are flagged nanort_ok / embree_ok =
  * false in the scene catalogue and show "Not supported".  SoText2 nodes are
  * rendered as coloured billboard quads by both backends.
  *
- * Layout (dual + CPU-RT)                    Layout (dual only)
- * ──────────────────────────────────────    ─────────────────────────────────
- *  ┌──────┬───────────┬────────┬────────┐    ┌──────┬─────────────┬─────────┐
- *  │Scene │ System GL │ OSMesa │Embree/ │    │Scene │  System GL  │  OSMesa │
- *  │brows.│  panel    │ panel  │NanoRT  │    │brows.│   panel     │  panel  │
- *  ├──────┴───────────┴────────┴────────┤    ├──────┴─────────────┴─────────┤
- *  │[Reload][Save]       [×] Sync All  │    │[Reload][Save]  [×]Sync All   │
- *  ├────────────────────────────────────┤    ├──────────────────────────────┤
- *  │ GL vs OSMesa: max_diff=1 RMSE=... │    │ GL vs OSMesa: max_diff=1 ... │
- *  └────────────────────────────────────┘    └──────────────────────────────┘
+ * Runtime panel control
+ * ─────────────────────
+ * All compiled-in panels are created at startup; command-line flags select
+ * the initial visible set.  Per-panel checkboxes allow toggling at runtime.
  *
- * Panels resize uniformly (EqualTile distributes width equally on resize).
+ *   obol_viewer                            – all compiled-in panels visible
+ *   obol_viewer --system-enable            – only System GL panel visible
+ *   obol_viewer --system-enable \
+ *               --osmesa-enable            – System GL + OSMesa visible
+ *   obol_viewer --osmesa-enable \
+ *               --nanort-enable            – OSMesa + NanoRT visible
+ *
+ * Layout (all four panels compiled in, all visible)
+ * ─────────────────────────────────────────────────
+ *  ┌──────┬──────────┬────────┬────────┬────────┐
+ *  │Scene │System GL │ OSMesa │ NanoRT │ Embree │
+ *  │brows.│  panel   │ panel  │ panel  │ panel  │
+ *  ├──────┴──────────┴────────┴────────┴────────┤
+ *  │[Reload][Save] [×]OSMesa [×]NanoRT [×]Embree [×]Sync All│
+ *  ├─────────────────────────────────────────────────────────┤
+ *  │ System GL vs OSMesa: max_diff=1 RMSE=...               │
+ *  └─────────────────────────────────────────────────────────┘
+ *
+ * Panels resize uniformly (EqualTile distributes width equally among visible
+ * panels on resize; hidden panels are moved off-screen with zero width).
  *
  * Camera interaction
  *   Left-drag  → orbit (quaternion trackball – no gimbal lock)
  *   Right-drag → dolly
  *   Scroll     → zoom
- *   "Sync All" checkbox mirrors camera changes across all active panels.
+ *   "Sync All" checkbox mirrors camera changes across all visible panels.
  *
  * GL vs OSMesa rendering consistency
  * ───────────────────────────────────
@@ -1427,6 +1440,7 @@ private:
     /* FLTK timer callback: view is stable — re-render at full resolution. */
     static void doRefine(void* data) {
         NanoRTPanel* p = static_cast<NanoRTPanel*>(data);
+        if (!p->visible()) return;   /* panel hidden – skip background refine */
         p->coarse_ = false;
         p->refreshRender();
     }
@@ -1890,6 +1904,7 @@ private:
 
     static void doRefine(void* data) {
         EmbreePanel* p = static_cast<EmbreePanel*>(data);
+        if (!p->visible()) return;   /* panel hidden – skip background refine */
         p->coarse_ = false;
         p->refreshRender();
     }
@@ -2282,20 +2297,46 @@ public:
     EqualTile(int X, int Y, int W, int H) : Fl_Tile(X, Y, W, H) {}
 
     void resize(int X, int Y, int W, int H) override {
-        int n = children();
-        if (n == 0) { Fl_Tile::resize(X, Y, W, H); return; }
+        /* Count only visible children so hidden panels don't occupy width. */
+        int n = 0;
+        for (int i = 0; i < children(); ++i)
+            if (child(i)->visible()) ++n;
+        if (n == 0) {
+            Fl_Widget::resize(X, Y, W, H);
+            init_sizes();  /* keep tile's internal size cache consistent */
+            return;
+        }
         /* Update our own bounding box without letting Fl_Tile redistribute. */
         Fl_Widget::resize(X, Y, W, H);
-        /* Distribute width equally; last child absorbs the remainder. */
-        int cw = W / n;
-        int cx = X;
-        for (int i = 0; i < n; ++i) {
-            int this_w = (i == n-1) ? (X + W - cx) : cw;
+        /* Distribute width equally among visible children; push hidden ones
+         * clearly off-screen (just past the right edge) at zero width so they
+         * are invisible and do not interfere with the tile drag handles. */
+        int cw  = W / n;
+        int cx  = X;
+        int vis = 0;
+        for (int i = 0; i < children(); ++i) {
+            if (!child(i)->visible()) {
+                child(i)->resize(X + W, Y, 0, H);
+                continue;
+            }
+            ++vis;
+            int this_w = (vis == n) ? (X + W - cx) : cw;
             child(i)->resize(cx, Y, this_w, H);
             cx += this_w;
         }
         init_sizes();
     }
+};
+
+/* -------------------------------------------------------------------------
+ * ViewerPanelOpts – initial panel visibility for ObolViewerWindow.
+ * Populated by parseViewerArgs() from command-line flags.
+ * Default: all compiled-in panels visible.
+ * ------------------------------------------------------------------------- */
+struct ViewerPanelOpts {
+    bool show_osmesa = true;
+    bool show_nrt    = true;
+    bool show_embree = true;
 };
 
 
@@ -2304,31 +2345,45 @@ class ObolViewerWindow : public Fl_Double_Window {
     CoinPanel*        coin_panel_;
     Fl_Button*        reload_btn_;
     Fl_Button*        save_btn_;
-    Fl_Box*           status_bar_;        /* toolbar: shows current scene name */
+    Fl_Box*           status_bar_;         /* toolbar: shows current scene name */
     Fl_Box*           diff_bar_ = nullptr; /* bottom bar: shows live diff metrics */
-    EqualTile*        tile_ = nullptr;
+    EqualTile*        tile_     = nullptr;
 #ifdef OBOL_VIEWER_OSMESA_PANEL
-    OSMesaPanel*      osmesa_panel_ = nullptr;
+    OSMesaPanel*      osmesa_panel_  = nullptr;
+    Fl_Check_Button*  osmesa_toggle_ = nullptr;
+    bool              osmesa_enabled_ = true;
 #endif
 #ifdef OBOL_VIEWER_NANORT
-    NanoRTPanel*      nrt_panel_  = nullptr;
+    NanoRTPanel*      nrt_panel_   = nullptr;
+    Fl_Check_Button*  nrt_toggle_  = nullptr;
+    bool              nrt_enabled_ = true;
 #endif
 #ifdef OBOL_VIEWER_EMBREE
-    EmbreePanel*      emb_panel_  = nullptr;
+    EmbreePanel*      emb_panel_   = nullptr;
+    Fl_Check_Button*  emb_toggle_  = nullptr;
+    bool              emb_enabled_ = true;
 #endif
-#if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT) || defined(OBOL_VIEWER_EMBREE)
     Fl_Check_Button*  sync_btn_  = nullptr;
     bool              syncing_   = false;
-#endif
+    std::string       current_scene_;
 
     static const int BROWSER_W = 220;
     static const int TOOLBAR_H = 32;
     static const int STATUS_H  = 48; /* tall enough for up to 3 comparison lines */
 
 public:
-    ObolViewerWindow(int W, int H)
+    ObolViewerWindow(int W, int H, const ViewerPanelOpts& opts)
         : Fl_Double_Window(W, H, "Obol Scene Viewer")
     {
+#ifdef OBOL_VIEWER_OSMESA_PANEL
+        osmesa_enabled_ = opts.show_osmesa;
+#endif
+#ifdef OBOL_VIEWER_NANORT
+        nrt_enabled_ = opts.show_nrt;
+#endif
+#ifdef OBOL_VIEWER_EMBREE
+        emb_enabled_ = opts.show_embree;
+#endif
         begin();
         buildUI(W, H);
         end();
@@ -2474,6 +2529,7 @@ public:
 
     void loadScene(const char* name) {
         coin_panel_->loadScene(name);
+        current_scene_ = name;
 
         /* Look up raytracer compatibility flags from the unified test registry. */
         const ObolTest::TestEntry* entry =
@@ -2481,129 +2537,28 @@ public:
         const bool nanort_ok = entry ? entry->nanort_ok : true;
         const bool embree_ok = entry ? entry->embree_ok : true;
 
+        /* Load scene into each visible optional panel. */
 #ifdef OBOL_VIEWER_OSMESA_PANEL
-        /* OSMesa panel shares the same scene root and camera as the Coin panel. */
-        if (osmesa_panel_ && coin_panel_->state && coin_panel_->state->root) {
+        if (osmesa_panel_ && osmesa_panel_->visible() &&
+                coin_panel_->state && coin_panel_->state->root) {
             osmesa_panel_->setScene(coin_panel_->state->root,
                                     coin_panel_->state->cam,
                                     entry ? entry->configure_renderer : nullptr);
         }
-#endif /* OBOL_VIEWER_OSMESA_PANEL */
-
+#endif
 #ifdef OBOL_VIEWER_NANORT
-        /* NanoRT panel shares the same scene root and camera as the Coin panel.
-         * Pass nanort_ok so the panel knows whether to render or show a message. */
-        if (nrt_panel_ && coin_panel_->state && coin_panel_->state->root) {
+        if (nrt_panel_ && nrt_panel_->visible() &&
+                coin_panel_->state && coin_panel_->state->root) {
             nrt_panel_->setScene(coin_panel_->state->root,
                                  coin_panel_->state->cam, nanort_ok);
         }
-#endif /* OBOL_VIEWER_NANORT */
-
+#endif
 #ifdef OBOL_VIEWER_EMBREE
-        /* Embree panel shares the same scene root and camera as the Coin panel.
-         * Pass embree_ok so the panel knows whether to render or show a message. */
-        if (emb_panel_ && coin_panel_->state && coin_panel_->state->root) {
+        if (emb_panel_ && emb_panel_->visible() &&
+                coin_panel_->state && coin_panel_->state->root) {
             emb_panel_->setScene(coin_panel_->state->root,
                                  coin_panel_->state->cam, embree_ok);
         }
-#endif /* OBOL_VIEWER_EMBREE */
-
-        /* Wire unified all-to-all sync so every active panel stays in sync when
-         * the sync button is checked.  A single syncing_ flag prevents recursive
-         * callbacks.
-         *
-         * All panels share the same camera pointer, so setCamera() writes from
-         * the sync path would just re-set the camera to its current values.
-         * Coin3D fires a field-change notification even for same-value writes,
-         * which bumps the camera's nodeId.  The CPU-raytracing BVH cache uses a
-         * "camera-only moved" heuristic to skip geometry rebuilds when only the
-         * camera changed; a spurious camera-nodeId bump caused by the redundant
-         * setCamera() write would trigger that heuristic even when a dragger
-         * also moved scene geometry, silently suppressing the BVH rebuild and
-         * leaving the CPU-raytracing panel showing the old geometry.
-         *
-         * The fix: use refreshRender() / refreshFromSync() directly in the
-         * sync callbacks instead of setCamera().  The shared camera is already
-         * at the correct position; only a re-render is needed to show the
-         * updated scene in the other panels. */
-#if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT) || defined(OBOL_VIEWER_EMBREE)
-        coin_panel_->on_camera_changed = [this](CoinPanel* /*src*/) {
-            if (!syncing_ && sync_btn_ && sync_btn_->value()) {
-                syncing_ = true;
-#  ifdef OBOL_VIEWER_OSMESA_PANEL
-                if (osmesa_panel_) osmesa_panel_->refreshRender();
-#  endif
-#  ifdef OBOL_VIEWER_NANORT
-                if (nrt_panel_) nrt_panel_->refreshFromSync();
-#  endif
-#  ifdef OBOL_VIEWER_EMBREE
-                if (emb_panel_) emb_panel_->refreshFromSync();
-#  endif
-                syncing_ = false;
-            }
-        };
-#  ifdef OBOL_VIEWER_OSMESA_PANEL
-        if (osmesa_panel_) {
-            osmesa_panel_->on_camera_changed = [this](OSMesaPanel* /*src*/) {
-                if (!syncing_ && sync_btn_ && sync_btn_->value()) {
-                    syncing_ = true;
-                    coin_panel_->refreshRender();
-#    ifdef OBOL_VIEWER_NANORT
-                    if (nrt_panel_) nrt_panel_->refreshFromSync();
-#    endif
-#    ifdef OBOL_VIEWER_EMBREE
-                    if (emb_panel_) emb_panel_->refreshFromSync();
-#    endif
-                    syncing_ = false;
-                }
-            };
-        }
-#  endif /* OBOL_VIEWER_OSMESA_PANEL */
-#  ifdef OBOL_VIEWER_NANORT
-        if (nrt_panel_) {
-            nrt_panel_->on_camera_changed = [this](NanoRTPanel* /*src*/) {
-                if (!syncing_ && sync_btn_ && sync_btn_->value()) {
-                    syncing_ = true;
-                    coin_panel_->refreshRender();
-#    ifdef OBOL_VIEWER_OSMESA_PANEL
-                    if (osmesa_panel_) osmesa_panel_->refreshRender();
-#    endif
-                    syncing_ = false;
-                }
-            };
-        }
-#  endif /* OBOL_VIEWER_NANORT */
-#  ifdef OBOL_VIEWER_EMBREE
-        if (emb_panel_) {
-            emb_panel_->on_camera_changed = [this](EmbreePanel* /*src*/) {
-                if (!syncing_ && sync_btn_ && sync_btn_->value()) {
-                    syncing_ = true;
-                    coin_panel_->refreshRender();
-#    ifdef OBOL_VIEWER_OSMESA_PANEL
-                    if (osmesa_panel_) osmesa_panel_->refreshRender();
-#    endif
-                    syncing_ = false;
-                }
-            };
-        }
-#  endif /* OBOL_VIEWER_EMBREE */
-#endif /* OBOL_VIEWER_OSMESA_PANEL || OBOL_VIEWER_NANORT || OBOL_VIEWER_EMBREE */
-
-#if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT) || defined(OBOL_VIEWER_EMBREE)
-        /* Wire post-render callbacks so the diff bar updates automatically. */
-        coin_panel_->on_rendered = [this]() { updateDiffBar(); };
-#  ifdef OBOL_VIEWER_OSMESA_PANEL
-        if (osmesa_panel_)
-            osmesa_panel_->on_rendered = [this]() { updateDiffBar(); };
-#  endif
-#  ifdef OBOL_VIEWER_NANORT
-        if (nrt_panel_)
-            nrt_panel_->on_rendered = [this]() { updateDiffBar(); };
-#  endif
-#  ifdef OBOL_VIEWER_EMBREE
-        if (emb_panel_)
-            emb_panel_->on_rendered = [this]() { updateDiffBar(); };
-#  endif
 #endif
 
         std::string s = "Scene: "; s += name;
@@ -2649,64 +2604,36 @@ private:
         }
 
         /* Render area: EqualTile so panels resize uniformly.
-         * Panel layout depends on which optional panels are compiled in:
-         *   dual + nanort  → 3 panels: System GL | OSMesa | NanoRT
-         *   dual + embree  → 3 panels: System GL | OSMesa | Embree
-         *   dual only      → 2 panels: System GL | OSMesa
-         *   nanort only    → 2 panels: Coin GL   | NanoRT
-         *   embree only    → 2 panels: Coin GL   | Embree
-         *   neither        → 1 panel:  Coin GL
-         */
+         * All compiled-in panels are always created; runtime flags (set from
+         * constructor opts) control initial visibility.  Hidden panels are
+         * pushed off-screen with zero width by EqualTile::resize().  The tile
+         * redistributes width equally among visible panels on every resize. */
         tile_ = new EqualTile(BROWSER_W, 0, W - BROWSER_W, content_h);
         {
-#if defined(OBOL_VIEWER_OSMESA_PANEL) && defined(OBOL_VIEWER_NANORT)
-            /* Three panels: System GL + OSMesa + NanoRT */
-            int panel_w = (W - BROWSER_W) / 3;
-            coin_panel_   = new CoinPanel(BROWSER_W, 0, panel_w, content_h, coinLabel());
-            osmesa_panel_ = new OSMesaPanel(BROWSER_W + panel_w, 0,
-                                            panel_w, content_h,
-                                            "OSMesa (per-renderer backend)");
-            nrt_panel_    = new NanoRTPanel(BROWSER_W + 2*panel_w, 0,
-                                            (W - BROWSER_W) - 2*panel_w, content_h,
-                                            "NanoRT (app-supplied renderer)");
-#elif defined(OBOL_VIEWER_OSMESA_PANEL) && defined(OBOL_VIEWER_EMBREE)
-            /* Three panels: System GL + OSMesa + Embree */
-            int panel_w = (W - BROWSER_W) / 3;
-            coin_panel_   = new CoinPanel(BROWSER_W, 0, panel_w, content_h, coinLabel());
-            osmesa_panel_ = new OSMesaPanel(BROWSER_W + panel_w, 0,
-                                            panel_w, content_h,
-                                            "OSMesa (per-renderer backend)");
-            emb_panel_    = new EmbreePanel(BROWSER_W + 2*panel_w, 0,
-                                            (W - BROWSER_W) - 2*panel_w, content_h,
-                                            "Embree (app-supplied renderer)");
-#elif defined(OBOL_VIEWER_OSMESA_PANEL)
-            /* Two panels: System GL + OSMesa */
-            int cpw = (W - BROWSER_W) / 2;
-            coin_panel_   = new CoinPanel(BROWSER_W, 0, cpw, content_h, coinLabel());
-            osmesa_panel_ = new OSMesaPanel(BROWSER_W + cpw, 0,
-                                            W - BROWSER_W - cpw, content_h,
-                                            "OSMesa (per-renderer backend)");
-#elif defined(OBOL_VIEWER_NANORT)
-            /* Two panels: Coin GL + NanoRT */
-            int cpw = (W - BROWSER_W) / 2;
-            coin_panel_ = new CoinPanel(BROWSER_W, 0, cpw, content_h, coinLabel());
-            nrt_panel_  = new NanoRTPanel(BROWSER_W + cpw, 0,
-                                          W - BROWSER_W - cpw, content_h,
-                                          "NanoRT (app-supplied renderer)");
-#elif defined(OBOL_VIEWER_EMBREE)
-            /* Two panels: Coin GL + Embree */
-            int cpw = (W - BROWSER_W) / 2;
-            coin_panel_ = new CoinPanel(BROWSER_W, 0, cpw, content_h, coinLabel());
-            emb_panel_  = new EmbreePanel(BROWSER_W + cpw, 0,
-                                          W - BROWSER_W - cpw, content_h,
-                                          "Embree (app-supplied renderer)");
-#else
-            /* Single panel */
             coin_panel_ = new CoinPanel(BROWSER_W, 0, W - BROWSER_W, content_h,
                                         coinLabel());
+#ifdef OBOL_VIEWER_OSMESA_PANEL
+            osmesa_panel_ = new OSMesaPanel(BROWSER_W, 0, W - BROWSER_W, content_h,
+                                            "OSMesa (per-renderer backend)");
+            if (!osmesa_enabled_) osmesa_panel_->hide();
+#endif
+#ifdef OBOL_VIEWER_NANORT
+            nrt_panel_ = new NanoRTPanel(BROWSER_W, 0, W - BROWSER_W, content_h,
+                                         "NanoRT (app-supplied renderer)");
+            if (!nrt_enabled_) nrt_panel_->hide();
+#endif
+#ifdef OBOL_VIEWER_EMBREE
+            emb_panel_ = new EmbreePanel(BROWSER_W, 0, W - BROWSER_W, content_h,
+                                         "Embree (app-supplied renderer)");
+            if (!emb_enabled_) emb_panel_->hide();
 #endif
         }
         tile_->end();
+        /* Redistribute width according to initial visibility. */
+        tile_->resize(tile_->x(), tile_->y(), tile_->w(), tile_->h());
+
+        /* Wire inter-panel callbacks once; they check visible() at call time. */
+        setupCallbacks();
 
         /* Toolbar */
         Fl_Group* tb = new Fl_Group(0, content_h, W, TOOLBAR_H);
@@ -2717,18 +2644,25 @@ private:
             reload_btn_->callback(reloadCB, this); bx += 76;
             save_btn_ = new Fl_Button(bx, by, 80, bh, "Save RGB...");
             save_btn_->callback(saveCB, this); bx += 86;
-#if defined(OBOL_VIEWER_OSMESA_PANEL) && (defined(OBOL_VIEWER_NANORT) || defined(OBOL_VIEWER_EMBREE))
-            sync_btn_ = new Fl_Check_Button(bx, by, 80, bh, "Sync All");
-            sync_btn_->value(1); bx += 86;
-#elif defined(OBOL_VIEWER_OSMESA_PANEL)
-            sync_btn_ = new Fl_Check_Button(bx, by, 120, bh, "Sync GL+OSMesa");
-            sync_btn_->value(1); bx += 126;
-#elif defined(OBOL_VIEWER_NANORT)
-            sync_btn_ = new Fl_Check_Button(bx, by, 110, bh, "Sync NanoRT");
-            sync_btn_->value(1); bx += 116;
-#elif defined(OBOL_VIEWER_EMBREE)
-            sync_btn_ = new Fl_Check_Button(bx, by, 110, bh, "Sync Embree");
-            sync_btn_->value(1); bx += 116;
+            /* Per-panel toggle checkboxes (only for compiled-in panels). */
+#ifdef OBOL_VIEWER_OSMESA_PANEL
+            osmesa_toggle_ = new Fl_Check_Button(bx, by, 75, bh, "OSMesa");
+            osmesa_toggle_->value(osmesa_enabled_ ? 1 : 0);
+            osmesa_toggle_->callback(osmesaToggleCB, this); bx += 81;
+#endif
+#ifdef OBOL_VIEWER_NANORT
+            nrt_toggle_ = new Fl_Check_Button(bx, by, 72, bh, "NanoRT");
+            nrt_toggle_->value(nrt_enabled_ ? 1 : 0);
+            nrt_toggle_->callback(nrtToggleCB, this); bx += 78;
+#endif
+#ifdef OBOL_VIEWER_EMBREE
+            emb_toggle_ = new Fl_Check_Button(bx, by, 70, bh, "Embree");
+            emb_toggle_->value(emb_enabled_ ? 1 : 0);
+            emb_toggle_->callback(embToggleCB, this); bx += 76;
+#endif
+#if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT) || defined(OBOL_VIEWER_EMBREE)
+            sync_btn_ = new Fl_Check_Button(bx, by, 74, bh, "Sync All");
+            sync_btn_->value(1); bx += 80;
 #endif
             status_bar_ = new Fl_Box(bx, by, W-bx-6, bh, "Ready");
             status_bar_->align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE);
@@ -2744,6 +2678,108 @@ private:
             "max_diff: maximum per-channel difference (0-255)\n"
             "RMSE: root mean square error across all channels\n"
             "rows_with_diff: % of rows containing any channel diff > 1");
+    }
+
+    /* Redistribute EqualTile widths after a panel is shown or hidden. */
+    void relayoutPanels() {
+        if (!tile_) return;
+        tile_->resize(tile_->x(), tile_->y(), tile_->w(), tile_->h());
+        redraw();
+    }
+
+    /* Wire all-to-all sync callbacks and post-render diff callbacks.
+     * Called once from buildUI() after all panels are created.
+     *
+     * Camera-sync callbacks use refreshRender()/refreshFromSync() directly
+     * (not setCamera()) to avoid spurious Coin3D nodeId bumps that would
+     * trick the CPU-raytracing BVH cache into skipping geometry rebuilds.
+     * They also check visible() so toggling a panel off pauses its sync. */
+    void setupCallbacks() {
+        coin_panel_->on_camera_changed = [this](CoinPanel* /*src*/) {
+            if (syncing_ || !sync_btn_ || !sync_btn_->value()) return;
+            syncing_ = true;
+#ifdef OBOL_VIEWER_OSMESA_PANEL
+            if (osmesa_panel_ && osmesa_panel_->visible())
+                osmesa_panel_->refreshRender();
+#endif
+#ifdef OBOL_VIEWER_NANORT
+            if (nrt_panel_ && nrt_panel_->visible())
+                nrt_panel_->refreshFromSync();
+#endif
+#ifdef OBOL_VIEWER_EMBREE
+            if (emb_panel_ && emb_panel_->visible())
+                emb_panel_->refreshFromSync();
+#endif
+            syncing_ = false;
+        };
+#ifdef OBOL_VIEWER_OSMESA_PANEL
+        if (osmesa_panel_) {
+            osmesa_panel_->on_camera_changed = [this](OSMesaPanel* /*src*/) {
+                if (syncing_ || !sync_btn_ || !sync_btn_->value()) return;
+                syncing_ = true;
+                coin_panel_->refreshRender();
+#  ifdef OBOL_VIEWER_NANORT
+                if (nrt_panel_ && nrt_panel_->visible())
+                    nrt_panel_->refreshFromSync();
+#  endif
+#  ifdef OBOL_VIEWER_EMBREE
+                if (emb_panel_ && emb_panel_->visible())
+                    emb_panel_->refreshFromSync();
+#  endif
+                syncing_ = false;
+            };
+        }
+#endif
+#ifdef OBOL_VIEWER_NANORT
+        if (nrt_panel_) {
+            nrt_panel_->on_camera_changed = [this](NanoRTPanel* /*src*/) {
+                if (syncing_ || !sync_btn_ || !sync_btn_->value()) return;
+                syncing_ = true;
+                coin_panel_->refreshRender();
+#  ifdef OBOL_VIEWER_OSMESA_PANEL
+                if (osmesa_panel_ && osmesa_panel_->visible())
+                    osmesa_panel_->refreshRender();
+#  endif
+#  ifdef OBOL_VIEWER_EMBREE
+                if (emb_panel_ && emb_panel_->visible())
+                    emb_panel_->refreshFromSync();
+#  endif
+                syncing_ = false;
+            };
+        }
+#endif
+#ifdef OBOL_VIEWER_EMBREE
+        if (emb_panel_) {
+            emb_panel_->on_camera_changed = [this](EmbreePanel* /*src*/) {
+                if (syncing_ || !sync_btn_ || !sync_btn_->value()) return;
+                syncing_ = true;
+                coin_panel_->refreshRender();
+#  ifdef OBOL_VIEWER_OSMESA_PANEL
+                if (osmesa_panel_ && osmesa_panel_->visible())
+                    osmesa_panel_->refreshRender();
+#  endif
+#  ifdef OBOL_VIEWER_NANORT
+                if (nrt_panel_ && nrt_panel_->visible())
+                    nrt_panel_->refreshFromSync();
+#  endif
+                syncing_ = false;
+            };
+        }
+#endif
+        /* Wire post-render callbacks so the diff bar updates automatically. */
+        coin_panel_->on_rendered = [this]() { updateDiffBar(); };
+#ifdef OBOL_VIEWER_OSMESA_PANEL
+        if (osmesa_panel_)
+            osmesa_panel_->on_rendered = [this]() { updateDiffBar(); };
+#endif
+#ifdef OBOL_VIEWER_NANORT
+        if (nrt_panel_)
+            nrt_panel_->on_rendered = [this]() { updateDiffBar(); };
+#endif
+#ifdef OBOL_VIEWER_EMBREE
+        if (emb_panel_)
+            emb_panel_->on_rendered = [this]() { updateDiffBar(); };
+#endif
     }
 
     static void closeCB(Fl_Widget*, void*) {
@@ -2767,9 +2803,88 @@ private:
 
     static void reloadCB(Fl_Widget*, void* data) { browserCB(nullptr, data); }
 
-#if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT) || defined(OBOL_VIEWER_EMBREE)
-    /* Compute pixel-difference metrics across all rendered panels and display
-     * them on the diff_bar_ status line at the bottom of the window. */
+    /* Panel toggle callbacks – show/hide a panel, redistribute tile widths,
+     * load the current scene if needed, then refresh the diff bar. */
+#ifdef OBOL_VIEWER_OSMESA_PANEL
+    static void osmesaToggleCB(Fl_Widget* w, void* data) {
+        auto* self = static_cast<ObolViewerWindow*>(data);
+        bool on = static_cast<Fl_Check_Button*>(w)->value() != 0;
+        self->osmesa_enabled_ = on;
+        if (on) {
+            self->osmesa_panel_->show();
+            self->relayoutPanels();
+            /* Load scene into newly-visible panel. */
+            if (!self->current_scene_.empty() &&
+                    self->coin_panel_->state && self->coin_panel_->state->root) {
+                const ObolTest::TestEntry* entry =
+                    ObolTest::TestRegistry::instance().findTest(
+                        self->current_scene_.c_str());
+                self->osmesa_panel_->setScene(
+                    self->coin_panel_->state->root,
+                    self->coin_panel_->state->cam,
+                    entry ? entry->configure_renderer : nullptr);
+            }
+        } else {
+            self->osmesa_panel_->hide();
+            self->relayoutPanels();
+        }
+        self->updateDiffBar();
+    }
+#endif
+#ifdef OBOL_VIEWER_NANORT
+    static void nrtToggleCB(Fl_Widget* w, void* data) {
+        auto* self = static_cast<ObolViewerWindow*>(data);
+        bool on = static_cast<Fl_Check_Button*>(w)->value() != 0;
+        self->nrt_enabled_ = on;
+        if (on) {
+            self->nrt_panel_->show();
+            self->relayoutPanels();
+            if (!self->current_scene_.empty() &&
+                    self->coin_panel_->state && self->coin_panel_->state->root) {
+                const ObolTest::TestEntry* entry =
+                    ObolTest::TestRegistry::instance().findTest(
+                        self->current_scene_.c_str());
+                const bool nanort_ok = entry ? entry->nanort_ok : true;
+                self->nrt_panel_->setScene(
+                    self->coin_panel_->state->root,
+                    self->coin_panel_->state->cam, nanort_ok);
+            }
+        } else {
+            self->nrt_panel_->hide();
+            self->relayoutPanels();
+        }
+        self->updateDiffBar();
+    }
+#endif
+#ifdef OBOL_VIEWER_EMBREE
+    static void embToggleCB(Fl_Widget* w, void* data) {
+        auto* self = static_cast<ObolViewerWindow*>(data);
+        bool on = static_cast<Fl_Check_Button*>(w)->value() != 0;
+        self->emb_enabled_ = on;
+        if (on) {
+            self->emb_panel_->show();
+            self->relayoutPanels();
+            if (!self->current_scene_.empty() &&
+                    self->coin_panel_->state && self->coin_panel_->state->root) {
+                const ObolTest::TestEntry* entry =
+                    ObolTest::TestRegistry::instance().findTest(
+                        self->current_scene_.c_str());
+                const bool embree_ok = entry ? entry->embree_ok : true;
+                self->emb_panel_->setScene(
+                    self->coin_panel_->state->root,
+                    self->coin_panel_->state->cam, embree_ok);
+            }
+        } else {
+            self->emb_panel_->hide();
+            self->relayoutPanels();
+        }
+        self->updateDiffBar();
+    }
+#endif
+
+    /* Compute pixel-difference metrics across all visible rendered panels and
+     * display them on the diff_bar_ status line at the bottom of the window.
+     * Works for any number of compiled-in panels (including none). */
     void updateDiffBar() {
         if (!diff_bar_) return;
 
@@ -2780,28 +2895,31 @@ private:
         };
         std::vector<PanelImg> panels;
 
-        if (!coin_panel_->display_buf.empty())
+        if (coin_panel_->visible() && !coin_panel_->display_buf.empty())
             panels.push_back({coin_panel_->label_text.c_str(),
                               coin_panel_->display_buf.data(),
                               coin_panel_->w(), coin_panel_->h()});
-#  ifdef OBOL_VIEWER_OSMESA_PANEL
-        if (osmesa_panel_ && !osmesa_panel_->display_buf.empty())
+#ifdef OBOL_VIEWER_OSMESA_PANEL
+        if (osmesa_panel_ && osmesa_panel_->visible() &&
+                !osmesa_panel_->display_buf.empty())
             panels.push_back({osmesa_panel_->label_text.c_str(),
                               osmesa_panel_->display_buf.data(),
                               osmesa_panel_->w(), osmesa_panel_->h()});
-#  endif
-#  ifdef OBOL_VIEWER_NANORT
-        if (nrt_panel_ && !nrt_panel_->display_buf.empty())
+#endif
+#ifdef OBOL_VIEWER_NANORT
+        if (nrt_panel_ && nrt_panel_->visible() &&
+                !nrt_panel_->display_buf.empty())
             panels.push_back({nrt_panel_->label_text.c_str(),
                               nrt_panel_->display_buf.data(),
                               nrt_panel_->w(), nrt_panel_->h()});
-#  endif
-#  ifdef OBOL_VIEWER_EMBREE
-        if (emb_panel_ && !emb_panel_->display_buf.empty())
+#endif
+#ifdef OBOL_VIEWER_EMBREE
+        if (emb_panel_ && emb_panel_->visible() &&
+                !emb_panel_->display_buf.empty())
             panels.push_back({emb_panel_->label_text.c_str(),
                               emb_panel_->display_buf.data(),
                               emb_panel_->w(), emb_panel_->h()});
-#  endif
+#endif
 
         if (panels.size() < 2) {
             diff_bar_->copy_label("");
@@ -2863,12 +2981,6 @@ private:
         diff_bar_->copy_label(msg.c_str());
         diff_bar_->redraw();
     }
-#endif /* OBOL_VIEWER_OSMESA_PANEL || OBOL_VIEWER_NANORT || OBOL_VIEWER_EMBREE */
-
-#if !defined(OBOL_VIEWER_OSMESA_PANEL) && !defined(OBOL_VIEWER_NANORT) && !defined(OBOL_VIEWER_EMBREE)
-    /* No-op when comparison panels are not compiled in (single-panel builds). */
-    void updateDiffBar() {}
-#endif
 
     static void saveCB(Fl_Widget*, void* data) {
         auto* self = static_cast<ObolViewerWindow*>(data);
@@ -2911,10 +3023,69 @@ private:
 };
 
 /* =========================================================================
+ * parseViewerArgs()
+ *
+ * Extracts obol_viewer-specific flags from argv and returns initial panel
+ * visibility settings.  Custom flags are removed from the argv copy passed
+ * to FLTK so FLTK's own argument handler does not see unknown options.
+ *
+ * Supported flags:
+ *   --system-enable   (system GL panel – always visible, this is the base)
+ *   --osmesa-enable   OSMesa panel visible at startup
+ *   --nanort-enable   NanoRT panel visible at startup
+ *   --embree-enable   Embree panel visible at startup
+ *
+ * If no --*-enable flags are provided every compiled-in panel starts visible.
+ * If one or more flags are provided only the named panels start visible.
+ * ======================================================================= */
+static ViewerPanelOpts parseViewerArgs(int argc, char** argv,
+                                       int* fltk_argc_out,
+                                       std::vector<char*>* fltk_argv_out)
+{
+    bool any_enable  = false;
+    bool want_osmesa = false, want_nrt = false, want_embree = false;
+
+    fltk_argv_out->clear();
+    fltk_argv_out->push_back(argv[0]);
+
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--system-enable") == 0) {
+            any_enable = true;
+            /* system GL is always visible; flag selects "only system" config */
+        } else if (strcmp(argv[i], "--osmesa-enable") == 0) {
+            any_enable = true; want_osmesa = true;
+        } else if (strcmp(argv[i], "--nanort-enable") == 0) {
+            any_enable = true; want_nrt = true;
+        } else if (strcmp(argv[i], "--embree-enable") == 0) {
+            any_enable = true; want_embree = true;
+        } else {
+            fltk_argv_out->push_back(argv[i]);
+        }
+    }
+    fltk_argv_out->push_back(nullptr);
+    *fltk_argc_out = static_cast<int>(fltk_argv_out->size()) - 1;
+
+    ViewerPanelOpts opts;
+    if (any_enable) {
+        opts.show_osmesa = want_osmesa;
+        opts.show_nrt    = want_nrt;
+        opts.show_embree = want_embree;
+    }
+    return opts;
+}
+
+/* =========================================================================
  * main()
  * ======================================================================= */
 int main(int argc, char** argv)
 {
+    /* Parse obol_viewer-specific flags before FLTK sees argv. */
+    int              fltk_argc = 0;
+    std::vector<char*> fltk_argv_storage;
+    ViewerPanelOpts opts = parseViewerArgs(argc, argv, &fltk_argc,
+                                           &fltk_argv_storage);
+    char** fltk_argv = fltk_argv_storage.data();
+
     /* Initialise Obol using the same context manager pattern as the tests */
     initCoinHeadless();
     fprintf(stderr, "[obol_viewer main] initCoinHeadless() complete.\n");
@@ -2937,9 +3108,9 @@ int main(int argc, char** argv)
         fflush(stderr);
     }
 
-    ObolViewerWindow* win = new ObolViewerWindow(1100, 700);
+    ObolViewerWindow* win = new ObolViewerWindow(1100, 700, opts);
     fprintf(stderr, "[obol_viewer main] calling win->show()...\n"); fflush(stderr);
-    win->show(argc, argv);
+    win->show(fltk_argc, fltk_argv);
     fprintf(stderr, "[obol_viewer main] win->show() returned.\n"); fflush(stderr);
 
 #ifdef OBOL_VIEWER_FLTK_GL
