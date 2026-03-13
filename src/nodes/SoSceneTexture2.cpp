@@ -1051,7 +1051,12 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
       int reqbytes = ctx_size[0]*ctx_size[1]*4;
       if (reqbytes > this->offscreenbuffersize) {
         delete[] this->offscreenbuffer;
-        this->offscreenbuffer = new unsigned char[reqbytes];
+        // Allocate with extra padding: some GPU drivers (e.g. radeonsi) use
+        // vectorised/DMA stores during glReadPixels that can overrun the
+        // exact data size by a cache-line-worth of bytes.  The extra 64
+        // bytes prevent the resulting heap corruption without affecting the
+        // actual pixel data written to the buffer.
+        this->offscreenbuffer = new unsigned char[reqbytes + 64];
         this->offscreenbuffersize = reqbytes;
       }
       SoGLContext_glPixelStorei(pbglue, GL_PACK_ALIGNMENT, 1);
