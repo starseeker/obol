@@ -145,6 +145,13 @@ static SoNanoRTContextManager s_nanort_mgr;
 static SoEmbreeContextManager s_embree_mgr;
 #endif
 
+/* ---- Optional Vulkan application-supplied renderer ---- */
+#ifdef OBOL_VIEWER_VULKAN
+#  include "vulkan_context_manager.h"
+/* Single Vulkan renderer instance owned by the viewer application. */
+static SoVulkanContextManager s_vulkan_mgr;
+#endif
+
 /* ---- FLTK ---- */
 #include <FL/Fl.H>
 #include <FL/Fl_Double_Window.H>
@@ -1517,6 +1524,272 @@ private:
 
 
 /* =========================================================================
+ * VulkanPanel  –  application-supplied Vulkan rasterisation panel (optional)
+ *
+ * Renders the same scene graph as CoinPanel but via SoVulkanContextManager
+ * called directly as a plain method call.  Lighting is pre-computed on the
+ * CPU (Phong model, same formulas as NanoRT/Embree but without shadows); the
+ * GPU performs vertex transformation, rasterisation, and depth testing.
+ *
+ * Unlike the CPU ray-tracers, Vulkan rendering is hardware-accelerated and
+ * fast enough to render at full resolution on every frame, so the
+ * coarse/refine calibration used by NanoRT and Embree is omitted here.
+ * ======================================================================= */
+#ifdef OBOL_VIEWER_VULKAN
+class VulkanPanel : public Fl_Box {
+public:
+    SoSeparator*         root       = nullptr;
+    SoPerspectiveCamera* cam        = nullptr;
+    std::string          label_text;
+    std::string          status_text;
+
+    std::vector<uint8_t> pixel_buf;   /* RGBA from renderScene() */
+    std::vector<uint8_t> display_buf; /* RGB, top-down for FLTK */
+    Fl_RGB_Image*        fltk_img  = nullptr;
+
+    std::function<void(VulkanPanel*)> on_camera_changed;
+    std::function<void()>             on_rendered;
+
+    explicit VulkanPanel(int X, int Y, int W, int H, const char* lbl = "")
+        : Fl_Box(X, Y, W, H, ""), label_text(lbl ? lbl : "")
+    {
+        box(FL_FLAT_BOX);
+        color(FL_BLACK);
+    }
+
+    ~VulkanPanel() { delete fltk_img; }
+
+    void setScene(SoSeparator* r, SoPerspectiveCamera* c,
+                  bool vulkan_supported = true)
+    {
+        root = r; cam = c; vulkan_ok_ = vulkan_supported;
+        status_text.clear();
+        s_vulkan_mgr.resetCache();
+        if (!vulkan_ok_) {
+            status_text = "Not supported (Vulkan)";
+            delete fltk_img; fltk_img = nullptr;
+            redraw(); return;
+        }
+        scene_center_ = SbVec3f(0,0,0);
+        if (root) {
+            SoGetBoundingBoxAction bba(
+                SbViewportRegion(std::max(w(),1), std::max(h(),1)));
+            bba.apply(root);
+            SbBox3f bbox = bba.getBoundingBox();
+            if (!bbox.isEmpty()) scene_center_ = bbox.getCenter();
+        }
+        refreshRender();
+    }
+
+    void refreshRender() {
+        if (!root || !vulkan_ok_) { redraw(); return; }
+        int pw = std::max(w(), 1);
+        int ph = std::max(h(), 1);
+        if (!doRender_(pw, ph)) { redraw(); return; }
+        redraw();
+        if (on_rendered) on_rendered();
+    }
+
+    void getCamera(float pos[3], float orient[4], float& dist) const {
+        if (!cam) return;
+        SbVec3f p = cam->position.getValue();
+        pos[0]=p[0]; pos[1]=p[1]; pos[2]=p[2];
+        SbRotation rot = cam->orientation.getValue();
+        SbVec3f axis; float angle; rot.getValue(axis, angle);
+        float s2 = sinf(angle*0.5f);
+        orient[0]=axis[0]*s2; orient[1]=axis[1]*s2;
+        orient[2]=axis[2]*s2; orient[3]=cosf(angle*0.5f);
+        dist = cam->focalDistance.getValue();
+    }
+
+    void setCamera(const float pos[3], const float orient[4], float dist) {
+        if (!cam) return;
+        float qx=orient[0], qy=orient[1], qz=orient[2], qw=orient[3];
+        float len = sqrtf(qx*qx+qy*qy+qz*qz+qw*qw);
+        if (len > 1e-6f) { qx/=len; qy/=len; qz/=len; qw/=len; }
+        float angle = 2.0f*acosf(qw);
+        SbVec3f ax(qx,qy,qz);
+        if (ax.length() < 1e-6f) { ax=SbVec3f(0,1,0); angle=0; } else ax.normalize();
+        SbRotation newRot(ax, angle);
+        SbVec3f curPos = cam->position.getValue();
+        if (fabsf(curPos[0]-pos[0]) > 1e-6f || fabsf(curPos[1]-pos[1]) > 1e-6f ||
+                fabsf(curPos[2]-pos[2]) > 1e-6f)
+            cam->position.setValue(pos[0], pos[1], pos[2]);
+        if (!cam->orientation.getValue().equals(newRot, 1e-5f))
+            cam->orientation.setValue(newRot);
+        if (dist > 0.0f && fabsf(cam->focalDistance.getValue() - dist) > 1e-6f)
+            cam->focalDistance.setValue(dist);
+        refreshRender();
+    }
+
+    void refreshFromSync() {
+        if (!root || !vulkan_ok_) return;
+        refreshRender();
+    }
+
+    /* ---- FLTK overrides ---- */
+
+    void draw() override {
+        fl_rectf(x(), y(), w(), h(), FL_BLACK);
+        if (fltk_img) {
+            fltk_img->draw(x(), y(), w(), h(), 0, 0);
+        } else {
+            fl_color(FL_WHITE); fl_font(FL_HELVETICA, 14);
+            fl_draw("(no scene)", x()+w()/2-40, y()+h()/2);
+        }
+        if (!label_text.empty()) {
+            fl_color(fl_rgb_color(255, 200, 80)); fl_font(FL_HELVETICA_BOLD, 13);
+            fl_draw(label_text.c_str(), x()+6, y()+16);
+        }
+        if (!status_text.empty()) {
+            fl_color(fl_rgb_color(255, 80, 80)); fl_font(FL_HELVETICA, 12);
+            fl_draw(status_text.c_str(), x()+6, y()+h()-6);
+        }
+    }
+
+    int handle(int event) override {
+        if (!root || !cam || !vulkan_ok_) return Fl_Box::handle(event);
+        int h_ = h();
+        switch (event) {
+        case FL_PUSH: {
+            take_focus();
+            dragging_ = true;
+            drag_btn_ = Fl::event_button();
+            last_x_   = Fl::event_x() - x();
+            last_y_   = Fl::event_y() - y();
+            SoMouseButtonEvent ev;
+            ev.setButton(drag_btn_==1 ? SoMouseButtonEvent::BUTTON1 :
+                         drag_btn_==2 ? SoMouseButtonEvent::BUTTON2 :
+                                        SoMouseButtonEvent::BUTTON3);
+            ev.setState(SoButtonEvent::DOWN);
+            ev.setPosition(SbVec2s((short)last_x_, (short)(h_-last_y_)));
+            ev.setTime(SbTime::getTimeOfDay());
+            SbViewportRegion vp(std::max(w(),1), std::max(h(),1));
+            SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(root);
+            return 1;
+        }
+        case FL_RELEASE: {
+            dragging_ = false;
+            int rx = Fl::event_x()-x(), ry = Fl::event_y()-y();
+            SoMouseButtonEvent ev;
+            ev.setButton(Fl::event_button()==1 ? SoMouseButtonEvent::BUTTON1 :
+                         Fl::event_button()==2 ? SoMouseButtonEvent::BUTTON2 :
+                                                 SoMouseButtonEvent::BUTTON3);
+            ev.setState(SoButtonEvent::UP);
+            ev.setPosition(SbVec2s((short)rx, (short)(h_-ry)));
+            ev.setTime(SbTime::getTimeOfDay());
+            SbViewportRegion vp(std::max(w(),1), std::max(h(),1));
+            SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(root);
+            notifyCameraChanged(); refreshRender(); return 1;
+        }
+        case FL_DRAG: {
+            if (!dragging_) return 1;
+            int ex = Fl::event_x()-x(), ey = Fl::event_y()-y();
+            int dx = ex - last_x_, dy = ey - last_y_;
+            last_x_ = ex; last_y_ = ey;
+            SoLocation2Event ev;
+            ev.setPosition(SbVec2s((short)ex, (short)(h_-ey)));
+            ev.setTime(SbTime::getTimeOfDay());
+            SbViewportRegion vp(std::max(w(),1), std::max(h(),1));
+            SoHandleEventAction ha(vp); ha.setEvent(&ev); ha.apply(root);
+            if (drag_btn_ == 1) {
+                cam->orbitCamera(scene_center_,
+                            (float)dx, (float)dy,
+                            0.01f * (180.0f / static_cast<float>(M_PI)));
+            } else if (drag_btn_ == 3) {
+                float dist = cam->focalDistance.getValue() * (1.0f + dy*0.01f);
+                if (dist < 0.1f) dist = 0.1f;
+                SbVec3f dir = cam->position.getValue() - scene_center_;
+                dir.normalize();
+                cam->position.setValue(scene_center_ + dir * dist);
+                cam->focalDistance.setValue(dist);
+                updateClipping_();
+            }
+            notifyCameraChanged(); refreshRender(); return 1;
+        }
+        case FL_MOUSEWHEEL: {
+            float dist = cam->focalDistance.getValue() *
+                         (1.0f + (float)Fl::event_dy()*0.1f);
+            if (dist < 0.1f) dist = 0.1f;
+            SbVec3f dir = cam->position.getValue() - scene_center_;
+            dir.normalize();
+            cam->position.setValue(scene_center_ + dir * dist);
+            cam->focalDistance.setValue(dist);
+            updateClipping_();
+            notifyCameraChanged(); refreshRender(); return 1;
+        }
+        case FL_FOCUS: case FL_UNFOCUS: return 1;
+        default: break;
+        }
+        return Fl_Box::handle(event);
+    }
+
+    void resize(int X, int Y, int W, int H) override {
+        Fl_Box::resize(X, Y, W, H);
+        refreshRender();
+    }
+
+private:
+    SbVec3f scene_center_ = SbVec3f(0,0,0);
+    bool vulkan_ok_  = true;
+    bool dragging_   = false;
+    int  drag_btn_   = 0;
+    int  last_x_     = 0;
+    int  last_y_     = 0;
+
+    bool doRender_(int pw, int ph) {
+        const float bg[3] = { 0.15f, 0.15f, 0.2f };
+        const uint8_t bg_r = static_cast<uint8_t>(bg[0] * 255.0f + 0.5f);
+        const uint8_t bg_g = static_cast<uint8_t>(bg[1] * 255.0f + 0.5f);
+        const uint8_t bg_b = static_cast<uint8_t>(bg[2] * 255.0f + 0.5f);
+        pixel_buf.resize((size_t)pw * ph * 4);
+        for (size_t i = 0; i < (size_t)pw * ph; ++i) {
+            pixel_buf[i*4+0] = bg_r;
+            pixel_buf[i*4+1] = bg_g;
+            pixel_buf[i*4+2] = bg_b;
+            pixel_buf[i*4+3] = 255;
+        }
+        s_vulkan_mgr.setDisplayViewport((unsigned int)pw, (unsigned int)ph);
+        SbBool ok = s_vulkan_mgr.renderScene(root,
+                                             (unsigned int)pw,
+                                             (unsigned int)ph,
+                                             pixel_buf.data(),
+                                             4u, bg);
+        if (!ok) { status_text = "Vulkan render failed (no device?)"; return false; }
+        status_text.clear();
+
+        /* SoVulkanContextManager outputs pixels in bottom-to-top row order
+         * because the OpenGL view-projection matrix and Vulkan's y-down NDC
+         * convention cancel out, giving the same bottom-up layout that
+         * SoOffscreenRenderer uses (see vulkan_context_manager.h notes).
+         * Convert to top-down RGB for FLTK display here. */
+        display_buf.resize((size_t)pw * ph * 3);
+        for (int row = 0; row < ph; ++row) {
+            const uint8_t* s = pixel_buf.data() + (size_t)(ph-1-row) * pw * 4;
+            uint8_t* d = display_buf.data() + (size_t)row * pw * 3;
+            for (int col = 0; col < pw; ++col) {
+                d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; d+=3; s+=4;
+            }
+        }
+        delete fltk_img;
+        fltk_img = new Fl_RGB_Image(display_buf.data(), pw, ph, 3);
+        return true;
+    }
+
+    void updateClipping_() {
+        if (!cam) return;
+        float d = cam->focalDistance.getValue();
+        if (d < 1e-4f) d = 1e-4f;
+        cam->nearDistance.setValue(d * 0.001f);
+        cam->farDistance.setValue(d * 10000.0f);
+    }
+
+    void notifyCameraChanged() { if (on_camera_changed) on_camera_changed(this); }
+};
+#endif /* OBOL_VIEWER_VULKAN */
+
+
+/* =========================================================================
  * OSMesaPanel  –  OSMesa offscreen rendering panel (dual-GL builds only)
  *
  * Renders the same scene graph as CoinPanel but through a dedicated
@@ -1835,6 +2108,7 @@ struct ViewerPanelOpts {
     bool show_osmesa = true;
     bool show_nrt    = true;
     bool show_embree = true;
+    bool show_vulkan = true;
 };
 
 
@@ -1861,6 +2135,11 @@ class ObolViewerWindow : public Fl_Double_Window {
     Fl_Check_Button*  emb_toggle_  = nullptr;
     bool              emb_enabled_ = true;
 #endif
+#ifdef OBOL_VIEWER_VULKAN
+    VulkanPanel*      vk_panel_    = nullptr;
+    Fl_Check_Button*  vk_toggle_   = nullptr;
+    bool              vk_enabled_  = true;
+#endif
     Fl_Check_Button*  sync_btn_  = nullptr;
     bool              syncing_   = false;
     std::string       current_scene_;
@@ -1881,6 +2160,9 @@ public:
 #endif
 #ifdef OBOL_VIEWER_EMBREE
         emb_enabled_ = opts.show_embree;
+#endif
+#ifdef OBOL_VIEWER_VULKAN
+        vk_enabled_ = opts.show_vulkan;
 #endif
         begin();
         buildUI(W, H);
@@ -1923,6 +2205,13 @@ public:
                 coin_panel_->state && coin_panel_->state->root) {
             emb_panel_->setScene(coin_panel_->state->root,
                                  coin_panel_->state->cam, embree_ok);
+        }
+#endif
+#ifdef OBOL_VIEWER_VULKAN
+        if (vk_panel_ && vk_panel_->visible() &&
+                coin_panel_->state && coin_panel_->state->root) {
+            vk_panel_->setScene(coin_panel_->state->root,
+                                coin_panel_->state->cam);
         }
 #endif
 
@@ -1990,6 +2279,11 @@ private:
                                          "Embree (app-supplied renderer)");
             if (!emb_enabled_) emb_panel_->hide();
 #endif
+#ifdef OBOL_VIEWER_VULKAN
+            vk_panel_ = new VulkanPanel(BROWSER_W, 0, W - BROWSER_W, content_h,
+                                        "Vulkan (app-supplied renderer)");
+            if (!vk_enabled_) vk_panel_->hide();
+#endif
         }
         tile_->end();
         /* Redistribute width according to initial visibility. */
@@ -2023,7 +2317,12 @@ private:
             emb_toggle_->value(emb_enabled_ ? 1 : 0);
             emb_toggle_->callback(embToggleCB, this); bx += 76;
 #endif
-#if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT) || defined(OBOL_VIEWER_EMBREE)
+#ifdef OBOL_VIEWER_VULKAN
+            vk_toggle_ = new Fl_Check_Button(bx, by, 70, bh, "Vulkan");
+            vk_toggle_->value(vk_enabled_ ? 1 : 0);
+            vk_toggle_->callback(vkToggleCB, this); bx += 76;
+#endif
+#if defined(OBOL_VIEWER_OSMESA_PANEL) || defined(OBOL_VIEWER_NANORT) || defined(OBOL_VIEWER_EMBREE) || defined(OBOL_VIEWER_VULKAN)
             sync_btn_ = new Fl_Check_Button(bx, by, 74, bh, "Sync All");
             sync_btn_->value(1); bx += 80;
 #endif
@@ -2072,6 +2371,10 @@ private:
 #ifdef OBOL_VIEWER_EMBREE
             if (emb_panel_ && emb_panel_->visible())
                 emb_panel_->refreshFromSync();
+#endif
+#ifdef OBOL_VIEWER_VULKAN
+            if (vk_panel_ && vk_panel_->visible())
+                vk_panel_->refreshFromSync();
 #endif
             syncing_ = false;
         };
@@ -2142,6 +2445,29 @@ private:
 #ifdef OBOL_VIEWER_EMBREE
         if (emb_panel_)
             emb_panel_->on_rendered = [this]() { updateDiffBar(); };
+#endif
+#ifdef OBOL_VIEWER_VULKAN
+        if (vk_panel_) {
+            vk_panel_->on_camera_changed = [this](VulkanPanel* /*src*/) {
+                if (syncing_ || !sync_btn_ || !sync_btn_->value()) return;
+                syncing_ = true;
+                coin_panel_->refreshRender();
+#  ifdef OBOL_VIEWER_OSMESA_PANEL
+                if (osmesa_panel_ && osmesa_panel_->visible())
+                    osmesa_panel_->refreshRender();
+#  endif
+#  ifdef OBOL_VIEWER_NANORT
+                if (nrt_panel_ && nrt_panel_->visible())
+                    nrt_panel_->refreshFromSync();
+#  endif
+#  ifdef OBOL_VIEWER_EMBREE
+                if (emb_panel_ && emb_panel_->visible())
+                    emb_panel_->refreshFromSync();
+#  endif
+                syncing_ = false;
+            };
+            vk_panel_->on_rendered = [this]() { updateDiffBar(); };
+        }
 #endif
     }
 
@@ -2244,6 +2570,27 @@ private:
         self->updateDiffBar();
     }
 #endif
+#ifdef OBOL_VIEWER_VULKAN
+    static void vkToggleCB(Fl_Widget* w, void* data) {
+        auto* self = static_cast<ObolViewerWindow*>(data);
+        bool on = static_cast<Fl_Check_Button*>(w)->value() != 0;
+        self->vk_enabled_ = on;
+        if (on) {
+            self->vk_panel_->show();
+            self->relayoutPanels();
+            if (!self->current_scene_.empty() &&
+                    self->coin_panel_->state && self->coin_panel_->state->root) {
+                self->vk_panel_->setScene(
+                    self->coin_panel_->state->root,
+                    self->coin_panel_->state->cam);
+            }
+        } else {
+            self->vk_panel_->hide();
+            self->relayoutPanels();
+        }
+        self->updateDiffBar();
+    }
+#endif
 
     /* Compute pixel-difference metrics across all visible rendered panels and
      * display them on the diff_bar_ status line at the bottom of the window.
@@ -2282,6 +2629,13 @@ private:
             panels.push_back({emb_panel_->label_text.c_str(),
                               emb_panel_->display_buf.data(),
                               emb_panel_->w(), emb_panel_->h()});
+#endif
+#ifdef OBOL_VIEWER_VULKAN
+        if (vk_panel_ && vk_panel_->visible() &&
+                !vk_panel_->display_buf.empty())
+            panels.push_back({vk_panel_->label_text.c_str(),
+                              vk_panel_->display_buf.data(),
+                              vk_panel_->w(), vk_panel_->h()});
 #endif
 
         if (panels.size() < 2) {
@@ -2397,6 +2751,7 @@ private:
  *   --osmesa-enable   OSMesa panel visible at startup
  *   --nanort-enable   NanoRT panel visible at startup
  *   --embree-enable   Embree panel visible at startup
+ *   --vulkan-enable   Vulkan panel visible at startup
  *
  * If no --*-enable flags are provided every compiled-in panel starts visible.
  * If one or more flags are provided only the named panels start visible.
@@ -2407,6 +2762,7 @@ static ViewerPanelOpts parseViewerArgs(int argc, char** argv,
 {
     bool any_enable  = false;
     bool want_osmesa = false, want_nrt = false, want_embree = false;
+    bool want_vulkan = false;
 
     fltk_argv_out->clear();
     fltk_argv_out->push_back(argv[0]);
@@ -2421,6 +2777,8 @@ static ViewerPanelOpts parseViewerArgs(int argc, char** argv,
             any_enable = true; want_nrt = true;
         } else if (strcmp(argv[i], "--embree-enable") == 0) {
             any_enable = true; want_embree = true;
+        } else if (strcmp(argv[i], "--vulkan-enable") == 0) {
+            any_enable = true; want_vulkan = true;
         } else {
             fltk_argv_out->push_back(argv[i]);
         }
@@ -2433,6 +2791,7 @@ static ViewerPanelOpts parseViewerArgs(int argc, char** argv,
         opts.show_osmesa = want_osmesa;
         opts.show_nrt    = want_nrt;
         opts.show_embree = want_embree;
+        opts.show_vulkan = want_vulkan;
     }
     return opts;
 }

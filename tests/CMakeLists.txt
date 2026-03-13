@@ -182,6 +182,36 @@ if(OBOL_BUILD_VIEWER)
         message(STATUS "obol_viewer: No CPU raytracing panel (neither Embree nor NanoRT found)")
     endif()
 
+    # Optional Vulkan rasterisation panel.
+    #
+    # OBOL_VIEWER_USE_VULKAN (default ON when the Vulkan loader is found)
+    # enables a hardware-accelerated Vulkan rasterisation panel.  Scene
+    # geometry is collected via SoRaytracerSceneCollector (same as NanoRT/
+    # Embree); per-vertex Phong lighting is pre-computed on the CPU and the
+    # GPU handles transformation, rasterisation, and depth testing.
+    find_package(Vulkan QUIET)
+    if(Vulkan_FOUND)
+        option(OBOL_VIEWER_USE_VULKAN
+            "Enable Vulkan hardware-rasterisation panel in obol_viewer"
+            ON)
+    else()
+        option(OBOL_VIEWER_USE_VULKAN
+            "Enable Vulkan hardware-rasterisation panel in obol_viewer"
+            OFF)
+    endif()
+    if(OBOL_VIEWER_USE_VULKAN AND Vulkan_FOUND)
+        target_compile_definitions(obol_viewer PRIVATE OBOL_VIEWER_VULKAN)
+        target_include_directories(obol_viewer PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/utils"   # vulkan_context_manager.h
+        )
+        target_link_libraries(obol_viewer PRIVATE Vulkan::Vulkan)
+        message(STATUS "obol_viewer: Vulkan panel enabled")
+    elseif(OBOL_VIEWER_USE_VULKAN AND NOT Vulkan_FOUND)
+        message(STATUS "obol_viewer: Vulkan panel requested but Vulkan not found")
+    else()
+        message(STATUS "obol_viewer: Vulkan panel disabled")
+    endif()
+
     # Link against obol_testlib (with --whole-archive so REGISTER_TEST static
     # initialisers are not discarded) as well as the main Obol library.
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
