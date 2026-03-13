@@ -191,13 +191,29 @@ public:
 /* =========================================================================
  * FLTKOffscreenCtx  –  per-context bookkeeping
  *
- * All FLTKOffscreenCtx instances share the same underlying GL context
- * (the hidden FLTKGLContextWindow).  This struct records the dimensions
- * that were requested when the context was created.
+ * On X11/GLX builds this holds a *real* shared GLXContext created from the
+ * main FLTK window context.  makeContextCurrent() switches into it with
+ * glXMakeCurrent(), giving updatePBuffer() proper GL-context isolation so
+ * that its glReadPixels() call reads from the correct (tmpFbo) framebuffer
+ * instead of whatever FBO the outer renderer had bound.
+ *
+ * On Windows / macOS the struct degrades to a plain dimension record; the
+ * single FLTK window context is reused as before (same behaviour as prior
+ * commits – FBO-only paths still work correctly there).
  * ======================================================================= */
 struct FLTKOffscreenCtx {
     unsigned int width;
     unsigned int height;
+#if !defined(_WIN32) && !defined(__APPLE__)
+    /* X11/GLX: real shared context -------------------------------------- */
+    GLXContext   ctx;       /* shared child context; nullptr if creation failed */
+    Display*     dpy;       /* X11 Display* (fl_display at creation time)       */
+    GLXDrawable  drawable;  /* the 1×1 window drawable shared by all contexts   */
+    /* Saved state for restorePreviousContext() */
+    GLXContext   prev_ctx;
+    GLXDrawable  prev_draw;
+    GLXDrawable  prev_read;
+#endif
 };
 
 /* =========================================================================
@@ -212,7 +228,13 @@ struct FLTKOffscreenCtx {
  * ======================================================================= */
 class FLTKContextManager : public SoDB::ContextManager {
 public:
-    FLTKContextManager() : win_(nullptr) {}
+    FLTKContextManager()
+        : win_(nullptr)
+#if !defined(_WIN32) && !defined(__APPLE__)
+        , mainGLCtx_(nullptr)
+        , mainDrawable_(0)
+#endif
+    {}
 
     virtual ~FLTKContextManager() {
         if (win_) {
@@ -226,24 +248,113 @@ public:
                                          unsigned int height) override
     {
         if (!ensureWindow()) return nullptr;
-        return new FLTKOffscreenCtx{width, height};
+        FLTKOffscreenCtx* ctx = new FLTKOffscreenCtx;
+        ctx->width  = width;
+        ctx->height = height;
+#if !defined(_WIN32) && !defined(__APPLE__)
+        ctx->ctx      = nullptr;
+        ctx->dpy      = fl_display;
+        ctx->drawable = mainDrawable_;
+        ctx->prev_ctx  = nullptr;
+        ctx->prev_draw = 0;
+        ctx->prev_read = 0;
+
+        /* Create a real GLX context that shares display lists, textures and
+         * buffer objects with the main FLTK window context.  This gives
+         * updatePBuffer() proper GL-context isolation: makeContextCurrent()
+         * will call glXMakeCurrent() with this context so that the inner
+         * render — and the subsequent glReadPixels() — run in a clean,
+         * separate GL context rather than the outer renderer's context.
+         *
+         * Without isolation the outer renderer's FBO binding leaks into the
+         * inner context, causing _mesa_ReadPixels to crash when it tries to
+         * access the (now-incorrect) read framebuffer attachment. */
+        if (mainGLCtx_ && fl_display) {
+            int visualId = 0;
+            /* glXQueryContext returns Success (0) on success. */
+            if (glXQueryContext(fl_display, mainGLCtx_,
+                                GLX_VISUAL_ID, &visualId) == Success
+                && visualId != 0) {
+                XVisualInfo templ;
+                templ.visualid = (VisualID)visualId;
+                int n = 0;
+                XVisualInfo* vi = XGetVisualInfo(fl_display,
+                                                  VisualIDMask, &templ, &n);
+                if (vi) {
+                    ctx->ctx = glXCreateContext(fl_display, vi,
+                                                mainGLCtx_, True);
+                    XFree(vi);
+                    /* glXCreateContext returns nullptr on failure; the
+                     * nullptr check in makeContextCurrent ensures we fall
+                     * back to the FLTK window context in that case. */
+                }
+            }
+        }
+#endif
+        return ctx;
     }
 
     virtual SbBool makeContextCurrent(void* context) override {
-        (void)context;
         if (!ensureWindow()) return FALSE;
+#if !defined(_WIN32) && !defined(__APPLE__)
+        FLTKOffscreenCtx* c = static_cast<FLTKOffscreenCtx*>(context);
+        if (c && c->ctx && c->dpy && c->drawable) {
+            /* Save the currently-active context so restorePreviousContext()
+             * can switch back to it (e.g. the outer SoOffscreenRenderer's
+             * shared context after updatePBuffer finishes). */
+            c->prev_ctx  = glXGetCurrentContext();
+            c->prev_draw = glXGetCurrentDrawable();
+            c->prev_read = glXGetCurrentReadDrawable();
+            if (!glXMakeCurrent(c->dpy, c->drawable, c->ctx)) {
+                /* Switch failed: clear the saved state so that
+                 * restorePreviousContext() does not attempt a restore
+                 * against an inconsistent/unknown prior state. */
+                c->prev_ctx  = nullptr;
+                c->prev_draw = 0;
+                c->prev_read = 0;
+                return FALSE;
+            }
+            return glGetString(GL_VERSION) ? TRUE : FALSE;
+        }
+#endif
+        /* Fallback (Windows, macOS, or X11 with no shared ctx):
+         * reuse the single FLTK window context as before. */
+        (void)context;
         win_->make_current();
         return glGetString(GL_VERSION) ? TRUE : FALSE;
     }
 
-    virtual void restorePreviousContext(void* /*context*/) override {
-        /* No-op: the hidden 1×1 window is the sole GL context source.
-         * There is no prior context to restore, and the next
-         * makeContextCurrent() call will re-activate it as needed. */
+    virtual void restorePreviousContext(void* context) override {
+#if !defined(_WIN32) && !defined(__APPLE__)
+        FLTKOffscreenCtx* c = static_cast<FLTKOffscreenCtx*>(context);
+        if (c && c->ctx && c->dpy) {
+            if (c->prev_ctx) {
+                /* Ignore glXMakeCurrent failure here: we are in a
+                 * cleanup/restore path; there is no useful recovery
+                 * action other than logging. */
+                glXMakeCurrent(c->dpy, c->prev_draw, c->prev_ctx);
+            } else {
+                glXMakeCurrent(c->dpy, None, nullptr);
+            }
+            return;
+        }
+#endif
+        /* Fallback: no-op — the FLTK window context stays current. */
+        (void)context;
     }
 
     virtual void destroyContext(void* context) override {
-        delete static_cast<FLTKOffscreenCtx*>(context);
+        FLTKOffscreenCtx* c = static_cast<FLTKOffscreenCtx*>(context);
+#if !defined(_WIN32) && !defined(__APPLE__)
+        if (c && c->ctx && c->dpy) {
+            /* Deactivate before destroying to satisfy GLX requirements. */
+            if (glXGetCurrentContext() == c->ctx)
+                glXMakeCurrent(c->dpy, None, nullptr);
+            glXDestroyContext(c->dpy, c->ctx);
+            c->ctx = nullptr;
+        }
+#endif
+        delete c;
     }
 
     virtual void* getProcAddress(const char* funcName) override {
@@ -273,6 +384,14 @@ private:
     /* Hidden 1×1 context window created lazily by ensureWindow(). */
     FLTKGLContextWindow* win_;
 
+#if !defined(_WIN32) && !defined(__APPLE__)
+    /* X11/GLX: the FLTK window's own GL context and drawable, captured in
+     * ensureWindow() after the first make_current() call.  Used as the
+     * share-context when creating inner GLXContext instances. */
+    GLXContext  mainGLCtx_;
+    GLXDrawable mainDrawable_;
+#endif
+
     /* Ensure a valid GL context window is available.
      *
      * Creates a hidden 1×1 FLTKGLContextWindow on the first call. */
@@ -297,6 +416,13 @@ private:
         if (fl_display) XSync(fl_display, False);
 #endif
         win_->make_current();
+#if !defined(_WIN32) && !defined(__APPLE__)
+        /* Record the FLTK window's GLX context and drawable so that
+         * createOffscreenContext() can create properly-sharing child
+         * contexts from them. */
+        mainGLCtx_    = glXGetCurrentContext();
+        mainDrawable_ = glXGetCurrentDrawable();
+#endif
         /* Confirm the hidden-window context is actually active. */
         reportGL("FLTKContextManager::ensureWindow");
         return true;
