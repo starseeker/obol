@@ -1,5 +1,7 @@
 # Obol - minimalist rework of Coin
 
+![Obol_Demo](docs/obol_viewer.png)
+
 ## Background
 
 Obol is an OpenGL-based, 3D graphics library that has its roots in the Coin
