@@ -363,12 +363,19 @@ public:
         const float ambientFill = cachedAmbientFill_;
 
         // --- 3. Build view-projection matrix --------------------------------
-        // Compute the combined view-projection matrix via SbViewVolume.
-        // Post-multiply by a z-remap to convert the OpenGL NDC z range
-        // [-1,1] to Vulkan's [0,1].  The y-axis flip between OpenGL and
-        // Vulkan NDC is NOT corrected here: it produces bottom-to-top row
-        // order in the Vulkan framebuffer which matches SoOffscreenRenderer's
-        // expected pixel layout (no explicit row flip needed).
+        // SbMatrix uses the row-vector convention: v' = v * M.
+        // GLSL uses column-vector convention: v' = M * v.
+        // To convert: GLSL needs M^T (where M is the SbMatrix).
+        //
+        // The combined transform in row-vector order is:
+        //   v_clip_vk = v_world * affine * proj * zRemap
+        // where affine = world→eye, proj = eye→OpenGL clip, and
+        // zRemap remaps OpenGL z [-1,1] to Vulkan z [0,1].
+        //
+        // Passed to GLSL as M_glsl = (affine * proj * zRemap)^T (column-major).
+        // The y-axis sign flip between OpenGL and Vulkan NDC is left
+        // uncorrected; it produces bottom-to-top row order in the Vulkan
+        // framebuffer which already matches SoOffscreenRenderer's convention.
         float vp_matrix[16]; // column-major for GLSL
         SbVec3f eyePos(0, 0, 0);
         bool ortho = false;
@@ -382,26 +389,31 @@ public:
             SbMatrix affine, proj;
             vv.getMatrices(affine, proj);
 
-            // z-remap: OpenGL z [-1,1] → Vulkan z [0,1]
-            // row-major: remap[2][2]=0.5, remap[2][3]=0.5, identity elsewhere
+            // z-remap (row-vector convention): v' = v_clip * zRemap
+            // We want z_clip_vk = 0.5 * z_clip_gl + 0.5 * w_clip
+            // In row-vector: z_out[j=2] = sum_i(v[i] * zRemap[i][2])
+            //   → zRemap[2][2] = 0.5 (z_clip contributes 0.5 to z_out)
+            //   → zRemap[3][2] = 0.5 (w_clip contributes 0.5 to z_out)
+            //   → identity elsewhere
             float remap[4][4] = {
                 {1,0,0,0},
                 {0,1,0,0},
-                {0,0,0.5f,0.5f},
-                {0,0,0,1}
+                {0,0,0.5f,0},  // z contribution to z_out
+                {0,0,0.5f,1}   // w contribution to z_out, w_out unchanged
             };
             SbMatrix zRemap(remap);
 
-            // combined = zRemap * proj * affine
-            SbMatrix combined = proj * affine;
-            combined = zRemap * combined;
+            // combined = affine * proj * zRemap  (row-vector order: apply left-to-right)
+            SbMatrix combined = affine * proj * zRemap;
 
-            // SbMatrix is row-major; GLSL expects column-major: transpose
+            // Transpose SbMatrix (row-vector) to GLSL column-major:
+            // M_glsl[r][c] = combined^T[r][c] = combined[c][r]
+            // In column-major storage: vp_matrix[c*4+r] = combined[c][r]
             const float (* const m)[4] =
                 reinterpret_cast<const float (*)[4]>(combined.getValue());
             for (int c = 0; c < 4; ++c)
                 for (int r = 0; r < 4; ++r)
-                    vp_matrix[c * 4 + r] = m[r][c];
+                    vp_matrix[c * 4 + r] = m[c][r];  // transpose: combined[c][r]
 
             eyePos = vv.getProjectionPoint();
             ortho  = (vv.getProjectionType() == SbViewVolume::ORTHOGRAPHIC);
