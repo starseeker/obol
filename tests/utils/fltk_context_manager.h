@@ -268,25 +268,42 @@ public:
          *
          * Without isolation the outer renderer's FBO binding leaks into the
          * inner context, causing _mesa_ReadPixels to crash when it tries to
-         * access the (now-incorrect) read framebuffer attachment. */
-        if (mainGLCtx_ && fl_display) {
-            int visualId = 0;
-            /* glXQueryContext returns Success (0) on success. */
-            if (glXQueryContext(fl_display, mainGLCtx_,
-                                GLX_VISUAL_ID, &visualId) == Success
-                && visualId != 0) {
+         * access the (now-incorrect) read framebuffer attachment.
+         *
+         * NOTE: Do NOT use glXQueryContext(GLX_VISUAL_ID) to retrieve the
+         * visual.  NVIDIA driver 535 returns 2 (X BadValue) instead of
+         * Success (0) for contexts created via the legacy glXCreateContext
+         * API, leaving visualId=0 and silently skipping shared-context
+         * creation.  The apitrace for the broken startup shows exactly this:
+         *   glXQueryContext(..., GLX_VISUAL_ID, &0) = 2
+         * Query the window's visual directly via XGetWindowAttributes
+         * instead — that path is independent of the GLX driver and always
+         * works on X11. */
+        if (mainGLCtx_ && fl_display && mainDrawable_) {
+            XWindowAttributes xwa;
+            if (XGetWindowAttributes(fl_display,
+                                     (Window)mainDrawable_, &xwa)
+                && xwa.visual) {
+                /* Convert the Visual* to a VisualID so we can look up the
+                 * matching XVisualInfo via XGetVisualInfo.  There is no
+                 * VisualMask (pointer-based) search; use XVisualIDFromVisual
+                 * then look up by VisualIDMask | VisualScreenMask. */
                 XVisualInfo templ;
-                templ.visualid = (VisualID)visualId;
+                templ.visualid = XVisualIDFromVisual(xwa.visual);
+                templ.screen   = DefaultScreen(fl_display);
                 int n = 0;
                 XVisualInfo* vi = XGetVisualInfo(fl_display,
-                                                  VisualIDMask, &templ, &n);
+                                                  VisualIDMask | VisualScreenMask,
+                                                  &templ, &n);
                 if (vi) {
-                    ctx->ctx = glXCreateContext(fl_display, vi,
-                                                mainGLCtx_, True);
+                    if (n > 0) {
+                        ctx->ctx = glXCreateContext(fl_display, vi,
+                                                    mainGLCtx_, True);
+                        /* glXCreateContext returns nullptr on failure; the
+                         * nullptr check in makeContextCurrent ensures we fall
+                         * back to the FLTK window context in that case. */
+                    }
                     XFree(vi);
-                    /* glXCreateContext returns nullptr on failure; the
-                     * nullptr check in makeContextCurrent ensures we fall
-                     * back to the FLTK window context in that case. */
                 }
             }
         }
