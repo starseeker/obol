@@ -1,6 +1,7 @@
 # Obol - minimalist rework of Coin
 
 ![Obol_Demo](docs/obol_viewer.png)
+![Obol_Demo_Moving](docs/obol_viewer_moving.png)
 
 ## Background
 
