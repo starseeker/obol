@@ -1116,12 +1116,14 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
       int reqbytes = ctx_size[0]*ctx_size[1]*4;
       if (reqbytes > this->offscreenbuffersize) {
         delete[] this->offscreenbuffer;
-        // Allocate with extra padding: some GPU drivers (e.g. radeonsi) use
-        // vectorised/DMA stores during glReadPixels that can overrun the
-        // exact data size by a cache-line-worth of bytes.  The extra 256
-        // bytes (increased from 64) prevent the resulting heap corruption
-        // without affecting the actual pixel data written to the buffer.
-        this->offscreenbuffer = new unsigned char[reqbytes + 256];
+        // Allocate with extra padding: proprietary GPU drivers (NVIDIA,
+        // radeonsi) use vectorised/DMA stores during glReadPixels that
+        // overrun the exact pixel-data size.  Valgrind on NVIDIA 535
+        // confirms writes at reqbytes+256 and reqbytes+272, meaning the
+        // driver overshoots the 256-byte zone entirely.  4096 bytes (one
+        // page) gives a safe margin for any conceivable DMA burst size
+        // without wasting meaningful memory.
+        this->offscreenbuffer = new unsigned char[reqbytes + 4096];
         this->offscreenbuffersize = reqbytes;
       }
       SoGLContext_glPixelStorei(pbglue, GL_PACK_ALIGNMENT, 1);
