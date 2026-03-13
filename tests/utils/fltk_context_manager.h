@@ -31,23 +31,24 @@
 \**************************************************************************/
 
 /*
- * FLTKContextManager: Cross-platform OpenGL context manager for Obol
- * that delegates context creation to FLTK's Fl_Gl_Window.
+ * FLTKContextManager: Cross-platform OpenGL context manager for Obol.
  *
- * FLTK abstracts the platform-specific GL context setup:
- *   - WGL on Windows
- *   - CGL / NSOpenGL on macOS
- *   - GLX on X11 / Linux
+ * On Windows and macOS, context creation is delegated to FLTK's
+ * Fl_Gl_Window (WGL / CGL respectively).  A small hidden 1×1 window is
+ * created lazily on the first render request.
  *
- * The manager creates a small hidden 1×1 Fl_Gl_Window lazily on the first
- * render request.  Its sole purpose is to own a valid GL context for use
- * by SoOffscreenRenderer via FBOs.  CoinPanel is a plain Fl_Box and
- * interacts with the context manager only indirectly through
- * SoOffscreenRenderer; no visible Fl_Gl_Window widget is involved.
+ * On X11/Linux, FLTK's GLX context creation path is intentionally bypassed.
+ * FLTK uses the legacy glXChooseVisual + glXCreateContext API, which produces
+ * a context whose GLX_VISUAL_ID cannot be reliably queried.  This prevents
+ * the creation of properly-sharing child contexts that SoSceneTexture2 needs
+ * for FBO isolation: without context isolation the outer renderer's FBO
+ * binding leaks into the inner render, causing _mesa_ReadPixels crashes.
  *
- * Offscreen rendering uses framebuffer objects (FBOs) managed by the Obol
- * library; the FLTK window surface itself is never drawn to directly by
- * this context manager.
+ * Instead, on X11 the manager creates the GL context directly via the modern
+ * glXChooseFBConfig + glXCreatePbuffer + glXCreateNewContext API, exactly
+ * mirroring the approach used by the older working obol implementation.
+ * Each offscreen context also gets its own small Pbuffer drawable so that
+ * glXMakeCurrent() can switch cleanly between contexts.
  *
  * This header provides drop-in replacements for the same functions that
  * headless_utils.h exposes for the system-GL / GLX path:
@@ -57,10 +58,7 @@
  *   getSharedRenderer()             – return a shared SoOffscreenRenderer
  *
  * Compile obol_viewer with -DOBOL_VIEWER_FLTK_GL to select this header
- * instead of headless_utils.h for the system-GL panel.  The GLX header
- * (included by headless_utils.h) is then not required by the viewer itself,
- * which means the viewer can build and run on any platform that FLTK
- * supports without needing Xvfb or a direct X11 connection.
+ * instead of headless_utils.h for the system-GL panel.
  *
  * Note: on Linux/X11 the getProcAddress() implementation still calls
  * glXGetProcAddress() directly because that is the standard GL extension
@@ -191,11 +189,16 @@ public:
 /* =========================================================================
  * FLTKOffscreenCtx  –  per-context bookkeeping
  *
- * On X11/GLX builds this holds a *real* shared GLXContext created from the
- * main FLTK window context.  makeContextCurrent() switches into it with
- * glXMakeCurrent(), giving updatePBuffer() proper GL-context isolation so
- * that its glReadPixels() call reads from the correct (tmpFbo) framebuffer
- * instead of whatever FBO the outer renderer had bound.
+ * On X11/GLX builds this holds a *real* shared GLXContext created with
+ * glXCreateNewContext() from the FBConfig used for the main Pbuffer context.
+ * Each offscreen context gets its own GLXPbuffer drawable so that
+ * glXMakeCurrent() can switch into it cleanly.
+ *
+ * Using glXCreateNewContext() (FBConfig-based) rather than the legacy
+ * glXCreateContext() (visual-based) avoids the glXQueryContext(GLX_VISUAL_ID)
+ * failure that occurs when FLTK creates an FBConfig-backed core-profile
+ * context, which caused all contexts to fall back to a single shared FLTK
+ * window context and produced FBO-state conflicts that crashed the renderer.
  *
  * On Windows / macOS the struct degrades to a plain dimension record; the
  * single FLTK window context is reused as before (same behaviour as prior
@@ -206,9 +209,9 @@ struct FLTKOffscreenCtx {
     unsigned int height;
 #if !defined(_WIN32) && !defined(__APPLE__)
     /* X11/GLX: real shared context -------------------------------------- */
-    GLXContext   ctx;       /* shared child context; nullptr if creation failed */
-    Display*     dpy;       /* X11 Display* (fl_display at creation time)       */
-    GLXDrawable  drawable;  /* the 1×1 window drawable shared by all contexts   */
+    GLXContext   ctx;        /* shared child context; nullptr if creation failed */
+    Display*     dpy;        /* X11 Display* (fl_display at creation time)       */
+    GLXDrawable  drawable;   /* per-context Pbuffer owned by this struct         */
     /* Saved state for restorePreviousContext() */
     GLXContext   prev_ctx;
     GLXDrawable  prev_draw;
@@ -222,21 +225,41 @@ struct FLTKOffscreenCtx {
  * Implements SoDB::ContextManager using FLTK's Fl_Gl_Window so that
  * context creation is handled by FLTK on every supported platform.
  *
- * A small hidden 1×1 FLTKGLContextWindow is created lazily on the first
- * render request.  All offscreen rendering is FBO-based; the window
- * surface is never drawn to directly.
+ * On X11/GLX, the GL context is created directly via glXChooseFBConfig +
+ * glXCreatePbuffer + glXCreateNewContext rather than relying on FLTK's
+ * legacy glXChooseVisual / glXCreateContext path.  Each offscreen context
+ * gets its own small Pbuffer drawable so glXMakeCurrent() can switch into
+ * it cleanly without needing a window.
+ *
+ * On Windows / macOS, a small hidden 1×1 FLTKGLContextWindow is created
+ * lazily on the first render request.  All offscreen rendering is
+ * FBO-based; the window surface is never drawn to directly.
  * ======================================================================= */
 class FLTKContextManager : public SoDB::ContextManager {
 public:
     FLTKContextManager()
         : win_(nullptr)
 #if !defined(_WIN32) && !defined(__APPLE__)
+        , mainFBConfig_(0)
+        , mainPbuffer_(0)
         , mainGLCtx_(nullptr)
-        , mainDrawable_(0)
+        , mainDpy_(nullptr)
 #endif
     {}
 
     virtual ~FLTKContextManager() {
+#if !defined(_WIN32) && !defined(__APPLE__)
+        if (mainGLCtx_ && mainDpy_) {
+            if (glXGetCurrentContext() == mainGLCtx_)
+                glXMakeCurrent(mainDpy_, None, nullptr);
+            glXDestroyContext(mainDpy_, mainGLCtx_);
+            mainGLCtx_ = nullptr;
+        }
+        if (mainPbuffer_ && mainDpy_) {
+            glXDestroyPbuffer(mainDpy_, mainPbuffer_);
+            mainPbuffer_ = 0;
+        }
+#endif
         if (win_) {
             win_->hide();
             delete win_;
@@ -253,57 +276,41 @@ public:
         ctx->height = height;
 #if !defined(_WIN32) && !defined(__APPLE__)
         ctx->ctx      = nullptr;
-        ctx->dpy      = fl_display;
-        ctx->drawable = mainDrawable_;
+        ctx->dpy      = mainDpy_;
+        ctx->drawable = 0;
         ctx->prev_ctx  = nullptr;
         ctx->prev_draw = 0;
         ctx->prev_read = 0;
 
-        /* Create a real GLX context that shares display lists, textures and
-         * buffer objects with the main FLTK window context.  This gives
-         * updatePBuffer() proper GL-context isolation: makeContextCurrent()
-         * will call glXMakeCurrent() with this context so that the inner
-         * render — and the subsequent glReadPixels() — run in a clean,
-         * separate GL context rather than the outer renderer's context.
+        /* Create a per-context Pbuffer and a new GLXContext that shares
+         * display lists, textures and buffer objects with the main context.
          *
-         * Without isolation the outer renderer's FBO binding leaks into the
-         * inner context, causing _mesa_ReadPixels to crash when it tries to
-         * access the (now-incorrect) read framebuffer attachment.
-         *
-         * NOTE: Do NOT use glXQueryContext(GLX_VISUAL_ID) to retrieve the
-         * visual.  NVIDIA driver 535 returns 2 (X BadValue) instead of
-         * Success (0) for contexts created via the legacy glXCreateContext
-         * API, leaving visualId=0 and silently skipping shared-context
-         * creation.  The apitrace for the broken startup shows exactly this:
-         *   glXQueryContext(..., GLX_VISUAL_ID, &0) = 2
-         * Query the window's visual directly via XGetWindowAttributes
-         * instead — that path is independent of the GLX driver and always
-         * works on X11. */
-        if (mainGLCtx_ && fl_display && mainDrawable_) {
-            XWindowAttributes xwa;
-            if (XGetWindowAttributes(fl_display,
-                                     (Window)mainDrawable_, &xwa)
-                && xwa.visual) {
-                /* Convert the Visual* to a VisualID so we can look up the
-                 * matching XVisualInfo via XGetVisualInfo.  There is no
-                 * VisualMask (pointer-based) search; use XVisualIDFromVisual
-                 * then look up by VisualIDMask | VisualScreenMask. */
-                XVisualInfo templ;
-                templ.visualid = XVisualIDFromVisual(xwa.visual);
-                templ.screen   = DefaultScreen(fl_display);
-                int n = 0;
-                XVisualInfo* vi = XGetVisualInfo(fl_display,
-                                                  VisualIDMask | VisualScreenMask,
-                                                  &templ, &n);
-                if (vi) {
-                    if (n > 0) {
-                        ctx->ctx = glXCreateContext(fl_display, vi,
-                                                    mainGLCtx_, True);
-                        /* glXCreateContext returns nullptr on failure; the
-                         * nullptr check in makeContextCurrent ensures we fall
-                         * back to the FLTK window context in that case. */
-                    }
-                    XFree(vi);
+         * Using glXCreateNewContext() (FBConfig-based) is essential here.
+         * The legacy glXCreateContext() requires a visual obtained via
+         * glXQueryContext(GLX_VISUAL_ID), which returns GLX_BAD_ATTRIBUTE
+         * on contexts created with glXCreateNewContext() or
+         * glXCreateContextAttribsARB(), causing shared-context creation to
+         * silently fall back to a single context and producing FBO state
+         * conflicts that crash the renderer (GL_INVALID_FRAMEBUFFER_OPERATION
+         * or _mesa_ReadPixels crash inside SoSceneTexture2::updatePBuffer). */
+        if (mainGLCtx_ && mainDpy_ && mainFBConfig_) {
+            /* A 1×1 Pbuffer is sufficient — all rendering targets FBOs; the
+             * Pbuffer itself is only the surface bound to glXMakeCurrent. */
+            const int pbAttribs[] = {
+                GLX_PBUFFER_WIDTH,  1,
+                GLX_PBUFFER_HEIGHT, 1,
+                GLX_PRESERVED_CONTENTS, False,
+                None
+            };
+            ctx->drawable = glXCreatePbuffer(mainDpy_, mainFBConfig_, pbAttribs);
+            if (ctx->drawable) {
+                ctx->ctx = glXCreateNewContext(mainDpy_, mainFBConfig_,
+                                               GLX_RGBA_TYPE, mainGLCtx_, True);
+                if (!ctx->ctx) {
+                    /* Context creation failed; release the Pbuffer so that
+                     * makeContextCurrent() falls back gracefully. */
+                    glXDestroyPbuffer(mainDpy_, ctx->drawable);
+                    ctx->drawable = 0;
                 }
             }
         }
@@ -333,10 +340,16 @@ public:
             }
             return glGetString(GL_VERSION) ? TRUE : FALSE;
         }
+        /* Fallback (X11, shared context creation failed): use main context. */
+        if (mainGLCtx_ && mainDpy_ && mainPbuffer_) {
+            glXMakeCurrent(mainDpy_, mainPbuffer_, mainGLCtx_);
+            return glGetString(GL_VERSION) ? TRUE : FALSE;
+        }
 #endif
-        /* Fallback (Windows, macOS, or X11 with no shared ctx):
-         * reuse the single FLTK window context as before. */
+        /* Fallback (Windows, macOS, or X11 GLX entirely unavailable):
+         * reuse the single FLTK window context. */
         (void)context;
+        if (!win_) return FALSE;
         win_->make_current();
         return glGetString(GL_VERSION) ? TRUE : FALSE;
     }
@@ -370,6 +383,11 @@ public:
             glXDestroyContext(c->dpy, c->ctx);
             c->ctx = nullptr;
         }
+        /* Destroy the per-context Pbuffer created in createOffscreenContext(). */
+        if (c && c->drawable && c->dpy) {
+            glXDestroyPbuffer(c->dpy, c->drawable);
+            c->drawable = 0;
+        }
 #endif
         delete c;
     }
@@ -398,51 +416,118 @@ public:
     }
 
 private:
-    /* Hidden 1×1 context window created lazily by ensureWindow(). */
+    /* Hidden 1×1 context window used on Windows / macOS (and as an X11
+     * fallback when direct GLX setup fails). */
     FLTKGLContextWindow* win_;
 
 #if !defined(_WIN32) && !defined(__APPLE__)
-    /* X11/GLX: the FLTK window's own GL context and drawable, captured in
-     * ensureWindow() after the first make_current() call.  Used as the
-     * share-context when creating inner GLXContext instances. */
+    /* X11/GLX: FBConfig, main Pbuffer, and main GLXContext created directly
+     * (bypassing FLTK) in ensureWindow().  mainFBConfig_ is reused by
+     * createOffscreenContext() to create per-context Pbuffers and shared
+     * child contexts via glXCreateNewContext(). */
+    GLXFBConfig mainFBConfig_;
+    GLXPbuffer  mainPbuffer_;
     GLXContext  mainGLCtx_;
-    GLXDrawable mainDrawable_;
+    Display*    mainDpy_;
 #endif
 
-    /* Ensure a valid GL context window is available.
+    /* Ensure a valid GL context is available.
      *
-     * Creates a hidden 1×1 FLTKGLContextWindow on the first call. */
+     * On X11: creates the main context directly via glXChooseFBConfig +
+     * glXCreatePbuffer + glXCreateNewContext, bypassing FLTK's legacy
+     * glXChooseVisual / glXCreateContext path.  Falls back to a hidden
+     * FLTKGLContextWindow if FBConfig setup fails.
+     *
+     * On Windows / macOS: creates a hidden 1×1 FLTKGLContextWindow. */
     bool ensureWindow() {
-        if (win_) return true;
+#if !defined(_WIN32) && !defined(__APPLE__)
+        if (mainGLCtx_) return true;
 
+        /* Open the X11 display if FLTK hasn't done so yet. */
+        fl_open_display();
+        Display* dpy = fl_display;
+        if (!dpy) goto fltk_fallback;
+
+        {
+            /* Attributes for the FBConfig: Pbuffer-capable RGBA context with
+             * 8-bit colour channels, 16-bit depth, single-buffered.
+             * These match the attributes that were used by the older working
+             * obol implementation that produced a correct apitrace. */
+            const int fbAttribs[] = {
+                GLX_DRAWABLE_TYPE, GLX_PBUFFER_BIT,
+                GLX_RENDER_TYPE,   GLX_RGBA_BIT,
+                GLX_RED_SIZE,   8,
+                GLX_GREEN_SIZE, 8,
+                GLX_BLUE_SIZE,  8,
+                GLX_DEPTH_SIZE, 16,
+                GLX_DOUBLEBUFFER, False,
+                None
+            };
+            int nConfigs = 0;
+            GLXFBConfig* configs = glXChooseFBConfig(
+                dpy, DefaultScreen(dpy), fbAttribs, &nConfigs);
+            if (!configs || nConfigs == 0) {
+                if (configs) XFree(configs);
+                goto fltk_fallback;
+            }
+            mainFBConfig_ = configs[0];
+            XFree(configs);
+
+            /* Create a small 32×32 Pbuffer as the surface for the main
+             * context.  Size does not matter for FBO rendering; 32×32 is
+             * chosen to match the older working probe context. */
+            const int pbAttribs[] = {
+                GLX_PBUFFER_WIDTH,  32,
+                GLX_PBUFFER_HEIGHT, 32,
+                GLX_PRESERVED_CONTENTS, False,
+                None
+            };
+            mainPbuffer_ = glXCreatePbuffer(dpy, mainFBConfig_, pbAttribs);
+            if (!mainPbuffer_) {
+                mainFBConfig_ = 0;
+                goto fltk_fallback;
+            }
+
+            mainGLCtx_ = glXCreateNewContext(
+                dpy, mainFBConfig_, GLX_RGBA_TYPE, nullptr, True);
+            if (!mainGLCtx_) {
+                glXDestroyPbuffer(dpy, mainPbuffer_);
+                mainPbuffer_ = 0;
+                mainFBConfig_ = 0;
+                goto fltk_fallback;
+            }
+
+            if (!glXMakeCurrent(dpy, mainPbuffer_, mainGLCtx_)) {
+                glXDestroyContext(dpy, mainGLCtx_);
+                mainGLCtx_ = nullptr;
+                glXDestroyPbuffer(dpy, mainPbuffer_);
+                mainPbuffer_ = 0;
+                mainFBConfig_ = 0;
+                goto fltk_fallback;
+            }
+
+            mainDpy_ = dpy;
+            reportGL("FLTKContextManager::ensureWindow (FBConfig/Pbuffer)");
+            return true;
+        }
+
+    fltk_fallback:
+#endif
+        /* Windows, macOS, or X11 GLX FBConfig setup failed: fall back to a
+         * hidden FLTK GL window to create the platform context. */
+        if (win_) return true;
         win_ = new FLTKGLContextWindow();
-        /* Position the 1×1 window off-screen.  show() creates the native
-         * window handle and the platform GL context without making the
-         * window visible to the user. */
         win_->position(-100, -100);
         win_->show();
         /* Flush the FLTK event queue so the native GL context is fully
          * initialised before the first make_current() call. */
         Fl::check();
 #if !defined(_WIN32) && !defined(__APPLE__)
-        /* On X11/GLX, synchronise with the X server before calling
-         * make_current().  Without this sync, Mesa's software renderer
-         * (used with Xvfb in CI) returns True from glXMakeCurrent but
-         * leaves glGetString(GL_VERSION) returning NULL because the
-         * window's rendering surface has not been allocated yet. */
         if (fl_display) XSync(fl_display, False);
 #endif
         win_->make_current();
-#if !defined(_WIN32) && !defined(__APPLE__)
-        /* Record the FLTK window's GLX context and drawable so that
-         * createOffscreenContext() can create properly-sharing child
-         * contexts from them. */
-        mainGLCtx_    = glXGetCurrentContext();
-        mainDrawable_ = glXGetCurrentDrawable();
-#endif
-        /* Confirm the hidden-window context is actually active. */
-        reportGL("FLTKContextManager::ensureWindow");
-        return true;
+        reportGL("FLTKContextManager::ensureWindow (FLTK fallback)");
+        return (bool)glGetString(GL_VERSION);
     }
 };
 
