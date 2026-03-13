@@ -413,7 +413,7 @@ public:
                 reinterpret_cast<const float (*)[4]>(combined.getValue());
             for (int c = 0; c < 4; ++c)
                 for (int r = 0; r < 4; ++r)
-                    vp_matrix[c * 4 + r] = m[c][r];  // transpose: combined[c][r]
+                    vp_matrix[c * 4 + r] = m[c][r];  // SbMatrix[c][r] → GLSL col-major[r,c]: transposes row-vector to column-vector
 
             eyePos = vv.getProjectionPoint();
             ortho  = (vv.getProjectionType() == SbViewVolume::ORTHOGRAPHIC);
@@ -439,7 +439,7 @@ public:
                 vtx.pos[1] = tri.pos[v][1];
                 vtx.pos[2] = tri.pos[v][2];
 
-                // Normal (already world-space, may need normalisation)
+                // Normal (already world-space, may need normalization)
                 float N[3] = { tri.norm[v][0], tri.norm[v][1], tri.norm[v][2] };
                 vk_normalize3(N);
 

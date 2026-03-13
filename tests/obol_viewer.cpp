@@ -1758,11 +1758,10 @@ private:
         if (!ok) { status_text = "Vulkan render failed (no device?)"; return false; }
         status_text.clear();
 
-        /* Vulkan image: top-to-bottom (y=0 at top of Vulkan framebuffer).
-         * SoOffscreenRenderer convention: bottom-to-top (y=0 at bottom).
-         * Due to the OpenGL/Vulkan y-axis convention difference, the
-         * SoVulkanContextManager outputs pixels already in bottom-to-top
-         * order; see the coordinate-system notes in vulkan_context_manager.h.
+        /* SoVulkanContextManager outputs pixels in bottom-to-top row order
+         * because the OpenGL view-projection matrix and Vulkan's y-down NDC
+         * convention cancel out, giving the same bottom-up layout that
+         * SoOffscreenRenderer uses (see vulkan_context_manager.h notes).
          * Convert to top-down RGB for FLTK display here. */
         display_buf.resize((size_t)pw * ph * 3);
         for (int row = 0; row < ph; ++row) {
