@@ -109,25 +109,37 @@ if(OBOL_BUILD_VIEWER)
 
     # Select the system-GL context manager for the viewer.
     # OBOL_VIEWER_USE_FLTK_GL (default ON) selects fltk_context_manager.h which
-    # uses Fl_Gl_Window for cross-platform GL context creation.
+    # uses a small hidden 1x1 Fl_Gl_Window to own the GL context.  CoinPanel
+    # itself is a plain Fl_Box (consistent with all other panels); rendered
+    # pixels are delivered via fltk_img->draw().
     # Set OFF to fall back to headless_utils.h (GLX on Linux) for CI environments
     # where FLTK's OpenGL cannot obtain a context (headless / no display manager).
-    # This option does not apply to pure-OSMesa builds.
-    if(OBOL_VIEWER_USE_FLTK_GL AND NOT OBOL_USE_OSMESA)
+    #
+    # This option applies to both single-GL and dual-GL builds.  In a dual-GL
+    # build (OBOL_BUILD_DUAL_GL), the OSMesa panel uses its own independent
+    # context manager (SoDB::createOSMesaContextManager()), so enabling FLTK GL
+    # for the system-GL CoinPanel does not interfere with OSMesa rendering.
+    # Pure-OSMesa builds (OBOL_OSMESA_BUILD) always use the headless path.
+    if(OBOL_VIEWER_USE_FLTK_GL AND (OBOL_BUILD_DUAL_GL OR NOT OBOL_USE_OSMESA))
         target_compile_definitions(obol_viewer PRIVATE OBOL_VIEWER_FLTK_GL)
-        message(STATUS "obol_viewer: using FLTK GL context manager (portable)")
+        if(OBOL_BUILD_DUAL_GL)
+            message(STATUS "obol_viewer: using FLTK GL context manager for system-GL panel (dual-GL build)")
+        else()
+            message(STATUS "obol_viewer: using FLTK GL context manager (portable, hidden 1x1 window)")
+        endif()
     else()
         if(NOT OBOL_USE_OSMESA)
             message(STATUS "obol_viewer: using GLX context manager (headless_utils.h)")
         endif()
     endif()
 
-    # Optional CPU raytracing panel: Embree (preferred) or NanoRT fallback.
+    # Optional CPU raytracing panels: Embree and/or NanoRT.
     #
     # OBOL_VIEWER_USE_EMBREE (default ON when embree 4 is found on the system)
-    # selects the Embree 4 CPU raytracing panel as an alternative to NanoRT.
-    # When Embree is enabled, the NanoRT panel is skipped.  If neither backend
-    # is available the viewer builds without a CPU raytracing panel.
+    # enables the Embree 4 CPU raytracing panel.
+    # When NanoRT (external/nanort/nanort.h) is also present, both panels are
+    # compiled in simultaneously and can each be toggled at runtime.
+    # If neither backend is available the viewer builds without CPU raytracing.
     find_package(embree 4 QUIET
         HINTS /usr/lib/x86_64-linux-gnu/cmake/embree-4.3.0
               /usr/lib/cmake/embree4
@@ -153,16 +165,20 @@ if(OBOL_BUILD_VIEWER)
             "${CMAKE_CURRENT_SOURCE_DIR}/utils"   # embree_context_manager.h
         )
         target_link_libraries(obol_viewer PRIVATE ${_obol_embree_link})
-        message(STATUS "obol_viewer: Embree panel enabled (replaces NanoRT)")
-    elseif(EXISTS "${PROJECT_SOURCE_DIR}/external/nanort/nanort.h")
-        # Embree not available or disabled – fall back to NanoRT if present.
+        message(STATUS "obol_viewer: Embree panel enabled")
+    endif()
+    if(EXISTS "${PROJECT_SOURCE_DIR}/external/nanort/nanort.h")
+        # NanoRT is a header-only library; compile in the NanoRT panel when
+        # the header is present, regardless of whether Embree is also enabled.
         target_compile_definitions(obol_viewer PRIVATE OBOL_VIEWER_NANORT)
         target_include_directories(obol_viewer PRIVATE
             "${PROJECT_SOURCE_DIR}/external/nanort"
             "${CMAKE_CURRENT_SOURCE_DIR}/utils"   # nanort_context_manager.h
         )
         message(STATUS "obol_viewer: NanoRT panel enabled (external/nanort/nanort.h found)")
-    else()
+    endif()
+    if(NOT (OBOL_VIEWER_USE_EMBREE AND (embree_FOUND OR TARGET embree4)) AND
+       NOT EXISTS "${PROJECT_SOURCE_DIR}/external/nanort/nanort.h")
         message(STATUS "obol_viewer: No CPU raytracing panel (neither Embree nor NanoRT found)")
     endif()
 
