@@ -829,7 +829,16 @@ SoSceneTexture2P::updateFrameBuffer(SoState * state, const float OBOL_UNUSED_ARG
       return;
     }
 
-    // FIXME: for some reason we need to do this every frame. Investigate why.
+  }
+
+  // Refresh the glimage's GL display list association on every frame.
+  // The DL can be removed from the glimage's internal list by context-cleanup
+  // callbacks (e.g. when a sibling GL context is destroyed) even while the FBO
+  // itself is still valid.  Without this call, SoGLImage::getGLDisplayList()
+  // falls through to createGLDisplayList() which — for an FBO-backed image
+  // with no pixel data — creates a new texture object that is never populated,
+  // corrupting the GL driver's heap metadata on the next allocation.
+  if (this->glimage && local_fbodata->fbo_frameBuffer != GL_INVALID_VALUE) {
     if (PUBLIC(this)->type.getValue() == SoSceneTexture2::DEPTH) {
       assert(local_fbodata->fbo_depthmap != NULL);
       this->glimage->setGLDisplayList(local_fbodata->fbo_depthmap, state,
