@@ -1088,7 +1088,11 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
         hasTmpFbo = TRUE;
       } else {
         // FBO setup failed; fall back to window framebuffer rendering.
-        SoGLContext_glBindFramebuffer(pbglue, GL_FRAMEBUFFER_EXT, (GLuint)savedFbo);
+        // Only restore a non-zero saved FBO explicitly; binding FBO 0 on
+        // drivers backed by a window surface (e.g. radeonsi on AMD) can
+        // crash _mesa_bind_framebuffers when the window is not fully exposed.
+        if (savedFbo != 0)
+          SoGLContext_glBindFramebuffer(pbglue, GL_FRAMEBUFFER_EXT, (GLuint)savedFbo);
         SoGLContext_glDeleteFramebuffers(pbglue, 1, &tmpFbo);
         SoGLContext_glDeleteRenderbuffers(pbglue, 1, &tmpDepthRbo);
         SoGLContext_glDeleteTextures(pbglue, 1, &tmpColorTex);
@@ -1103,6 +1107,11 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
     SoGLContext_glFlush(pbglue);
 
     if (!this->canrendertotexture) {
+      // Ensure the temp FBO is still bound before glReadPixels: apply() may
+      // have changed the framebuffer binding internally (e.g. via nested
+      // SoSceneTexture2 nodes).
+      if (hasTmpFbo)
+        SoGLContext_glBindFramebuffer(pbglue, GL_FRAMEBUFFER_EXT, tmpFbo);
       SbVec2s ctx_size = this->glcontextsize;
       int reqbytes = ctx_size[0]*ctx_size[1]*4;
       if (reqbytes > this->offscreenbuffersize) {
@@ -1123,7 +1132,14 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
 
     // Clean up temporary FBO now that pixel readback is complete.
     if (hasTmpFbo) {
-      SoGLContext_glBindFramebuffer(pbglue, GL_FRAMEBUFFER_EXT, (GLuint)savedFbo);
+      // Per the OpenGL spec, deleting a currently-bound FBO automatically
+      // reverts the binding to 0, so an explicit glBindFramebuffer(0) is
+      // not needed when savedFbo == 0.  Avoid calling it in that case:
+      // on some drivers (e.g. radeonsi on AMD) glBindFramebuffer(0) crashes
+      // inside _mesa_bind_framebuffers when the context is backed by a
+      // window surface that was never fully exposed.
+      if (savedFbo != 0)
+        SoGLContext_glBindFramebuffer(pbglue, GL_FRAMEBUFFER_EXT, (GLuint)savedFbo);
       SoGLContext_glDeleteFramebuffers(pbglue, 1, &tmpFbo);
       SoGLContext_glDeleteRenderbuffers(pbglue, 1, &tmpDepthRbo);
       SoGLContext_glDeleteTextures(pbglue, 1, &tmpColorTex);
