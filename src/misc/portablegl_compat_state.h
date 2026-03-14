@@ -36,6 +36,7 @@
 #define PGL_PREFIX_TYPES 1
 #define PGL_PREFIX_GLSL  1
 #include <portablegl/portablegl.h>
+#include <portablegl/portablegl_compat_consts.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Constants

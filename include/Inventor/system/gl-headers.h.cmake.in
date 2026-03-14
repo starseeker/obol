@@ -106,9 +106,7 @@
  * compile time; the interceptors in portablegl_compat_funcs.cpp handle them
  * at run time.  This header is a proposed upstream contribution to
  * portablegl.h (see FindPortableGL.cmake for details). */
-#  ifndef PORTABLEGL_GL_MANGLE_H /* not already included via OVERRIDE path */
-#    include <portablegl/portablegl_compat_consts.h>
-#  endif
+#  include <portablegl/portablegl_compat_consts.h>
 #endif
 
 #endif /* ! OBOL_GLHEADERS_H */

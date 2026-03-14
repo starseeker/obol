@@ -617,4 +617,259 @@
 #  define GL_PACK_ROW_LENGTH          0x0D02
 #endif
 
+/* ─── glFinish / glFlush ─────────────────────────────────────────────────── */
+/* PortableGL is synchronous (CPU-based); Finish/Flush are no-ops.
+ * Defined here so Obol source files that call them compile without changes.  */
+#ifndef GL_FINISH_DEFINED
+#  define GL_FINISH_DEFINED
+static inline void glFinish(void) {}
+static inline void glFlush(void)  {}
+#endif
+
+/* ─── Current state queries ──────────────────────────────────────────────── */
+#ifndef GL_CURRENT_COLOR
+#  define GL_CURRENT_COLOR       0x0B00
+#endif
+#ifndef GL_RED_BITS
+#  define GL_RED_BITS            0x0D52
+#endif
+#ifndef GL_GREEN_BITS
+#  define GL_GREEN_BITS          0x0D53
+#endif
+#ifndef GL_BLUE_BITS
+#  define GL_BLUE_BITS           0x0D54
+#endif
+#ifndef GL_RGBA_MODE
+#  define GL_RGBA_MODE           0x0C31
+#endif
+#ifndef GL_LINE_STIPPLE
+#  define GL_LINE_STIPPLE        0x0B24
+#endif
+
+/* ─── ARB shader object tokens (used by Obol's GLSL-over-PGL path) ──────── */
+#ifndef GL_FRAGMENT_SHADER_ARB
+#  define GL_FRAGMENT_SHADER_ARB            0x8B30
+#endif
+#ifndef GL_OBJECT_COMPILE_STATUS_ARB
+#  define GL_OBJECT_COMPILE_STATUS_ARB      0x8B81
+#endif
+#ifndef GL_OBJECT_LINK_STATUS_ARB
+#  define GL_OBJECT_LINK_STATUS_ARB         0x8B82
+#endif
+#ifndef GL_OBJECT_INFO_LOG_LENGTH_ARB
+#  define GL_OBJECT_INFO_LOG_LENGTH_ARB     0x8B84
+#endif
+
+/* ─── GL 1.x legacy pixel-pipeline / framebuffer-query constants ─────────── */
+/* These are used by Obol's CoinOffscreenGLCanvas and related paths for pixel
+ * transfer state save/restore. PortableGL ignores pixel transfer state.       */#ifndef GL_MAP_COLOR
+#  define GL_MAP_COLOR                      0x0D10
+#endif
+#ifndef GL_MAP_STENCIL
+#  define GL_MAP_STENCIL                    0x0D11
+#endif
+#ifndef GL_INDEX_SHIFT
+#  define GL_INDEX_SHIFT                    0x0D12
+#endif
+#ifndef GL_INDEX_OFFSET
+#  define GL_INDEX_OFFSET                   0x0D13
+#endif
+#ifndef GL_RED_SCALE
+#  define GL_RED_SCALE                      0x0D14
+#endif
+#ifndef GL_RED_BIAS
+#  define GL_RED_BIAS                       0x0D15
+#endif
+#ifndef GL_GREEN_SCALE
+#  define GL_GREEN_SCALE                    0x0D18
+#endif
+#ifndef GL_GREEN_BIAS
+#  define GL_GREEN_BIAS                     0x0D19
+#endif
+#ifndef GL_BLUE_SCALE
+#  define GL_BLUE_SCALE                     0x0D1A
+#endif
+#ifndef GL_BLUE_BIAS
+#  define GL_BLUE_BIAS                      0x0D1B
+#endif
+#ifndef GL_ALPHA_BIAS
+#  define GL_ALPHA_BIAS                     0x0D1D
+#endif
+#ifndef GL_DEPTH_SCALE
+#  define GL_DEPTH_SCALE                    0x0D1E
+#endif
+#ifndef GL_DEPTH_BIAS
+#  define GL_DEPTH_BIAS                     0x0D1F
+#endif
+#ifndef GL_PIXEL_MAP_I_TO_I
+#  define GL_PIXEL_MAP_I_TO_I               0x0C70
+#endif
+#ifndef GL_PIXEL_MAP_S_TO_S
+#  define GL_PIXEL_MAP_S_TO_S               0x0C71
+#endif
+#ifndef GL_PIXEL_MAP_I_TO_R
+#  define GL_PIXEL_MAP_I_TO_R               0x0C72
+#endif
+#ifndef GL_PIXEL_MAP_I_TO_G
+#  define GL_PIXEL_MAP_I_TO_G               0x0C73
+#endif
+#ifndef GL_PIXEL_MAP_I_TO_B
+#  define GL_PIXEL_MAP_I_TO_B               0x0C74
+#endif
+#ifndef GL_PIXEL_MAP_I_TO_A
+#  define GL_PIXEL_MAP_I_TO_A               0x0C75
+#endif
+#ifndef GL_PIXEL_MAP_R_TO_R
+#  define GL_PIXEL_MAP_R_TO_R               0x0C76
+#endif
+#ifndef GL_PIXEL_MAP_G_TO_G
+#  define GL_PIXEL_MAP_G_TO_G               0x0C77
+#endif
+#ifndef GL_PIXEL_MAP_B_TO_B
+#  define GL_PIXEL_MAP_B_TO_B               0x0C78
+#endif
+#ifndef GL_PIXEL_MAP_A_TO_A
+#  define GL_PIXEL_MAP_A_TO_A               0x0C79
+#endif
+#ifndef GL_ALPHA_BITS
+#  define GL_ALPHA_BITS                     0x0D55
+#endif
+#ifndef GL_STENCIL_INDEX
+#  define GL_STENCIL_INDEX                  0x1901
+#endif
+/* GL_ACCUM buffer operations */
+#ifndef GL_LOAD
+#  define GL_LOAD                           0x0101
+#endif
+#ifndef GL_RETURN
+#  define GL_RETURN                         0x0102
+#endif
+/* Draw-buffer identifiers for stereo/mono rendering */
+#ifndef GL_FRONT_LEFT
+#  define GL_FRONT_LEFT                     0x0400
+#endif
+#ifndef GL_FRONT_RIGHT
+#  define GL_FRONT_RIGHT                    0x0401
+#endif
+#ifndef GL_BACK_LEFT
+#  define GL_BACK_LEFT                      0x0402
+#endif
+#ifndef GL_BACK_RIGHT
+#  define GL_BACK_RIGHT                     0x0403
+#endif
+
+/* ─── String / capability query tokens ──────────────────────────────────── */
+#ifndef GL_EXTENSIONS
+#  define GL_EXTENSIONS                     0x1F03
+#endif
+#ifndef GL_MAX_TEXTURE_UNITS
+#  define GL_MAX_TEXTURE_UNITS              0x84E2
+#endif
+#ifndef GL_MAX_TEXTURE_UNITS_ARB
+#  define GL_MAX_TEXTURE_UNITS_ARB          0x84E2
+#endif
+#ifndef GL_MAX_VIEWPORT_DIMS
+#  define GL_MAX_VIEWPORT_DIMS              0x0D3A
+#endif
+#ifndef GL_POINT_SIZE
+#  define GL_POINT_SIZE                     0x0B11
+#endif
+#ifndef GL_POINT_SIZE_RANGE
+#  define GL_POINT_SIZE_RANGE               0x0B12
+#endif
+#ifndef GL_LINE_WIDTH
+#  define GL_LINE_WIDTH                     0x0B21
+#endif
+#ifndef GL_LINE_WIDTH_RANGE
+#  define GL_LINE_WIDTH_RANGE               0x0B22
+#endif
+#ifndef GL_VIEWPORT_BIT
+#  define GL_VIEWPORT_BIT                   0x00000800
+#endif
+
+/* ─── Luminance / luminance-alpha texture formats ────────────────────────── */
+#ifndef GL_LUMINANCE
+#  define GL_LUMINANCE                      0x1909
+#endif
+#ifndef GL_LUMINANCE_ALPHA
+#  define GL_LUMINANCE_ALPHA                0x190A
+#endif
+#ifndef GL_LUMINANCE8
+#  define GL_LUMINANCE8                     0x8040
+#endif
+#ifndef GL_LUMINANCE8_ALPHA8
+#  define GL_LUMINANCE8_ALPHA8              0x8045
+#endif
+
+/* ─── Texture dimension queries ──────────────────────────────────────────── */
+#ifndef GL_TEXTURE_HEIGHT
+#  define GL_TEXTURE_HEIGHT                 0x1001
+#endif
+#ifndef GL_TEXTURE_WIDTH
+#  define GL_TEXTURE_WIDTH                  0x1000
+#endif
+#ifndef GL_TEXTURE_DEPTH
+#  define GL_TEXTURE_DEPTH                  0x8071
+#endif
+#ifndef GL_PROXY_TEXTURE_2D
+#  define GL_PROXY_TEXTURE_2D               0x8064
+#endif
+#ifndef GL_PROXY_TEXTURE_3D
+#  define GL_PROXY_TEXTURE_3D               0x8070
+#endif
+/* glGetTexLevelParameteriv: PortableGL has no proxy texture mechanism.
+ * Always indicate that the texture can be created (non-zero width).           */
+#ifndef GL_GETTEXLEVELPARAMETERIV_STUB
+#  define GL_GETTEXLEVELPARAMETERIV_STUB
+static inline void glGetTexLevelParameteriv(GLenum /*target*/, GLint /*level*/,
+                                            GLenum pname, GLint* params) {
+    if (params)
+        *params = (pname == GL_TEXTURE_WIDTH || pname == GL_TEXTURE_HEIGHT ||
+                   pname == GL_TEXTURE_DEPTH) ? 1 : 0;
+}
+#endif
+
+/* ─── Shade model ────────────────────────────────────────────────────────── */
+/* PortableGL uses PGL_FLAT / PGL_SMOOTH for per-shader interpolation;
+ * glShadeModel is provided here as a no-op so Obol source files compile
+ * unchanged.  Gouraud/Phong selection is driven by Obol's own shader
+ * selector, not by the GL shade-model state.                                  */
+#ifndef GL_FLAT
+#  define GL_FLAT                           0x1D00
+#endif
+#ifndef GL_SMOOTH
+#  define GL_SMOOTH                         0x1D01
+#endif
+#ifndef GL_SHADEMODEL_STUB
+#  define GL_SHADEMODEL_STUB
+static inline void glShadeModel(GLenum /*mode*/) {}
+#endif
+
+/* ─── Display lists (not supported in PortableGL) ───────────────────────── */
+#ifndef GL_COMPILE
+#  define GL_COMPILE                        0x1300
+#endif
+#ifndef GL_COMPILE_AND_EXECUTE
+#  define GL_COMPILE_AND_EXECUTE            0x1301
+#endif
+
+/* ─── Polygon stipple ────────────────────────────────────────────────────── */
+#ifndef GL_POLYGON_STIPPLE
+#  define GL_POLYGON_STIPPLE                0x0B42
+#endif
+
+/* ─── Miscellaneous constants missing from PortableGL ───────────────────── */
+#ifndef GL_NONE
+#  define GL_NONE                           0
+#endif
+#ifndef GL_BLUE
+#  define GL_BLUE                           0x1905
+#endif
+#ifndef GL_DEPTH_BITS
+#  define GL_DEPTH_BITS                     0x0D56
+#endif
+#ifndef GL_EYE_PLANE
+#  define GL_EYE_PLANE                      0x2502
+#endif
+
 #endif /* PORTABLEGL_COMPAT_CONSTS_H */
