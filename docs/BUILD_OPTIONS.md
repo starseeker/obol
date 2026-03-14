@@ -12,7 +12,9 @@ This document describes CMake build options available in Obol.
 
 ## OpenGL Backend Options
 
-Obol supports three OpenGL backend configurations:
+Obol supports multiple OpenGL backend configurations.
+
+### System OpenGL / OSMesa backends
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -23,6 +25,29 @@ Obol supports three OpenGL backend configurations:
 When all three are `OFF` (the default), CMake auto-detects available backends: dual mode if both system OpenGL and OSMesa are present, otherwise whichever is available.
 
 `OBOL_USE_OSMESA` and `OBOL_BUILD_DUAL_GL` are mutually exclusive.
+
+### PortableGL backend (experimental)
+
+[PortableGL](https://github.com/rswinkle/PortableGL) is a single-header CPU software
+renderer implementing an OpenGL 3.x-style core profile.  It requires no system
+libraries and produces a fully self-contained binary — useful for embedded targets,
+WebAssembly, and environments with no display server.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `OBOL_USE_PORTABLEGL` | `OFF` | Build against PortableGL only (no system GL or OSMesa) |
+| `OBOL_BUILD_DUAL_PORTABLEGL` | `OFF` | Build with both system OpenGL (primary) and PortableGL in a single library |
+
+`OBOL_USE_PORTABLEGL` is mutually exclusive with all other backend options.
+
+`OBOL_BUILD_DUAL_PORTABLEGL` requires system OpenGL and PortableGL to be present
+(`external/portablegl/portablegl.h`).
+
+> **Status**: PortableGL is experimental.  Basic geometry, lighting, and texturing work
+> via an Obol-supplied compatibility layer.  Shadow maps (`SoShadowGroup`) are not yet
+> functional (depth-only FBO support is incomplete).  See
+> [docs/SOFTWARE_GL_COMPARISON.md](SOFTWARE_GL_COMPARISON.md) for a full feature
+> comparison with OSMesa.
 
 ## Feature Options
 
@@ -93,5 +118,17 @@ cmake --build build_dir -- -j4
 **Headless/offscreen-only build:**
 ```bash
 cmake -S . -B build_dir -DOBOL_USE_OSMESA=ON
+cmake --build build_dir -- -j4
+```
+
+**PortableGL software-only build (no system GL deps):**
+```bash
+cmake -S . -B build_dir -DOBOL_USE_PORTABLEGL=ON
+cmake --build build_dir -- -j4
+```
+
+**Dual-backend build (system GL primary + PortableGL software fallback):**
+```bash
+cmake -S . -B build_dir -DOBOL_BUILD_DUAL_PORTABLEGL=ON
 cmake --build build_dir -- -j4
 ```

@@ -1,12 +1,17 @@
 # Obol Rendering Backend Feature Survey
 
-This document surveys Obol's feature set across three rendering backend tiers:
+This document surveys Obol's feature set across four rendering backend tiers:
 1. **Any backend** (including nanort or another raytracing renderer)
 2. **OSMesa OpenGL 2.0 + extensions** (headless software rasterizer)
+2b. **PortableGL** (experimental single-header CPU software renderer)
 3. **Full system OpenGL** (hardware-accelerated, all extensions)
 
 It also describes what changes were made to allow raytracing backends to work
 with Obol's scene graph, and which features can be recast generically.
+
+> For a detailed head-to-head comparison of OSMesa and PortableGL — covering
+> performance, maintainability, and feature gaps — see
+> [docs/SOFTWARE_GL_COMPARISON.md](SOFTWARE_GL_COMPARISON.md).
 
 ---
 
@@ -163,7 +168,66 @@ OSMesa supports both; bump mapping should work.
 
 ---
 
-## Tier 3 — Full System OpenGL Only
+## Tier 2b — PortableGL (Experimental)
+
+PortableGL is a single-header CPU software renderer (`external/portablegl/portablegl.h`)
+that provides an OpenGL 3.x core-profile-style API.  It can be used anywhere OSMesa
+can be used, with the tradeoffs listed here.  Enable it with `-DOBOL_USE_PORTABLEGL=ON`.
+
+> **Status**: Experimental.  Basic geometry, Phong lighting, and 2D texturing work.
+> Shadow maps and depth-only FBOs are not yet complete.
+
+### What PortableGL Provides Natively (without Obol's compat layer)
+
+- Triangle/line/point rasterisation
+- Vertex and index buffer objects (VBO/VAO)
+- 2D, 3D, and cube-map textures
+- Instanced drawing
+- Depth buffering (32-bit float)
+- Blending, scissor, stencil (basic)
+- C-function shaders via `pglCreateProgram(vert_func, frag_func, ...)`
+
+### What Obol's Compat Layer Adds
+
+Because PortableGL is a core-profile renderer with no fixed-function state, Obol
+supplies a compatibility layer in `src/misc/portablegl_compat_*.cpp|h`:
+
+| Fixed-function feature | Implementation |
+|---|---|
+| Matrix stacks (MV / P / Tex) | `ObolPGLCompatState` in `portablegl_compat_state.h` |
+| `glLightfv`, `glMaterialfv` | Interceptors in `portablegl_compat_funcs.cpp` |
+| `glBegin`/`glEnd` | Buffered → `glDrawArrays` at `glEnd` |
+| GLSL shader API (`glShaderSourceARB`, ...) | Intercepted; GLSL source classified and mapped to C shaders |
+| `glReadPixels` | Reads from PortableGL back buffer; row-flip applied |
+| Colour-attachment FBOs | Via `pglSetTexBackBuffer` |
+
+Obol ships six pre-written C-function shaders in `portablegl_obol_shaders.h` that
+cover the standard Obol shading modes:
+
+| Shader | Maps to |
+|---|---|
+| `OBOL_PGL_SHADER_FLAT` | Base-colour rendering, no lighting |
+| `OBOL_PGL_SHADER_GOURAUD` | Per-vertex Phong lighting |
+| `OBOL_PGL_SHADER_PHONG` | Per-pixel Phong lighting |
+| `OBOL_PGL_SHADER_TEXTURED_REPLACE` | Textured, no lighting |
+| `OBOL_PGL_SHADER_TEXTURED_PHONG` | Textured + per-pixel Phong |
+| `OBOL_PGL_SHADER_DEPTH` | Depth-only pass (for shadow maps) |
+
+### Feature Gaps vs OSMesa
+
+| Feature | OSMesa | PortableGL |
+|---|---|---|
+| Shadow maps (`SoShadowGroup`) | ✅ | ❌ Depth-only FBO not complete |
+| Depth texture FBO | ✅ | ❌ |
+| FXAA antialiasing | ✅ `OSMesaFXAAEnable` | ❌ |
+| Arbitrary GLSL shaders | ✅ | ❌ Fixed shader set only |
+| sRGB textures | ✅ | ❌ |
+| `GL_ARB_framebuffer_object` | ❌ | ❌ |
+
+See [docs/SOFTWARE_GL_COMPARISON.md](SOFTWARE_GL_COMPARISON.md) for the complete
+comparison.
+
+---
 
 These features require capabilities beyond OpenGL 2.0 or depend on
 hardware-specific extensions that OSMesa may not provide:
