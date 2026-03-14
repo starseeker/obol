@@ -337,8 +337,9 @@ to the application-supplied `SoDB::ContextManager` callbacks; they return
 **PBuffer functions** (`cc_glglue_context_pbuffer_is_bound`, etc.) are stubs
 that always return `FALSE`/no-op.
 
-**Screen resolution detection** now returns a fixed 72 DPI instead of
-querying the display server:
+**Screen resolution detection** uses a default of 72 DPI instead of
+querying the display server.  Unlike Coin, applications can now change this
+value at runtime using the new static API on `SoOffscreenRenderer`:
 
 ```cpp
 // Coin (upstream) — queried display server
@@ -348,9 +349,15 @@ querying the display server:
   pixmmres = SoOffscreenWGLData::getResolution();
 #endif
 
-// Obol — portable constant
-SbVec2f pixmmres(72.0f / 25.4f, 72.0f / 25.4f);
+// Obol — portable default, overridable at runtime
+SbVec2f pixmmres(72.0f / 25.4f, 72.0f / 25.4f);   // internal default
+
+// Override to match display or output target:
+SoOffscreenRenderer::setScreenPixelsPerInch(96.0f);   // e.g. typical 96 DPI display
+float dpi = SoOffscreenRenderer::getScreenPixelsPerInch();  // read current value
 ```
+
+Both methods are static; the setting is process-wide.
 
 **OpenGL function loading** uses only the portable `cc_dl_sym()` path; the
 `wglGetProcAddress` and `glXGetProcAddressARB` paths are gone.
@@ -377,9 +384,12 @@ reason about and test than hidden `#ifdef` branches.
   any platform where they want offscreen rendering.  On Windows this typically
   means a WGL-based manager; on Linux a GLX- or EGL-based manager; on macOS a
   CGL-based manager.  OSMesa-based managers work on any platform.
-* **Fixed DPI:** Applications that relied on Coin's automatic screen DPI
-  detection for `SoOffscreenRenderer` pixel size calculations must now apply
-  their own DPI scaling.
+* **Configurable DPI:** The default 72 DPI is appropriate for most headless
+  use cases.  Applications that relied on Coin's automatic screen DPI detection
+  can set the desired value explicitly:
+  ```cpp
+  SoOffscreenRenderer::setScreenPixelsPerInch(96.0f);
+  ```
 
 ---
 
@@ -413,7 +423,7 @@ setting the `COIN_PROFILER` environment variable at runtime.
 
 In Obol, the profiling code is compiled in but **`SoProfiler::isEnabled()`
 always returns `FALSE` unless the build is configured with
-`-DCOIN_PROFILING=ON`**.  With that option off (the default) the entire
+`-DOBOL_PROFILING=ON`**.  With that option off (the default) the entire
 profiling code path is unreachable at runtime regardless of the `COIN_PROFILER`
 environment variable.
 
@@ -427,11 +437,11 @@ so that performance regressions cannot be silently introduced.
 ### User implications
 
 `SoProfilingReportGenerator`, `SbProfilingData`, and related classes are
-always compiled but are not reachable at runtime unless `-DCOIN_PROFILING=ON`
+always compiled but are not reachable at runtime unless `-DOBOL_PROFILING=ON`
 is specified at CMake configure time:
 
 ```bash
-cmake -S . -B build_dir -DCOIN_PROFILING=ON
+cmake -S . -B build_dir -DOBOL_PROFILING=ON
 ```
 
 When enabled, profiling behaves identically to upstream Coin: set the
@@ -717,43 +727,97 @@ Replace all uses of `SoSFLong`, `SoMFLong`, `SoSFULong`, `SoMFULong` with
 
 ## 21. Build System Differences
 
+### GL backend options
+
+The two primary GL backend switches replace the old `OBOL_USE_OSMESA` /
+`OBOL_USE_SYSTEM_ONLY` / `OBOL_BUILD_DUAL_GL` triplet:
+
 | CMake option | Default | Description |
 |---|---|---|
-| `OBOL_PROFILING` | `OFF` | Enable profiling subsystem (`SoProfiler::isEnabled()` always FALSE when OFF) |
-| `OBOL_USE_OSMESA` | `OFF` | Link OSMesa only for offscreen/headless rendering (no system GL) |
-| `OBOL_USE_SYSTEM_ONLY` | `OFF` | System OpenGL only (no OSMesa fallback) |
-| `OBOL_BUILD_DUAL_GL` | `OFF` | Both system GL and OSMesa in one library (auto-enabled when both found) |
-| `OBOL_NO_OPENGL` | `OFF` | Build without any OpenGL (custom context drivers + reduced feature set) |
-| `OBOL_BUILD_TESTS` | `ON` | Build the Catch2-based test suite |
-| `OBOL_BUILD_VIEWER` | auto | Build FLTK scene viewer (requires FLTK and `OBOL_BUILD_TESTS`) |
-| `OBOL_BUILD_QT_VIEWER` | auto | Build Qt6 scene viewer (requires Qt6 and `OBOL_BUILD_TESTS`) |
+| `OBOL_USE_SYSTEM_GL` | auto¹ | Enable the system OpenGL backend |
+| `OBOL_USE_SWRAST` | auto² | Enable the software-rasterizer (OSMesa) backend |
+
+¹ Default `ON` when CMake's `find_package(OpenGL)` succeeds; `OFF` otherwise.  
+² Default `ON` when `external/osmesa/CMakeLists.txt` is present; `OFF` otherwise.
+
+The combination of these two flags determines the build mode:
+
+| `OBOL_USE_SWRAST` | `OBOL_USE_SYSTEM_GL` | Mode | Library name |
+|---|---|---|---|
+| `OFF` | `OFF` | No-OpenGL (custom context managers only) | `libObol-nogl` |
+| `ON` | `OFF` | Software-rasterizer only (headless/offscreen) | `libObol-swrast` |
+| `OFF` | `ON` | System OpenGL only | `libObol` |
+| `ON` | `ON` | **Dual-GL** (system primary + OSMesa per-renderer) | `libObol` |
+
+### Core options
+
+| CMake option | Default | Description |
+|---|---|---|
 | `BUILD_SHARED_LIBS` | `ON` | Shared vs. static library |
+| `OBOL_BUILD_TESTS` | `ON` | Build the Catch2-based test suite |
+| `OBOL_BUILD_DOCS` | `OFF` | Build Doxygen API documentation (requires Doxygen) |
 | `OBOL_THREADSAFE` | `ON` | Thread-safe render traversals |
-| `COIN_USE_PRECOMPILED_HEADERS` | `ON` | PCH for faster incremental builds (CMake ≥ 3.16) |
 | `HAVE_NODEKITS` | `ON` | NodeKit support |
 | `HAVE_DRAGGERS` | `ON` | Dragger support |
 | `HAVE_MANIPULATORS` | `ON` | Manipulator support |
+| `OBOL_PROFILING` | `OFF` | Enable profiling subsystem (`SoProfiler::isEnabled()` always `FALSE` when `OFF`) |
+| `USE_EXCEPTIONS` | `ON` | Compile with C++ exceptions (GCC/Clang) |
 
-**GL backend selection:** When neither `OBOL_USE_OSMESA`, `OBOL_USE_SYSTEM_ONLY`,
-nor `OBOL_BUILD_DUAL_GL` is set, CMake auto-detects available GL libraries:
-if both system GL and OSMesa are found, `OBOL_BUILD_DUAL_GL` is automatically
-enabled; if only one is found, the corresponding single-backend mode is used.
+### Build quality options
+
+| CMake option | Default | Description |
+|---|---|---|
+| `OBOL_USE_UNITY_BUILD` | `ON` | Unity (jumbo) build for faster compilation (CMake ≥ 3.16) |
+| `OBOL_WARNINGS` | `ON` | Enable extra warning flags (`-Wall -Wextra -Wundef -Wshadow` etc.) on the Obol target |
+| `OBOL_COVERAGE` | `OFF` | Code-coverage instrumentation (GCC/Clang; adds `coverage` CTest target) |
+
+### Viewer options
+
+| CMake option | Default | Description |
+|---|---|---|
+| `OBOL_BUILD_VIEWER` | auto³ | Build `obol_viewer` FLTK scene viewer |
+| `OBOL_BUILD_MINIMALIST_VIEWER` | same as `OBOL_BUILD_VIEWER` | Build `obol_minimalist_viewer` stress-tester |
+| `OBOL_VIEWER_USE_FLTK_GL` | `ON` | Use FLTK GL context for the system-GL panel in `obol_viewer` |
+| `OBOL_VIEWER_USE_EMBREE` | auto⁴ | Enable Intel Embree 4 CPU raytracing panel in `obol_viewer` |
+| `OBOL_VIEWER_USE_VULKAN` | auto⁵ | Enable Vulkan hardware-rasterization panel in `obol_viewer` |
+| `OBOL_BUILD_QT_VIEWER` | auto⁶ | Build `obol_qt_viewer` Qt6 scene viewer |
+| `OBOL_BUILD_QT_EXAMPLE` | `OFF` | Build `qt_obol_example` standalone Qt/Obol widget demo |
+
+³ `ON` when `FLTK_FOUND` and `OBOL_BUILD_TESTS`; `OFF` otherwise.  
+⁴ `ON` when Embree 4 is found; `OFF` otherwise.  
+⁵ `ON` when Vulkan is found; `OFF` otherwise.  
+⁶ `ON` when Qt6 Widgets/Gui is found and `OBOL_BUILD_TESTS`; `OFF` otherwise.
+
+### MSVC-specific options (Windows only)
+
+| CMake option | Default | Description |
+|---|---|---|
+| `OBOL_BUILD_MSVC_STATIC_RUNTIME` | `OFF` | Link against the static MSVC C runtime (`/MT`) |
+| `OBOL_BUILD_MSVC_MP` | `ON` | Enable parallel compilation (`/MP`) in Visual Studio |
+
+**GL backend selection:** When neither `OBOL_USE_SWRAST` nor `OBOL_USE_SYSTEM_GL`
+is explicitly set, CMake auto-detects available GL libraries and sets the defaults
+as described above.  Setting both `ON` gives the dual-GL build in which both
+system GL and OSMesa are compiled into the same shared library, selectable per
+`SoOffscreenRenderer` instance at runtime (see §24).
+
+**Software rasterizer submodule:** The `external/osmesa` submodule provides the
+name-mangled OSMesa build required for `OBOL_USE_SWRAST=ON`.
+
+**FLTK detection:** CMake first looks for a system FLTK installation
+(`libfltk1.3-dev`); if none is found it automatically initialises the
+`external/fltk` submodule and builds FLTK from source.
 
 **Minimum compiler standard:** C++17.
-
-**Submodules:** The `external/osmesa` submodule provides the name-mangled OSMesa
-build required for dual-GL mode.  For FLTK-based viewers, CMake first looks for
-a system FLTK installation (`libfltk1.3-dev`); if none is found it automatically
-initialises the `external/fltk` submodule and builds FLTK from source.
 
 **Out-of-source builds are enforced.**  Attempting to configure in the source
 directory will fail immediately.
 
 Upstream Coin's Autoconf/Automake build system is not present in Obol; only CMake is supported.
 
-> **Note:** Obol's CMake options use the `OBOL_` prefix (not Coin's `COIN_`
-> prefix) except for the legacy `COIN_USE_PRECOMPILED_HEADERS` option retained
-> for backward compatibility with existing build scripts.
+> **Note:** Obol's CMake options use the `OBOL_` prefix throughout.  The old
+> Coin-era `COIN_USE_PRECOMPILED_HEADERS` option no longer exists; unity builds
+> are controlled by `OBOL_USE_UNITY_BUILD` instead.
 
 ---
 
@@ -770,7 +834,7 @@ Upstream Coin's Autoconf/Automake build system is not present in Obol; only CMak
 | **NURBS** | `SoNurbsCurve`, `SoNurbsSurface`, etc. removed | Pre-tessellate to `SoIndexedFaceSet` / `SoIndexedLineSet` |
 | **Collision** | `SoIntersectionDetectionAction` removed | Perform intersection tests externally |
 | **Platform GL context** | WGL/GLX/AGL/CGL/EGL code removed | Implement `SoDB::ContextManager` for each platform |
-| **Fixed DPI** | Offscreen renderer uses 72 DPI constant | Apply application-level DPI scaling if needed |
+| **Configurable DPI** | Offscreen renderer defaults to 72 DPI; adjustable at runtime | Call `SoOffscreenRenderer::setScreenPixelsPerInch(dpi)` to override |
 | **PostScript/hardcopy** | Always compiled; API always available | No action needed; `SoVectorizePSAction` usable in all builds |
 | **Profiling** | Always compiled; off by default (`-DOBOL_PROFILING=ON` to enable) | Add CMake option; `COIN_PROFILER` env var activates it when enabled |
 | **Font: SoGlyph** | Removed (was deprecated in Coin) | Use `SbFont` / `SbGlyph2D` / `SbGlyph3D` |
@@ -787,8 +851,8 @@ Upstream Coin's Autoconf/Automake build system is not present in Obol; only CMak
 | **NEW: SuUtils.h** | `SbAtexitStaticInternal` now public | Use when writing custom node classes |
 | **NEW: Extended ContextManager** | `getActualSurfaceSize`, `maxOffscreenDimensions`, `isOSMesaContext`, `getProcAddress`, `renderScene` | Override as needed; defaults are safe no-ops |
 | **NEW: Per-renderer managers** | `SoOffscreenRenderer` accepts per-instance `ContextManager*` | Pass manager to constructor; use `SDB::createOSMesaContextManager()` for built-in OSMesa |
-| **NEW: Dual-GL mode** | System GL + OSMesa in one library (`OBOL_BUILD_DUAL_GL`) | Auto-enabled when both are found; see §24 |
-| **Build system** | CMake only; C++17 required; `OBOL_` option prefix | Update build scripts; replace `COIN_BUILD_TESTS` → `OBOL_BUILD_TESTS`, etc. |
+| **NEW: Dual-GL mode** | System GL + OSMesa in one library (`OBOL_USE_SWRAST=ON` + `OBOL_USE_SYSTEM_GL=ON`) | Auto-enabled when both are detected; see §24 |
+| **Build system** | CMake only; C++17 required; `OBOL_` option prefix throughout | Update build scripts; replace old `OBOL_USE_OSMESA`→`OBOL_USE_SWRAST`, `OBOL_USE_SYSTEM_ONLY`→`OBOL_USE_SYSTEM_GL`, `COIN_USE_PRECOMPILED_HEADERS`→`OBOL_USE_UNITY_BUILD`, `COIN_BUILD_TESTS`→`OBOL_BUILD_TESTS` |
 
 ---
 
@@ -846,7 +910,7 @@ virtual SbBool isOSMesaContext(void * context);
 // Default: FALSE
 ```
 
-In `OBOL_BUILD_DUAL_GL` builds, both system GL and OSMesa are compiled into the
+In dual-GL builds (`OBOL_USE_SWRAST=ON` + `OBOL_USE_SYSTEM_GL=ON`), both system GL and OSMesa are compiled into the
 same library.  Return `TRUE` for contexts created via OSMesa so that the GL-glue
 dispatch layer routes calls to the `osmesa_SoGLContext_*` implementation rather
 than the system-GL implementation.  Only meaningful in dual-GL builds; the default
@@ -950,9 +1014,9 @@ These changes were driven by two needs:
 
 Obol can be built so that **both system OpenGL and OSMesa are available in the
 same shared library**, selectable per `SoOffscreenRenderer` instance at runtime.
-This is controlled by the `OBOL_BUILD_DUAL_GL` CMake option (auto-enabled when
-both system GL and OSMesa are detected on a system that has neither
-`OBOL_USE_OSMESA` nor `OBOL_USE_SYSTEM_ONLY` set explicitly).
+This mode is activated by setting both `OBOL_USE_SWRAST=ON` and
+`OBOL_USE_SYSTEM_GL=ON` (auto-enabled when both system GL and the
+`external/osmesa` submodule are detected and neither option is overridden).
 
 This might seem surprising — having two conflicting GL implementations in the
 same binary is normally a recipe for chaos.  This document explains why it is
@@ -1005,7 +1069,7 @@ Both objects link into the same `.so` with no symbol collision because:
 
 ### Runtime Dispatch
 
-A thin dispatch layer in `gl.cpp` (compiled with `OBOL_BUILD_DUAL_GL`) keeps the
+A thin dispatch layer in `gl.cpp` (compiled in dual-GL mode) keeps the
 stable `SoGLContext_*` API working at runtime:
 
 ```
@@ -1022,11 +1086,12 @@ returns `TRUE` from this method; the `FLTKContextManager` returns `FALSE`.
 
 ### Why `USE_MGL_NAMESPACE` Is Not Set Globally
 
-In the OSMesa-only build (`OBOL_USE_OSMESA=ON`), `USE_MGL_NAMESPACE` is set as a
-`target_compile_definition` on the Obol library target only — not via
-`add_definitions()`.  This prevents the mangle header from being activated in
-test executables or viewer code that includes `<GL/glx.h>` (which conditionally
-includes `glx_mangle.h`, a file that does not exist on modern Ubuntu 24.04).
+In the software-rasterizer-only build (`OBOL_USE_SWRAST=ON`, `OBOL_USE_SYSTEM_GL=OFF`),
+`USE_MGL_NAMESPACE` is set as a `target_compile_definition` on the Obol library
+target only — not via `add_definitions()`.  This prevents the mangle header from
+being activated in test executables or viewer code that includes `<GL/glx.h>`
+(which conditionally includes `glx_mangle.h`, a file that does not exist on
+modern Ubuntu 24.04).
 
 In dual-GL builds, `USE_MGL_NAMESPACE` is **not** set globally at all; it is
 activated only inside `gl_osmesa.cpp` via the `#define` at the top of that file,
@@ -1053,10 +1118,10 @@ ensuring complete isolation.
 
 | Scenario | Recommended option |
 |----------|--------------------|
-| Headless CI / servers with no GPU | `OBOL_USE_OSMESA=ON` |
-| Desktop with GPU; no headless fallback needed | `OBOL_USE_SYSTEM_ONLY=ON` |
-| Desktop with GPU + need for per-renderer OSMesa | `OBOL_BUILD_DUAL_GL=ON` (or leave both OFF for auto-detect) |
-| Embedded / custom GL driver, no system GL | `OBOL_NO_OPENGL=ON` + custom ContextManager |
+| Headless CI / servers with no GPU | `-DOBOL_USE_SWRAST=ON -DOBOL_USE_SYSTEM_GL=OFF` |
+| Desktop with GPU; no headless fallback needed | `-DOBOL_USE_SYSTEM_GL=ON -DOBOL_USE_SWRAST=OFF` |
+| Desktop with GPU + need for per-renderer OSMesa | `-DOBOL_USE_SWRAST=ON -DOBOL_USE_SYSTEM_GL=ON` (or leave both at auto-detect defaults) |
+| Embedded / custom GL driver, no system GL | `-DOBOL_USE_SWRAST=OFF -DOBOL_USE_SYSTEM_GL=OFF` + custom `ContextManager` |
 
 For detailed information on implementing a context manager for any of these
 scenarios, see `docs/CONTEXT_MANAGEMENT_API.md`.
