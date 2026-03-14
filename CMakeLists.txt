@@ -187,6 +187,7 @@ option(OBOL_USE_OSMESA "Build against OSMesa only for offscreen/headless renderi
 option(OBOL_USE_SYSTEM_ONLY "Build against system OpenGL only (no OSMesa fallback)" OFF)
 option(OBOL_BUILD_DUAL_GL "Build with both system-OpenGL and OSMesa backends in a single library" OFF)
 option(OBOL_USE_PORTABLEGL "Build against PortableGL (CPU software renderer, no system GL/OSMesa)" OFF)
+option(OBOL_BUILD_DUAL_PORTABLEGL "Build with both system-OpenGL and PortableGL backends in a single library" OFF)
 option(OBOL_THREADSAFE "Enable thread safe render traversals" ON)
 
 # Component options
@@ -305,7 +306,8 @@ set(OBOL_TARGET_LINK_LIBRARIES_GL)
 # system header at <GL/osmesa.h>, which uses un-mangled gl* symbols
 # incompatible with a dual system-GL+OSMesa build.
 # -----------------------------------------------------------------------
-if(NOT OBOL_USE_OSMESA AND NOT OBOL_USE_SYSTEM_ONLY AND NOT OBOL_BUILD_DUAL_GL)
+if(NOT OBOL_USE_OSMESA AND NOT OBOL_USE_SYSTEM_ONLY AND NOT OBOL_BUILD_DUAL_GL
+   AND NOT OBOL_USE_PORTABLEGL AND NOT OBOL_BUILD_DUAL_PORTABLEGL)
   find_package(OpenGL QUIET)
   # "OSMesa available" means our submodule is present (not system osmesa)
   if(EXISTS "${PROJECT_SOURCE_DIR}/external/osmesa/CMakeLists.txt")
@@ -422,6 +424,44 @@ if(OBOL_BUILD_DUAL_GL)
   message(STATUS "Dual-GL build enabled: system OpenGL + OSMesa in one library")
 endif()
 
+# Dual-PortableGL build: compile both system OpenGL (primary) and PortableGL
+# (software backend) into a single shared library, using symbol renaming to
+# avoid collisions between their respective gl* function sets.
+#
+# This is the PORTABLEGL equivalent of OBOL_BUILD_DUAL_GL + OSMesa:
+#   - portablegl_impl.cpp builds PortableGL with PGL_PREFIX_GL=1 so its
+#     exported symbols are pgl_glFoo (not glFoo).
+#   - gl_portablegl.cpp recompiles gl.cpp with SOGL_PREFIX_STR=portablegl_
+#     and OBOL_GLHEADERS_PORTABLEGL_OVERRIDE (which activates
+#     portablegl_gl_mangle.h via gl-headers.h) so all SoGLContext_* exports
+#     become portablegl_SoGLContext_* calling pgl_gl* symbols.
+#   - A dispatch layer in gl.cpp routes per-context calls to the correct
+#     backend at runtime (coingl_context_backend_is_portablegl).
+#
+# Requirements:
+#   - System OpenGL must be available.
+#   - external/portablegl/portablegl.h must be present (FindPortableGL).
+#   - Cannot be combined with OBOL_USE_PORTABLEGL (portablegl-only) or
+#     OBOL_USE_OSMESA.
+if(OBOL_BUILD_DUAL_PORTABLEGL)
+  if(OBOL_USE_PORTABLEGL)
+    message(FATAL_ERROR "OBOL_BUILD_DUAL_PORTABLEGL and OBOL_USE_PORTABLEGL are mutually exclusive. "
+            "DUAL_PORTABLEGL uses system OpenGL as primary with PortableGL as a secondary backend.")
+  endif()
+  if(OBOL_USE_OSMESA)
+    message(FATAL_ERROR "OBOL_BUILD_DUAL_PORTABLEGL and OBOL_USE_OSMESA are mutually exclusive.")
+  endif()
+  list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
+  find_package(PortableGL REQUIRED)
+  if(NOT PortableGL_FOUND)
+    message(FATAL_ERROR "OBOL_BUILD_DUAL_PORTABLEGL requires PortableGL (external/portablegl/portablegl.h).\n"
+            "Ensure the header is present or set PortableGL_ROOT.")
+  endif()
+  set(OBOL_PORTABLEGL_INCLUDE_DIRS "${PortableGL_INCLUDE_DIRS}")
+  add_definitions(-DOBOL_BUILD_DUAL_PORTABLEGL)
+  message(STATUS "Dual-PortableGL build enabled: system OpenGL + PortableGL in one library")
+endif()
+
 # Set library output name based on backend selection
 if(OBOL_USE_PORTABLEGL)
   set(OBOL_OUTPUT_NAME "Obol-portablegl")
@@ -434,6 +474,11 @@ elseif(OBOL_USE_OSMESA)
   # to avoid propagating it to test executables that include <GL/glx.h>, which
   # conditionally includes "glx_mangle.h" (not present on modern Ubuntu 24.04).
   message(STATUS "Library will be named: lib${OBOL_OUTPUT_NAME}")
+elseif(OBOL_BUILD_DUAL_PORTABLEGL)
+  set(OBOL_OUTPUT_NAME "Obol-dual-portablegl")
+  message(STATUS "Library will be named: lib${OBOL_OUTPUT_NAME}")
+  # PortableGL is header-only (no library to link); nothing to add to
+  # OBOL_TARGET_LINK_LIBRARIES beyond system GL which is already there.
 else()
   set(OBOL_OUTPUT_NAME "Obol")
   message(STATUS "Library will be named: lib${OBOL_OUTPUT_NAME}")
@@ -599,10 +644,31 @@ if(OBOL_USE_PORTABLEGL)
   # conflicts with Obol's own local variable names.
   # PGL_PREFIX_GLSL renames math helpers (clamp, smoothstep, …) that would
   # otherwise shadow standard-library or Obol implementations.
+  # PGL_PREFIX_GL renames gl* → pgl_gl* (needed only in a dual build, but
+  # applied always for consistency — see portablegl_impl.cpp comments).
   set(SIM_INCLUDE_GL_H
-      "#define PGL_PREFIX_TYPES 1\n  #define PGL_PREFIX_GLSL  1\n  #include <portablegl/portablegl.h>")
+      "#define PGL_PREFIX_TYPES 1\n  #define PGL_PREFIX_GLSL  1\n  #define PGL_PREFIX_GL    1\n  #include <portablegl/portablegl.h>")
   set(SIM_INCLUDE_GLEXT_H "/* portablegl.h provides all GL extension prototypes */")
   message(STATUS "Using PortableGL headers for GL (software renderer)")
+elseif(OBOL_BUILD_DUAL_PORTABLEGL)
+  # Dual-portablegl: the primary build uses system GL headers.  The
+  # portablegl headers are included only in gl_portablegl.cpp (via
+  # OBOL_GLHEADERS_PORTABLEGL_OVERRIDE in gl-headers.h).
+  if(HAVE_GL_GL_H)
+    set(SIM_INCLUDE_GL_H "#include <GL/gl.h>")
+  elseif(HAVE_OPENGL_GL_H)
+    set(SIM_INCLUDE_GL_H "#include <OpenGL/gl.h>")
+  else()
+    set(SIM_INCLUDE_GL_H "#error \"don't know how to include gl.h header\"")
+  endif()
+  if(HAVE_GL_GLEXT_H)
+    set(SIM_INCLUDE_GLEXT_H "#include <GL/glext.h>")
+  elseif(HAVE_OPENGL_GLEXT_H)
+    set(SIM_INCLUDE_GLEXT_H "#include <OpenGL/glext.h>")
+  else()
+    set(SIM_INCLUDE_GLEXT_H "/* #include <GL/glext.h> - not found on system */")
+  endif()
+  message(STATUS "Using system GL headers for primary build (PortableGL via override in gl_portablegl.cpp)")
 elseif(OBOL_USE_OSMESA)
   # OSMesa's gl.h already includes OSMesa/glext.h, so no system glext needed.
   # Mixing system GL/glext.h with OSMesa's MGL-mangled headers causes symbol

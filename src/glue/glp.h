@@ -2697,6 +2697,18 @@ void SoGLContext_win32_updateHDCBitmap(void * ctx);
 void coingl_register_osmesa_context(int contextid);
 void coingl_unregister_osmesa_context(int contextid);
 
+/* PortableGL context registry (dual-portablegl builds).
+ *
+ * Register/unregister a PortableGL-backed context ID so that the dispatch
+ * in SoGLContext_instance() and SoGLContext_destruct() can route calls to
+ * the portablegl_SoGLContext_* variants compiled in gl_portablegl.cpp.
+ *
+ * Both functions are always declared and safe to call; they are no-ops in
+ * non-dual-portablegl builds.
+ * --------------------------------------------------------------------- */
+void coingl_register_portablegl_context(int contextid);
+void coingl_unregister_portablegl_context(int contextid);
+
 /* Per-context-ID manager registry.  Call coingl_register_context_manager()
    after assigning a render-context ID whenever the context was created via a
    SoDB::ContextManager (e.g. inside CoinOffscreenGLCanvas::tryActivateGLContext()).

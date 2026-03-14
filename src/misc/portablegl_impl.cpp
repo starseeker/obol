@@ -12,8 +12,7 @@
  * ON (i.e. when the library was configured with the PortableGL software
  * renderer backend).
  *
- * The two preprocessor knobs below are required for compatibility with the
- * rest of the Obol source tree:
+ * Preprocessor knobs used here:
  *
  *   PGL_PREFIX_TYPES
  *     Renames the GLSL-style builtin types that PortableGL injects into the
@@ -27,9 +26,21 @@
  *     (smoothstep → pgl_smoothstep, clamp → pgl_clamp, etc.) to avoid
  *     collisions with the clamp() template in toojpeg.cpp and the clamp()
  *     helper in evaluator.cpp.
+ *
+ *   PGL_PREFIX_GL
+ *     Renames every gl* function to pgl_gl* (e.g. glDrawArrays →
+ *     pgl_glDrawArrays) using portablegl_gl_mangle.h.  This prevents symbol
+ *     clashes with system OpenGL when both backends are linked into the same
+ *     shared library (OBOL_BUILD_DUAL_PORTABLEGL builds).
+ *
+ *     NOTE: In a pure OBOL_USE_PORTABLEGL (portablegl-only) build this
+ *     renaming is unnecessary because there is no system GL.  However it is
+ *     always applied so that the same object file can be used for both build
+ *     modes without recompilation.
  */
 
 #define PGL_PREFIX_TYPES 1
 #define PGL_PREFIX_GLSL  1
+#define PGL_PREFIX_GL    1
 #define PORTABLEGL_IMPLEMENTATION
 #include <portablegl/portablegl.h>

@@ -323,6 +323,35 @@ const SoGLContext * osmesa_SoGLContext_instance(int contextid);
 void osmesa_SoGLContext_destruct(uint32_t contextid);
 #endif /* OBOL_BUILD_DUAL_GL */
 
+/* -----------------------------------------------------------------------
+ * Dual-PortableGL backend registry
+ *
+ * When OBOL_BUILD_DUAL_PORTABLEGL is defined, we maintain a set of context
+ * IDs that were created against the PortableGL software backend.  The
+ * dispatch in SoGLContext_instance() routes those IDs to
+ * portablegl_SoGLContext_instance(), which was compiled in gl_portablegl.cpp
+ * with pgl_gl* symbols (symbol renaming via portablegl_gl_mangle.h).
+ *
+ * This exactly mirrors the dual-GL OSMesa registry above.
+ * --------------------------------------------------------------------- */
+#if defined(OBOL_BUILD_DUAL_PORTABLEGL)
+static std::unordered_set<int> * coingl_portablegl_context_ids = NULL;
+static std::mutex coingl_portablegl_context_mutex;
+
+static void coingl_portablegl_registry_cleanup(void)
+{
+  std::lock_guard<std::mutex> lock(coingl_portablegl_context_mutex);
+  delete coingl_portablegl_context_ids;
+  coingl_portablegl_context_ids = NULL;
+}
+
+/* Forward declarations of the portablegl-prefixed implementations compiled
+   in gl_portablegl.cpp.  The linker resolves these from the glue_portablegl
+   object. */
+const SoGLContext * portablegl_SoGLContext_instance(int contextid);
+void portablegl_SoGLContext_destruct(uint32_t contextid);
+#endif /* OBOL_BUILD_DUAL_PORTABLEGL */
+
 /* Public C API: register an OSMesa-backed render-context ID.
    Must be called (once, at context-ID assignment time) by the application
    or CoinOffscreenGLCanvas before the first SoGLContext_instance() call
@@ -367,6 +396,52 @@ coingl_context_backend_is_osmesa(int contextid)
   std::lock_guard<std::mutex> lock(coingl_osmesa_context_mutex);
   return (coingl_osmesa_context_ids &&
           coingl_osmesa_context_ids->count(contextid) > 0) ? 1 : 0;
+#else
+  (void)contextid;
+  return 0;
+#endif
+}
+
+/* Public C API: register a PortableGL-backed render-context ID.
+   Mirrors coingl_register_osmesa_context() for the PortableGL backend.
+   Safe to call even when OBOL_BUILD_DUAL_PORTABLEGL is not defined (no-op). */
+void
+coingl_register_portablegl_context(int contextid)
+{
+#if defined(OBOL_BUILD_DUAL_PORTABLEGL)
+  std::lock_guard<std::mutex> lock(coingl_portablegl_context_mutex);
+  if (!coingl_portablegl_context_ids) {
+    coingl_portablegl_context_ids = new std::unordered_set<int>();
+    coin_atexit((coin_atexit_f *)coingl_portablegl_registry_cleanup, CC_ATEXIT_NORMAL);
+  }
+  coingl_portablegl_context_ids->insert(contextid);
+#else
+  (void)contextid;
+#endif
+}
+
+/* Remove a PortableGL context ID from the backend registry. */
+void
+coingl_unregister_portablegl_context(int contextid)
+{
+#if defined(OBOL_BUILD_DUAL_PORTABLEGL)
+  std::lock_guard<std::mutex> lock(coingl_portablegl_context_mutex);
+  if (coingl_portablegl_context_ids) {
+    coingl_portablegl_context_ids->erase(contextid);
+  }
+#else
+  (void)contextid;
+#endif
+}
+
+/* Query whether a context ID was registered as a PortableGL context. */
+[[maybe_unused]] static int
+coingl_context_backend_is_portablegl(int contextid)
+{
+#if defined(OBOL_BUILD_DUAL_PORTABLEGL)
+  std::lock_guard<std::mutex> lock(coingl_portablegl_context_mutex);
+  return (coingl_portablegl_context_ids &&
+          coingl_portablegl_context_ids->count(contextid) > 0) ? 1 : 0;
 #else
   (void)contextid;
   return 0;
@@ -744,10 +819,13 @@ SoGLContext_getprocaddress(const SoGLContext * glue, const char * symname)
 {
   void * ptr = NULL;
 
-#if defined(OBOL_PORTABLEGL_BUILD)
-  /* PortableGL path: resolve via our static interceptor table.  Never use
-     dlsym() or glXGetProcAddress() as PortableGL's GL symbols are
-     incompatible with system GL and OSMesa dispatch tables. */
+#if defined(OBOL_PORTABLEGL_BUILD) || (defined(SOGL_PREFIX_SET) && defined(PGL_PREFIX_GL))
+  /* PortableGL path: resolve via our static interceptor table.  This branch
+     is taken both in a portablegl-only build (OBOL_PORTABLEGL_BUILD) and in
+     the portablegl compilation unit of a dual-portablegl build
+     (SOGL_PREFIX_SET + PGL_PREFIX_GL, set by gl_portablegl.cpp).
+     Never use dlsym() or glXGetProcAddress() — PortableGL's gl symbols are
+     named pgl_gl* and have no dlopen handle. */
   extern void* obol_portablegl_getprocaddress(const char*);
   ptr = obol_portablegl_getprocaddress(symname);
   if (ptr) {
@@ -2743,6 +2821,16 @@ SoGLContext_instance(int contextid)
     return osmesa_SoGLContext_instance(contextid);
   }
 #endif
+#if defined(OBOL_BUILD_DUAL_PORTABLEGL) && !defined(SOGL_PREFIX_SET)
+  /* Dual-PortableGL dispatch: if this context ID was registered as a
+     PortableGL context, forward to the portablegl_ variant compiled in
+     gl_portablegl.cpp.  This is the PORTABLEGL equivalent of the OSMesa
+     dispatch above; see portablegl_gl_mangle.h and gl_portablegl.cpp for
+     the symbol-renaming mechanism that avoids linker collisions. */
+  if (coingl_context_backend_is_portablegl(contextid)) {
+    return portablegl_SoGLContext_instance(contextid);
+  }
+#endif
 
   // Add debugging for OSMesa builds at function entry
 #ifdef OBOL_OSMESA_BUILD
@@ -3197,6 +3285,16 @@ SoGLContext_destruct(uint32_t contextid)
   if (coingl_context_backend_is_osmesa(static_cast<int>(contextid))) {
     osmesa_SoGLContext_destruct(contextid);
     coingl_unregister_osmesa_context(static_cast<int>(contextid));
+    coingl_unregister_context_manager(static_cast<int>(contextid));
+    return;
+  }
+#endif
+#if defined(OBOL_BUILD_DUAL_PORTABLEGL) && !defined(SOGL_PREFIX_SET)
+  /* In dual-portablegl builds, PortableGL contexts are stored in the
+     portablegl variant's dictionary.  Dispatch and clean up registries. */
+  if (coingl_context_backend_is_portablegl(static_cast<int>(contextid))) {
+    portablegl_SoGLContext_destruct(contextid);
+    coingl_unregister_portablegl_context(static_cast<int>(contextid));
     coingl_unregister_context_manager(static_cast<int>(contextid));
     return;
   }

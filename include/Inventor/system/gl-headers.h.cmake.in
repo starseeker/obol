@@ -51,14 +51,32 @@
    of the default backend configured at CMake time.  This is the mechanism
    that allows src/glue/gl_osmesa.cpp to compile the same source with
    OSMesa GL symbols while the primary build uses system OpenGL. */
+/* When OBOL_GLHEADERS_OSMESA_OVERRIDE is defined (set by _osmesa.cpp
+   compilation units in dual-GL builds), we use OSMesa headers regardless
+   of the default backend configured at CMake time.  This is the mechanism
+   that allows src/glue/gl_osmesa.cpp to compile the same source with
+   OSMesa GL symbols while the primary build uses system OpenGL. */
 #ifdef OBOL_GLHEADERS_OSMESA_OVERRIDE
 #  include <OSMesa/osmesa.h>
 #  include <OSMesa/gl.h>
 /* OSMesa/gl.h already includes OSMesa/glext.h */
+#elif defined(OBOL_GLHEADERS_PORTABLEGL_OVERRIDE)
+/* When OBOL_GLHEADERS_PORTABLEGL_OVERRIDE is defined (set by gl_portablegl.cpp
+ * in dual-portablegl builds), we pull in PortableGL headers with the
+ * pgl_gl* symbol renaming active.  This is the PORTABLEGL equivalent of
+ * OSMesa's OBOL_GLHEADERS_OSMESA_OVERRIDE / USE_MGL_NAMESPACE mechanism
+ * and allows system-GL and PortableGL to coexist in the same .so without
+ * linker collisions. */
+#  define PGL_PREFIX_TYPES 1
+#  define PGL_PREFIX_GLSL  1
+#  define PGL_PREFIX_GL    1
+#  include <portablegl/portablegl_gl_mangle.h>
+#  include <portablegl/portablegl.h>
+#  include <portablegl/portablegl_compat_consts.h>
 #else
 @SIM_INCLUDE_GL_H@
 @SIM_INCLUDE_GLEXT_H@
-#endif /* OBOL_GLHEADERS_OSMESA_OVERRIDE */
+#endif /* OBOL_GLHEADERS_OSMESA_OVERRIDE / OBOL_GLHEADERS_PORTABLEGL_OVERRIDE */
 
 /* PortableGL note
  * ────────────────
@@ -75,15 +93,22 @@
  * Obol's own clamp() implementations.  The PORTABLEGL_IMPLEMENTATION
  * define is placed in src/misc/portablegl_impl.cpp only so that the
  * function bodies are emitted exactly once.
+ *
+ * When OBOL_BUILD_DUAL_PORTABLEGL is additionally ON, gl_portablegl.cpp
+ * sets OBOL_GLHEADERS_PORTABLEGL_OVERRIDE (handled above) which also
+ * activates PGL_PREFIX_GL to rename gl* → pgl_gl*, allowing system OpenGL
+ * and PortableGL to coexist in the same .so without linker collisions.
  */
 
-#ifdef OBOL_PORTABLEGL_BUILD
+#if defined(OBOL_PORTABLEGL_BUILD) || defined(OBOL_BUILD_DUAL_PORTABLEGL)
 /* GL 1.x/2.x compatibility constants missing from PortableGL's core-profile
  * implementation.  Obol passes these as arguments to the GL dispatch layer at
  * compile time; the interceptors in portablegl_compat_funcs.cpp handle them
  * at run time.  This header is a proposed upstream contribution to
  * portablegl.h (see FindPortableGL.cmake for details). */
-#  include <portablegl/portablegl_compat_consts.h>
+#  ifndef PORTABLEGL_GL_MANGLE_H /* not already included via OVERRIDE path */
+#    include <portablegl/portablegl_compat_consts.h>
+#  endif
 #endif
 
 #endif /* ! OBOL_GLHEADERS_H */

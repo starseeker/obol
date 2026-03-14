@@ -86,6 +86,21 @@ if(OBOL_BUILD_DUAL_GL AND OBOL_OSMESA_INCLUDE_DIRS)
     endforeach()
 endif()
 
+# In dual-portablegl builds, gl_portablegl.cpp and the portablegl compat
+# sources need the PortableGL include directory.  Apply per-file for the same
+# reason as OSMesa above: keep portablegl.h out of the normal include path.
+if(OBOL_BUILD_DUAL_PORTABLEGL AND OBOL_PORTABLEGL_INCLUDE_DIRS)
+    foreach(_pgl_src
+            "${CMAKE_CURRENT_SOURCE_DIR}/glue/gl_portablegl.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/misc/portablegl_impl.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/misc/portablegl_compat_funcs.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/misc/portablegl_shader_registry.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/misc/SoDBPortableGL.cpp")
+        set_source_files_properties(${_pgl_src} PROPERTIES
+            INCLUDE_DIRECTORIES "${OBOL_PORTABLEGL_INCLUDE_DIRS}")
+    endforeach()
+endif()
+
 add_library(${PROJECT_NAME} ${OBOL_SOURCE} ${OBOL_ADDITIONAL_HDRS})
 if(TARGET obol_parser_gen)
   add_dependencies(${PROJECT_NAME} obol_parser_gen)

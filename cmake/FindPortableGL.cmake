@@ -64,13 +64,26 @@
 #    these functions natively in portablegl.h.  Shaders would access it via
 #    a pglGetCompatState() helper (or a pointer stored in pgl_uniforms).
 #
-# 6. No dual-GL support (REMAINS):
+# 6. No dual-GL support (RESOLVED via PGL_PREFIX_GL + gl_portablegl.cpp):
 #    PortableGL defines standard gl* names directly.  Without name-mangling
-#    analogous to OSMesa's mgl* symbols, OBOL_USE_PORTABLEGL is mutually
+#    analogous to OSMesa's mgl* symbols, OBOL_USE_PORTABLEGL was mutually
 #    exclusive with system-OpenGL and OSMesa builds.
-#    PROPOSED UPSTREAM: Add a PGL_PREFIX_GL option that renames all public
-#    gl* symbols to pgl* (similar to how PGL_PREFIX_TYPES renames vec4, etc.),
-#    enabling a dual-GL build with system OpenGL.
+#    RESOLUTION: portablegl_gl_mangle.h provides a complete set of #define
+#    macros that rename every gl* symbol to pgl_gl* (e.g. glDrawArrays →
+#    pgl_glDrawArrays).  portablegl.h now includes this header when
+#    PGL_PREFIX_GL is defined (proposed upstream patch already applied to
+#    the vendored copy).  portablegl_impl.cpp sets PGL_PREFIX_GL=1 so the
+#    compiled symbols are pgl_gl*.  gl_portablegl.cpp recompiles gl.cpp with
+#    SOGL_PREFIX_STR=portablegl_ and OBOL_GLHEADERS_PORTABLEGL_OVERRIDE (which
+#    activates the mangle header) so all SoGLContext_* exports become
+#    portablegl_SoGLContext_* calling pgl_gl* symbols.  The result is fully
+#    equivalent to the OSMesa dual-GL build (OBOL_BUILD_DUAL_GL), now enabled
+#    via -DOBOL_BUILD_DUAL_PORTABLEGL=ON.
+#    PROPOSED UPSTREAM (accepted here, pending PR to rswinkle/PortableGL):
+#      • portablegl_gl_mangle.h — new file in the project root.
+#      • Add "#ifdef PGL_PREFIX_GL / #include portablegl_gl_mangle.h / #endif"
+#        inside portablegl.h, after "extern C {", before PGLDEF declarations.
+#      • Document PGL_PREFIX_GL in the portablegl.h usage section.
 #
 # 7. Performance (REMAINS):
 #    PortableGL is a single-threaded CPU software renderer.  It will be

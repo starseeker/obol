@@ -72,6 +72,17 @@ elseif(OBOL_USE_PORTABLEGL)
 		misc/portablegl_shader_registry.cpp
 		misc/SoDBPortableGL.cpp
 		CACHE INTERNAL "OBOL_SOURCE")
+elseif(OBOL_BUILD_DUAL_PORTABLEGL)
+	# Dual-portablegl build: PortableGL sources are compiled in alongside
+	# system GL.  portablegl_impl.cpp defines PORTABLEGL_IMPLEMENTATION with
+	# PGL_PREFIX_GL so the compiled symbols are pgl_gl* (not gl*), avoiding
+	# linker collisions with system OpenGL.
+	set(OBOL_SOURCE ${OBOL_SOURCE}
+		misc/portablegl_impl.cpp
+		misc/portablegl_compat_funcs.cpp
+		misc/portablegl_shader_registry.cpp
+		misc/SoDBPortableGL.cpp
+		CACHE INTERNAL "OBOL_SOURCE")
 endif()
 
 # define documentation

@@ -423,6 +423,19 @@ IN THE SOFTWARE.
 extern "C" {
 #endif
 
+/* PGL_PREFIX_GL  –  rename every gl* symbol to pgl_gl* so that PortableGL
+ * can coexist in the same process as system OpenGL (e.g. in an Obol dual-GL
+ * build).  Mirrors the USE_MGL_NAMESPACE mechanism of OSMesa.
+ *
+ * This is a PROPOSED UPSTREAM CONTRIBUTION to PortableGL.  Once merged the
+ * mangle header content can be inlined here and this comment updated.
+ *
+ * Usage:  #define PGL_PREFIX_GL 1
+ *         #include "portablegl.h"
+ */
+#ifdef PGL_PREFIX_GL
+#include "portablegl_gl_mangle.h"
+#endif
 
 #ifndef PGLDEF
 #ifdef PGL_STATIC

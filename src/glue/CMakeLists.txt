@@ -18,6 +18,9 @@ endforeach(SRCFILE)
 if(OBOL_BUILD_DUAL_GL)
 	set(OBOL_SOURCE ${OBOL_SOURCE} glue/gl_osmesa.cpp CACHE INTERNAL "OBOL_SOURCE")
 endif()
+if(OBOL_BUILD_DUAL_PORTABLEGL)
+	set(OBOL_SOURCE ${OBOL_SOURCE} glue/gl_portablegl.cpp CACHE INTERNAL "OBOL_SOURCE")
+endif()
 
 # define documentation
 foreach(SRCFILE ${OBOL_GLUE_FILES})
