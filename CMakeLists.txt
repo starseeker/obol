@@ -34,17 +34,71 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
   message(FATAL_ERROR "${CMAKE_PROJECT_NAME} requires an out-of-source build. Please create a separate build directory and run 'cmake <path_to_${CMAKE_PROJECT_NAME}> [options]' from there.")
 endif()
 
-# Make sure submodules are initialized
-if (NOT EXISTS ${PROJECT_SOURCE_DIR}/external/osmesa/CMakeLists.txt)
-  find_program(GIT_EXECUTABLE git)
-  if (NOT GIT_EXECUTABLE)
-    message(FATAL_ERROR "Need to populate Git submodule, but unable to find git executable")
-  endif (NOT GIT_EXECUTABLE)
-  execute_process(
-    COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive ${PROJECT_SOURCE_DIR}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    )
-endif()
+# ============================================================================
+# Git submodule helper
+# ============================================================================
+# Try to initialise a single git submodule at configure time.
+# Call this before using any path that may live in a submodule.
+#
+#   obol_init_submodule("external/fltk")
+#
+# Behaviour:
+#   1. If <path>/CMakeLists.txt already exists → no-op (already populated).
+#   2. Otherwise, check if the path is registered as a gitlink in the git
+#      index (mode 160000).  Only if it is do we run
+#      "git submodule update --init <path>" — this avoids accidentally
+#      kicking off a full network clone for a submodule that hasn't been
+#      registered yet.
+#   3. If git is unavailable or the command fails → emit a WARNING and
+#      continue; callers are expected to gracefully degrade.
+macro(obol_init_submodule submodule_path)
+  if(NOT EXISTS "${PROJECT_SOURCE_DIR}/${submodule_path}/CMakeLists.txt")
+    find_program(_obol_git git)
+    if(_obol_git)
+      # Check whether this path is actually registered as a git submodule
+      # (i.e. has a 160000 gitlink entry in the index).  Without the gitlink,
+      # "git submodule update --init" would try to clone from the URL in
+      # .gitmodules, which we do NOT want to trigger silently at configure
+      # time when the developer hasn't explicitly set up the submodule.
+      execute_process(
+        COMMAND ${_obol_git} ls-files --stage -- ${submodule_path}
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+        OUTPUT_VARIABLE _gitlink_output
+        RESULT_VARIABLE _gitlink_result
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+      )
+      if(_gitlink_result EQUAL 0 AND _gitlink_output MATCHES "^160000 ")
+        # Registered gitlink found → safe to initialise
+        message(STATUS "Initialising git submodule: ${submodule_path}")
+        execute_process(
+          COMMAND ${_obol_git} submodule update --init -- ${submodule_path}
+          WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+          RESULT_VARIABLE _submodule_result
+          OUTPUT_QUIET
+          ERROR_QUIET
+        )
+        if(NOT _submodule_result EQUAL 0)
+          message(WARNING
+            "Failed to initialise submodule ${submodule_path}. "
+            "Run: git submodule update --init ${submodule_path}")
+        endif()
+        unset(_submodule_result)
+      else()
+        # Not yet registered as a gitlink — skip silently.
+        # Callers will detect the missing directory and degrade gracefully.
+      endif()
+      unset(_gitlink_output)
+      unset(_gitlink_result)
+    endif()
+    unset(_obol_git)
+  endif()
+endmacro()
+
+# Ensure the OSMesa submodule is present (needed for osmesa and dual-GL builds).
+# This is a no-op when osmesa files are already on disk (bundled or previously
+# initialised).
+obol_init_submodule("external/osmesa")
 
 # Set C++ standard requirements
 set(CMAKE_CXX_STANDARD 17)
@@ -92,14 +146,50 @@ option(OBOL_VIEWER_USE_FLTK_GL
     "Use FLTK GL context for obol_viewer system-GL panel (portable; disable for CI/headless)"
     ON)
 
-# FLTK must be installed as a system package (libfltk1.3-dev or equivalent).
-# The project no longer ships a bundled copy; install the devel package first.
+# ---------------------------------------------------------------------------
+# FLTK detection and submodule fallback
+#
+# Priority:
+#   1. System FLTK (libfltk1.3-dev / libfltk-dev)
+#   2. external/fltk git submodule (populated at configure time when available)
+#   3. Disabled — FLTK-based viewers are silently skipped
+#
+# The git submodule is declared in .gitmodules and points to
+# https://github.com/fltk/fltk (branch-1.3).  It is initialised
+# automatically at configure time when system FLTK is absent.
+# ---------------------------------------------------------------------------
 find_package(FLTK QUIET)
 if(FLTK_FOUND)
-  message(STATUS "FLTK found: ${FLTK_INCLUDE_DIRS}")
+  message(STATUS "FLTK: using system installation (${FLTK_INCLUDE_DIRS})")
 else()
-  if(OBOL_BUILD_TESTS)
-    message(STATUS "System FLTK not found – FLTK-based viewers will be disabled")
+  # System FLTK not found.  Try to populate the submodule fallback.
+  obol_init_submodule("external/fltk")
+  if(EXISTS "${PROJECT_SOURCE_DIR}/external/fltk/CMakeLists.txt")
+    message(STATUS "FLTK: using external/fltk submodule")
+    set(FLTK_BUILD_FLUID        OFF CACHE BOOL "Build FLTK fluid tool"         FORCE)
+    set(FLTK_BUILD_FLTK_OPTIONS OFF CACHE BOOL "Build FLTK fltk-options tool"  FORCE)
+    set(FLTK_BUILD_TEST         OFF CACHE BOOL "Build FLTK test/demo programs"  FORCE)
+    set(FLTK_BUILD_EXAMPLES     OFF CACHE BOOL "Build FLTK example programs"    FORCE)
+    set(FLTK_BUILD_FORMS        OFF CACHE BOOL "Build FLTK forms library"       FORCE)
+    if(OBOL_VIEWER_USE_FLTK_GL)
+      set(FLTK_BUILD_GL         ON  CACHE BOOL "Build FLTK OpenGL library"      FORCE)
+    else()
+      set(FLTK_BUILD_GL         OFF CACHE BOOL "Build FLTK OpenGL library"      FORCE)
+    endif()
+    set(FLTK_BUILD_SHARED_LIBS  OFF CACHE BOOL "Build FLTK shared libraries"    FORCE)
+    add_subdirectory("${PROJECT_SOURCE_DIR}/external/fltk" fltk_build EXCLUDE_FROM_ALL)
+    set(FLTK_FOUND TRUE)
+    set(FLTK_LIBRARIES fltk::fltk)
+    if(OBOL_VIEWER_USE_FLTK_GL AND TARGET fltk::gl)
+      list(APPEND FLTK_LIBRARIES fltk::gl)
+    endif()
+    set(FLTK_INCLUDE_DIRS
+        "${PROJECT_SOURCE_DIR}/external/fltk"
+        "${CMAKE_BINARY_DIR}/fltk_build")
+  else()
+    if(OBOL_BUILD_TESTS)
+      message(STATUS "FLTK: not found (no system package, no external/fltk submodule) – FLTK viewers disabled")
+    endif()
   endif()
 endif()
 
