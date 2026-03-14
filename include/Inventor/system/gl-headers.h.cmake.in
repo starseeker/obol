@@ -60,4 +60,21 @@
 @SIM_INCLUDE_GLEXT_H@
 #endif /* OBOL_GLHEADERS_OSMESA_OVERRIDE */
 
+/* PortableGL note
+ * ────────────────
+ * When OBOL_USE_PORTABLEGL is ON, CMake sets SIM_INCLUDE_GL_H to:
+ *
+ *   #define PGL_PREFIX_TYPES 1
+ *   #define PGL_PREFIX_GLSL  1
+ *   #include <portablegl/portablegl.h>
+ *
+ * The PGL_PREFIX_TYPES macro renames PortableGL's global-namespace types
+ * (vec2, vec3, vec4, mat4, …) to pgl_vec2 etc. to avoid conflicts with
+ * local variable names in the Obol source tree.  PGL_PREFIX_GLSL renames
+ * math helpers (clamp, smoothstep, …) that would otherwise conflict with
+ * Obol's own clamp() implementations.  The PORTABLEGL_IMPLEMENTATION
+ * define is placed in src/misc/portablegl_impl.cpp only so that the
+ * function bodies are emitted exactly once.
+ */
+
 #endif /* ! OBOL_GLHEADERS_H */
