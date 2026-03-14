@@ -744,11 +744,16 @@ SoGLContext_getprocaddress(const SoGLContext * glue, const char * symname)
 {
   void * ptr = NULL;
 
-#if defined(OBOL_SWRAST_BUILD) || defined(SOGL_PREFIX_SET)
+#if (defined(OBOL_SWRAST_BUILD) && !defined(OBOL_DUAL_GL_BUILD)) || defined(SOGL_PREFIX_SET)
   /* OSMesa path: resolve via OSMesaGetProcAddress first to guarantee we
      get an OSMesa function pointer and never accidentally pick up a system
      GL symbol from the process handle (the two implementations have
-     different dispatch tables and mixing them causes subtle corruption). */
+     different dispatch tables and mixing them causes subtle corruption).
+     This path is active in:
+       - pure swrast-only builds (OBOL_SWRAST_BUILD without OBOL_DUAL_GL_BUILD)
+       - the osmesa_ compilation unit in dual-GL builds (SOGL_PREFIX_SET)
+     It is NOT active in the system-GL compilation unit of a dual-GL build,
+     because gl.cpp is compiled without OSMesa headers there. */
   ptr = (void*)OSMesaGetProcAddress(symname);
   if (SoGLContext_debug()) {
     cc_debugerror_postinfo("SoGLContext_getprocaddress",
