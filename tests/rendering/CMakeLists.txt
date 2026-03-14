@@ -890,6 +890,30 @@ if(RENDERING_USE_OSMESA)
     )
 endif()
 
+# ---- No-OpenGL scene graph test (OBOL_NO_OPENGL=ON only) --------------------
+# Verifies that the no-GL build can initialise, traverse, and query a scene
+# graph without any OpenGL calls or display server.
+if(OBOL_NO_OPENGL)
+    add_executable(nogl_scenegraph_test nogl_scenegraph_test.cpp)
+    target_include_directories(nogl_scenegraph_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_BINARY_DIR}/include
+    )
+    target_link_libraries(nogl_scenegraph_test ${PROJECT_NAME})
+    set_target_properties(nogl_scenegraph_test PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
+    )
+    add_test(
+        NAME nogl_scenegraph_test
+        COMMAND $<TARGET_FILE:nogl_scenegraph_test>
+    )
+    set_tests_properties(nogl_scenegraph_test PROPERTIES
+        TIMEOUT 60
+        LABELS "nogl"
+    )
+endif()
+
 # ---- Custom target: generate control images ----------------------------------
 # Runs all rendering tests with GLX (via Xvfb) and converts the .rgb output to
 # control PNGs.  Invoke with:

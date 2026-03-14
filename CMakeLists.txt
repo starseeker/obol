@@ -246,9 +246,11 @@ endif()
 
 # Feature options
 # Backend selection:
+#   OBOL_NO_OPENGL=ON           → no OpenGL at all (custom context drivers only, reduced features)
 #   OBOL_USE_OSMESA=ON          → OSMesa-only (headless, no system GL)
 #   OBOL_USE_SYSTEM_ONLY=ON     → system OpenGL only (no OSMesa)
 #   default (both OFF)            → auto-detect; dual mode when both are available
+option(OBOL_NO_OPENGL "Build without any OpenGL support (custom context drivers only, reduced feature set)" OFF)
 option(OBOL_USE_OSMESA "Build against OSMesa only for offscreen/headless rendering" OFF)
 option(OBOL_USE_SYSTEM_ONLY "Build against system OpenGL only (no OSMesa fallback)" OFF)
 option(OBOL_BUILD_DUAL_GL "Build with both system-OpenGL and OSMesa backends in a single library" OFF)
@@ -355,6 +357,23 @@ set(OBOL_TARGET_LINK_LIBRARIES_GL)
 
 # OpenGL backend selection
 # -----------------------------------------------------------------------
+# When OBOL_NO_OPENGL is ON, skip all GL/OSMesa detection entirely.
+# The library is built with custom context driver support only (nanort,
+# embree, vulkan, etc.).  The GL dispatch layer is replaced by no-op stubs.
+# -----------------------------------------------------------------------
+if(OBOL_NO_OPENGL)
+  message(STATUS "OBOL_NO_OPENGL=ON: building without any OpenGL support")
+  # Validate that no conflicting options are set
+  if(OBOL_USE_OSMESA OR OBOL_USE_SYSTEM_ONLY OR OBOL_BUILD_DUAL_GL)
+    message(FATAL_ERROR "OBOL_NO_OPENGL is incompatible with OBOL_USE_OSMESA, "
+            "OBOL_USE_SYSTEM_ONLY, and OBOL_BUILD_DUAL_GL.")
+  endif()
+  set(HAVE_OPENGL 0)
+  set(OBOL_OUTPUT_NAME "Obol-nogl")
+  add_definitions(-DOBOL_NO_OPENGL)
+  message(STATUS "Library will be named: lib${OBOL_OUTPUT_NAME}")
+else()
+
 # Auto-detection when neither OSMESA-only nor SYSTEM-only is forced:
 #   1. Check for system OpenGL and for the OSMesa submodule
 #   2. If both are available → enable DUAL GL (one library, both backends)
@@ -489,6 +508,8 @@ else()
   set(OBOL_OUTPUT_NAME "Obol")
   message(STATUS "Library will be named: lib${OBOL_OUTPUT_NAME}")
 endif()
+
+endif() # NOT OBOL_NO_OPENGL
 
 # Threading support
 find_package(Threads REQUIRED)
@@ -633,10 +654,12 @@ else()
 endif()
 
 # OpenGL header detection (simplified)
-check_include_file(GL/gl.h HAVE_GL_GL_H)
-check_include_file(OpenGL/gl.h HAVE_OPENGL_GL_H)
-check_include_files("GL/gl.h;GL/glext.h" HAVE_GL_GLEXT_H)
-check_include_files("OpenGL/gl.h;OpenGL/glext.h" HAVE_OPENGL_GLEXT_H)
+if(NOT OBOL_NO_OPENGL)
+  check_include_file(GL/gl.h HAVE_GL_GL_H)
+  check_include_file(OpenGL/gl.h HAVE_OPENGL_GL_H)
+  check_include_files("GL/gl.h;GL/glext.h" HAVE_GL_GLEXT_H)
+  check_include_files("OpenGL/gl.h;OpenGL/glext.h" HAVE_OPENGL_GLEXT_H)
+endif()
 
 if(HAVE_WINDOWS_H)
   set(SIM_INCLUDE_WINDOWS_H "#include <windows.h>")
@@ -644,7 +667,13 @@ else()
   set(SIM_INCLUDE_WINDOWS_H "/* #include <windows.h> - not needed on system */")
 endif()
 
-if(OBOL_USE_OSMESA)
+if(OBOL_NO_OPENGL)
+  # No-OpenGL build: gl-headers.h will include the bundled type/constant stubs.
+  set(SIM_INCLUDE_GL_H "#include <Inventor/system/gl_stub.h>")
+  set(SIM_INCLUDE_GLEXT_H "/* OBOL_NO_OPENGL: no OpenGL extension headers */")
+  set(SIM_GL_GLEXT_PROTOTYPES_DEFINE "/* OBOL_NO_OPENGL: GL_GLEXT_PROTOTYPES not set */")
+  message(STATUS "No-OpenGL build: using bundled GL type/constant stubs")
+elseif(OBOL_USE_OSMESA)
   # starseeker/osmesa backend - use starseeker/osmesa headers only.
   # OSMesa's gl.h already includes OSMesa/glext.h, so no system glext needed.
   # Mixing system GL/glext.h with OSMesa's MGL-mangled headers causes symbol
@@ -652,6 +681,7 @@ if(OBOL_USE_OSMESA)
   set(SIM_INCLUDE_GL_H "#include <OSMesa/osmesa.h>
   #include <OSMesa/gl.h>")
   set(SIM_INCLUDE_GLEXT_H "/* OSMesa/gl.h already includes OSMesa/glext.h - system GL/glext.h must NOT be included */")
+  set(SIM_GL_GLEXT_PROTOTYPES_DEFINE "#define GL_GLEXT_PROTOTYPES 1")
   message(STATUS "Using starseeker/osmesa headers for GL with automatic MGL name mangling")
 else()
   # System OpenGL backend
@@ -669,6 +699,7 @@ else()
   else()
     set(SIM_INCLUDE_GLEXT_H "/* #include <GL/glext.h> - not found on system */")
   endif()
+  set(SIM_GL_GLEXT_PROTOTYPES_DEFINE "#define GL_GLEXT_PROTOTYPES 1")
 endif()
 
 # getcwd detection (POSIX vs Windows)

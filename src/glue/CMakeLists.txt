@@ -1,9 +1,18 @@
 # source files
-set(OBOL_GLUE_FILES
-	dl.cpp
-	gl.cpp
-	toojpeg.cpp
-)
+if(OBOL_NO_OPENGL)
+  # No-OpenGL build: use the no-op stub instead of the real GL dispatch layer.
+  set(OBOL_GLUE_FILES
+    dl.cpp
+    gl_stub.cpp
+    toojpeg.cpp
+  )
+else()
+  set(OBOL_GLUE_FILES
+    dl.cpp
+    gl.cpp
+    toojpeg.cpp
+  )
+endif()
 
 # Files excluded from public API documentation, included in complete documentation.
 set(OBOL_GLUE_INTERNAL_FILES

@@ -400,6 +400,7 @@ public:
     this->lastnodewasacamera = FALSE;
     this->instanceContextManager = mgr;
 	
+#ifndef OBOL_NO_OPENGL
     if (glrenderaction) {
       this->renderaction = glrenderaction;
     }
@@ -408,8 +409,14 @@ public:
       this->renderaction->setCacheContext(SoGLCacheContextElement::getUniqueCacheContext());
       this->renderaction->setTransparencyType(SoGLRenderAction::SORTED_OBJECT_BLEND);
     }
-
     this->didallocation = glrenderaction ? FALSE : TRUE;
+#else
+    /* No-OpenGL build: GL render action is unavailable.  Custom context
+       managers (nanort, embree, ...) handle all rendering via renderScene(). */
+    (void)glrenderaction;
+    this->renderaction = NULL;
+    this->didallocation = FALSE;
+#endif
     this->viewport = vpr;
 	this->useDC = false;
   }
@@ -1278,6 +1285,7 @@ unsigned char *
 SoOffscreenRenderer::getBuffer(void) const
 {
   if (!PRIVATE(this)->didreadbuffer) {
+#ifndef OBOL_NO_OPENGL
     const SbVec2s dims = this->getViewportRegion().getViewportSizePixels();
     //fprintf(stderr,"reading pixels: %d %d\n", dims[0], dims[1]);
 
@@ -1286,6 +1294,7 @@ SoOffscreenRenderer::getBuffer(void) const
                                        (unsigned int) this->getComponents());
     PRIVATE(this)->glcanvas.deactivateGLContext();
     PRIVATE(this)->didreadbuffer = TRUE;
+#endif /* OBOL_NO_OPENGL */
   }
   return PRIVATE(this)->buffer;
 }
