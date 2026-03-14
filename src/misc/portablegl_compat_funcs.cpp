@@ -91,6 +91,8 @@ void pgl_igl_reset_context_caches() {
     /* Also reset ARB shader registry handles – they reference programs in the
      * old portablegl context and must be re-created in the new one.          */
     pgl_igl_reset_shader_registry_handles();
+    /* Reset vertex-array client state tracking */
+    if (g_cur_compat) g_cur_compat->color_array_enabled = false;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -306,6 +308,57 @@ void pgl_igl_Disable(GLenum cap) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * GL 1.x vertex-array API → PortableGL vertex-attrib equivalents
+ *
+ * Obol (Coin-GL) uses the legacy glColorPointer / glVertexPointer etc. API
+ * to upload VBO colour data.  PortableGL does not implement these GL 1.x
+ * functions; we map them to the equivalent glVertexAttribPointer / Enable /
+ * Disable calls using the fixed PGL_ATTR_* attribute indices.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+void pgl_igl_VertexPointer(GLint size, GLenum type, GLsizei stride, const GLvoid* ptr) {
+    glVertexAttribPointer(PGL_ATTR_VERT, size, type, GL_FALSE, stride, ptr);
+}
+void pgl_igl_NormalPointer(GLenum type, GLsizei stride, const GLvoid* ptr) {
+    /* Normals are always 3-component; mark for normalisation in shader. */
+    glVertexAttribPointer(PGL_ATTR_NORMAL, 3, type, GL_FALSE, stride, ptr);
+}
+void pgl_igl_ColorPointer(GLint size, GLenum type, GLsizei stride, const GLvoid* ptr) {
+    /* Colours may be GL_UNSIGNED_BYTE (packed) or GL_FLOAT; normalise bytes. */
+    GLboolean norm = (type == GL_UNSIGNED_BYTE || type == GL_BYTE ||
+                      type == GL_UNSIGNED_SHORT || type == GL_SHORT) ? GL_TRUE : GL_FALSE;
+    glVertexAttribPointer(PGL_ATTR_COLOR, size, type, norm, stride, ptr);
+}
+void pgl_igl_TexCoordPointer(GLint size, GLenum type, GLsizei stride, const GLvoid* ptr) {
+    glVertexAttribPointer(PGL_ATTR_TEXCOORD0, size, type, GL_FALSE, stride, ptr);
+}
+
+void pgl_igl_EnableClientState(GLenum array) {
+    switch (array) {
+    case GL_VERTEX_ARRAY:        glEnableVertexAttribArray(PGL_ATTR_VERT);      break;
+    case GL_NORMAL_ARRAY:        glEnableVertexAttribArray(PGL_ATTR_NORMAL);    break;
+    case GL_COLOR_ARRAY:
+        glEnableVertexAttribArray(PGL_ATTR_COLOR);
+        if (g_cur_compat) g_cur_compat->color_array_enabled = true;
+        break;
+    case GL_TEXTURE_COORD_ARRAY: glEnableVertexAttribArray(PGL_ATTR_TEXCOORD0); break;
+    default: break;
+    }
+}
+void pgl_igl_DisableClientState(GLenum array) {
+    switch (array) {
+    case GL_VERTEX_ARRAY:        glDisableVertexAttribArray(PGL_ATTR_VERT);      break;
+    case GL_NORMAL_ARRAY:        glDisableVertexAttribArray(PGL_ATTR_NORMAL);    break;
+    case GL_COLOR_ARRAY:
+        glDisableVertexAttribArray(PGL_ATTR_COLOR);
+        if (g_cur_compat) g_cur_compat->color_array_enabled = false;
+        break;
+    case GL_TEXTURE_COORD_ARRAY: glDisableVertexAttribArray(PGL_ATTR_TEXCOORD0); break;
+    default: break;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Draw-call interceptors: convert legacy primitive modes to GL 3.x modes
  * PortableGL supports modes 0 (GL_POINTS) through 6 (GL_TRIANGLE_FAN).
  * GL_QUADS (7), GL_QUAD_STRIP (8), and GL_POLYGON (9) must be mapped.
@@ -482,6 +535,8 @@ void pgl_igl_End() {
     }
 
     glBindVertexArray(s_imm_vao);
+    /* ImmVertex VAO has PGL_ATTR_COLOR enabled with per-vertex data. */
+    if (g_cur_compat) g_cur_compat->color_array_enabled = true;
     glBindBuffer(GL_ARRAY_BUFFER,s_imm_vbo);
     glBufferData(GL_ARRAY_BUFFER,(GLsizei)(s_imm_verts.size()*sizeof(ImmVertex)),
                  s_imm_verts.data(),GL_STREAM_DRAW);
@@ -506,6 +561,8 @@ void pgl_igl_End() {
         glDrawArrays(draw_mode, 0, (GLsizei)s_imm_verts.size());
     }
     glBindVertexArray(0);
+    /* Back to the default (non-imm) VAO – color array is no longer live. */
+    if (g_cur_compat) g_cur_compat->color_array_enabled = false;
     /* Restore unbound state so explicit glUseProgramObjectARB calls in the
      * same frame don't see our auto-bound shader as the current one. */
     if (auto_bound) glUseProgram(0);

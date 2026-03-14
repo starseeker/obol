@@ -205,6 +205,12 @@ struct ObolPGLCompatState {
     float  current_normal[3];
     float  current_texcoord[2];
 
+    /* ── Vertex-array client state (GL 1.x) ─────────────────────────── */
+    /* Track whether GL_COLOR_ARRAY is currently enabled so the vertex
+     * shader knows whether v_attrs[PGL_ATTR_COLOR] carries valid per-vertex
+     * colour or is stale from a previous draw call.                       */
+    bool   color_array_enabled;
+
     /* ── Initialise to OpenGL defaults ──────────────────────────────── */
     void init() {
         obol_pgl_identity(modelview_stack[0]);
@@ -237,6 +243,7 @@ struct ObolPGLCompatState {
         current_color[0]=current_color[1]=current_color[2]=current_color[3]=1.f;
         current_normal[0]=current_normal[1]=0.f; current_normal[2]=1.f;
         current_texcoord[0]=current_texcoord[1]=0.f;
+        color_array_enabled = false;
     }
 
     /* Recompute derived matrices.  Must be called whenever MV or P stacks change. */

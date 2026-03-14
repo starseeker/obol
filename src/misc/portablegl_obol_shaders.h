@@ -207,37 +207,43 @@ static void obol_gouraud_vs(float* vs_output, pgl_vec4* v_attrs,
     float nlen = sqrtf(tn[0]*tn[0]+tn[1]*tn[1]+tn[2]*tn[2]);
     if (nlen > 1e-7f) { tn[0]/=nlen; tn[1]/=nlen; tn[2]/=nlen; }
 
-    /* Per-vertex diffuse colour (attrib slot 1 or material diffuse) */
-    float cr = v_attrs[PGL_ATTR_COLOR].x;
-    float cg = v_attrs[PGL_ATTR_COLOR].y;
-    float cb = v_attrs[PGL_ATTR_COLOR].z;
-    float ca = v_attrs[PGL_ATTR_COLOR].w;
+    /* Per-vertex diffuse colour: prefer the VBO vertex-colour attribute (set by
+     * Obol via glColorPointer + glEnableClientState).  When the VBO does not
+     * carry per-vertex colour (no glColorPointer call), the attribute defaults
+     * to all-zeros.  In that case fall back to the material diffuse (set by
+     * Obol via glColor4f → COLOR_MATERIAL emulation → front_material.diffuse).
+     * This covers both PER_OBJECT and PER_VERTEX material binding modes.     */
+    const ObolPGLMaterialState& mat = s->front_material;
+    float cr, cg, cb, ca;
+    if (s->color_array_enabled) {
+        /* Per-vertex colour is live: use VBO attribute directly. */
+        cr = v_attrs[PGL_ATTR_COLOR].x;
+        cg = v_attrs[PGL_ATTR_COLOR].y;
+        cb = v_attrs[PGL_ATTR_COLOR].z;
+        ca = v_attrs[PGL_ATTR_COLOR].w;
+    } else {
+        /* No per-vertex colour: use material diffuse (set by glColor4f or
+         * glMaterialfv) so single-colour objects render with correct hue.  */
+        cr = mat.diffuse[0];
+        cg = mat.diffuse[1];
+        cb = mat.diffuse[2];
+        ca = mat.diffuse[3];
+    }
 
     /* BASE_COLOR mode: skip all lighting.  Always use front_material.diffuse
      * as the output colour (Obol may pass diffuse colour via COLOR_MATERIAL
      * or via the material uniform; the per-vertex attribute may be white/black
      * if no explicit per-vertex colour is bound in the VBO).               */
     if (s->light_model == 0) {
-        const ObolPGLMaterialState& mat2 = s->front_material;
-        float out_r = mat2.diffuse[0];
-        float out_g = mat2.diffuse[1];
-        float out_b = mat2.diffuse[2];
-        float out_a = mat2.diffuse[3];
-        /* If per-vertex colour is set (non-trivial: not pure black or pure white
-         * default values), blend it with the material diffuse.              */
-        if (cr > 0.01f || cg > 0.01f || cb > 0.01f) {
-            if (cr < 0.99f || cg < 0.99f || cb < 0.99f) {
-                /* Non-trivial per-vertex colour: use it as a modulator. */
-                out_r *= cr; out_g *= cg; out_b *= cb;
-            }
-        }
-        ((pgl_vec4*)vs_output)[0] = make_v4(out_r, out_g, out_b, out_a);
+        /* In BASE_COLOR mode the effective colour is the (possibly per-vertex)
+         * colour attribute (now cr/cg/cb from above) which already reflects
+         * material diffuse when no per-vertex colours are bound.             */
+        ((pgl_vec4*)vs_output)[0] = make_v4(cr, cg, cb, ca);
         ((pgl_vec4*)vs_output)[1] = make_v4(0.f, 0.f, 0.f, 1.f);
         return;
     }
 
     /* Scene colour = emission + globalAmbient * material.ambient */
-    const ObolPGLMaterialState& mat = s->front_material;
     float sr = mat.emission[0] + s->global_ambient[0]*mat.ambient[0];
     float sg = mat.emission[1] + s->global_ambient[1]*mat.ambient[1];
     float sb = mat.emission[2] + s->global_ambient[2]*mat.ambient[2];
@@ -314,8 +320,17 @@ static void obol_phong_vs(float* vs_output, pgl_vec4* v_attrs,
     if (nlen > 1e-7f) { tnx/=nlen; tny/=nlen; tnz/=nlen; }
     ((pgl_vec4*)vs_output)[1] = make_v4(tnx, tny, tnz, 1.f);
 
-    /* Per-vertex colour */
-    ((pgl_vec4*)vs_output)[2] = v_attrs[PGL_ATTR_COLOR];
+    /* Per-vertex colour: fall back to material diffuse if the VBO does not
+     * supply a colour attribute (color_array_enabled tracks whether
+     * glEnableClientState(GL_COLOR_ARRAY) was called for this draw).        */
+    pgl_vec4 vc;
+    if (((ObolPGLCompatState*)uniforms)->color_array_enabled) {
+        vc = v_attrs[PGL_ATTR_COLOR];
+    } else {
+        const ObolPGLMaterialState& mat2 = ((ObolPGLCompatState*)uniforms)->front_material;
+        vc = make_v4(mat2.diffuse[0], mat2.diffuse[1], mat2.diffuse[2], mat2.diffuse[3]);
+    }
+    ((pgl_vec4*)vs_output)[2] = vc;
 }
 
 static void obol_phong_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms)

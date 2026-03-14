@@ -77,6 +77,13 @@ extern "C" {
     void pgl_igl_GetMaterialfv(GLenum,GLenum,GLfloat*);
     void pgl_igl_Enable(GLenum);
     void pgl_igl_Disable(GLenum);
+    /* GL 1.x vertex-array (fixed-function) → PortableGL attrib equivalents */
+    void pgl_igl_VertexPointer(GLint,GLenum,GLsizei,const GLvoid*);
+    void pgl_igl_NormalPointer(GLenum,GLsizei,const GLvoid*);
+    void pgl_igl_ColorPointer(GLint,GLenum,GLsizei,const GLvoid*);
+    void pgl_igl_TexCoordPointer(GLint,GLenum,GLsizei,const GLvoid*);
+    void pgl_igl_EnableClientState(GLenum);
+    void pgl_igl_DisableClientState(GLenum);
     void pgl_igl_DrawArrays(GLenum, GLint, GLsizei);
     void pgl_igl_DrawElements(GLenum, GLsizei, GLenum, const GLvoid*);
     void pgl_igl_Begin(GLenum);
@@ -174,6 +181,16 @@ extern "C" void pgl_igl_reset_context_caches();
 static void pgl_noop_glFlush(void) {}
 static void pgl_noop_glFinish(void) {}
 static void pgl_noop_glIndexi(GLint) {}
+
+/* glGetBooleanv interceptor: PortableGL doesn't implement GL_RGBA_MODE but
+ * Obol queries it in SoGLLazyElement to decide between RGBA and color-index
+ * rendering modes.  PortableGL is always in RGBA mode; return GL_TRUE for that
+ * enum and delegate everything else to the native glGetBooleanv.             */
+static void pgl_igl_GetBooleanv(GLenum pname, GLboolean* params) {
+    if (!params) return;
+    if (pname == GL_RGBA_MODE) { *params = GL_TRUE; return; }
+    glGetBooleanv(pname, params);
+}
 static void pgl_noop_glPixelTransferi(GLenum, GLint) {}
 static void pgl_noop_glPixelTransferf(GLenum, GLfloat) {}
 static void pgl_noop_glPixelMapfv(GLenum, GLsizei, const GLfloat*) {}
@@ -183,6 +200,11 @@ static void pgl_noop_glPushAttrib(GLbitfield) {}
 static void pgl_noop_glPopAttrib(void) {}
 static void pgl_noop_glPushClientAttrib(GLbitfield) {}
 static void pgl_noop_glPopClientAttrib(void) {}
+/* GL 1.1 array functions not needed by PortableGL (used by Obol for version
+ * checking – all must be non-null for Obol to enable the vertex-array path).  */
+static void pgl_noop_glIndexPointer(GLenum, GLsizei, const GLvoid*) {}
+static void pgl_noop_glInterleavedArrays(GLenum, GLsizei, const GLvoid*) {}
+static void pgl_noop_glArrayElement(GLint) {}
 
 /* glClear interceptor: translate standard OpenGL buffer-bit values to the
  * PortableGL-internal enum values.  portablegl_compat_consts.h re-defines
@@ -262,7 +284,7 @@ static const PGLProcEntry s_pgl_proctable[] = {
     { "glGetError",                (void*)glGetError                },
     { "glGetString",               (void*)glGetString               },
     { "glGetStringi",              (void*)glGetStringi              },
-    { "glGetBooleanv",             (void*)glGetBooleanv             },
+    { "glGetBooleanv",             (void*)pgl_igl_GetBooleanv       },
     { "glGetFloatv",               (void*)glGetFloatv               },
     { "glGetIntegerv",             (void*)glGetIntegerv             },
     { "glIsEnabled",               (void*)glIsEnabled               },
@@ -329,6 +351,23 @@ static const PGLProcEntry s_pgl_proctable[] = {
     { "glMaterialf",               (void*)pgl_igl_Materialf         },
     { "glColorMaterial",           (void*)pgl_igl_ColorMaterial     },
     { "glGetMaterialfv",           (void*)pgl_igl_GetMaterialfv     },
+
+    /* GL 1.x vertex-array (fixed-function) → PortableGL attrib equivalents.
+     * Obol uses glColorPointer / glNormalPointer / glVertexPointer / etc. to
+     * upload VBO colour, normal, and position data; map these to the modern
+     * glVertexAttribPointer at the fixed PGL_ATTR_* attrib slots.            */
+    { "glVertexPointer",           (void*)pgl_igl_VertexPointer     },
+    { "glNormalPointer",           (void*)pgl_igl_NormalPointer     },
+    { "glColorPointer",            (void*)pgl_igl_ColorPointer      },
+    { "glTexCoordPointer",         (void*)pgl_igl_TexCoordPointer   },
+    { "glEnableClientState",       (void*)pgl_igl_EnableClientState },
+    { "glDisableClientState",      (void*)pgl_igl_DisableClientState},
+    /* GL 1.1 array functions – present so Obol enables vertex arrays.
+     * glIndexPointer/glInterleavedArrays/glArrayElement are not used in the
+     * hot path but must be non-null for Obol's has_vertex_array() check.     */
+    { "glIndexPointer",            (void*)pgl_noop_glIndexPointer   },
+    { "glInterleavedArrays",       (void*)pgl_noop_glInterleavedArrays},
+    { "glArrayElement",            (void*)pgl_noop_glArrayElement   },
 
     /* Immediate mode interceptors */
     { "glBegin",                   (void*)pgl_igl_Begin             },
