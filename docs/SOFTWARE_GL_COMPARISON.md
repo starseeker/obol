@@ -82,7 +82,7 @@ wins on correctness.
 |---|---|---|
 | Per-pixel throughput | Moderate (C loops, no SIMD) | Comparable (C loops, no SIMD) |
 | Shader cost | Higher (GLSL interpreter overhead in Mesa 7.0.4) | Lower (pre-compiled C functions) |
-| Shadow-map pass | Works natively | Partially working (depth FBO not complete) |
+| Shadow-map pass | Works natively | Infrastructure complete; depth FBO redirects back buffer to depth texture |
 | Depth precision | 24-bit integer (accurate) | 32-bit float (good for most uses) |
 | Multisampling | Not supported (GL_EXT_framebuffer_multisample: MISSING) | Not supported |
 | Antialiasing | FXAA built-in (`OSMesaFXAAEnable`) | Not built-in; would need compat-layer addition |
@@ -150,9 +150,10 @@ completely.
 - The shader classifier in `portablegl_shader_registry.cpp` uses heuristic keyword
   matching to pick a C shader from a fixed set.  Any new Obol shader variant not in
   the fixed set will silently render wrong.
-- The FBO compat layer (colour-attachment render-to-texture via `pglSetTexBackBuffer`)
-  does not support depth-only FBOs.  Shadow passes currently render geometry but do
-  not capture depth correctly.
+- The FBO compat layer now supports colour, depth-texture, and depth-renderbuffer
+  attachments.  Shadow passes use `GL_DEPTH_ATTACHMENT` + `OBOL_PGL_SHADER_DEPTH`
+  which writes depth-as-greyscale-RGBA; the Phong shadow-lookup shader still needs
+  wiring to read the depth texture and compare.
 - The immediate-mode emulation (`glBegin`/`glEnd`) buffers vertices and calls
   `glDrawArrays` at `glEnd` — correct, but adds per-frame allocation overhead.
 - Thread-local `g_cur_compat` works for single-threaded rendering but needs care for
@@ -207,7 +208,7 @@ completely.
 | Cube map textures | ✅ `GL_ARB_texture_cube_map` | ✅ |
 | Multi-texturing | ✅ `GL_ARB_multitexture` | ✅ |
 | Texture arrays | ✅ | ✅ |
-| Depth textures | ✅ `GL_ARB_depth_texture` | ⚠️ Partial (read-back works; depth FBO not complete) |
+| Depth textures | ✅ `GL_ARB_depth_texture` | ✅ Depth written as greyscale RGBA via `OBOL_PGL_SHADER_DEPTH` |
 | Mipmaps | ✅ | ✅ |
 | sRGB textures | ✅ `EXT_texture_sRGB` | ❌ |
 
@@ -215,18 +216,28 @@ completely.
 
 | Feature | OSMesa | PortableGL |
 |---|---|---|
-| `GL_EXT_framebuffer_object` | ✅ | ⚠️ Compat layer: colour attachment only |
-| Depth attachment | ✅ | ❌ (not yet implemented in compat layer) |
-| Stencil attachment | ✅ | ❌ |
-| Renderbuffer | ✅ | ❌ (stub) |
+| `GL_EXT_framebuffer_object` | ✅ | ✅ Colour + depth attachments |
+| Colour attachment | ✅ | ✅ via `pglSetTexBackBuffer` |
+| Depth texture attachment | ✅ | ✅ depth-as-RGBA via `pglSetTexBackBuffer` + `OBOL_PGL_SHADER_DEPTH` |
+| Depth renderbuffer attachment | ✅ | ✅ tracked for FBO-completeness; not sampled (sufficient for `SoSceneTexture2`) |
+| Stencil attachment | ✅ | ✅ depth_rbo slot tracks stencil for FBO-completeness |
 | Multiple render targets | ❌ `GL_ARB_framebuffer_object: MISSING` | ❌ |
 | Multisampled FBO | ❌ `GL_EXT_framebuffer_multisample: MISSING` | ❌ |
 | `GL_ARB_framebuffer_object` | ❌ | ❌ |
 
-> **Note on OSMesa FBOs**: OSMesa has `GL_EXT_framebuffer_object` (the legacy path
-> that Obol uses via `glGenFramebuffersEXT`) but **not** `GL_ARB_framebuffer_object`
-> (the core-profile path available since OpenGL 3.0).  The legacy EXT path is what
-> Obol's `CoinOffscreenGLCanvas` and `SoSceneTexture2` use.
+> **Note on FBO preference in Obol's dispatch layer**: `gl.cpp` already tries
+> `GL_ARB_framebuffer_object` (OpenGL 3.0 core) first before falling back to
+> `GL_EXT_framebuffer_object`.  The function pointers (`glGenFramebuffers`,
+> `glBindFramebuffer`, etc.) stored in `SoGLContext` are loaded from whichever
+> path succeeds, so callers in `CoinOffscreenGLCanvas` and `SoSceneTexture2`
+> automatically use ARB when available without any code change.
+
+> **Note on PortableGL depth FBOs**: When a texture is attached at
+> `GL_DEPTH_ATTACHMENT`, PortableGL redirects its RGBA back buffer to that
+> texture.  `OBOL_PGL_SHADER_DEPTH` writes `(depth, depth, depth, 1.0)` into
+> each pixel.  Shadow shaders then read the texture's R channel as depth.
+> PortableGL's own internal zbuf continues to perform depth testing correctly
+> during rasterisation regardless of what the back buffer points to.
 
 ### Shadow Maps — Critical for SoShadowGroup
 
@@ -234,13 +245,15 @@ completely.
 |---|---|---|
 | `GL_ARB_shadow` | ✅ | ❌ Not implemented |
 | `GL_ARB_shadow_ambient` | ✅ | ❌ |
-| Depth texture (`GL_ARB_depth_texture`) | ✅ | ⚠️ Partial |
-| Depth-only FBO pass | ✅ (via EXT FBO) | ❌ Compat layer does not yet capture depth |
-| `SoShadowGroup` functional | ✅ (tested) | ❌ Blocked by depth FBO |
+| Depth texture (`GL_ARB_depth_texture`) | ✅ | ✅ via depth-as-RGBA FBO path |
+| Depth-only FBO pass | ✅ (via EXT/ARB FBO) | ✅ `GL_DEPTH_ATTACHMENT` redirects back buffer to depth texture |
+| Renderbuffer depth attachment | ✅ | ✅ tracked for FBO-completeness; PortableGL zbuf used for rasterisation |
+| `SoShadowGroup` functional | ✅ (tested) | ⚠️ Infrastructure complete; Phong shadow-lookup needs `ObolPGLCompatState::shadows` wiring |
 
 Shadow rendering is one of the most important Obol features that requires careful
-attention.  OSMesa supports it fully.  PortableGL's depth-only FBO support in the
-compat layer needs to be completed before `SoShadowGroup` will work.
+attention.  OSMesa supports it fully.  The PortableGL compat layer now has depth
+FBO infrastructure in place; the remaining work is wiring the shadow matrix and
+shadow depth-texture sampling into the Phong C shader.
 
 ### Matrix and Fixed-Function State
 
@@ -251,7 +264,7 @@ compat layer needs to be completed before `SoShadowGroup` will work.
 | `glLightfv` / `glMaterialfv` | ✅ native | ✅ via compat layer |
 | `glBegin` / `glEnd` | ✅ native | ✅ via compat layer (buffered → DrawArrays) |
 | `glColorMaterial` | ✅ native | ⚠️ Intentional no-op (material set via `glMaterialfv`) |
-| `glFog*` | ✅ native | ⚠️ State stored, not applied in shaders yet |
+| `glFog*` | ✅ native | ✅ `pgl_igl_Fog{f,i,fv,iv}` + `GL_FOG` Enable/Disable; applied in Gouraud, Phong, textured-Phong shaders |
 
 ### Pixel Read-Back
 
@@ -259,7 +272,7 @@ compat layer needs to be completed before `SoShadowGroup` will work.
 |---|---|---|
 | `glReadPixels` | ✅ (formats: all standard) | ✅ via compat layer (RGBA/UNSIGNED_BYTE only) |
 | Row flip (GL bottom-up vs app top-down) | ✅ native | ✅ handled in `pgl_igl_ReadPixels` |
-| `GL_PACK_ROW_LENGTH` | ✅ | ❌ Not implemented |
+| `GL_PACK_ROW_LENGTH` | ✅ | ✅ via `pgl_igl_PixelStorei` interceptor |
 
 ### Rendering Quality Extras
 
@@ -290,13 +303,15 @@ compat layer needs to be completed before `SoShadowGroup` will work.
 | **Dependency size** | 13 MB (frozen) | 381 KB (active upstream) |
 | **Obol glue size** | ~380 lines | ~2,530 lines |
 | **GLSL shaders** | ✅ Native | ❌ C-function shaders only |
-| **Shadow maps** | ✅ Full | ❌ Blocked (depth FBO incomplete) |
-| **FBO (EXT)** | ✅ Colour + depth | ⚠️ Colour only |
+| **Shadow maps** | ✅ Full | ⚠️ Infrastructure complete; Phong shadow-lookup needs wiring |
+| **FBO (EXT/ARB)** | ✅ Colour + depth | ✅ Colour, depth-texture, depth-renderbuffer |
+| **Fog** | ✅ Native | ✅ Via compat layer + shaders |
+| **GL_PACK_ROW_LENGTH** | ✅ Native | ✅ Via `pgl_igl_PixelStorei` interceptor |
 | **Fixed-function** | ✅ Native | ✅ Via compat layer |
 | **Side-by-side system GL** | ✅ (`OBOL_BUILD_DUAL_GL`) | ✅ (`OBOL_BUILD_DUAL_PORTABLEGL`) |
 | **Multi-threading** | Hard | Possible (small codebase) |
 | **Upstream evolution** | None (frozen fork) | Active (proposed contributions pending) |
-| **Production ready for Obol** | ✅ Yes | ⚠️ Requires depth-FBO and shadow work |
+| **Production ready for Obol** | ✅ Yes | ⚠️ Shadow-lookup wiring remaining |
 
 ---
 
@@ -306,7 +321,7 @@ compat layer needs to be completed before `SoShadowGroup` will work.
 
 1. It compiles Obol's GLSL shaders natively — no compat layer required.
 2. Shadow maps (`SoShadowGroup`) work out of the box.
-3. FBOs (EXT path) work for render-to-texture (`SoSceneTexture2`).
+3. FBOs (EXT/ARB path) work for render-to-texture (`SoSceneTexture2`).
 4. The external dependency is frozen and well-tested.
 5. The Obol integration code is small (~380 lines) and rarely needs to change.
 
@@ -321,16 +336,12 @@ compat layer needs to be completed before `SoShadowGroup` will work.
 4. You want to co-exist with system GL in a single process with minimal dependencies
    (`OBOL_BUILD_DUAL_PORTABLEGL`) — the symbol-isolation mechanism is now equivalent to
    the OSMesa dual-GL build.
-5. You are willing to contribute the missing depth-FBO + shadow work to complete the
-   compat layer.
 
 **Remaining work to make PortableGL production-ready for Obol:**
 
-- [ ] Implement depth-only FBO capture in `portablegl_compat_funcs.cpp` using
-      `pglSetTexBackBuffer` with a depth pix_t buffer.
-- [ ] Validate `SoShadowGroup` end-to-end with the depth-only FBO.
-- [ ] Add fog-colour application to `portablegl_obol_shaders.h` shaders.
-- [ ] Handle `GL_PACK_ROW_LENGTH` in `pgl_igl_ReadPixels`.
+- [ ] Wire shadow matrix + depth-texture sampling into `obol_phong_fs` via
+      `ObolPGLCompatState::shadows` so `SoShadowGroup` can use the depth-as-RGBA texture.
+- [ ] Validate `SoShadowGroup` end-to-end with the depth FBO.
 - [ ] Test multi-threaded render traversal (`OBOL_THREADSAFE=ON`) with the
       `g_cur_compat` thread-local.
 - [ ] Send upstream PRs to [rswinkle/PortableGL](https://github.com/rswinkle/PortableGL)

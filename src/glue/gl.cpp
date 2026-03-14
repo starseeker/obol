@@ -3527,7 +3527,8 @@ static void sogl_warn_no_fbo(void)
     warned = TRUE;
     cc_debugerror_postwarning("SoGLContext",
       "Framebuffer objects are not available in this GL context "
-      "(requires OpenGL >= 3.0 or GL_EXT_framebuffer_object). "
+      "(requires OpenGL >= 3.0, GL_ARB_framebuffer_object, or "
+      "GL_EXT_framebuffer_object). "
       "Features that require off-screen render targets — including "
       "SoSceneTexture2, shadow maps and some transparency modes — "
       "will be skipped. Provide a context with at least OpenGL 3.0 "

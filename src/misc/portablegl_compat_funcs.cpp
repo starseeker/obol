@@ -42,6 +42,8 @@
 #include <cstdlib>
 #include <cmath>
 #include <vector>
+#include <unordered_map>
+#include <unordered_set>
 
 /* Current compat state – set by SoDBPortableGL.cpp via makeContextCurrent. */
 thread_local ObolPGLCompatState* g_cur_compat = nullptr;
@@ -196,16 +198,60 @@ void pgl_igl_GetMaterialfv(GLenum face, GLenum pname, GLfloat* p) {
 
 /* glEnable/glDisable with light intercept */
 void pgl_igl_Enable(GLenum cap) {
-    if (g_cur_compat && cap>=GL_LIGHT0 && cap<=GL_LIGHT0+OBOL_PGL_MAX_LIGHTS-1)
-        g_cur_compat->lights[cap-GL_LIGHT0].enabled=true;
-    else
-        glEnable(cap);
+    if (g_cur_compat) {
+        if (cap>=GL_LIGHT0 && cap<=GL_LIGHT0+OBOL_PGL_MAX_LIGHTS-1) {
+            g_cur_compat->lights[cap-GL_LIGHT0].enabled=true;
+            return;
+        }
+        if (cap==GL_FOG) { g_cur_compat->fog_enabled=true; return; }
+    }
+    glEnable(cap);
 }
 void pgl_igl_Disable(GLenum cap) {
-    if (g_cur_compat && cap>=GL_LIGHT0 && cap<=GL_LIGHT0+OBOL_PGL_MAX_LIGHTS-1)
-        g_cur_compat->lights[cap-GL_LIGHT0].enabled=false;
-    else
-        glDisable(cap);
+    if (g_cur_compat) {
+        if (cap>=GL_LIGHT0 && cap<=GL_LIGHT0+OBOL_PGL_MAX_LIGHTS-1) {
+            g_cur_compat->lights[cap-GL_LIGHT0].enabled=false;
+            return;
+        }
+        if (cap==GL_FOG) { g_cur_compat->fog_enabled=false; return; }
+    }
+    glDisable(cap);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Fog state interceptors
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+void pgl_igl_Fogf(GLenum pname, GLfloat param) {
+    if (!g_cur_compat) return;
+    switch (pname) {
+    case GL_FOG_DENSITY: g_cur_compat->fog_density = param; break;
+    case GL_FOG_START:   g_cur_compat->fog_start   = param; break;
+    case GL_FOG_END:     g_cur_compat->fog_end      = param; break;
+    default: break;
+    }
+}
+void pgl_igl_Fogi(GLenum pname, GLint param) {
+    if (!g_cur_compat) return;
+    if (pname == GL_FOG_MODE) g_cur_compat->fog_mode = (GLenum)param;
+    else                      pgl_igl_Fogf(pname, (GLfloat)param);
+}
+void pgl_igl_Fogfv(GLenum pname, const GLfloat* p) {
+    if (!g_cur_compat || !p) return;
+    if (pname == GL_FOG_COLOR) memcpy(g_cur_compat->fog_color, p, 4*sizeof(GLfloat));
+    else                       pgl_igl_Fogf(pname, p[0]);
+}
+void pgl_igl_Fogiv(GLenum pname, const GLint* p) {
+    if (!g_cur_compat || !p) return;
+    if (pname == GL_FOG_COLOR) {
+        /* Integer fog colour is in [0..255] per channel */
+        g_cur_compat->fog_color[0] = p[0]/255.f;
+        g_cur_compat->fog_color[1] = p[1]/255.f;
+        g_cur_compat->fog_color[2] = p[2]/255.f;
+        g_cur_compat->fog_color[3] = p[3]/255.f;
+    } else {
+        pgl_igl_Fogi(pname, p[0]);
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -320,6 +366,20 @@ void pgl_igl_TexCoord3fv(const GLfloat* v)              { if(v) pgl_igl_TexCoord
 void pgl_igl_TexCoord4fv(const GLfloat* v)              { if(v) pgl_igl_TexCoord2f(v[0],v[1]); }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * glPixelStorei  –  track GL_PACK_ROW_LENGTH for ReadPixels
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static thread_local GLint g_pack_row_length = 0;   /* 0 = tightly packed */
+
+void pgl_igl_PixelStorei(GLenum pname, GLint param) {
+    if (pname == GL_PACK_ROW_LENGTH) {
+        g_pack_row_length = (param >= 0) ? param : 0;
+    } else {
+        glPixelStorei(pname, param);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * glReadPixels  (not implemented in PortableGL)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -330,61 +390,163 @@ void pgl_igl_ReadPixels(GLint x, GLint y, GLsizei width, GLsizei height,
         if (pixels) memset(pixels,0,(size_t)width*height*4);
         return;
     }
+    /* pglGetBackBuffer() returns c->back_buffer.buf (top row first in PGL),
+     * whereas OpenGL's glReadPixels returns bottom row first.
+     * We flip vertically when copying, and respect GL_PACK_ROW_LENGTH.     */
     const pix_t* src = static_cast<const pix_t*>(pglGetBackBuffer());
     if (!src || !pixels) return;
+    GLsizei dst_stride = (g_pack_row_length > 0) ? g_pack_row_length : width;
     unsigned char* dst = static_cast<unsigned char*>(pixels);
     for (GLsizei row=0; row<height; ++row) {
         GLint src_row = y + (height-1-row);
         const unsigned char* sptr = reinterpret_cast<const unsigned char*>(src + src_row*width) + x*4;
-        memcpy(dst+(size_t)row*width*4, sptr, (size_t)width*4);
+        memcpy(dst + (size_t)row * dst_stride * 4, sptr, (size_t)width * 4);
     }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Minimal FBO (render to texture via pglSetTexBackBuffer)
+ * FBO (render-to-texture via pglSetTexBackBuffer)
+ *
+ * Design:
+ *   • GL_COLOR_ATTACHMENT0: redirect PGL back buffer to the color texture
+ *     using pglSetTexBackBuffer().
+ *   • GL_DEPTH_ATTACHMENT  with a texture: redirect PGL back buffer to
+ *     the depth texture.  OBOL_PGL_SHADER_DEPTH writes depth-as-greyscale
+ *     RGBA, so the depth texture's pixels hold the depth in their R channel.
+ *   • GL_DEPTH_ATTACHMENT  with a renderbuffer: tracked for FBO-completeness
+ *     reporting only; PortableGL uses its own internal depth buffer during
+ *     rasterisation, which is sufficient.
+ *   • When binding FBO 0 (default), the PGL back buffer is restored to the
+ *     per-context default allocation saved when the context was made current.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-struct FakeFBO { GLuint tex; bool complete; };
+/* Saved default back-buffer pointer/dimensions for the currently-bound PGL
+ * context.  Updated by pgl_fbo_register_context() on each makeCurrent().  */
+static thread_local pix_t*  g_default_backbuf_ptr = nullptr;
+static thread_local GLsizei g_default_backbuf_w   = 0;
+static thread_local GLsizei g_default_backbuf_h   = 0;
+
+/* Called from SoDBPortableGL.cpp PGLContextData::makeCurrent() so we know
+ * the default (non-FBO) back-buffer pointer and dimensions for this context. */
+void pgl_fbo_register_context(int w, int h) {
+    g_default_backbuf_ptr = static_cast<pix_t*>(pglGetBackBuffer());
+    g_default_backbuf_w   = (GLsizei)w;
+    g_default_backbuf_h   = (GLsizei)h;
+}
+
+struct FakeFBO {
+    GLuint color_tex  = 0;   /* GL_COLOR_ATTACHMENT0 texture (if any) */
+    GLuint depth_tex  = 0;   /* GL_DEPTH_ATTACHMENT  texture (redirected as RGBA back buf) */
+    GLuint depth_rbo  = 0;   /* GL_DEPTH_ATTACHMENT  renderbuffer (for completeness only) */
+};
+
 static GLuint s_next_fbo = 1;
 static std::unordered_map<GLuint,FakeFBO> s_fbos;
 static GLuint s_cur_fbo  = 0;
 
+/* Renderbuffer object bookkeeping (depth storage only; not sampled later). */
+static GLuint s_next_rbo = 1;
+static std::unordered_set<GLuint> s_rbos;
+static GLuint s_cur_rbo  = 0;
+
+static bool fbo_is_complete(const FakeFBO& f) {
+    return f.color_tex || f.depth_tex || f.depth_rbo;
+}
+
+static void fbo_apply_backbuf(const FakeFBO& f) {
+    if (f.color_tex) {
+        pglSetTexBackBuffer(f.color_tex);
+    } else if (f.depth_tex) {
+        /* Depth-only FBO: OBOL_PGL_SHADER_DEPTH writes depth-as-greyscale
+         * RGBA into the depth texture.  pglSetTexBackBuffer redirects the
+         * colour output there.  PortableGL still maintains its own internal
+         * depth buffer for rasterisation correctness.                       */
+        pglSetTexBackBuffer(f.depth_tex);
+    }
+    /* If depth_rbo only: keep default back buffer; renderbuffer not sampled. */
+}
+
 void pgl_igl_GenFramebuffers(GLsizei n, GLuint* ids) {
     if (!ids) return;
-    for (GLsizei i=0;i<n;i++) { ids[i]=s_next_fbo++; s_fbos[ids[i]]={0,false}; }
+    for (GLsizei i=0; i<n; i++) { ids[i]=s_next_fbo++; s_fbos[ids[i]]=FakeFBO{}; }
 }
 void pgl_igl_BindFramebuffer(GLenum /*tgt*/, GLuint fbo) {
-    s_cur_fbo=fbo;
-    if (fbo==0) {
-        /* Restore default back buffer – PortableGL keeps it in the context */
-        if (g_cur_compat) pglSetBackBuffer(nullptr,0,0); /* triggers PGL default */
+    s_cur_fbo = fbo;
+    if (fbo == 0) {
+        /* Restore the default context back buffer. */
+        if (g_default_backbuf_ptr)
+            pglSetBackBuffer(g_default_backbuf_ptr, g_default_backbuf_w, g_default_backbuf_h);
     } else {
-        auto it=s_fbos.find(fbo);
-        if (it!=s_fbos.end() && it->second.tex) pglSetTexBackBuffer(it->second.tex);
+        auto it = s_fbos.find(fbo);
+        if (it != s_fbos.end()) fbo_apply_backbuf(it->second);
     }
 }
 void pgl_igl_DeleteFramebuffers(GLsizei n, const GLuint* ids) {
     if (!ids) return;
-    for (GLsizei i=0;i<n;i++) { if(s_cur_fbo==ids[i]) s_cur_fbo=0; s_fbos.erase(ids[i]); }
+    for (GLsizei i=0; i<n; i++) {
+        if (s_cur_fbo == ids[i]) { s_cur_fbo = 0; }
+        s_fbos.erase(ids[i]);
+    }
 }
 void pgl_igl_FramebufferTexture2D(GLenum /*tgt*/, GLenum att,
                                    GLenum /*texTgt*/, GLuint tex, GLint /*lvl*/) {
     if (!s_cur_fbo) return;
-    auto it=s_fbos.find(s_cur_fbo);
-    if (it==s_fbos.end()) return;
-    if (att==GL_COLOR_ATTACHMENT0) {
-        it->second.tex=tex; it->second.complete=(tex!=0);
+    auto it = s_fbos.find(s_cur_fbo);
+    if (it == s_fbos.end()) return;
+    FakeFBO& f = it->second;
+    if (att == GL_COLOR_ATTACHMENT0 || att == GL_COLOR_ATTACHMENT0_EXT) {
+        f.color_tex = tex;
         if (tex) pglSetTexBackBuffer(tex);
+    } else if (att == GL_DEPTH_ATTACHMENT || att == GL_DEPTH_ATTACHMENT_EXT) {
+        f.depth_tex = tex;
+        /* If this FBO has no colour attachment, redirect back buffer to the
+         * depth texture so OBOL_PGL_SHADER_DEPTH fills it with depth data.  */
+        if (tex && !f.color_tex) pglSetTexBackBuffer(tex);
     }
+}
+void pgl_igl_FramebufferRenderbuffer(GLenum /*tgt*/, GLenum att,
+                                      GLenum /*rboTgt*/, GLuint rbo) {
+    if (!s_cur_fbo) return;
+    auto it = s_fbos.find(s_cur_fbo);
+    if (it == s_fbos.end()) return;
+    if (att == GL_DEPTH_ATTACHMENT || att == GL_DEPTH_ATTACHMENT_EXT ||
+        att == GL_STENCIL_ATTACHMENT || att == GL_STENCIL_ATTACHMENT_EXT)
+        it->second.depth_rbo = rbo;
 }
 GLenum pgl_igl_CheckFramebufferStatus(GLenum /*tgt*/) {
     if (!s_cur_fbo) return GL_FRAMEBUFFER_COMPLETE;
-    auto it=s_fbos.find(s_cur_fbo);
-    return (it!=s_fbos.end() && it->second.complete) ? GL_FRAMEBUFFER_COMPLETE
-                                                      : GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+    auto it = s_fbos.find(s_cur_fbo);
+    if (it == s_fbos.end()) return GL_FRAMEBUFFER_UNDEFINED;
+    return fbo_is_complete(it->second) ? GL_FRAMEBUFFER_COMPLETE
+                                       : GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
 }
 GLboolean pgl_igl_IsFramebuffer(GLuint fbo) {
     return s_fbos.count(fbo) ? GL_TRUE : GL_FALSE;
+}
+
+/* ── Renderbuffer objects ─────────────────────────────────────────────────── */
+
+void pgl_igl_GenRenderbuffers(GLsizei n, GLuint* ids) {
+    if (!ids) return;
+    for (GLsizei i=0; i<n; i++) { ids[i]=s_next_rbo++; s_rbos.insert(ids[i]); }
+}
+void pgl_igl_BindRenderbuffer(GLenum /*tgt*/, GLuint rbo) {
+    s_cur_rbo = rbo;
+}
+void pgl_igl_DeleteRenderbuffers(GLsizei n, const GLuint* ids) {
+    if (!ids) return;
+    for (GLsizei i=0; i<n; i++) {
+        if (s_cur_rbo == ids[i]) s_cur_rbo = 0;
+        s_rbos.erase(ids[i]);
+    }
+}
+void pgl_igl_RenderbufferStorage(GLenum /*tgt*/, GLenum /*fmt*/,
+                                   GLsizei /*w*/, GLsizei /*h*/) {
+    /* PortableGL manages its own depth buffer; this is a no-op.
+     * The depth_rbo attachment is tracked for FBO-completeness only.  */
+}
+GLboolean pgl_igl_IsRenderbuffer(GLuint rbo) {
+    return s_rbos.count(rbo) ? GL_TRUE : GL_FALSE;
 }
 
 } /* extern "C" */

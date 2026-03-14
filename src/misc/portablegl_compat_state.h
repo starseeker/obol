@@ -197,6 +197,7 @@ struct ObolPGLCompatState {
     float  fog_start;
     float  fog_end;
     GLenum fog_mode;
+    bool   fog_enabled;
 
     /* ── Immediate-mode current state ───────────────────────────────── */
     float  current_color[4];
@@ -230,7 +231,7 @@ struct ObolPGLCompatState {
 
         fog_color[0]=fog_color[1]=fog_color[2]=0.f; fog_color[3]=1.f;
         fog_density=1.f; fog_start=0.f; fog_end=1.f;
-        fog_mode=GL_EXP;
+        fog_mode=GL_EXP; fog_enabled=false;
 
         current_color[0]=current_color[1]=current_color[2]=current_color[3]=1.f;
         current_normal[0]=current_normal[1]=0.f; current_normal[2]=1.f;

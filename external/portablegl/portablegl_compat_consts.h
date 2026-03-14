@@ -570,4 +570,51 @@
 #  define GL_COMPRESSED_RGBA_ARB 0x84EE
 #endif
 
+/* ─── Framebuffer-object (FBO) status values ─────────────────────────────── */
+/* GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER
+ * are defined as enum values in portablegl.h.  The completeness status codes
+ * and legacy EXT aliases used by Obol's FBO compat layer are NOT in
+ * portablegl.h and are defined here.                                          */
+#ifndef GL_FRAMEBUFFER_COMPLETE
+#  define GL_FRAMEBUFFER_COMPLETE                      0x8CD5
+#endif
+#ifndef GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT
+#  define GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT         0x8CD6
+#endif
+#ifndef GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT
+#  define GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT 0x8CD7
+#endif
+#ifndef GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER
+#  define GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER        0x8CDB
+#endif
+#ifndef GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER
+#  define GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER        0x8CDC
+#endif
+#ifndef GL_FRAMEBUFFER_UNDEFINED
+#  define GL_FRAMEBUFFER_UNDEFINED                     0x8219
+#endif
+/* EXT aliases (used by Obol's SoSceneTexture2 and shadow map code) */
+#ifndef GL_FRAMEBUFFER_EXT
+#  define GL_FRAMEBUFFER_EXT          GL_FRAMEBUFFER
+#endif
+#ifndef GL_FRAMEBUFFER_COMPLETE_EXT
+#  define GL_FRAMEBUFFER_COMPLETE_EXT GL_FRAMEBUFFER_COMPLETE
+#endif
+#ifndef GL_COLOR_ATTACHMENT0_EXT
+#  define GL_COLOR_ATTACHMENT0_EXT    GL_COLOR_ATTACHMENT0
+#endif
+#ifndef GL_DEPTH_ATTACHMENT_EXT
+#  define GL_DEPTH_ATTACHMENT_EXT     GL_DEPTH_ATTACHMENT
+#endif
+#ifndef GL_STENCIL_ATTACHMENT_EXT
+#  define GL_STENCIL_ATTACHMENT_EXT   GL_STENCIL_ATTACHMENT
+#endif
+#ifndef GL_RENDERBUFFER_EXT
+#  define GL_RENDERBUFFER_EXT         GL_RENDERBUFFER
+#endif
+/* GL_PACK_ROW_LENGTH may not be defined in portablegl.h (core 3.x only) */
+#ifndef GL_PACK_ROW_LENGTH
+#  define GL_PACK_ROW_LENGTH          0x0D02
+#endif
+
 #endif /* PORTABLEGL_COMPAT_CONSTS_H */

@@ -141,6 +141,33 @@ static inline float obol_pgl_clamp01(float v) {
     return v < 0.f ? 0.f : (v > 1.f ? 1.f : v);
 }
 
+/* Apply OpenGL fog blending to an already-computed lit colour.
+ * eye_z is the eye-space Z coordinate (negative in front of camera).
+ * The fog factor follows OpenGL's standard formulas.                   */
+static inline void obol_pgl_apply_fog(const ObolPGLCompatState* s,
+                                      float& r, float& g, float& b,
+                                      float eye_z)
+{
+    if (!s->fog_enabled) return;
+    float z = -eye_z;                      /* distance = -eye_z (positive) */
+    if (z < 0.f) z = 0.f;
+    float f = 1.f;
+    switch (s->fog_mode) {
+    case GL_LINEAR: {
+        float denom = s->fog_end - s->fog_start;
+        f = (denom != 0.f) ? (s->fog_end - z) / denom : 1.f;
+        break;
+    }
+    case GL_EXP:   f = expf(-s->fog_density * z); break;
+    case GL_EXP2:  { float d = s->fog_density * z; f = expf(-(d*d)); break; }
+    default: break;
+    }
+    f = obol_pgl_clamp01(f);
+    r = f*r + (1.f-f)*s->fog_color[0];
+    g = f*g + (1.f-f)*s->fog_color[1];
+    b = f*b + (1.f-f)*s->fog_color[2];
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * OBOL_PGL_SHADER_GOURAUD  –  per-vertex Phong (matches Obol's default VS path)
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -216,9 +243,14 @@ static void obol_gouraud_vs(float* vs_output, pgl_vec4* v_attrs,
     ((pgl_vec4*)vs_output)[1] = make_v4(ec3[0], ec3[1], ec3[2], 1.f);
 }
 
-static void obol_gouraud_fs(float* fs_input, Shader_Builtins* builtins, void* /*uniforms*/)
+static void obol_gouraud_fs(float* fs_input, Shader_Builtins* builtins, void* uniforms)
 {
-    builtins->gl_FragColor = ((pgl_vec4*)fs_input)[0];
+    ObolPGLCompatState* s = OBOL_PGL_STATE(uniforms);
+    pgl_vec4 col = ((pgl_vec4*)fs_input)[0];
+    pgl_vec4 eye = ((pgl_vec4*)fs_input)[1];   /* eye-space position from VS */
+    float r=col.x, g=col.y, b=col.z;
+    obol_pgl_apply_fog(s, r, g, b, eye.z);
+    builtins->gl_FragColor = make_v4(r, g, b, col.w);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -308,6 +340,7 @@ static void obol_phong_fs(float* fs_input, Shader_Builtins* builtins, void* unif
     float fr = obol_pgl_clamp01(sr + acc_diff_r*cr + acc_spec_r*mat.specular[0]);
     float fg = obol_pgl_clamp01(sg + acc_diff_g*cg + acc_spec_g*mat.specular[1]);
     float fb = obol_pgl_clamp01(sb + acc_diff_b*cb + acc_spec_b*mat.specular[2]);
+    obol_pgl_apply_fog(s, fr, fg, fb, ec3[2]);
     builtins->gl_FragColor = make_v4(fr, fg, fb, ca);
 }
 
@@ -428,6 +461,7 @@ static void obol_tex_phong_fs(float* fs_input, Shader_Builtins* builtins, void* 
     float fr = obol_pgl_clamp01(sr + acc_diff_r*texcol.x + acc_spec_r*mat.specular[0]);
     float fg = obol_pgl_clamp01(sg + acc_diff_g*texcol.y + acc_spec_g*mat.specular[1]);
     float fb = obol_pgl_clamp01(sb + acc_diff_b*texcol.z + acc_spec_b*mat.specular[2]);
+    obol_pgl_apply_fog(s, fr, fg, fb, ec3[2]);
     builtins->gl_FragColor = make_v4(fr, fg, fb, ca);
 }
 

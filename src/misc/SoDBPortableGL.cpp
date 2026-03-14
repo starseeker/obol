@@ -98,13 +98,27 @@ extern "C" {
     void pgl_igl_TexCoord3f(GLfloat,GLfloat,GLfloat);
     void pgl_igl_TexCoord3fv(const GLfloat*);
     void pgl_igl_TexCoord4fv(const GLfloat*);
+    void pgl_igl_PixelStorei(GLenum,GLint);
     void pgl_igl_ReadPixels(GLint,GLint,GLsizei,GLsizei,GLenum,GLenum,GLvoid*);
     void pgl_igl_GenFramebuffers(GLsizei,GLuint*);
     void pgl_igl_BindFramebuffer(GLenum,GLuint);
     void pgl_igl_DeleteFramebuffers(GLsizei,const GLuint*);
     void pgl_igl_FramebufferTexture2D(GLenum,GLenum,GLenum,GLuint,GLint);
+    void pgl_igl_FramebufferRenderbuffer(GLenum,GLenum,GLenum,GLuint);
     GLenum pgl_igl_CheckFramebufferStatus(GLenum);
     GLboolean pgl_igl_IsFramebuffer(GLuint);
+    void pgl_igl_GenRenderbuffers(GLsizei,GLuint*);
+    void pgl_igl_BindRenderbuffer(GLenum,GLuint);
+    void pgl_igl_DeleteRenderbuffers(GLsizei,const GLuint*);
+    void pgl_igl_RenderbufferStorage(GLenum,GLenum,GLsizei,GLsizei);
+    GLboolean pgl_igl_IsRenderbuffer(GLuint);
+    /* Fog */
+    void pgl_igl_Fogf(GLenum,GLfloat);
+    void pgl_igl_Fogi(GLenum,GLint);
+    void pgl_igl_Fogfv(GLenum,const GLfloat*);
+    void pgl_igl_Fogiv(GLenum,const GLint*);
+    /* FBO back-buffer registration (called at makeCurrent) */
+    void pgl_fbo_register_context(int,int);
     /* Shader registry */
     GLuint  pgl_igl_CreateShaderObjectARB(GLenum);
     void    pgl_igl_ShaderSourceARB(GLuint,GLsizei,const GLchar**,const GLint*);
@@ -245,7 +259,7 @@ static const PGLProcEntry s_pgl_proctable[] = {
     { "glTexImage3D",              (void*)glTexImage3D              },
     { "glTexSubImage2D",           (void*)glTexSubImage2D           },
     { "glTexSubImage3D",           (void*)glTexSubImage3D           },
-    { "glPixelStorei",             (void*)glPixelStorei             },
+    { "glPixelStorei",             (void*)pgl_igl_PixelStorei       },
     { "glGenerateMipmap",          (void*)glGenerateMipmap          },
 
     /* Pixel read – intercepted: PortableGL has no glReadPixels */
@@ -337,19 +351,24 @@ static const PGLProcEntry s_pgl_proctable[] = {
     { "glUniformMatrix4fvARB",     (void*)pgl_igl_UniformMatrix4fvARB },
 
     /* FBO interceptors (render-to-texture via pglSetTexBackBuffer) */
-    { "glGenFramebuffers",         (void*)pgl_igl_GenFramebuffers       },
-    { "glBindFramebuffer",         (void*)pgl_igl_BindFramebuffer       },
-    { "glDeleteFramebuffers",      (void*)pgl_igl_DeleteFramebuffers    },
-    { "glFramebufferTexture2D",    (void*)pgl_igl_FramebufferTexture2D  },
-    { "glCheckFramebufferStatus",  (void*)pgl_igl_CheckFramebufferStatus},
-    { "glIsFramebuffer",           (void*)pgl_igl_IsFramebuffer         },
-    /* Renderbuffers – still stubs */
-    { "glGenRenderbuffers",        (void*)glGenRenderbuffers        },
-    { "glBindRenderbuffer",        (void*)glBindRenderbuffer        },
-    { "glDeleteRenderbuffers",     (void*)glDeleteRenderbuffers     },
-    { "glRenderbufferStorage",     (void*)glRenderbufferStorage     },
-    { "glIsRenderbuffer",          (void*)glIsRenderbuffer          },
-    { "glFramebufferRenderbuffer", (void*)glFramebufferRenderbuffer },
+    { "glGenFramebuffers",         (void*)pgl_igl_GenFramebuffers         },
+    { "glBindFramebuffer",         (void*)pgl_igl_BindFramebuffer         },
+    { "glDeleteFramebuffers",      (void*)pgl_igl_DeleteFramebuffers      },
+    { "glFramebufferTexture2D",    (void*)pgl_igl_FramebufferTexture2D    },
+    { "glFramebufferRenderbuffer", (void*)pgl_igl_FramebufferRenderbuffer },
+    { "glCheckFramebufferStatus",  (void*)pgl_igl_CheckFramebufferStatus  },
+    { "glIsFramebuffer",           (void*)pgl_igl_IsFramebuffer           },
+    /* Renderbuffers – tracked for FBO-completeness; depth not sampled */
+    { "glGenRenderbuffers",        (void*)pgl_igl_GenRenderbuffers        },
+    { "glBindRenderbuffer",        (void*)pgl_igl_BindRenderbuffer        },
+    { "glDeleteRenderbuffers",     (void*)pgl_igl_DeleteRenderbuffers     },
+    { "glRenderbufferStorage",     (void*)pgl_igl_RenderbufferStorage     },
+    { "glIsRenderbuffer",          (void*)pgl_igl_IsRenderbuffer          },
+    /* Fog interceptors */
+    { "glFogf",                    (void*)pgl_igl_Fogf                    },
+    { "glFogi",                    (void*)pgl_igl_Fogi                    },
+    { "glFogfv",                   (void*)pgl_igl_Fogfv                   },
+    { "glFogiv",                   (void*)pgl_igl_Fogiv                   },
     /* Misc */
     { "glDrawBuffers",             (void*)glDrawBuffers             },
     { "glReadBuffer",              (void*)glReadBuffer              },
@@ -405,6 +424,9 @@ struct PGLContextData {
         set_glContext(&pgl_ctx);
         g_cur_compat = &compat;
         pglSetUniform(&compat);
+        /* Register default back-buffer pointer/dimensions so BindFramebuffer(0)
+         * can restore the PGL-internal back buffer after FBO use.           */
+        pgl_fbo_register_context(width, height);
     }
 
     void restorePrev() {
