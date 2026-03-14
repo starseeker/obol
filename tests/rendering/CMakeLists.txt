@@ -894,16 +894,14 @@ endif()
 # Runs all rendering tests with GLX (via Xvfb) and converts the .rgb output to
 # control PNGs.  Invoke with:
 #   cmake --build build_dir --target generate_rendering_controls
-if(PNG_FOUND)
-    add_custom_target(generate_rendering_controls
-        COMMAND ${CMAKE_COMMAND} -E env
-            BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
-            CONTROL_DIR=${CONTROL_IMAGES_DIR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/generate_controls.sh
-        DEPENDS
-            image_comparator rgb_to_png
-            obol_test
-        COMMENT "Generating PNG control images for rendering regression tests"
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    )
-endif()
+add_custom_target(generate_rendering_controls
+    COMMAND ${CMAKE_COMMAND} -E env
+        BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        CONTROL_DIR=${CONTROL_IMAGES_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/generate_controls.sh
+    DEPENDS
+        image_comparator rgb_to_png
+        obol_test
+    COMMENT "Generating PNG control images for rendering regression tests"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)

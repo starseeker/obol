@@ -51,15 +51,7 @@
 #include <vector>
 #include <string>
 
-#ifdef HAVE_LIBPNG
-#include <png.h>
-#else
-// Fall back to stb_image for PNG decoding when libpng is not available
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_PNG
-#define STBI_NO_STDIO
-#include "stb_image.h"
-#endif
+#include "lodepng.h"
 
 // Default thresholds - should match CMake defaults in CMakeLists.txt
 // IMAGE_COMPARISON_HASH_THRESHOLD and IMAGE_COMPARISON_RMSE_THRESHOLD
@@ -189,130 +181,25 @@ static bool load_rgb_image(const char* filename, int& width, int& height, int& c
     return true;
 }
 
-// Load PNG image (decoded to interleaved RGB/RGBA pixel data)
+// Load PNG image (decoded to interleaved RGB pixel data)
 // Returns pixel data in the same interleaved format as load_rgb_image
-#ifdef HAVE_LIBPNG
 static bool load_png_image(const char* filename, int& width, int& height, int& channels,
                            std::vector<unsigned char>& data) {
-    FILE* fp = fopen(filename, "rb");
-    if (!fp) {
-        fprintf(stderr, "Error: Cannot open file %s\n", filename);
+    unsigned w = 0, h = 0;
+    unsigned char* out = nullptr;
+    unsigned error = lodepng_decode24_file(&out, &w, &h, filename);
+    if (error) {
+        fprintf(stderr, "Error: lodepng failed to decode %s: %s\n",
+                filename, lodepng_error_text(error));
         return false;
     }
-
-    // Check PNG signature
-    unsigned char sig[8];
-    if (fread(sig, 1, 8, fp) != 8 || png_sig_cmp(sig, 0, 8) != 0) {
-        fprintf(stderr, "Error: Not a valid PNG file: %s\n", filename);
-        fclose(fp);
-        return false;
-    }
-
-    png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    if (!png) {
-        fprintf(stderr, "Error: png_create_read_struct failed\n");
-        fclose(fp);
-        return false;
-    }
-
-    png_infop info = png_create_info_struct(png);
-    if (!info) {
-        fprintf(stderr, "Error: png_create_info_struct failed\n");
-        png_destroy_read_struct(&png, NULL, NULL);
-        fclose(fp);
-        return false;
-    }
-
-    if (setjmp(png_jmpbuf(png))) {
-        fprintf(stderr, "Error: PNG read error in %s\n", filename);
-        png_destroy_read_struct(&png, &info, NULL);
-        fclose(fp);
-        return false;
-    }
-
-    png_init_io(png, fp);
-    png_set_sig_bytes(png, 8);
-    png_read_info(png, info);
-
-    width = (int)png_get_image_width(png, info);
-    height = (int)png_get_image_height(png, info);
-    png_byte color_type = png_get_color_type(png, info);
-    png_byte bit_depth = png_get_bit_depth(png, info);
-
-    // Normalize to 8-bit RGB
-    if (bit_depth == 16)
-        png_set_strip_16(png);
-    if (color_type == PNG_COLOR_TYPE_PALETTE)
-        png_set_palette_to_rgb(png);
-    if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
-        png_set_expand_gray_1_2_4_to_8(png);
-    if (png_get_valid(png, info, PNG_INFO_tRNS))
-        png_set_tRNS_to_alpha(png);
-    // Strip alpha channel - we only want RGB for comparison with SGI RGB images
-    if (color_type == PNG_COLOR_TYPE_RGBA || color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
-        png_set_strip_alpha(png);
-    // Convert grayscale to RGB
-    if (color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
-        png_set_gray_to_rgb(png);
-
-    png_read_update_info(png, info);
-    channels = (int)png_get_channels(png, info);
-
-    // Allocate row pointers and read image
-    std::vector<png_bytep> row_pointers(height);
-    int rowbytes = (int)png_get_rowbytes(png, info);
-    data.resize(height * rowbytes);
-    for (int y = 0; y < height; y++)
-        row_pointers[y] = data.data() + y * rowbytes;
-
-    png_read_image(png, row_pointers.data());
-    png_destroy_read_struct(&png, &info, NULL);
-    fclose(fp);
-    return true;
-}
-#else
-// stb_image PNG loader - used when libpng is not available
-static bool load_png_image(const char* filename, int& width, int& height, int& channels,
-                           std::vector<unsigned char>& data) {
-    // Read file into memory for stb_image (STBI_NO_STDIO is defined)
-    FILE* fp = fopen(filename, "rb");
-    if (!fp) {
-        fprintf(stderr, "Error: Cannot open file %s\n", filename);
-        return false;
-    }
-    fseek(fp, 0, SEEK_END);
-    long fsize = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-    if (fsize <= 0) {
-        fprintf(stderr, "Error: Empty or invalid file %s\n", filename);
-        fclose(fp);
-        return false;
-    }
-    std::vector<unsigned char> file_data((size_t)fsize);
-    if (fread(file_data.data(), 1, (size_t)fsize, fp) != (size_t)fsize) {
-        fprintf(stderr, "Error: Failed to read file %s\n", filename);
-        fclose(fp);
-        return false;
-    }
-    fclose(fp);
-
-    // Decode PNG - force 3 channels (RGB) for comparison with SGI RGB images
-    int w = 0, h = 0, c = 0;
-    unsigned char* pixels = stbi_load_from_memory(
-        file_data.data(), (int)fsize, &w, &h, &c, 3);
-    if (!pixels) {
-        fprintf(stderr, "Error: stb_image failed to decode %s: %s\n",
-                filename, stbi_failure_reason());
-        return false;
-    }
-    width = w;
-    height = h;
+    width = (int)w;
+    height = (int)h;
     channels = 3;
-    data.assign(pixels, pixels + (size_t)(w * h * 3));
-    stbi_image_free(pixels);
+    data.assign(out, out + (size_t)(w * h * 3));
+    free(out);
     return true;
 }
-#endif /* HAVE_LIBPNG */
 
 // Determine file type by extension and load image accordingly
 static bool load_image(const char* filename, int& width, int& height, int& channels,
@@ -409,7 +296,7 @@ static double compute_rmse(const std::vector<unsigned char>& data1,
 // Print usage
 static void print_usage(const char* prog) {
     fprintf(stderr, "Usage: %s [options] <reference_image> <test_image>\n", prog);
-    fprintf(stderr, "\nSupported formats: .rgb (SGI RGB), .png (PNG, requires libpng)\n");
+    fprintf(stderr, "\nSupported formats: .rgb (SGI RGB), .png (PNG)\n");
     fprintf(stderr, "\nOptions:\n");
     fprintf(stderr, "  -t, --threshold <N>    Set perceptual hash threshold (0-64, default: 5)\n");
     fprintf(stderr, "                         Lower = stricter, Higher = more tolerant\n");
