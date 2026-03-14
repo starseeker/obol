@@ -744,7 +744,21 @@ SoGLContext_getprocaddress(const SoGLContext * glue, const char * symname)
 {
   void * ptr = NULL;
 
-#if defined(OBOL_OSMESA_BUILD) || defined(SOGL_PREFIX_SET)
+#if defined(OBOL_PORTABLEGL_BUILD)
+  /* PortableGL path: resolve via our static interceptor table.  Never use
+     dlsym() or glXGetProcAddress() as PortableGL's GL symbols are
+     incompatible with system GL and OSMesa dispatch tables. */
+  extern void* obol_portablegl_getprocaddress(const char*);
+  ptr = obol_portablegl_getprocaddress(symname);
+  if (ptr) {
+    if (SoGLContext_debug()) {
+      cc_debugerror_postinfo("SoGLContext_getprocaddress",
+                             "portablegl table: '%s' == %p", symname, ptr);
+    }
+    return ptr;
+  }
+  /* Fall through to context manager below for any names not in the table. */
+#elif defined(OBOL_OSMESA_BUILD) || defined(SOGL_PREFIX_SET)
   /* OSMesa path: resolve via OSMesaGetProcAddress first to guarantee we
      get an OSMesa function pointer and never accidentally pick up a system
      GL symbol from the process handle (the two implementations have
@@ -785,11 +799,9 @@ SoGLContext_getprocaddress(const SoGLContext * glue, const char * symname)
      platform's proc-address resolver (e.g. glXGetProcAddress).  This keeps
      all platform-specific code outside of Obol proper.
      NOTE: This fallback is intentionally skipped in the OSMesa compilation
-     unit (SOGL_PREFIX_SET).  In a dual-GL build an OSMesa context's manager
-     uses OSMesaGetProcAddress() while the system-GL context's manager uses
-     the platform resolver; using the per-context manager here prevents
-     cross-backend contamination of function pointers. */
-#ifndef SOGL_PREFIX_SET
+     unit (SOGL_PREFIX_SET) and in PORTABLEGL builds where the full proc
+     table is owned by SoDBPortableGL.cpp's static interceptor table. */
+#if !defined(SOGL_PREFIX_SET) && !defined(OBOL_PORTABLEGL_BUILD)
   if (ptr == NULL) {
     SoDB::ContextManager * mgr = static_cast<SoDB::ContextManager*>(glue->context_manager);
     if (mgr) {
@@ -801,7 +813,7 @@ SoGLContext_getprocaddress(const SoGLContext * glue, const char * symname)
       }
     }
   }
-#endif /* !SOGL_PREFIX_SET */
+#endif /* !SOGL_PREFIX_SET && !OBOL_PORTABLEGL_BUILD */
 
   if (SoGLContext_debug()) {
     cc_debugerror_postinfo("SoGLContext_getprocaddress", "%s==%p", symname, ptr);

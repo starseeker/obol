@@ -77,4 +77,13 @@
  * function bodies are emitted exactly once.
  */
 
+#ifdef OBOL_PORTABLEGL_BUILD
+/* GL 1.x/2.x compatibility constants missing from PortableGL's core-profile
+ * implementation.  Obol passes these as arguments to the GL dispatch layer at
+ * compile time; the interceptors in portablegl_compat_funcs.cpp handle them
+ * at run time.  This header is a proposed upstream contribution to
+ * portablegl.h (see FindPortableGL.cmake for details). */
+#  include <portablegl/portablegl_compat_consts.h>
+#endif
+
 #endif /* ! OBOL_GLHEADERS_H */

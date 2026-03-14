@@ -4,57 +4,86 @@
 # PortableGL is a software implementation of OpenGL 3.x core in a single C/C++
 # header file.  Unlike OSMesa it does NOT support GLSL shader compilation;
 # shaders must be supplied as C/C++ function pointers via pglCreateProgram().
-# This is the primary obstacle to a full Obol migration (see obstacles below).
 #
 # The project embeds a copy of portablegl.h in external/portablegl/.
 #
-# Known obstacles for full Obol/Coin migration
-# --------------------------------------------
-# 1. GLSL incompatibility (BLOCKER):
-#    Obol generates and compiles GLSL programs at runtime (SoShaderObject,
-#    SoShadowGroup, etc.).  PortableGL has no GLSL compiler; glShaderSource(),
-#    glCompileShader() and glLinkProgram() are compile-time stubs that silently
-#    succeed but produce no working shader.  Every GLSL-based render path will
-#    produce incorrect or blank output.
+# Obstacles, status, and proposed PortableGL upstream contributions
+# -----------------------------------------------------------------
 #
-# 2. Uniform stubs:
-#    All glUniform*() and glUniformMatrix*() functions are empty stubs.  Because
-#    Obol relies on uniforms for transformation matrices, lighting parameters,
-#    and material properties, none of those values will reach any PortableGL
-#    C-function shader even if one is provided.
+# 1. GLSL incompatibility (RESOLVED via shader adapter):
+#    Obol generates GLSL 1.10 compatibility-profile shaders at runtime.
+#    The adapter in portablegl_shader_registry.cpp:
+#      a) intercepts glShaderSourceARB / glCompileShaderARB / glLinkProgramARB,
+#      b) inspects the GLSL source for known keywords (gl_LightSource,
+#         fragmentNormal, texture2D, shadowMap, …) to classify the shader,
+#      c) selects the matching pre-written C-function shader pair from
+#         portablegl_obol_shaders.h (Gouraud, Phong, Textured, Depth, Flat),
+#      d) creates the PortableGL program via pglCreateProgram(), and
+#      e) at glUseProgramObjectARB time calls pglSetUniform() to wire the
+#         ObolPGLCompatState as the uniform data block for C shaders.
+#    PROPOSED UPSTREAM: An optional GLSL-to-C transpiler stub or a named-
+#    shader registry (glNamedShaderARB / pglRegisterCShader) would allow
+#    apps to associate C shaders with GLSL source names, eliminating the
+#    need for keyword-based classification heuristics.
 #
-# 3. FBO stubs:
-#    glGenFramebuffers(), glBindFramebuffer(), glCheckFramebufferStatus() etc.
-#    are all empty stubs.  SoSceneTexture2 (render-to-texture), shadow maps
-#    and any node that creates its own FBO will silently fail.
+# 2. Uniforms (RESOLVED via ObolPGLCompatState):
+#    All fixed-function uniform state (gl_ModelViewMatrix, gl_LightSource[],
+#    gl_FrontMaterial, …) is tracked in ObolPGLCompatState (see
+#    portablegl_compat_state.h) and passed to C shaders via pglSetUniform().
+#    Named coin_* uniforms are handled via magic location integers returned
+#    from the glGetUniformLocationARB interceptor.
+#    PROPOSED UPSTREAM: A per-program key→value uniform store (e.g. an array
+#    of float/int values indexed by glGetUniformLocation) would allow portable
+#    C shaders to read application uniforms without a bespoke compat-state
+#    struct.
 #
-# 4. Missing glReadPixels():
-#    PortableGL does not implement glReadPixels().  CoinOffscreenGLCanvas uses
-#    glReadPixels() to extract rendered pixels.  A workaround is provided in
-#    SoDBPortableGL.cpp via pglGetBackBuffer(), but it only works for the
-#    default framebuffer and requires pixel-format conversion.
+# 3. FBO (PARTIALLY RESOLVED via pglSetTexBackBuffer):
+#    FBO calls are intercepted by pgl_igl_GenFramebuffers / BindFramebuffer /
+#    FramebufferTexture2D in portablegl_compat_funcs.cpp.  Colour attachment
+#    render-to-texture is implemented via pglSetTexBackBuffer(); depth-only
+#    attachments and multi-attachment FBOs are not yet supported.
+#    Shadow maps require a depth-only pass; the OBOL_PGL_SHADER_DEPTH shader
+#    writes gl_FragDepth but the FBO infrastructure to capture it still needs
+#    work.
+#    PROPOSED UPSTREAM: A proper FBO table with attachment objects would fully
+#    replace the pglSetTexBackBuffer() workaround and enable depth textures,
+#    renderbuffers, and MRT.
 #
-# 5. No dual-GL support:
-#    OSMesa uses MGL name mangling (gl* -> mgl*) to coexist with system OpenGL
-#    in the same process.  PortableGL defines the standard gl* names directly.
-#    Without a code-generation step analogous to OSMesa's name-mangling build,
-#    OBOL_USE_PORTABLEGL is mutually exclusive with system-OpenGL and OSMesa.
+# 4. glReadPixels (RESOLVED via pglGetBackBuffer):
+#    pgl_igl_ReadPixels() reads from the PortableGL back buffer directly and
+#    performs the GL bottom-to-top / PGL top-to-bottom row flip.  Only
+#    GL_RGBA / GL_UNSIGNED_BYTE is supported.
+#    PROPOSED UPSTREAM: A proper glReadPixels implementation in portablegl.h
+#    that handles all standard format/type combinations.
 #
-# 6. Type name conflicts:
-#    PortableGL defines vec2/vec3/vec4/mat4 etc. in the global namespace.
-#    PGL_PREFIX_TYPES is activated when including portablegl.h via gl-headers.h
-#    to rename them to pgl_vec2 etc. and avoid conflicts with Obol source code
-#    that uses vec2/vec3 as variable names.
+# 5. Fixed-function state (RESOLVED via interceptors):
+#    glMatrixMode / glLoadMatrixf / glPushMatrix / glPopMatrix / glOrtho /
+#    glFrustum / glLightfv / glMaterialfv / glColorMaterial / glBegin /
+#    glEnd etc. are all intercepted and routed through ObolPGLCompatState.
+#    PROPOSED UPSTREAM: Add a compat_state field to glContext and implement
+#    these functions natively in portablegl.h.  Shaders would access it via
+#    a pglGetCompatState() helper (or a pointer stored in pgl_uniforms).
 #
-# 7. Performance:
-#    PortableGL is a CPU software renderer with no parallel rasterisation.
-#    For production workloads it will be significantly slower than even OSMesa
-#    with llvmpipe.
+# 6. No dual-GL support (REMAINS):
+#    PortableGL defines standard gl* names directly.  Without name-mangling
+#    analogous to OSMesa's mgl* symbols, OBOL_USE_PORTABLEGL is mutually
+#    exclusive with system-OpenGL and OSMesa builds.
+#    PROPOSED UPSTREAM: Add a PGL_PREFIX_GL option that renames all public
+#    gl* symbols to pgl* (similar to how PGL_PREFIX_TYPES renames vec4, etc.),
+#    enabling a dual-GL build with system OpenGL.
+#
+# 7. Performance (REMAINS):
+#    PortableGL is a single-threaded CPU software renderer.  It will be
+#    significantly slower than OSMesa+llvmpipe for complex scenes.
+#    PROPOSED UPSTREAM: Multi-threaded tile rasterisation would substantially
+#    improve throughput for Obol's typical workload (large meshes, Phong
+#    lighting, shadow maps).
 #
 # This will define the following variables:
 #
 #   PortableGL_FOUND        - True if PortableGL header is available
-#   PortableGL_INCLUDE_DIRS - Directory containing portablegl.h
+#   PortableGL_INCLUDE_DIRS - Parent directory of portablegl/ (for
+#                             #include <portablegl/portablegl.h>)
 #
 # Interface target:
 #   portablegl_interface    - INTERFACE library for include path propagation
@@ -64,11 +93,14 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/external/portablegl/portablegl.h")
 
     if(NOT TARGET portablegl_interface)
         add_library(portablegl_interface INTERFACE)
+        # The include path is the PARENT of the portablegl/ directory so that
+        # #include <portablegl/portablegl.h> resolves correctly.
         target_include_directories(portablegl_interface INTERFACE
-            "${PROJECT_SOURCE_DIR}/external/portablegl")
+            "${PROJECT_SOURCE_DIR}/external")
     endif()
 
-    set(PortableGL_INCLUDE_DIR  "${PROJECT_SOURCE_DIR}/external/portablegl")
+    # PortableGL_INCLUDE_DIRS = parent dir so <portablegl/portablegl.h> works
+    set(PortableGL_INCLUDE_DIR  "${PROJECT_SOURCE_DIR}/external")
     set(PortableGL_FOUND        TRUE)
     set(PortableGL_INCLUDE_DIRS "${PortableGL_INCLUDE_DIR}")
 

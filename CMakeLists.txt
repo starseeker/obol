@@ -186,6 +186,7 @@ endif()
 option(OBOL_USE_OSMESA "Build against OSMesa only for offscreen/headless rendering" OFF)
 option(OBOL_USE_SYSTEM_ONLY "Build against system OpenGL only (no OSMesa fallback)" OFF)
 option(OBOL_BUILD_DUAL_GL "Build with both system-OpenGL and OSMesa backends in a single library" OFF)
+option(OBOL_USE_PORTABLEGL "Build against PortableGL (CPU software renderer, no system GL/OSMesa)" OFF)
 option(OBOL_THREADSAFE "Enable thread safe render traversals" ON)
 
 # Component options
@@ -326,9 +327,19 @@ if(NOT OBOL_USE_OSMESA AND NOT OBOL_USE_SYSTEM_ONLY AND NOT OBOL_BUILD_DUAL_GL)
   endif()
 endif()
 
-if(OBOL_USE_OSMESA)
-  # OSMesa backend for offscreen/headless rendering
-  find_package(OSMesa REQUIRED)
+if(OBOL_USE_PORTABLEGL)
+  # PortableGL backend: single-header CPU software renderer, no system GL/OSMesa.
+  # The header is expected at external/portablegl/portablegl.h or installed
+  # at a system include path.  Use cmake/FindPortableGL.cmake to locate it.
+  list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
+  find_package(PortableGL REQUIRED)
+  if(PortableGL_FOUND)
+    set(HAVE_OPENGL 1)
+    set(OBOL_PORTABLEGL_BUILD 1)
+    list(APPEND OBOL_TARGET_INCLUDE_DIRECTORIES ${PortableGL_INCLUDE_DIRS})
+    message(STATUS "Using PortableGL for software/headless rendering")
+  endif()
+elseif(OBOL_USE_OSMESA)
   if(OSMesa_FOUND)
     set(HAVE_OPENGL 1)
     set(HAVE_OSMESA 1)
@@ -412,7 +423,11 @@ if(OBOL_BUILD_DUAL_GL)
 endif()
 
 # Set library output name based on backend selection
-if(OBOL_USE_OSMESA)
+if(OBOL_USE_PORTABLEGL)
+  set(OBOL_OUTPUT_NAME "Obol-portablegl")
+  add_definitions(-DOBOL_PORTABLEGL_BUILD)
+  message(STATUS "Library will be named: lib${OBOL_OUTPUT_NAME}")
+elseif(OBOL_USE_OSMESA)
   set(OBOL_OUTPUT_NAME "Obol-osmesa")
   add_definitions(-DOBOL_OSMESA_BUILD)
   # USE_MGL_NAMESPACE is set only on the Obol library target (see src/CMakeLists.txt)
@@ -578,8 +593,17 @@ else()
   set(SIM_INCLUDE_WINDOWS_H "/* #include <windows.h> - not needed on system */")
 endif()
 
-if(OBOL_USE_OSMESA)
-  # starseeker/osmesa backend - use starseeker/osmesa headers only.
+if(OBOL_USE_PORTABLEGL)
+  # PortableGL backend – all GL symbols come from portablegl.h.
+  # PGL_PREFIX_TYPES renames vec2/vec3/vec4/mat4 to pgl_vec* to avoid
+  # conflicts with Obol's own local variable names.
+  # PGL_PREFIX_GLSL renames math helpers (clamp, smoothstep, …) that would
+  # otherwise shadow standard-library or Obol implementations.
+  set(SIM_INCLUDE_GL_H
+      "#define PGL_PREFIX_TYPES 1\n  #define PGL_PREFIX_GLSL  1\n  #include <portablegl/portablegl.h>")
+  set(SIM_INCLUDE_GLEXT_H "/* portablegl.h provides all GL extension prototypes */")
+  message(STATUS "Using PortableGL headers for GL (software renderer)")
+elseif(OBOL_USE_OSMESA)
   # OSMesa's gl.h already includes OSMesa/glext.h, so no system glext needed.
   # Mixing system GL/glext.h with OSMesa's MGL-mangled headers causes symbol
   # conflicts that corrupt the heap at runtime.

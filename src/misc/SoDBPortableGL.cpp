@@ -1,50 +1,46 @@
 /*
- * SoDBPortableGL.cpp  –  PortableGL-backed SoDB::ContextManager implementation
+ * SoDBPortableGL.cpp  –  PortableGL-backed SoDB::ContextManager
  *
  * This translation unit provides:
  *   1. CoinPortableGLContextManagerImpl  – a SoDB::ContextManager that creates
- *      and manages PortableGL offscreen rendering contexts.
- *   2. obol_portablegl_getprocaddress()  – a static name→function-pointer table
- *      used by SoGLContext_getprocaddress() when OBOL_PORTABLEGL_BUILD is set.
- *   3. coin_create_portablegl_context_manager_impl()  – a C entry point called
- *      by SoDB::createPortableGLContextManager() in SoDB.cpp.
+ *      and manages PortableGL offscreen rendering contexts, including wiring up
+ *      the per-context ObolPGLCompatState used by the shader adapter layer.
+ *   2. obol_portablegl_getprocaddress()  – a comprehensive name→function-pointer
+ *      table that routes all Obol GL calls through interceptors defined in
+ *      portablegl_compat_funcs.cpp and portablegl_shader_registry.cpp.
+ *   3. coin_create_portablegl_context_manager_impl()  – C entry point called by
+ *      SoDB::createPortableGLContextManager() in SoDB.cpp.
+ *
+ * Shader adaptation
+ * ─────────────────
+ * Obol's GLSL shaders use OpenGL compatibility-profile built-ins
+ * (gl_ModelViewMatrix, gl_LightSource[], gl_FrontMaterial …).  PortableGL
+ * cannot compile GLSL; instead this file wires a full compatibility-profile
+ * state layer (ObolPGLCompatState) and pre-written C-function shaders
+ * (portablegl_obol_shaders.h) that faithfully implement Obol's shader logic.
+ *
+ * See portablegl_compat_funcs.cpp and portablegl_shader_registry.cpp for the
+ * interceptor implementations and shader registry respectively.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * Known obstacles / limitations (see also cmake/FindPortableGL.cmake)
+ * Remaining limitations (see cmake/FindPortableGL.cmake for full list)
  * ─────────────────────────────────────────────────────────────────────────────
  *
- * GLSL (BLOCKER):  All glShaderSource / glCompileShader / glLinkProgram calls
- *   are no-ops in PortableGL.  Obol generates GLSL programs at runtime for
- *   lighting, materials, shadows, and textures.  These programs will silently
- *   compile to nothing, so rendered output will lack shading.  To obtain
- *   correct output, every GLSL shader in the Obol source would need to be
- *   reimplemented as a pair of PortableGL C vertex/fragment shader functions
- *   and registered via pglCreateProgram().
+ * Shadow maps: FBO render-to-texture is implemented via pglSetTexBackBuffer()
+ *   but SoShadowGroup's multi-pass shadow pipeline has not been validated.
  *
- * Uniforms (BLOCKER):  glUniform*() and glUniformMatrix*() are all empty
- *   stubs.  Transformation matrices, material properties, and lighting
- *   parameters will not reach any PortableGL shader.
+ * Context switching: PortableGL uses a single global context pointer.  The
+ *   thread-local g_cur_compat pointer in portablegl_compat_funcs.cpp tracks
+ *   the current ObolPGLCompatState; multi-threaded rendering requires care.
  *
- * FBOs (BLOCKER):  glGenFramebuffers / glBindFramebuffer / glCheckFramebuffer-
- *   Status are empty stubs.  Render-to-texture (SoSceneTexture2), shadow maps,
- *   and any pass that uses a custom FBO will silently fail.
- *
- * glReadPixels (missing):  PortableGL does not implement glReadPixels.
- *   CoinOffscreenGLCanvas calls glReadPixels to extract rendered pixels.  The
- *   portablegl_glReadPixels() wrapper below reads directly from the PortableGL
- *   back-buffer (pglGetBackBuffer()) as a workaround, but only supports
- *   GL_RGBA / GL_UNSIGNED_BYTE for the default framebuffer.
- *
- * Context switching:  PortableGL maintains a single global context pointer `c`.
- *   set_glContext() updates it.  To support multiple simultaneous offscreen
- *   renderers each PGLContextData saves the "previous" context pointer before
- *   making itself current, allowing restorePreviousContext() to reinstate it.
- *   This is single-thread safe; multi-threaded rendering requires a mutex.
+ * Proposed upstream contributions to PortableGL
+ * ──────────────────────────────────────────────
+ * See portablegl_compat_funcs.cpp for the list of proposed upstream additions
+ * (matrix stack, light/material state, immediate mode, glReadPixels, FBO).
  */
 
 #include <Inventor/SoDB.h>
 #include <cstring>
-#include <memory>
 
 /* portablegl.h is a single-header library.  portablegl_impl.cpp provides the
  * PORTABLEGL_IMPLEMENTATION; here we only need the declarations. */
@@ -52,241 +48,311 @@
 #define PGL_PREFIX_GLSL  1
 #include <portablegl/portablegl.h>
 
+#include "portablegl_compat_state.h"
+
+/* Forward declarations for functions defined in portablegl_compat_funcs.cpp
+ * and portablegl_shader_registry.cpp. */
+extern "C" {
+    /* Compat funcs (matrix, light, material, imm mode, readpixels, FBO) */
+    void pgl_igl_MatrixMode(GLenum);
+    void pgl_igl_LoadIdentity();
+    void pgl_igl_LoadMatrixf(const GLfloat*);
+    void pgl_igl_LoadMatrixd(const GLdouble*);
+    void pgl_igl_MultMatrixf(const GLfloat*);
+    void pgl_igl_PushMatrix();
+    void pgl_igl_PopMatrix();
+    void pgl_igl_Translatef(GLfloat,GLfloat,GLfloat);
+    void pgl_igl_Scalef(GLfloat,GLfloat,GLfloat);
+    void pgl_igl_Rotatef(GLfloat,GLfloat,GLfloat,GLfloat);
+    void pgl_igl_Ortho(GLdouble,GLdouble,GLdouble,GLdouble,GLdouble,GLdouble);
+    void pgl_igl_Frustum(GLdouble,GLdouble,GLdouble,GLdouble,GLdouble,GLdouble);
+    void pgl_igl_Lightfv(GLenum,GLenum,const GLfloat*);
+    void pgl_igl_Lighti(GLenum,GLenum,GLint);
+    void pgl_igl_LightModelfv(GLenum,const GLfloat*);
+    void pgl_igl_LightModeli(GLenum,GLint);
+    void pgl_igl_Materialfv(GLenum,GLenum,const GLfloat*);
+    void pgl_igl_Materialf(GLenum,GLenum,GLfloat);
+    void pgl_igl_ColorMaterial(GLenum,GLenum);
+    void pgl_igl_GetMaterialfv(GLenum,GLenum,GLfloat*);
+    void pgl_igl_Enable(GLenum);
+    void pgl_igl_Disable(GLenum);
+    void pgl_igl_Begin(GLenum);
+    void pgl_igl_End();
+    void pgl_igl_Vertex2f(GLfloat,GLfloat);
+    void pgl_igl_Vertex2s(GLshort,GLshort);
+    void pgl_igl_Vertex3f(GLfloat,GLfloat,GLfloat);
+    void pgl_igl_Vertex3fv(const GLfloat*);
+    void pgl_igl_Vertex4fv(const GLfloat*);
+    void pgl_igl_Normal3f(GLfloat,GLfloat,GLfloat);
+    void pgl_igl_Normal3fv(const GLfloat*);
+    void pgl_igl_Color3f(GLfloat,GLfloat,GLfloat);
+    void pgl_igl_Color3fv(const GLfloat*);
+    void pgl_igl_Color4f(GLfloat,GLfloat,GLfloat,GLfloat);
+    void pgl_igl_Color4fv(const GLfloat*);
+    void pgl_igl_Color3ub(GLubyte,GLubyte,GLubyte);
+    void pgl_igl_Color3ubv(const GLubyte*);
+    void pgl_igl_Color4ub(GLubyte,GLubyte,GLubyte,GLubyte);
+    void pgl_igl_Color4ubv(const GLubyte*);
+    void pgl_igl_TexCoord2f(GLfloat,GLfloat);
+    void pgl_igl_TexCoord2fv(const GLfloat*);
+    void pgl_igl_TexCoord3f(GLfloat,GLfloat,GLfloat);
+    void pgl_igl_TexCoord3fv(const GLfloat*);
+    void pgl_igl_TexCoord4fv(const GLfloat*);
+    void pgl_igl_ReadPixels(GLint,GLint,GLsizei,GLsizei,GLenum,GLenum,GLvoid*);
+    void pgl_igl_GenFramebuffers(GLsizei,GLuint*);
+    void pgl_igl_BindFramebuffer(GLenum,GLuint);
+    void pgl_igl_DeleteFramebuffers(GLsizei,const GLuint*);
+    void pgl_igl_FramebufferTexture2D(GLenum,GLenum,GLenum,GLuint,GLint);
+    GLenum pgl_igl_CheckFramebufferStatus(GLenum);
+    GLboolean pgl_igl_IsFramebuffer(GLuint);
+    /* Shader registry */
+    GLuint  pgl_igl_CreateShaderObjectARB(GLenum);
+    void    pgl_igl_ShaderSourceARB(GLuint,GLsizei,const GLchar**,const GLint*);
+    void    pgl_igl_CompileShaderARB(GLuint);
+    void    pgl_igl_GetObjectParameterivARB(GLuint,GLenum,GLint*);
+    void    pgl_igl_GetInfoLogARB(GLuint,GLsizei,GLsizei*,GLchar*);
+    void    pgl_igl_DeleteObjectARB(GLuint);
+    GLuint  pgl_igl_CreateProgramObjectARB();
+    void    pgl_igl_AttachObjectARB(GLuint,GLuint);
+    void    pgl_igl_DetachObjectARB(GLuint,GLuint);
+    void    pgl_igl_LinkProgramARB(GLuint);
+    GLboolean pgl_igl_IsProgram(GLuint);
+    void    pgl_igl_UseProgramObjectARB(GLuint);
+    GLint   pgl_igl_GetUniformLocationARB(GLuint,const GLchar*);
+    void    pgl_igl_GetActiveUniformARB(GLuint,GLuint,GLsizei,GLsizei*,GLint*,GLenum*,GLchar*);
+    void    pgl_igl_Uniform1iARB(GLint,GLint);
+    void    pgl_igl_Uniform1fARB(GLint,GLfloat);
+    void    pgl_igl_Uniform2fARB(GLint,GLfloat,GLfloat);
+    void    pgl_igl_Uniform3fARB(GLint,GLfloat,GLfloat,GLfloat);
+    void    pgl_igl_Uniform4fARB(GLint,GLfloat,GLfloat,GLfloat,GLfloat);
+    void    pgl_igl_Uniform2iARB(GLint,GLint,GLint);
+    void    pgl_igl_Uniform3iARB(GLint,GLint,GLint,GLint);
+    void    pgl_igl_Uniform4iARB(GLint,GLint,GLint,GLint,GLint);
+    void    pgl_igl_Uniform1fvARB(GLint,GLsizei,const GLfloat*);
+    void    pgl_igl_Uniform2fvARB(GLint,GLsizei,const GLfloat*);
+    void    pgl_igl_Uniform3fvARB(GLint,GLsizei,const GLfloat*);
+    void    pgl_igl_Uniform4fvARB(GLint,GLsizei,const GLfloat*);
+    void    pgl_igl_Uniform1ivARB(GLint,GLsizei,const GLint*);
+    void    pgl_igl_Uniform2ivARB(GLint,GLsizei,const GLint*);
+    void    pgl_igl_Uniform3ivARB(GLint,GLsizei,const GLint*);
+    void    pgl_igl_Uniform4ivARB(GLint,GLsizei,const GLint*);
+    void    pgl_igl_UniformMatrix2fvARB(GLint,GLsizei,GLboolean,const GLfloat*);
+    void    pgl_igl_UniformMatrix3fvARB(GLint,GLsizei,GLboolean,const GLfloat*);
+    void    pgl_igl_UniformMatrix4fvARB(GLint,GLsizei,GLboolean,const GLfloat*);
+} /* extern "C" */
+
+/* g_cur_compat is defined in portablegl_compat_funcs.cpp; we set it here
+ * when switching contexts. */
+extern thread_local ObolPGLCompatState* g_cur_compat;
+
 /* ─────────────────────────────────────────────────────────────────────────── */
-/* glReadPixels workaround                                                      */
+/* NOTE: glReadPixels and all other interceptors are now in                     */
+/* portablegl_compat_funcs.cpp and portablegl_shader_registry.cpp.             */
+/* This file only contains the context manager and proc-address table.         */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-/*
- * PortableGL stores the back buffer in PGL_ABGR32 format by default (32-bit
- * pixels, memory order R G B A on little-endian).  CoinOffscreenGLCanvas
- * calls glReadPixels(…, GL_RGBA, GL_UNSIGNED_BYTE, …) expecting bottom-to-top
- * row order (GL convention).  The PortableGL back buffer is stored top-to-bottom
- * (screen convention), so we must flip rows.
- *
- * Limitations of this workaround:
- *   • Only GL_RGBA / GL_UNSIGNED_BYTE is handled; other formats return silently.
- *   • Only the default framebuffer is read; if an FBO was bound (e.g. for
- *     render-to-texture) the result is wrong because FBO stubs are no-ops.
- */
-static void portablegl_glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height,
-                                    GLenum format, GLenum type, GLvoid* pixels)
-{
-    if (format != GL_RGBA || type != GL_UNSIGNED_BYTE) {
-        /* Unsupported combination – zero the buffer so callers get a defined
-         * (if incorrect) result rather than uninitialised memory. */
-        if (pixels) memset(pixels, 0, (size_t)width * height * 4);
-        return;
-    }
 
-    const pix_t* src = static_cast<const pix_t*>(pglGetBackBuffer());
-    if (!src || !pixels) return;
-
-    /* PGL_ABGR32 pixel layout (default, LSB architecture):
-     *   bits  7-0  : R
-     *   bits 15-8  : G
-     *   bits 23-16 : B
-     *   bits 31-24 : A
-     * When read as uint32_t on little-endian the byte order in memory is
-     * R G B A, which is exactly GL_RGBA GL_UNSIGNED_BYTE.
-     *
-     * The PortableGL buffer is stored from top row (y=0) to bottom, but
-     * glReadPixels returns rows from bottom (y=0 in GL convention) to top.
-     * We flip vertically when copying.
-     */
-    GLint ctx_width  = 0;
-    glGetIntegerv(GL_VIEWPORT, &ctx_width); /* Not ideal – use the back buffer width */
-    /* Fall back: just copy naively using the caller-supplied width/height. */
-    (void)ctx_width;
-
-    unsigned char* dst = static_cast<unsigned char*>(pixels);
-    for (GLsizei row = 0; row < height; ++row) {
-        /* Source row in PGL (top-to-bottom): (y_from_top + row)
-         * Destination row in GL (bottom-to-top): (height - 1 - row) */
-        GLint src_row = y + (height - 1 - row);  /* flip */
-        const unsigned char* src_ptr =
-            reinterpret_cast<const unsigned char*>(src + src_row * width) + x * 4;
-        unsigned char* dst_ptr = dst + (size_t)row * width * 4;
-        memcpy(dst_ptr, src_ptr, (size_t)width * 4);
-    }
-}
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* Static proc-address table                                                    */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-/*
- * PortableGL has no dynamic function-pointer resolver equivalent to
- * OSMesaGetProcAddress() or glXGetProcAddress().  All of its GL functions are
- * directly-linked C symbols.  We expose them through a static name→pointer
- * table so that SoGLContext_getprocaddress() can populate the per-context
- * function-pointer struct that drives Obol's GL dispatch layer.
- *
- * Functions not listed here return NULL from obol_portablegl_getprocaddress(),
- * which the GL dispatch layer treats as "not supported".
- *
- * NOTE: stub functions (FBOs, uniforms, GLSL, etc.) ARE included in this table
- * so that the GL dispatch layer does not fall back to dlsym() and accidentally
- * pick up system-GL symbols.  Returning a no-op pointer is safer than returning
- * a real symbol from an incompatible implementation.
- */
 struct PGLProcEntry { const char* name; void* fn; };
 
 static const PGLProcEntry s_pgl_proctable[] = {
     /* Core drawing */
-    { "glDrawArrays",             (void*)glDrawArrays             },
-    { "glDrawElements",           (void*)glDrawElements           },
-    { "glDrawArraysInstanced",    (void*)glDrawArraysInstanced    },
-    { "glDrawElementsInstanced",  (void*)glDrawElementsInstanced  },
-    { "glMultiDrawArrays",        (void*)glMultiDrawArrays        },
-    { "glMultiDrawElements",      (void*)glMultiDrawElements      },
+    { "glDrawArrays",              (void*)glDrawArrays              },
+    { "glDrawElements",            (void*)glDrawElements            },
+    { "glDrawArraysInstanced",     (void*)glDrawArraysInstanced     },
+    { "glDrawElementsInstanced",   (void*)glDrawElementsInstanced   },
+    { "glMultiDrawArrays",         (void*)glMultiDrawArrays         },
+    { "glMultiDrawElements",       (void*)glMultiDrawElements       },
 
-    /* State */
-    { "glEnable",                 (void*)glEnable                 },
-    { "glDisable",                (void*)glDisable                },
-    { "glCullFace",               (void*)glCullFace               },
-    { "glFrontFace",              (void*)glFrontFace              },
-    { "glPolygonMode",            (void*)glPolygonMode            },
-    { "glPolygonOffset",          (void*)glPolygonOffset          },
-    { "glPointSize",              (void*)glPointSize              },
-    { "glLineWidth",              (void*)glLineWidth              },
-    { "glScissor",                (void*)glScissor                },
-    { "glViewport",               (void*)glViewport               },
-    { "glDepthFunc",              (void*)glDepthFunc              },
-    { "glDepthMask",              (void*)glDepthMask              },
-    { "glDepthRange",             (void*)glDepthRange             },
-    { "glColorMask",              (void*)glColorMask              },
-    { "glBlendFunc",              (void*)glBlendFunc              },
-    { "glBlendEquation",          (void*)glBlendEquation          },
-    { "glBlendFuncSeparate",      (void*)glBlendFuncSeparate      },
-    { "glBlendEquationSeparate",  (void*)glBlendEquationSeparate  },
-    { "glBlendColor",             (void*)glBlendColor             },
-    { "glStencilFunc",            (void*)glStencilFunc            },
-    { "glStencilFuncSeparate",    (void*)glStencilFuncSeparate    },
-    { "glStencilOp",              (void*)glStencilOp              },
-    { "glStencilOpSeparate",      (void*)glStencilOpSeparate      },
-    { "glStencilMask",            (void*)glStencilMask            },
-    { "glStencilMaskSeparate",    (void*)glStencilMaskSeparate    },
-    { "glLogicOp",                (void*)glLogicOp                },
-    { "glProvokingVertex",        (void*)glProvokingVertex        },
+    /* State – Enable/Disable intercepted for light management */
+    { "glEnable",                  (void*)pgl_igl_Enable            },
+    { "glDisable",                 (void*)pgl_igl_Disable           },
+    { "glCullFace",                (void*)glCullFace                },
+    { "glFrontFace",               (void*)glFrontFace               },
+    { "glPolygonMode",             (void*)glPolygonMode             },
+    { "glPolygonOffset",           (void*)glPolygonOffset           },
+    { "glPointSize",               (void*)glPointSize               },
+    { "glLineWidth",               (void*)glLineWidth               },
+    { "glScissor",                 (void*)glScissor                 },
+    { "glViewport",                (void*)glViewport                },
+    { "glDepthFunc",               (void*)glDepthFunc               },
+    { "glDepthMask",               (void*)glDepthMask               },
+    { "glDepthRange",              (void*)glDepthRange              },
+    { "glColorMask",               (void*)glColorMask               },
+    { "glBlendFunc",               (void*)glBlendFunc               },
+    { "glBlendEquation",           (void*)glBlendEquation           },
+    { "glBlendFuncSeparate",       (void*)glBlendFuncSeparate       },
+    { "glBlendEquationSeparate",   (void*)glBlendEquationSeparate   },
+    { "glBlendColor",              (void*)glBlendColor              },
+    { "glStencilFunc",             (void*)glStencilFunc             },
+    { "glStencilFuncSeparate",     (void*)glStencilFuncSeparate     },
+    { "glStencilOp",               (void*)glStencilOp               },
+    { "glStencilOpSeparate",       (void*)glStencilOpSeparate       },
+    { "glStencilMask",             (void*)glStencilMask             },
+    { "glStencilMaskSeparate",     (void*)glStencilMaskSeparate     },
+    { "glLogicOp",                 (void*)glLogicOp                 },
+    { "glProvokingVertex",         (void*)glProvokingVertex         },
 
     /* Clear */
-    { "glClear",                  (void*)glClear                  },
-    { "glClearColor",             (void*)glClearColor             },
-    { "glClearDepth",             (void*)glClearDepth             },
-    { "glClearDepthf",            (void*)glClearDepthf            },
-    { "glClearStencil",           (void*)glClearStencil           },
+    { "glClear",                   (void*)glClear                   },
+    { "glClearColor",              (void*)glClearColor              },
+    { "glClearDepth",              (void*)glClearDepth              },
+    { "glClearDepthf",             (void*)glClearDepthf             },
+    { "glClearStencil",            (void*)glClearStencil            },
 
     /* Queries */
-    { "glGetError",               (void*)glGetError               },
-    { "glGetString",              (void*)glGetString              },
-    { "glGetStringi",             (void*)glGetStringi             },
-    { "glGetBooleanv",            (void*)glGetBooleanv            },
-    { "glGetFloatv",              (void*)glGetFloatv              },
-    { "glGetIntegerv",            (void*)glGetIntegerv            },
-    { "glIsEnabled",              (void*)glIsEnabled              },
+    { "glGetError",                (void*)glGetError                },
+    { "glGetString",               (void*)glGetString               },
+    { "glGetStringi",              (void*)glGetStringi              },
+    { "glGetBooleanv",             (void*)glGetBooleanv             },
+    { "glGetFloatv",               (void*)glGetFloatv               },
+    { "glGetIntegerv",             (void*)glGetIntegerv             },
+    { "glIsEnabled",               (void*)glIsEnabled               },
 
     /* Buffers (VBOs) */
-    { "glGenBuffers",             (void*)glGenBuffers             },
-    { "glDeleteBuffers",          (void*)glDeleteBuffers          },
-    { "glBindBuffer",             (void*)glBindBuffer             },
-    { "glBufferData",             (void*)glBufferData             },
-    { "glBufferSubData",          (void*)glBufferSubData          },
-    { "glMapBuffer",              (void*)glMapBuffer              },
-    { "glUnmapBuffer",            (void*)glUnmapBuffer            },
+    { "glGenBuffers",              (void*)glGenBuffers              },
+    { "glDeleteBuffers",           (void*)glDeleteBuffers           },
+    { "glBindBuffer",              (void*)glBindBuffer              },
+    { "glBufferData",              (void*)glBufferData              },
+    { "glBufferSubData",           (void*)glBufferSubData           },
+    { "glMapBuffer",               (void*)glMapBuffer               },
+    { "glUnmapBuffer",             (void*)glUnmapBuffer             },
 
     /* Vertex arrays (VAOs) */
-    { "glGenVertexArrays",        (void*)glGenVertexArrays        },
-    { "glDeleteVertexArrays",     (void*)glDeleteVertexArrays     },
-    { "glBindVertexArray",        (void*)glBindVertexArray        },
-    { "glVertexAttribPointer",    (void*)glVertexAttribPointer    },
-    { "glVertexAttribDivisor",    (void*)glVertexAttribDivisor    },
-    { "glEnableVertexAttribArray",(void*)glEnableVertexAttribArray},
+    { "glGenVertexArrays",         (void*)glGenVertexArrays         },
+    { "glDeleteVertexArrays",      (void*)glDeleteVertexArrays      },
+    { "glBindVertexArray",         (void*)glBindVertexArray         },
+    { "glVertexAttribPointer",     (void*)glVertexAttribPointer     },
+    { "glVertexAttribDivisor",     (void*)glVertexAttribDivisor     },
+    { "glEnableVertexAttribArray", (void*)glEnableVertexAttribArray },
     { "glDisableVertexAttribArray",(void*)glDisableVertexAttribArray},
 
     /* Textures */
-    { "glGenTextures",            (void*)glGenTextures            },
-    { "glDeleteTextures",         (void*)glDeleteTextures         },
-    { "glBindTexture",            (void*)glBindTexture            },
-    { "glActiveTexture",          (void*)glActiveTexture          },
-    { "glTexParameteri",          (void*)glTexParameteri          },
-    { "glTexParameterfv",         (void*)glTexParameterfv         },
-    { "glTexParameteriv",         (void*)glTexParameteriv         },
-    { "glGetTexParameterfv",      (void*)glGetTexParameterfv      },
-    { "glGetTexParameteriv",      (void*)glGetTexParameteriv      },
-    { "glTexImage2D",             (void*)glTexImage2D             },
-    { "glTexImage3D",             (void*)glTexImage3D             },
-    { "glTexSubImage2D",          (void*)glTexSubImage2D          },
-    { "glTexSubImage3D",          (void*)glTexSubImage3D          },
-    { "glPixelStorei",            (void*)glPixelStorei            },
-    { "glGenerateMipmap",         (void*)glGenerateMipmap         },
+    { "glGenTextures",             (void*)glGenTextures             },
+    { "glDeleteTextures",          (void*)glDeleteTextures          },
+    { "glBindTexture",             (void*)glBindTexture             },
+    { "glActiveTexture",           (void*)glActiveTexture           },
+    { "glTexParameteri",           (void*)glTexParameteri           },
+    { "glTexParameterfv",          (void*)glTexParameterfv          },
+    { "glTexParameteriv",          (void*)glTexParameteriv          },
+    { "glGetTexParameterfv",       (void*)glGetTexParameterfv       },
+    { "glGetTexParameteriv",       (void*)glGetTexParameteriv       },
+    { "glTexImage2D",              (void*)glTexImage2D              },
+    { "glTexImage3D",              (void*)glTexImage3D              },
+    { "glTexSubImage2D",           (void*)glTexSubImage2D           },
+    { "glTexSubImage3D",           (void*)glTexSubImage3D           },
+    { "glPixelStorei",             (void*)glPixelStorei             },
+    { "glGenerateMipmap",          (void*)glGenerateMipmap          },
 
-    /* Pixel read – PortableGL has no glReadPixels, use our wrapper */
-    { "glReadPixels",             (void*)portablegl_glReadPixels  },
+    /* Pixel read – intercepted: PortableGL has no glReadPixels */
+    { "glReadPixels",              (void*)pgl_igl_ReadPixels        },
 
-    /* Shaders – all stubs in PortableGL; included so dispatch does not fall  */
-    /* back to dlsym() and accidentally pick up system-GL symbols.            */
-    { "glCreateProgram",          (void*)glCreateProgram          },
-    { "glDeleteProgram",          (void*)glDeleteProgram          },
-    { "glUseProgram",             (void*)glUseProgram             },
-    { "glCreateShader",           (void*)glCreateShader           },
-    { "glDeleteShader",           (void*)glDeleteShader           },
-    { "glShaderSource",           (void*)glShaderSource           },
-    { "glCompileShader",          (void*)glCompileShader          },
-    { "glAttachShader",           (void*)glAttachShader           },
-    { "glDetachShader",           (void*)glDetachShader           },
-    { "glLinkProgram",            (void*)glLinkProgram            },
-    { "glGetProgramiv",           (void*)glGetProgramiv           },
-    { "glGetProgramInfoLog",      (void*)glGetProgramInfoLog      },
-    { "glGetShaderiv",            (void*)glGetShaderiv            },
-    { "glGetShaderInfoLog",       (void*)glGetShaderInfoLog       },
-    { "glGetUniformLocation",     (void*)glGetUniformLocation     },
-    { "glGetAttribLocation",      (void*)glGetAttribLocation      },
+    /* Matrix stack interceptors (update ObolPGLCompatState) */
+    { "glMatrixMode",              (void*)pgl_igl_MatrixMode        },
+    { "glLoadIdentity",            (void*)pgl_igl_LoadIdentity      },
+    { "glLoadMatrixf",             (void*)pgl_igl_LoadMatrixf       },
+    { "glLoadMatrixd",             (void*)pgl_igl_LoadMatrixd       },
+    { "glMultMatrixf",             (void*)pgl_igl_MultMatrixf       },
+    { "glPushMatrix",              (void*)pgl_igl_PushMatrix        },
+    { "glPopMatrix",               (void*)pgl_igl_PopMatrix         },
+    { "glTranslatef",              (void*)pgl_igl_Translatef        },
+    { "glScalef",                  (void*)pgl_igl_Scalef            },
+    { "glRotatef",                 (void*)pgl_igl_Rotatef           },
+    { "glOrtho",                   (void*)pgl_igl_Ortho             },
+    { "glFrustum",                 (void*)pgl_igl_Frustum           },
 
-    /* Uniforms – stubs */
-    { "glUniform1f",              (void*)glUniform1f              },
-    { "glUniform2f",              (void*)glUniform2f              },
-    { "glUniform3f",              (void*)glUniform3f              },
-    { "glUniform4f",              (void*)glUniform4f              },
-    { "glUniform1i",              (void*)glUniform1i              },
-    { "glUniform2i",              (void*)glUniform2i              },
-    { "glUniform3i",              (void*)glUniform3i              },
-    { "glUniform4i",              (void*)glUniform4i              },
-    { "glUniform1fv",             (void*)glUniform1fv             },
-    { "glUniform2fv",             (void*)glUniform2fv             },
-    { "glUniform3fv",             (void*)glUniform3fv             },
-    { "glUniform4fv",             (void*)glUniform4fv             },
-    { "glUniform1iv",             (void*)glUniform1iv             },
-    { "glUniform2iv",             (void*)glUniform2iv             },
-    { "glUniform3iv",             (void*)glUniform3iv             },
-    { "glUniform4iv",             (void*)glUniform4iv             },
-    { "glUniformMatrix2fv",       (void*)glUniformMatrix2fv       },
-    { "glUniformMatrix3fv",       (void*)glUniformMatrix3fv       },
-    { "glUniformMatrix4fv",       (void*)glUniformMatrix4fv       },
-    { "glUniformMatrix3x4fv",     (void*)glUniformMatrix3x4fv     },
-    { "glUniformMatrix4x3fv",     (void*)glUniformMatrix4x3fv     },
+    /* Light state interceptors */
+    { "glLightfv",                 (void*)pgl_igl_Lightfv           },
+    { "glLighti",                  (void*)pgl_igl_Lighti            },
+    { "glLightModelfv",            (void*)pgl_igl_LightModelfv      },
+    { "glLightModeli",             (void*)pgl_igl_LightModeli       },
+    { "glMaterialfv",              (void*)pgl_igl_Materialfv        },
+    { "glMaterialf",               (void*)pgl_igl_Materialf         },
+    { "glColorMaterial",           (void*)pgl_igl_ColorMaterial     },
+    { "glGetMaterialfv",           (void*)pgl_igl_GetMaterialfv     },
 
-    /* Framebuffer objects – stubs */
-    { "glGenFramebuffers",        (void*)glGenFramebuffers        },
-    { "glBindFramebuffer",        (void*)glBindFramebuffer        },
-    { "glDeleteFramebuffers",     (void*)glDeleteFramebuffers     },
-    { "glFramebufferTexture2D",   (void*)glFramebufferTexture2D   },
-    { "glFramebufferTexture3D",   (void*)glFramebufferTexture3D   },
-    { "glFramebufferRenderbuffer",(void*)glFramebufferRenderbuffer},
-    { "glCheckFramebufferStatus", (void*)glCheckFramebufferStatus },
-    { "glIsFramebuffer",          (void*)glIsFramebuffer          },
-    { "glBlitFramebuffer",        (void*)glBlitFramebuffer        },
+    /* Immediate mode interceptors */
+    { "glBegin",                   (void*)pgl_igl_Begin             },
+    { "glEnd",                     (void*)pgl_igl_End               },
+    { "glVertex2f",                (void*)pgl_igl_Vertex2f          },
+    { "glVertex2s",                (void*)pgl_igl_Vertex2s          },
+    { "glVertex3f",                (void*)pgl_igl_Vertex3f          },
+    { "glVertex3fv",               (void*)pgl_igl_Vertex3fv         },
+    { "glVertex4fv",               (void*)pgl_igl_Vertex4fv         },
+    { "glNormal3f",                (void*)pgl_igl_Normal3f          },
+    { "glNormal3fv",               (void*)pgl_igl_Normal3fv         },
+    { "glColor3f",                 (void*)pgl_igl_Color3f           },
+    { "glColor3fv",                (void*)pgl_igl_Color3fv          },
+    { "glColor4f",                 (void*)pgl_igl_Color4f           },
+    { "glColor4fv",                (void*)pgl_igl_Color4fv          },
+    { "glColor3ub",                (void*)pgl_igl_Color3ub          },
+    { "glColor3ubv",               (void*)pgl_igl_Color3ubv         },
+    { "glColor4ub",                (void*)pgl_igl_Color4ub          },
+    { "glColor4ubv",               (void*)pgl_igl_Color4ubv         },
+    { "glTexCoord2f",              (void*)pgl_igl_TexCoord2f        },
+    { "glTexCoord2fv",             (void*)pgl_igl_TexCoord2fv       },
+    { "glTexCoord3f",              (void*)pgl_igl_TexCoord3f        },
+    { "glTexCoord3fv",             (void*)pgl_igl_TexCoord3fv       },
+    { "glTexCoord4fv",             (void*)pgl_igl_TexCoord4fv       },
 
-    /* Renderbuffers – stubs */
-    { "glGenRenderbuffers",       (void*)glGenRenderbuffers       },
-    { "glBindRenderbuffer",       (void*)glBindRenderbuffer       },
-    { "glDeleteRenderbuffers",    (void*)glDeleteRenderbuffers    },
-    { "glRenderbufferStorage",    (void*)glRenderbufferStorage    },
-    { "glIsRenderbuffer",         (void*)glIsRenderbuffer         },
+    /* ARB shader object interceptors (GLSL classification + C-shader dispatch) */
+    { "glCreateShaderObjectARB",   (void*)pgl_igl_CreateShaderObjectARB   },
+    { "glShaderSourceARB",         (void*)pgl_igl_ShaderSourceARB         },
+    { "glCompileShaderARB",        (void*)pgl_igl_CompileShaderARB        },
+    { "glGetObjectParameterivARB", (void*)pgl_igl_GetObjectParameterivARB },
+    { "glGetInfoLogARB",           (void*)pgl_igl_GetInfoLogARB           },
+    { "glDeleteObjectARB",         (void*)pgl_igl_DeleteObjectARB         },
+    { "glCreateProgramObjectARB",  (void*)pgl_igl_CreateProgramObjectARB  },
+    { "glAttachObjectARB",         (void*)pgl_igl_AttachObjectARB         },
+    { "glDetachObjectARB",         (void*)pgl_igl_DetachObjectARB         },
+    { "glLinkProgramARB",          (void*)pgl_igl_LinkProgramARB          },
+    { "glIsProgram",               (void*)pgl_igl_IsProgram               },
+    { "glUseProgramObjectARB",     (void*)pgl_igl_UseProgramObjectARB     },
+    { "glGetUniformLocationARB",   (void*)pgl_igl_GetUniformLocationARB   },
+    { "glGetActiveUniformARB",     (void*)pgl_igl_GetActiveUniformARB     },
 
-    /* Misc stubs */
-    { "glDrawBuffers",            (void*)glDrawBuffers            },
-    { "glReadBuffer",             (void*)glReadBuffer             },
-    { "glGenerateMipmap",         (void*)glGenerateMipmap         },
+    /* Uniform interceptors */
+    { "glUniform1iARB",            (void*)pgl_igl_Uniform1iARB      },
+    { "glUniform1fARB",            (void*)pgl_igl_Uniform1fARB      },
+    { "glUniform2fARB",            (void*)pgl_igl_Uniform2fARB      },
+    { "glUniform3fARB",            (void*)pgl_igl_Uniform3fARB      },
+    { "glUniform4fARB",            (void*)pgl_igl_Uniform4fARB      },
+    { "glUniform2iARB",            (void*)pgl_igl_Uniform2iARB      },
+    { "glUniform3iARB",            (void*)pgl_igl_Uniform3iARB      },
+    { "glUniform4iARB",            (void*)pgl_igl_Uniform4iARB      },
+    { "glUniform1fvARB",           (void*)pgl_igl_Uniform1fvARB     },
+    { "glUniform2fvARB",           (void*)pgl_igl_Uniform2fvARB     },
+    { "glUniform3fvARB",           (void*)pgl_igl_Uniform3fvARB     },
+    { "glUniform4fvARB",           (void*)pgl_igl_Uniform4fvARB     },
+    { "glUniform1ivARB",           (void*)pgl_igl_Uniform1ivARB     },
+    { "glUniform2ivARB",           (void*)pgl_igl_Uniform2ivARB     },
+    { "glUniform3ivARB",           (void*)pgl_igl_Uniform3ivARB     },
+    { "glUniform4ivARB",           (void*)pgl_igl_Uniform4ivARB     },
+    { "glUniformMatrix2fvARB",     (void*)pgl_igl_UniformMatrix2fvARB },
+    { "glUniformMatrix3fvARB",     (void*)pgl_igl_UniformMatrix3fvARB },
+    { "glUniformMatrix4fvARB",     (void*)pgl_igl_UniformMatrix4fvARB },
+
+    /* FBO interceptors (render-to-texture via pglSetTexBackBuffer) */
+    { "glGenFramebuffers",         (void*)pgl_igl_GenFramebuffers       },
+    { "glBindFramebuffer",         (void*)pgl_igl_BindFramebuffer       },
+    { "glDeleteFramebuffers",      (void*)pgl_igl_DeleteFramebuffers    },
+    { "glFramebufferTexture2D",    (void*)pgl_igl_FramebufferTexture2D  },
+    { "glCheckFramebufferStatus",  (void*)pgl_igl_CheckFramebufferStatus},
+    { "glIsFramebuffer",           (void*)pgl_igl_IsFramebuffer         },
+    /* Renderbuffers – still stubs */
+    { "glGenRenderbuffers",        (void*)glGenRenderbuffers        },
+    { "glBindRenderbuffer",        (void*)glBindRenderbuffer        },
+    { "glDeleteRenderbuffers",     (void*)glDeleteRenderbuffers     },
+    { "glRenderbufferStorage",     (void*)glRenderbufferStorage     },
+    { "glIsRenderbuffer",          (void*)glIsRenderbuffer          },
+    { "glFramebufferRenderbuffer", (void*)glFramebufferRenderbuffer },
+    /* Misc */
+    { "glDrawBuffers",             (void*)glDrawBuffers             },
+    { "glReadBuffer",              (void*)glReadBuffer              },
 
     /* End sentinel */
     { nullptr, nullptr }
@@ -303,39 +369,30 @@ void* obol_portablegl_getprocaddress(const char* name)
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
-/* Per-context state                                                            */
+/* Per-context data                                                             */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-/*
- * We track the "currently active" PortableGL context ourselves because
- * PortableGL stores its current-context pointer in a static variable inside
- * the implementation and provides no public getter.  Each context data record
- * saves the previously-active context pointer before making itself current so
- * that restorePreviousContext() can reinstate the prior state.
- */
 static glContext* s_current_pgl_context = nullptr;
 
 struct PGLContextData {
-    glContext pgl_ctx;
-    pix_t*    backbuf;
-    int       width;
-    int       height;
-    /* The context that was active when makeContextCurrent() was last called
-     * on THIS context, saved so restorePreviousContext() can put it back. */
-    glContext* saved_prev;
+    glContext          pgl_ctx;
+    pix_t*             backbuf;
+    int                width;
+    int                height;
+    glContext*         saved_prev;
+    ObolPGLCompatState compat;
 
     PGLContextData(int w, int h)
         : backbuf(nullptr), width(w), height(h), saved_prev(nullptr)
-    {}
+    { compat.init(); }
 
     ~PGLContextData() {
-        /* If this context is currently active, deactivate it. */
         if (s_current_pgl_context == &pgl_ctx) {
             set_glContext(nullptr);
             s_current_pgl_context = nullptr;
+            g_cur_compat = nullptr;
         }
         free_glContext(&pgl_ctx);
-        /* backbuf is owned and freed by free_glContext */
     }
 
     bool init() {
@@ -343,17 +400,22 @@ struct PGLContextData {
     }
 
     void makeCurrent() {
-        saved_prev = s_current_pgl_context;
+        saved_prev       = s_current_pgl_context;
         s_current_pgl_context = &pgl_ctx;
         set_glContext(&pgl_ctx);
+        g_cur_compat = &compat;
+        pglSetUniform(&compat);
     }
 
     void restorePrev() {
         s_current_pgl_context = saved_prev;
         set_glContext(saved_prev);
+        g_cur_compat = nullptr;
         saved_prev = nullptr;
     }
 };
+
+
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* SoDB::ContextManager implementation                                         */

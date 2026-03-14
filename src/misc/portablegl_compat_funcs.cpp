@@ -1,0 +1,390 @@
+/*
+ * portablegl_compat_funcs.cpp
+ *
+ * OpenGL compatibility-profile interceptors for the PortableGL backend.
+ *
+ * These implement the fixed-function GL calls that Obol's renderer makes
+ * (glMatrixMode, glLightfv, glMaterialfv, glBegin/glEnd, etc.) by updating
+ * the current context's ObolPGLCompatState rather than calling into PortableGL
+ * (which has no fixed-function support).
+ *
+ * The thread-local g_cur_compat pointer is set by makeContextCurrent() in
+ * SoDBPortableGL.cpp; all interceptors access it.
+ *
+ * Proposed upstream contributions to PortableGL
+ * ──────────────────────────────────────────────
+ *  1. Matrix stack (glMatrixMode / glLoadMatrixf / glPushMatrix / glPopMatrix /
+ *     glTranslatef / glScalef / glRotatef / glOrtho / glFrustum)
+ *     → add to glContext struct: modelview/projection/texture stacks
+ *
+ *  2. Light state (glLightfv / glLightModelfv)
+ *     → add gl_light_source_parameters array to glContext
+ *
+ *  3. Material state (glMaterialfv / glColorMaterial)
+ *     → add gl_material_parameters to glContext
+ *
+ *  4. Immediate mode (glBegin/glEnd / glVertex3f / glNormal3f / glColor4f /
+ *     glTexCoord2f)
+ *     → buffer vertices internally, emit glDrawArrays in glEnd
+ *
+ *  All four additions map cleanly onto PortableGL's existing architecture
+ *  (the shader C-functions would read these from the context struct, or from
+ *  a new 'compat_state' field added to glContext).
+ */
+
+#define PGL_PREFIX_TYPES 1
+#define PGL_PREFIX_GLSL  1
+#include <portablegl/portablegl.h>
+
+#include "portablegl_compat_state.h"
+
+#include <cstring>
+#include <cstdlib>
+#include <cmath>
+#include <vector>
+
+/* Current compat state – set by SoDBPortableGL.cpp via makeContextCurrent. */
+thread_local ObolPGLCompatState* g_cur_compat = nullptr;
+
+extern "C" {
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Matrix stack
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+void pgl_igl_MatrixMode(GLenum mode) {
+    if (g_cur_compat) g_cur_compat->matrix_mode_set(mode);
+}
+void pgl_igl_LoadIdentity() {
+    if (g_cur_compat) g_cur_compat->load_identity();
+}
+void pgl_igl_LoadMatrixf(const GLfloat* m) {
+    if (g_cur_compat && m) g_cur_compat->load_matrixf(m);
+}
+void pgl_igl_LoadMatrixd(const GLdouble* m) {
+    if (!g_cur_compat || !m) return;
+    float mf[16]; for(int i=0;i<16;i++) mf[i]=(float)m[i];
+    g_cur_compat->load_matrixf(mf);
+}
+void pgl_igl_MultMatrixf(const GLfloat* m) {
+    if (g_cur_compat && m) g_cur_compat->mult_matrixf(m);
+}
+void pgl_igl_PushMatrix() {
+    if (g_cur_compat) g_cur_compat->push_matrix();
+}
+void pgl_igl_PopMatrix() {
+    if (g_cur_compat) g_cur_compat->pop_matrix();
+}
+void pgl_igl_Translatef(GLfloat x, GLfloat y, GLfloat z) {
+    if (!g_cur_compat) return;
+    float m[16]; obol_pgl_identity(m);
+    m[12]=x; m[13]=y; m[14]=z;
+    g_cur_compat->mult_matrixf(m);
+}
+void pgl_igl_Scalef(GLfloat x, GLfloat y, GLfloat z) {
+    if (!g_cur_compat) return;
+    float m[16]; obol_pgl_identity(m);
+    m[0]=x; m[5]=y; m[10]=z;
+    g_cur_compat->mult_matrixf(m);
+}
+void pgl_igl_Rotatef(GLfloat angle, GLfloat x, GLfloat y, GLfloat z) {
+    if (!g_cur_compat) return;
+    float rad = angle * (3.14159265f/180.f);
+    float c = cosf(rad), s = sinf(rad), t = 1.f-c;
+    float len = sqrtf(x*x+y*y+z*z);
+    if (len>1e-7f){x/=len;y/=len;z/=len;}
+    float m[16] = {
+        t*x*x+c,   t*x*y+s*z, t*x*z-s*y, 0,
+        t*x*y-s*z, t*y*y+c,   t*y*z+s*x, 0,
+        t*x*z+s*y, t*y*z-s*x, t*z*z+c,   0,
+        0,          0,          0,          1
+    };
+    g_cur_compat->mult_matrixf(m);
+}
+void pgl_igl_Ortho(GLdouble l, GLdouble r, GLdouble b, GLdouble t,
+                    GLdouble n, GLdouble f) {
+    if (!g_cur_compat) return;
+    float rl=(float)(r-l), tb=(float)(t-b), fn=(float)(f-n);
+    if (rl==0||tb==0||fn==0) return;
+    float m[16]={};
+    m[0]=2.f/rl; m[5]=2.f/tb; m[10]=-2.f/fn;
+    m[12]=-(float)(r+l)/rl; m[13]=-(float)(t+b)/tb; m[14]=-(float)(f+n)/fn; m[15]=1.f;
+    g_cur_compat->mult_matrixf(m);
+}
+void pgl_igl_Frustum(GLdouble l, GLdouble r, GLdouble b, GLdouble t,
+                      GLdouble n, GLdouble f) {
+    if (!g_cur_compat) return;
+    float rl=(float)(r-l), tb=(float)(t-b), fn=(float)(f-n);
+    float m[16]={};
+    m[0]=(float)(2*n)/rl; m[5]=(float)(2*n)/tb;
+    m[8]=(float)(r+l)/rl; m[9]=(float)(t+b)/tb;
+    m[10]=-(float)(f+n)/fn; m[11]=-1.f;
+    m[14]=-(float)(2*f*n)/fn;
+    g_cur_compat->mult_matrixf(m);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Light and material state
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+void pgl_igl_Lightfv(GLenum light, GLenum pname, const GLfloat* p) {
+    if (!g_cur_compat || !p) return;
+    int i = (int)(light - GL_LIGHT0);
+    if (i<0 || i>=OBOL_PGL_MAX_LIGHTS) return;
+    ObolPGLLightState& L = g_cur_compat->lights[i];
+    switch (pname) {
+    case GL_AMBIENT:              memcpy(L.ambient,   p,16); break;
+    case GL_DIFFUSE:              memcpy(L.diffuse,   p,16); break;
+    case GL_SPECULAR:             memcpy(L.specular,  p,16); break;
+    case GL_POSITION:
+        /* Transform to eye space */
+        if (g_cur_compat->modelview_depth >= 0)
+            obol_pgl_mv4(L.position, g_cur_compat->modelview_stack[g_cur_compat->modelview_depth], p);
+        else
+            memcpy(L.position, p, 16);
+        if (p[3]==0.f) { /* directional – compute half-vector */
+            float n=sqrtf(L.position[0]*L.position[0]+L.position[1]*L.position[1]+L.position[2]*L.position[2]);
+            if (n>1e-7f) { L.half_vector[0]=L.position[0]/n; L.half_vector[1]=L.position[1]/n; L.half_vector[2]=(L.position[2]+1.f)/n; L.half_vector[3]=0.f; }
+        }
+        break;
+    case GL_SPOT_DIRECTION:       memcpy(L.spot_direction, p, 12); break;
+    case GL_SPOT_EXPONENT:        L.spot_exponent=p[0]; break;
+    case GL_SPOT_CUTOFF:          L.spot_cutoff=p[0]; L.spot_cos_cutoff=cosf(p[0]*3.14159265f/180.f); break;
+    case GL_CONSTANT_ATTENUATION: L.attenuation[0]=p[0]; break;
+    case GL_LINEAR_ATTENUATION:   L.attenuation[1]=p[0]; break;
+    case GL_QUADRATIC_ATTENUATION:L.attenuation[2]=p[0]; break;
+    }
+}
+void pgl_igl_Lighti(GLenum light, GLenum pname, GLint param) {
+    float f=(float)param; pgl_igl_Lightfv(light, pname, &f);
+}
+void pgl_igl_LightModelfv(GLenum pname, const GLfloat* p) {
+    if (!g_cur_compat || !p) return;
+    if (pname==GL_LIGHT_MODEL_AMBIENT) memcpy(g_cur_compat->global_ambient, p, 16);
+}
+void pgl_igl_LightModeli(GLenum pname, GLint param) {
+    if (!g_cur_compat) return;
+    if (pname==0x0B52u /*GL_LIGHT_MODEL_TWO_SIDE*/) g_cur_compat->two_sided_lighting=param;
+}
+void pgl_igl_Materialfv(GLenum face, GLenum pname, const GLfloat* p) {
+    if (!g_cur_compat || !p || face==GL_BACK) return;
+    ObolPGLMaterialState& m = g_cur_compat->front_material;
+    switch (pname) {
+    case GL_AMBIENT:             memcpy(m.ambient, p,16); break;
+    case GL_DIFFUSE:             memcpy(m.diffuse, p,16); break;
+    case GL_SPECULAR:            memcpy(m.specular,p,16); break;
+    case GL_EMISSION:            memcpy(m.emission,p,16); break;
+    case GL_SHININESS:           m.shininess=p[0]; break;
+    case GL_AMBIENT_AND_DIFFUSE: memcpy(m.ambient,p,16); memcpy(m.diffuse,p,16); break;
+    }
+}
+void pgl_igl_Materialf(GLenum face, GLenum pname, GLfloat param) {
+    pgl_igl_Materialfv(face, pname, &param);
+}
+void pgl_igl_ColorMaterial(GLenum /*face*/, GLenum /*mode*/) { /* intentional no-op */ }
+void pgl_igl_GetMaterialfv(GLenum face, GLenum pname, GLfloat* p) {
+    if (!g_cur_compat || !p || face==GL_BACK) return;
+    ObolPGLMaterialState& m = g_cur_compat->front_material;
+    switch (pname) {
+    case GL_AMBIENT:   memcpy(p,m.ambient, 16); break;
+    case GL_DIFFUSE:   memcpy(p,m.diffuse, 16); break;
+    case GL_SPECULAR:  memcpy(p,m.specular,16); break;
+    case GL_EMISSION:  memcpy(p,m.emission,16); break;
+    case GL_SHININESS: p[0]=m.shininess; break;
+    }
+}
+
+/* glEnable/glDisable with light intercept */
+void pgl_igl_Enable(GLenum cap) {
+    if (g_cur_compat && cap>=GL_LIGHT0 && cap<=GL_LIGHT0+OBOL_PGL_MAX_LIGHTS-1)
+        g_cur_compat->lights[cap-GL_LIGHT0].enabled=true;
+    else
+        glEnable(cap);
+}
+void pgl_igl_Disable(GLenum cap) {
+    if (g_cur_compat && cap>=GL_LIGHT0 && cap<=GL_LIGHT0+OBOL_PGL_MAX_LIGHTS-1)
+        g_cur_compat->lights[cap-GL_LIGHT0].enabled=false;
+    else
+        glDisable(cap);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Immediate mode
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+struct ImmVertex {
+    float pos[4];  /* PGL_ATTR_VERT     */
+    float col[4];  /* PGL_ATTR_COLOR    */
+    float norm[3]; /* PGL_ATTR_NORMAL   */
+    float tc[2];   /* PGL_ATTR_TEXCOORD0*/
+};
+
+static GLenum              s_imm_prim = GL_TRIANGLES;
+static bool                s_in_begin = false;
+static std::vector<ImmVertex> s_imm_verts;
+static GLuint              s_imm_vao  = 0;
+static GLuint              s_imm_vbo  = 0;
+static bool                s_imm_init = false;
+
+static void imm_ensure_vbo() {
+    if (s_imm_init) return;
+    glGenVertexArrays(1,&s_imm_vao);
+    glGenBuffers(1,&s_imm_vbo);
+    glBindVertexArray(s_imm_vao);
+    glBindBuffer(GL_ARRAY_BUFFER,s_imm_vbo);
+    size_t stride = sizeof(ImmVertex);
+    glVertexAttribPointer(PGL_ATTR_VERT,      4,GL_FLOAT,GL_FALSE,(GLsizei)stride,(void*)offsetof(ImmVertex,pos));
+    glVertexAttribPointer(PGL_ATTR_COLOR,     4,GL_FLOAT,GL_FALSE,(GLsizei)stride,(void*)offsetof(ImmVertex,col));
+    glVertexAttribPointer(PGL_ATTR_NORMAL,    3,GL_FLOAT,GL_FALSE,(GLsizei)stride,(void*)offsetof(ImmVertex,norm));
+    glVertexAttribPointer(PGL_ATTR_TEXCOORD0, 2,GL_FLOAT,GL_FALSE,(GLsizei)stride,(void*)offsetof(ImmVertex,tc));
+    glEnableVertexAttribArray(PGL_ATTR_VERT);
+    glEnableVertexAttribArray(PGL_ATTR_COLOR);
+    glEnableVertexAttribArray(PGL_ATTR_NORMAL);
+    glEnableVertexAttribArray(PGL_ATTR_TEXCOORD0);
+    glBindVertexArray(0);
+    s_imm_init = true;
+}
+
+void pgl_igl_Begin(GLenum prim) {
+    s_imm_prim=prim; s_in_begin=true; s_imm_verts.clear();
+}
+void pgl_igl_End() {
+    if (!s_in_begin || s_imm_verts.empty()) { s_in_begin=false; return; }
+    s_in_begin=false;
+    imm_ensure_vbo();
+    glBindVertexArray(s_imm_vao);
+    glBindBuffer(GL_ARRAY_BUFFER,s_imm_vbo);
+    glBufferData(GL_ARRAY_BUFFER,(GLsizei)(s_imm_verts.size()*sizeof(ImmVertex)),
+                 s_imm_verts.data(),GL_STREAM_DRAW);
+    if (s_imm_prim==GL_QUADS && s_imm_verts.size()>=4) {
+        std::vector<GLuint> idx;
+        for (size_t q=0;q+3<s_imm_verts.size();q+=4) {
+            idx.push_back((GLuint)q);   idx.push_back((GLuint)q+1); idx.push_back((GLuint)q+2);
+            idx.push_back((GLuint)q);   idx.push_back((GLuint)q+2); idx.push_back((GLuint)q+3);
+        }
+        GLuint ebo; glGenBuffers(1,&ebo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER,(GLsizei)(idx.size()*sizeof(GLuint)),idx.data(),GL_STREAM_DRAW);
+        glDrawElements(GL_TRIANGLES,(GLsizei)idx.size(),GL_UNSIGNED_INT,nullptr);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,0);
+        glDeleteBuffers(1,&ebo);
+    } else {
+        glDrawArrays(s_imm_prim==GL_QUADS?GL_TRIANGLES:s_imm_prim,0,(GLsizei)s_imm_verts.size());
+    }
+    glBindVertexArray(0);
+}
+
+/* Helpers to emit a vertex with inherited current attribs */
+static void imm_push_vertex(float x, float y, float z) {
+    ImmVertex v = {};
+    if (g_cur_compat) {
+        memcpy(v.col,  g_cur_compat->current_color,   16);
+        memcpy(v.norm, g_cur_compat->current_normal,   12);
+        memcpy(v.tc,   g_cur_compat->current_texcoord,  8);
+    }
+    v.pos[0]=x; v.pos[1]=y; v.pos[2]=z; v.pos[3]=1.f;
+    s_imm_verts.push_back(v);
+}
+
+void pgl_igl_Vertex2f (GLfloat x, GLfloat y)          { imm_push_vertex(x,y,0.f); }
+void pgl_igl_Vertex2s (GLshort x, GLshort y)           { imm_push_vertex((float)x,(float)y,0.f); }
+void pgl_igl_Vertex3f (GLfloat x, GLfloat y, GLfloat z){ imm_push_vertex(x,y,z); }
+void pgl_igl_Vertex3fv(const GLfloat* v)               { if(v) imm_push_vertex(v[0],v[1],v[2]); }
+void pgl_igl_Vertex4fv(const GLfloat* v)               { if(v) imm_push_vertex(v[0],v[1],v[2]); }
+void pgl_igl_Normal3f (GLfloat x, GLfloat y, GLfloat z) {
+    if (g_cur_compat) { g_cur_compat->current_normal[0]=x; g_cur_compat->current_normal[1]=y; g_cur_compat->current_normal[2]=z; }
+    if (!s_imm_verts.empty()) { s_imm_verts.back().norm[0]=x; s_imm_verts.back().norm[1]=y; s_imm_verts.back().norm[2]=z; }
+}
+void pgl_igl_Normal3fv(const GLfloat* v) { if(v) pgl_igl_Normal3f(v[0],v[1],v[2]); }
+
+static void set_color(float r,float g,float b,float a) {
+    if (!g_cur_compat) return;
+    g_cur_compat->current_color[0]=r; g_cur_compat->current_color[1]=g;
+    g_cur_compat->current_color[2]=b; g_cur_compat->current_color[3]=a;
+}
+void pgl_igl_Color3f  (GLfloat r, GLfloat g, GLfloat b)                   { set_color(r,g,b,1.f); }
+void pgl_igl_Color3fv (const GLfloat* v)                                   { if(v) set_color(v[0],v[1],v[2],1.f); }
+void pgl_igl_Color4f  (GLfloat r, GLfloat g, GLfloat b, GLfloat a)        { set_color(r,g,b,a); }
+void pgl_igl_Color4fv (const GLfloat* v)                                   { if(v) set_color(v[0],v[1],v[2],v[3]); }
+void pgl_igl_Color3ub (GLubyte r, GLubyte g, GLubyte b)                    { set_color(r/255.f,g/255.f,b/255.f,1.f); }
+void pgl_igl_Color3ubv(const GLubyte* v)                                   { if(v) set_color(v[0]/255.f,v[1]/255.f,v[2]/255.f,1.f); }
+void pgl_igl_Color4ub (GLubyte r, GLubyte g, GLubyte b, GLubyte a)        { set_color(r/255.f,g/255.f,b/255.f,a/255.f); }
+void pgl_igl_Color4ubv(const GLubyte* v)                                   { if(v) set_color(v[0]/255.f,v[1]/255.f,v[2]/255.f,v[3]/255.f); }
+void pgl_igl_TexCoord2f (GLfloat s_, GLfloat t_) {
+    if (g_cur_compat) { g_cur_compat->current_texcoord[0]=s_; g_cur_compat->current_texcoord[1]=t_; }
+    if (!s_imm_verts.empty()) { s_imm_verts.back().tc[0]=s_; s_imm_verts.back().tc[1]=t_; }
+}
+void pgl_igl_TexCoord2fv(const GLfloat* v)              { if(v) pgl_igl_TexCoord2f(v[0],v[1]); }
+void pgl_igl_TexCoord3f (GLfloat s_,GLfloat t_,GLfloat) { pgl_igl_TexCoord2f(s_,t_); }
+void pgl_igl_TexCoord3fv(const GLfloat* v)              { if(v) pgl_igl_TexCoord2f(v[0],v[1]); }
+void pgl_igl_TexCoord4fv(const GLfloat* v)              { if(v) pgl_igl_TexCoord2f(v[0],v[1]); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * glReadPixels  (not implemented in PortableGL)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+void pgl_igl_ReadPixels(GLint x, GLint y, GLsizei width, GLsizei height,
+                         GLenum format, GLenum type, GLvoid* pixels)
+{
+    if (format!=GL_RGBA || type!=GL_UNSIGNED_BYTE) {
+        if (pixels) memset(pixels,0,(size_t)width*height*4);
+        return;
+    }
+    const pix_t* src = static_cast<const pix_t*>(pglGetBackBuffer());
+    if (!src || !pixels) return;
+    unsigned char* dst = static_cast<unsigned char*>(pixels);
+    for (GLsizei row=0; row<height; ++row) {
+        GLint src_row = y + (height-1-row);
+        const unsigned char* sptr = reinterpret_cast<const unsigned char*>(src + src_row*width) + x*4;
+        memcpy(dst+(size_t)row*width*4, sptr, (size_t)width*4);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Minimal FBO (render to texture via pglSetTexBackBuffer)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+struct FakeFBO { GLuint tex; bool complete; };
+static GLuint s_next_fbo = 1;
+static std::unordered_map<GLuint,FakeFBO> s_fbos;
+static GLuint s_cur_fbo  = 0;
+
+void pgl_igl_GenFramebuffers(GLsizei n, GLuint* ids) {
+    if (!ids) return;
+    for (GLsizei i=0;i<n;i++) { ids[i]=s_next_fbo++; s_fbos[ids[i]]={0,false}; }
+}
+void pgl_igl_BindFramebuffer(GLenum /*tgt*/, GLuint fbo) {
+    s_cur_fbo=fbo;
+    if (fbo==0) {
+        /* Restore default back buffer – PortableGL keeps it in the context */
+        if (g_cur_compat) pglSetBackBuffer(nullptr,0,0); /* triggers PGL default */
+    } else {
+        auto it=s_fbos.find(fbo);
+        if (it!=s_fbos.end() && it->second.tex) pglSetTexBackBuffer(it->second.tex);
+    }
+}
+void pgl_igl_DeleteFramebuffers(GLsizei n, const GLuint* ids) {
+    if (!ids) return;
+    for (GLsizei i=0;i<n;i++) { if(s_cur_fbo==ids[i]) s_cur_fbo=0; s_fbos.erase(ids[i]); }
+}
+void pgl_igl_FramebufferTexture2D(GLenum /*tgt*/, GLenum att,
+                                   GLenum /*texTgt*/, GLuint tex, GLint /*lvl*/) {
+    if (!s_cur_fbo) return;
+    auto it=s_fbos.find(s_cur_fbo);
+    if (it==s_fbos.end()) return;
+    if (att==GL_COLOR_ATTACHMENT0) {
+        it->second.tex=tex; it->second.complete=(tex!=0);
+        if (tex) pglSetTexBackBuffer(tex);
+    }
+}
+GLenum pgl_igl_CheckFramebufferStatus(GLenum /*tgt*/) {
+    if (!s_cur_fbo) return GL_FRAMEBUFFER_COMPLETE;
+    auto it=s_fbos.find(s_cur_fbo);
+    return (it!=s_fbos.end() && it->second.complete) ? GL_FRAMEBUFFER_COMPLETE
+                                                      : GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+}
+GLboolean pgl_igl_IsFramebuffer(GLuint fbo) {
+    return s_fbos.count(fbo) ? GL_TRUE : GL_FALSE;
+}
+
+} /* extern "C" */

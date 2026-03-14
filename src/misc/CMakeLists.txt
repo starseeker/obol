@@ -65,6 +65,13 @@ if(OBOL_USE_OSMESA)
 	set(OBOL_SOURCE ${OBOL_SOURCE} misc/SoDBOSMesa.cpp CACHE INTERNAL "OBOL_SOURCE")
 elseif(OBOL_BUILD_DUAL_GL)
 	set(OBOL_SOURCE ${OBOL_SOURCE} misc/SoDBOSMesa.cpp CACHE INTERNAL "OBOL_SOURCE")
+elseif(OBOL_USE_PORTABLEGL)
+	set(OBOL_SOURCE ${OBOL_SOURCE}
+		misc/portablegl_impl.cpp
+		misc/portablegl_compat_funcs.cpp
+		misc/portablegl_shader_registry.cpp
+		misc/SoDBPortableGL.cpp
+		CACHE INTERNAL "OBOL_SOURCE")
 endif()
 
 # define documentation
