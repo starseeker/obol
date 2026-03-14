@@ -213,6 +213,29 @@ static void obol_gouraud_vs(float* vs_output, pgl_vec4* v_attrs,
     float cb = v_attrs[PGL_ATTR_COLOR].z;
     float ca = v_attrs[PGL_ATTR_COLOR].w;
 
+    /* BASE_COLOR mode: skip all lighting.  Always use front_material.diffuse
+     * as the output colour (Obol may pass diffuse colour via COLOR_MATERIAL
+     * or via the material uniform; the per-vertex attribute may be white/black
+     * if no explicit per-vertex colour is bound in the VBO).               */
+    if (s->light_model == 0) {
+        const ObolPGLMaterialState& mat2 = s->front_material;
+        float out_r = mat2.diffuse[0];
+        float out_g = mat2.diffuse[1];
+        float out_b = mat2.diffuse[2];
+        float out_a = mat2.diffuse[3];
+        /* If per-vertex colour is set (non-trivial: not pure black or pure white
+         * default values), blend it with the material diffuse.              */
+        if (cr > 0.01f || cg > 0.01f || cb > 0.01f) {
+            if (cr < 0.99f || cg < 0.99f || cb < 0.99f) {
+                /* Non-trivial per-vertex colour: use it as a modulator. */
+                out_r *= cr; out_g *= cg; out_b *= cb;
+            }
+        }
+        ((pgl_vec4*)vs_output)[0] = make_v4(out_r, out_g, out_b, out_a);
+        ((pgl_vec4*)vs_output)[1] = make_v4(0.f, 0.f, 0.f, 1.f);
+        return;
+    }
+
     /* Scene colour = emission + globalAmbient * material.ambient */
     const ObolPGLMaterialState& mat = s->front_material;
     float sr = mat.emission[0] + s->global_ambient[0]*mat.ambient[0];

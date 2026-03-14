@@ -52,6 +52,11 @@ if(OBOL_USE_OSMESA)
     target_include_directories(simple_test_utils PUBLIC
         "${PROJECT_SOURCE_DIR}/external/osmesa/include")
 endif()
+# portablegl_context_manager.h now includes portablegl_compat_state.h from src/misc/
+if(OBOL_PORTABLEGL_BUILD OR OBOL_BUILD_DUAL_PORTABLEGL)
+    target_include_directories(simple_test_utils PUBLIC
+        "${PROJECT_SOURCE_DIR}/src/misc")
+endif()
 
 # -----------------------------------------------------------------------
 # Image comparison thresholds (defined before subdirectories so that

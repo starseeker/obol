@@ -488,6 +488,11 @@ if(OBOL_PORTABLEGL_BUILD OR RENDERING_USE_OSMESA OR (FLTK_FOUND AND X11_FOUND AN
         ${OBOL_TARGET_INCLUDE_DIRECTORIES}
         ${FLTK_INCLUDE_DIRS}
     )
+    if(OBOL_PORTABLEGL_BUILD OR OBOL_BUILD_DUAL_PORTABLEGL)
+        target_include_directories(render_basic_context PRIVATE
+            ${CMAKE_SOURCE_DIR}/src/misc
+        )
+    endif()
     target_link_libraries(render_basic_context
         PRIVATE
             ${PROJECT_NAME}
@@ -712,8 +717,11 @@ target_link_libraries(obol_render_tests_gl
 )
 if(OBOL_PORTABLEGL_BUILD)
     # PortableGL mode: OBOL_PORTABLEGL_BUILD already set globally via add_definitions().
-    # headless_utils.h will include portablegl_context_manager.h automatically.
-    # Include dirs for portablegl.h come from OBOL_TARGET_INCLUDE_DIRECTORIES.
+    # headless_utils.h includes portablegl_context_manager.h which now also includes
+    # portablegl_compat_state.h from src/misc/ – add that directory to the include path.
+    target_include_directories(obol_render_tests_gl PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/misc
+    )
     message(STATUS "obol_render_tests_gl: using PortableGL headless backend")
 elseif(RENDERING_USE_OSMESA)
     target_compile_definitions(obol_render_tests_gl PRIVATE OBOL_OSMESA_BUILD)

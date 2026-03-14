@@ -208,12 +208,22 @@ void pgl_igl_LinkProgramARB(GLuint prog) {
 
     ObolPGLShaderKind kind = classify_glsl(vs_src, fs_src);
     GLuint pgl_prog = obol_pgl_create_shader(kind);
-    fprintf(stderr, "[PGL shader] LinkProgram %u → kind=%d pgl_prog=%u\n",
-            prog, (int)kind, pgl_prog);
 
     pit->second.kind       = kind;
     pit->second.pgl_handle = pgl_prog;
     pit->second.linked     = (pgl_prog != 0);
+}
+
+/* Called by pgl_igl_reset_context_caches() when the active portablegl context
+ * changes.  All cached pgl_handle values are context-specific and must be
+ * cleared so that UseProgramObjectARB re-creates them in the new context.    */
+void pgl_igl_reset_shader_registry_handles() {
+    std::lock_guard<std::mutex> lk(s_reg_mutex);
+    for (auto& kv : s_programs) {
+        kv.second.pgl_handle = 0;
+        /* Keep 'linked' and 'kind' so UseProgramObjectARB can re-create the
+         * pgl program lazily in the new context without re-classifying GLSL. */
+    }
 }
 
 GLboolean pgl_igl_IsProgram(GLuint prog) {
@@ -226,10 +236,18 @@ void pgl_igl_UseProgramObjectARB(GLuint prog) {
     if (prog == 0) { glUseProgram(0); return; }
     std::lock_guard<std::mutex> lk(s_reg_mutex);
     auto it = s_programs.find(prog);
-    if (it == s_programs.end() || it->second.pgl_handle == 0) {
-    
-        glUseProgram(0); return;
+    if (it == s_programs.end()) { glUseProgram(0); return; }
+
+    /* If the pgl_handle is 0 (context was reset), re-create the shader in the
+     * current portablegl context using the previously classified kind.        */
+    if (it->second.pgl_handle == 0 && it->second.linked &&
+        (int)it->second.kind < (int)OBOL_PGL_NUM_SHADERS) {
+        GLuint new_handle = obol_pgl_create_shader(it->second.kind);
+        it->second.pgl_handle = new_handle;
+        it->second.linked     = (new_handle != 0);
     }
+
+    if (it->second.pgl_handle == 0) { glUseProgram(0); return; }
     glUseProgram(it->second.pgl_handle);
     if (g_cur_compat) pglSetUniform(g_cur_compat);
 }

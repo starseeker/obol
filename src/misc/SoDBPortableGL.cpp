@@ -162,6 +162,10 @@ extern "C" {
  * when switching contexts. */
 extern thread_local ObolPGLCompatState* g_cur_compat;
 
+/* Reset per-context caches (VAO/VBO/shader program IDs) when switching to a
+ * new portablegl context.  Defined in portablegl_compat_funcs.cpp.           */
+extern "C" void pgl_igl_reset_context_caches();
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* No-op stubs for GL 1.x compatibility-profile functions that PortableGL      */
 /* does not implement.  These are needed so that SoGLContext's function pointer */
@@ -473,6 +477,11 @@ struct PGLContextData {
         set_glContext(&pgl_ctx);
         g_cur_compat = &compat;
         pglSetUniform(&compat);
+        /* Reset per-context caches (program IDs, VAO/VBO handles) whenever
+         * the active portablegl context changes.  The new context has its own
+         * object-name namespace so cached handles from the previous context
+         * would be invalid.                                                   */
+        pgl_igl_reset_context_caches();
         /* Register default back-buffer pointer/dimensions so BindFramebuffer(0)
          * can restore the PGL-internal back buffer after FBO use.           */
         pgl_fbo_register_context(width, height);

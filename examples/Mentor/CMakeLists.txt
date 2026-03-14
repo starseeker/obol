@@ -54,6 +54,11 @@ if(TARGET Obol)
     if(OBOL_TARGET_INCLUDE_DIRECTORIES)
         include_directories(${OBOL_TARGET_INCLUDE_DIRECTORIES})
     endif()
+    # portablegl_context_manager.h (included via headless_utils.h) now depends on
+    # portablegl_compat_state.h which lives in src/misc/
+    if(OBOL_PORTABLEGL_BUILD OR OBOL_BUILD_DUAL_PORTABLEGL)
+        include_directories(${CMAKE_SOURCE_DIR}/src/misc)
+    endif()
     find_package(X11 QUIET)
     find_package(OpenGL QUIET)
     macro(add_headless_example name)
@@ -76,6 +81,12 @@ if(TARGET Obol)
             elseif(TARGET osmesa)
                 target_link_libraries(${name} osmesa)
             endif()
+        elseif(OBOL_PORTABLEGL_BUILD OR OBOL_BUILD_DUAL_PORTABLEGL)
+            # portablegl_context_manager.h includes portablegl_compat_state.h
+            target_include_directories(${name} PRIVATE
+                ${CMAKE_SOURCE_DIR}/src/misc
+                ${PROJECT_SOURCE_DIR}/tests/utils
+            )
         elseif(X11_FOUND)
             target_link_libraries(${name} ${X11_X11_LIB} ${OPENGL_LIBRARIES})
             target_include_directories(${name} PRIVATE ${X11_INCLUDE_DIR})

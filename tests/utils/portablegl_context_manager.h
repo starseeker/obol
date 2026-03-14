@@ -61,6 +61,10 @@
  * CoinPortableGLContextData::makeCurrent() can set it. */
 extern thread_local ObolPGLCompatState* g_cur_compat;
 
+/* Reset per-context caches (VAO/VBO/program handles) on context switch.
+ * Defined in portablegl_compat_funcs.cpp. */
+extern "C" void pgl_igl_reset_context_caches();
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* Per-context data                                                             */
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -105,6 +109,9 @@ struct CoinPortableGLContextData {
         set_glContext(&pgl_ctx);
         g_cur_compat = &compat;
         pglSetUniform(&compat);
+        /* Reset per-context caches whenever the portablegl context changes.
+         * Each context has its own object-name namespace.                    */
+        pgl_igl_reset_context_caches();
     }
 
     void restorePrev() {

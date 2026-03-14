@@ -52,15 +52,46 @@ thread_local ObolPGLCompatState* g_cur_compat = nullptr;
 
 /* Lazily-created default portablegl program (Gouraud shading), bound
  * automatically by pgl_igl_End() when no explicit shader has been bound via
- * pgl_igl_UseProgramObjectARB.  One default program per context is enough
- * because the portablegl context (and its program table) is thread-local. */
+ * pgl_igl_UseProgramObjectARB.  These are per-thread but must be invalidated
+ * when a new portablegl context becomes current (its programs table is
+ * separate from the previous context's).  Call pgl_igl_reset_context_caches()
+ * from makeCurrent() to reset them.                                           */
 static thread_local GLuint s_default_gouraud_prog = 0;
 static thread_local GLuint s_default_phong_prog = 0;
 static thread_local GLuint s_default_flat_prog = 0;
 static thread_local GLuint s_default_tex_replace_prog = 0;
 static thread_local GLuint s_default_tex_phong_prog = 0;
 
+/* Also reset the immediate-mode VBO state so the new context gets its own
+ * VAO/VBO handles (the old ones are gone after a context switch).            */
+static thread_local bool   s_imm_init = false;
+static thread_local GLuint s_imm_vao  = 0;
+static thread_local GLuint s_imm_vbo  = 0;
+
+/* Forward declaration – defined in portablegl_shader_registry.cpp.
+ * Clears all cached portablegl program handles in the global ARB shader
+ * registry so they are re-created in the new context on next link.          */
+extern "C" void pgl_igl_reset_shader_registry_handles();
+
 extern "C" {
+
+/* Called from CoinPortableGLContextData::makeCurrent() whenever the active
+ * portablegl context changes.  Resets all caches that hold portablegl object
+ * handles (program IDs, VAO/VBO IDs) because those handles belong to the
+ * previous context's object namespace and are invalid in the new context.    */
+void pgl_igl_reset_context_caches() {
+    s_default_gouraud_prog    = 0;
+    s_default_phong_prog      = 0;
+    s_default_flat_prog       = 0;
+    s_default_tex_replace_prog = 0;
+    s_default_tex_phong_prog  = 0;
+    s_imm_init = false;
+    s_imm_vao  = 0;
+    s_imm_vbo  = 0;
+    /* Also reset ARB shader registry handles – they reference programs in the
+     * old portablegl context and must be re-created in the new one.          */
+    pgl_igl_reset_shader_registry_handles();
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Matrix stack
@@ -219,6 +250,8 @@ void pgl_igl_Enable(GLenum cap) {
             return;
         }
         if (cap==GL_FOG) { g_cur_compat->fog_enabled=true; return; }
+        /* GL_LIGHTING enable/disable maps to light_model PHONG/BASE_COLOR */
+        if (cap==GL_LIGHTING) { g_cur_compat->light_model=1; return; }
     }
     /* Only pass caps that PortableGL's glEnable() actually supports;
      * silently drop GL 1.x fixed-function caps (GL_LIGHTING, GL_COLOR_MATERIAL,
@@ -249,6 +282,8 @@ void pgl_igl_Disable(GLenum cap) {
             return;
         }
         if (cap==GL_FOG) { g_cur_compat->fog_enabled=false; return; }
+        /* GL_LIGHTING enable/disable maps to light_model PHONG/BASE_COLOR */
+        if (cap==GL_LIGHTING) { g_cur_compat->light_model=0; return; }
     }
     switch (cap) {
     case GL_CULL_FACE:
@@ -366,9 +401,8 @@ struct ImmVertex {
 static GLenum              s_imm_prim = GL_TRIANGLES;
 static bool                s_in_begin = false;
 static std::vector<ImmVertex> s_imm_verts;
-static GLuint              s_imm_vao  = 0;
-static GLuint              s_imm_vbo  = 0;
-static bool                s_imm_init = false;
+/* s_imm_vao, s_imm_vbo, s_imm_init are declared as thread_local above
+ * so they can be reset by pgl_igl_reset_context_caches() on context switch. */
 
 static void imm_ensure_vbo() {
     if (s_imm_init) return;
@@ -504,6 +538,13 @@ static void set_color(float r,float g,float b,float a) {
     if (!g_cur_compat) return;
     g_cur_compat->current_color[0]=r; g_cur_compat->current_color[1]=g;
     g_cur_compat->current_color[2]=b; g_cur_compat->current_color[3]=a;
+    /* GL_COLOR_MATERIAL: glColor* also updates the current material diffuse.
+     * Obol uses sendPackedDiffuse (glColor4ub) to pass per-draw-call colour;
+     * updating front_material.diffuse lets the BASE_COLOR shader see it.   */
+    g_cur_compat->front_material.diffuse[0]=r;
+    g_cur_compat->front_material.diffuse[1]=g;
+    g_cur_compat->front_material.diffuse[2]=b;
+    g_cur_compat->front_material.diffuse[3]=a;
 }
 void pgl_igl_Color3f  (GLfloat r, GLfloat g, GLfloat b)                   { set_color(r,g,b,1.f); }
 void pgl_igl_Color3fv (const GLfloat* v)                                   { if(v) set_color(v[0],v[1],v[2],1.f); }
