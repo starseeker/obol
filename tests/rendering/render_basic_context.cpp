@@ -286,7 +286,7 @@ int main(int argc, char** argv)
             all_ok = false;
         } else {
             /* Write output image. */
-            char path[4096];
+            char path[sizeof(outbase) + 4];
             snprintf(path, sizeof(path), "%s.rgb", outbase);
             renderer.writeToRGB(path);
             printf("PASS (nonBlack=%d)\n", nonBlack);
