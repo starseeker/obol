@@ -468,8 +468,13 @@ set_tests_properties(stt_iosevka PROPERTIES
 # Tests that Obol never crashes when given a BasicFLTKContextManager (FLTK
 # 1×1 native window, no Pbuffers) and that diagnostics are issued instead of
 # memory corruption when features like FBOs are unavailable.
-# Only built and run when FLTK and system OpenGL are available.
-if(FLTK_FOUND AND X11_FOUND AND (TARGET OpenGL::GL OR OPENGL_gl_LIBRARY))
+#
+# Two build paths:
+#   OSMesa mode (RENDERING_USE_OSMESA): uses initCoinHeadless() with the
+#       OSMesa context manager — same headless path as all other OSMesa tests.
+#   System GL mode: uses BasicFLTKContextManager (FLTK 1×1 window); requires
+#       FLTK, X11, and system OpenGL.
+if(RENDERING_USE_OSMESA OR (FLTK_FOUND AND X11_FOUND AND (TARGET OpenGL::GL OR OPENGL_gl_LIBRARY)))
     add_executable(render_basic_context render_basic_context.cpp)
     target_include_directories(render_basic_context PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
@@ -481,23 +486,42 @@ if(FLTK_FOUND AND X11_FOUND AND (TARGET OpenGL::GL OR OPENGL_gl_LIBRARY))
         ${OBOL_TARGET_INCLUDE_DIRECTORIES}
         ${FLTK_INCLUDE_DIRS}
     )
-    target_compile_definitions(render_basic_context PRIVATE OBOL_VIEWER_FLTK_GL)
     target_link_libraries(render_basic_context
         PRIVATE
             ${PROJECT_NAME}
             ${OBOL_TARGET_LINK_LIBRARIES}
-            ${FLTK_LIBRARIES}
-            ${X11_X11_LIB}
     )
-    if(TARGET OpenGL::GL)
-        target_link_libraries(render_basic_context PRIVATE OpenGL::GL)
-    elseif(OPENGL_gl_LIBRARY)
-        target_link_libraries(render_basic_context PRIVATE ${OPENGL_gl_LIBRARY})
-    endif()
-    if(TARGET OpenGL::GLU)
-        target_link_libraries(render_basic_context PRIVATE OpenGL::GLU)
-    elseif(OPENGL_glu_LIBRARY)
-        target_link_libraries(render_basic_context PRIVATE ${OPENGL_glu_LIBRARY})
+    if(RENDERING_USE_OSMESA)
+        # OSMesa mode: use initCoinHeadless() (headless OSMesa context manager).
+        # OBOL_VIEWER_FLTK_GL must NOT be defined — the #else branch in
+        # render_basic_context.cpp uses headless_utils.h / initCoinHeadless().
+        target_compile_definitions(render_basic_context PRIVATE OBOL_OSMESA_BUILD)
+        if(OSMESA_INCLUDE_DIR)
+            target_include_directories(render_basic_context PRIVATE ${OSMESA_INCLUDE_DIR})
+        endif()
+        if(OSMESA_LINK_TARGET)
+            target_link_libraries(render_basic_context PRIVATE ${OSMESA_LINK_TARGET})
+        endif()
+        message(STATUS "render_basic_context: graceful-degradation test enabled (OSMesa/headless path)")
+    else()
+        # System GL mode: use BasicFLTKContextManager (FLTK 1×1 GL window).
+        target_compile_definitions(render_basic_context PRIVATE OBOL_VIEWER_FLTK_GL)
+        target_link_libraries(render_basic_context
+            PRIVATE
+                ${FLTK_LIBRARIES}
+                ${X11_X11_LIB}
+        )
+        if(TARGET OpenGL::GL)
+            target_link_libraries(render_basic_context PRIVATE OpenGL::GL)
+        elseif(OPENGL_gl_LIBRARY)
+            target_link_libraries(render_basic_context PRIVATE ${OPENGL_gl_LIBRARY})
+        endif()
+        if(TARGET OpenGL::GLU)
+            target_link_libraries(render_basic_context PRIVATE OpenGL::GLU)
+        elseif(OPENGL_glu_LIBRARY)
+            target_link_libraries(render_basic_context PRIVATE ${OPENGL_glu_LIBRARY})
+        endif()
+        message(STATUS "render_basic_context: graceful-degradation test enabled (FLTK/system-GL path)")
     endif()
     find_package(Threads REQUIRED)
     target_link_libraries(render_basic_context PRIVATE Threads::Threads)
@@ -515,7 +539,6 @@ if(FLTK_FOUND AND X11_FOUND AND (TARGET OpenGL::GL OR OPENGL_gl_LIBRARY))
     set_tests_properties(render_basic_context PROPERTIES
         TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
     )
-    message(STATUS "render_basic_context: graceful-degradation test enabled")
 endif()
 
 
