@@ -1183,6 +1183,17 @@ SoSceneTexture2P::updatePBuffer(SoState * state, const float quality)
         this->offscreenbuffersize = reqbytes;
       }
       SoGLContext_glPixelStorei(pbglue, GL_PACK_ALIGNMENT, 1);
+      // Defensively reset GL_PACK_ROW_LENGTH to the default (0 = tightly
+      // packed) before calling glReadPixels.  GL_PACK_* are client
+      // pixel-store parameters that are NOT saved/restored by
+      // glPushAttrib/glPopAttrib; if the outer renderer (CoinOffscreenGLCanvas)
+      // left GL_PACK_ROW_LENGTH set to its full-image width, the inner
+      // glReadPixels would use an oversized row stride and overflow the buffer.
+      SoGLContext_glPixelStorei(pbglue, GL_PACK_ROW_LENGTH,  0);
+      SoGLContext_glPixelStorei(pbglue, GL_PACK_SKIP_ROWS,   0);
+      SoGLContext_glPixelStorei(pbglue, GL_PACK_SKIP_PIXELS, 0);
+      SoGLContext_glPixelStorei(pbglue, GL_PACK_SWAP_BYTES,  0);
+      SoGLContext_glPixelStorei(pbglue, GL_PACK_LSB_FIRST,   0);
       SoGLContext_glReadPixels(pbglue, 0, 0, ctx_size[0], ctx_size[1], GL_RGBA, GL_UNSIGNED_BYTE,
                    this->offscreenbuffer);
       SoGLContext_glPixelStorei(pbglue, GL_PACK_ALIGNMENT, 4);
