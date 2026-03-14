@@ -86,48 +86,24 @@ option(BUILD_SHARED_LIBS "Build shared library when ON, static when OFF" ON)
 option(OBOL_BUILD_TESTS "Build unit tests" ON)
 
 # FLTK GL context manager for obol_viewer.
-# Defined here (before FLTK detection) so it can drive FLTK_BUILD_GL when
-# building the bundled FLTK.  The actual compile-definition is set for the
-# obol_viewer target in tests/CMakeLists.txt.
+# The actual compile-definition is set for the obol_viewer target in
+# examples/fltk/CMakeLists.txt.
 option(OBOL_VIEWER_USE_FLTK_GL
     "Use FLTK GL context for obol_viewer system-GL panel (portable; disable for CI/headless)"
     ON)
 
+# FLTK must be installed as a system package (libfltk1.3-dev or equivalent).
+# The project no longer ships a bundled copy; install the devel package first.
 find_package(FLTK QUIET)
-if(OBOL_BUILD_TESTS AND NOT FLTK_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/external/fltk/CMakeLists.txt")
-  message(STATUS "System FLTK not found; building bundled FLTK from external/fltk")
-  set(FLTK_BUILD_FLUID        OFF CACHE BOOL "Build FLTK fluid tool"         FORCE)
-  set(FLTK_BUILD_FLTK_OPTIONS OFF CACHE BOOL "Build FLTK fltk-options tool"  FORCE)
-  set(FLTK_BUILD_TEST         OFF CACHE BOOL "Build FLTK test/demo programs"  FORCE)
-  set(FLTK_BUILD_EXAMPLES     OFF CACHE BOOL "Build FLTK example programs"    FORCE)
-  set(FLTK_BUILD_FORMS        OFF CACHE BOOL "Build FLTK forms library"       FORCE)
-  # Enable the FLTK OpenGL library when the viewer will use Fl_Gl_Window for
-  # its cross-platform GL context manager; disable otherwise to keep the
-  # bundled FLTK build as lean as possible.
-  if(OBOL_VIEWER_USE_FLTK_GL)
-    set(FLTK_BUILD_GL         ON  CACHE BOOL "Build FLTK OpenGL library"      FORCE)
-  else()
-    set(FLTK_BUILD_GL         OFF CACHE BOOL "Build FLTK OpenGL library"      FORCE)
-  endif()
-  set(FLTK_BUILD_SHARED_LIBS  OFF CACHE BOOL "Build FLTK shared libraries"    FORCE)
-  add_subdirectory("${PROJECT_SOURCE_DIR}/external/fltk" fltk_build EXCLUDE_FROM_ALL)
-  set(FLTK_FOUND TRUE)
-  set(FLTK_LIBRARIES fltk::fltk)
-  # When the FLTK GL library is built, add it to FLTK_LIBRARIES so that
-  # targets linking ${FLTK_LIBRARIES} automatically get Fl_Gl_Window support.
-  if(OBOL_VIEWER_USE_FLTK_GL AND TARGET fltk::gl)
-    list(APPEND FLTK_LIBRARIES fltk::gl)
-  endif()
-  set(FLTK_INCLUDE_DIRS
-      "${PROJECT_SOURCE_DIR}/external/fltk"
-      "${CMAKE_BINARY_DIR}/fltk_build")
-  message(STATUS "Using bundled FLTK from external/fltk")
-elseif()
-  if (OBOL_BUILD_TESTS)
-    message(STATUS "FLTK not found and external/fltk not present – obol_viewer disabled")
+if(FLTK_FOUND)
+  message(STATUS "FLTK found: ${FLTK_INCLUDE_DIRS}")
+else()
+  if(OBOL_BUILD_TESTS)
+    message(STATUS "System FLTK not found – FLTK-based viewers will be disabled")
   endif()
 endif()
-# obol_viewer uses obol_testlib for its scene catalogue, so it can only be
+
+# obol_viewer uses libObolEx for its scene catalogue, so it can only be
 # built when OBOL_BUILD_TESTS is also ON.  cmake_dependent_option enforces
 # this: the viewer is silently disabled if FLTK is absent or tests are off.
 cmake_dependent_option(OBOL_BUILD_VIEWER
@@ -698,7 +674,7 @@ if(OBOL_BUILD_TESTS)
 
   enable_testing()
   add_subdirectory(tests)
-  add_subdirectory(examples/Mentor)
+  add_subdirectory(examples)
 endif()
 
 # ============================================================================
@@ -768,47 +744,6 @@ if(OBOL_COVERAGE AND LCOV_EXECUTABLE AND GENHTML_EXECUTABLE)
   message(STATUS
     "Run 'cmake --build <dir> --target coverage' to generate the HTML report")
   message(STATUS "  Report will be written to: ${COVERAGE_OUTPUT_DIR}")
-endif()
-
-# ============================================================================
-# Qt example (examples/qt_obol_example.cpp + examples/qt_obol_widget.h)
-#
-# Built when -DOBOL_BUILD_QT_EXAMPLE=ON and Qt6 (Widgets + OpenGL) is found.
-# Demonstrates Qt/Obol integration using QtObolWidget, the full-featured
-# equivalent of Quarter's QuarterWidget.  See examples/qt_obol_widget.h for:
-#   - Feature-by-feature comparison: Quarter vs Obol (render/stereo/transparency
-#     modes, interaction mode, SpaceNavigator, Qt Designer plugin)
-#   - Answer to "does Obol make any of these harder?" (answer: no)
-# ============================================================================
-option(OBOL_BUILD_QT_EXAMPLE "Build the Qt/Obol example (requires Qt6)" OFF)
-
-if(OBOL_BUILD_QT_EXAMPLE)
-  find_package(Qt6 QUIET COMPONENTS Core Widgets OpenGL OpenGLWidgets)
-  if(Qt6Widgets_FOUND AND Qt6OpenGL_FOUND AND Qt6OpenGLWidgets_FOUND)
-    set(CMAKE_AUTOMOC ON)
-    add_executable(qt_obol_example
-        examples/qt_obol_example.cpp
-        examples/qt_obol_widget.h   # listed so AUTOMOC finds Q_OBJECT
-    )
-    target_include_directories(qt_obol_example PRIVATE
-        ${PROJECT_SOURCE_DIR}/examples
-        ${PROJECT_SOURCE_DIR}/include
-        ${PROJECT_SOURCE_DIR}/include/Inventor/annex
-        ${PROJECT_BINARY_DIR}/include
-        ${OBOL_TARGET_INCLUDE_DIRECTORIES}
-    )
-    target_link_libraries(qt_obol_example PRIVATE
-        ${PROJECT_NAME}
-        ${OBOL_TARGET_LINK_LIBRARIES}
-        Qt6::Core
-        Qt6::Widgets
-        Qt6::OpenGL
-        Qt6::OpenGLWidgets
-    )
-    message(STATUS "Qt/Obol example: enabled (Qt6 ${Qt6Widgets_VERSION})")
-  else()
-    message(STATUS "Qt/Obol example: disabled (Qt6 Widgets/OpenGL/OpenGLWidgets not found)")
-  endif()
 endif()
 
 # ============================================================================
