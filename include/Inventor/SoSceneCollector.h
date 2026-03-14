@@ -1,5 +1,5 @@
-#ifndef OBOL_SORAYTRACERSCENECOLLECTOR_H
-#define OBOL_SORAYTRACERSCENECOLLECTOR_H
+#ifndef OBOL_SOSCENECOLLECTOR_H
+#define OBOL_SOSCENECOLLECTOR_H
 
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
@@ -34,12 +34,12 @@
 \**************************************************************************/
 
 /*!
-  \class SoRaytracerSceneCollector SoRaytracerSceneCollector.h Inventor/SoRaytracerSceneCollector.h
-  \brief Utility class for collecting world-space scene data for CPU raytracing backends.
+  \class SoSceneCollector SoSceneCollector.h Inventor/SoSceneCollector.h
+  \brief Utility class for collecting world-space scene data for non-GL rendering backends.
 
   \ingroup coin_general
 
-  \c SoRaytracerSceneCollector traverses an Obol scene graph and extracts
+  \c SoSceneCollector traverses an Obol scene graph and extracts
   everything a CPU raytracing backend (nanort, Intel Embree, OSPRay, …) needs
   to render it — without any OpenGL dependency:
 
@@ -91,12 +91,12 @@
   <b>Usage example (with nanort):</b>
 
   \code
-  SoRaytracerSceneCollector collector;
+  SoSceneCollector collector;
   SbViewportRegion vp(800, 600);
   collector.collect(root, vp);
 
   // Feed geometry into nanort BVH:
-  for (const SoRtTriangle & tri : collector.getTriangles()) {
+  for (const SoScTriangle & tri : collector.getTriangles()) {
       for (int v = 0; v < 3; ++v) {
           verts.push_back(tri.pos[v][0]);
           verts.push_back(tri.pos[v][1]);
@@ -107,7 +107,7 @@
   collector.compositeOverlays(pixels, width, height, 3);
   \endcode
 
-  \sa SoRaytraceRenderAction, SoRaytracingParams, docs/BACKEND_SURVEY.md
+  \sa SoSceneRenderAction, SoSceneRendererParams, docs/BACKEND_SURVEY.md
 */
 
 #include <Inventor/SbBasic.h>
@@ -127,13 +127,13 @@ class SoCoordinateElement;
 // ==========================================================================
 
 /*!
-  \struct SoRtMaterial
+  \struct SoScMaterial
   \brief Surface material properties for a single triangle, in the Phong model.
 
   All colour channels are in [0, 1].  \c shininess is in [0, 1]; multiply
   by 128 to obtain the Phong specular exponent.
 */
-struct SoRtMaterial {
+struct SoScMaterial {
     float diffuse[3];   //!< Diffuse reflectance (RGB)
     float specular[3];  //!< Specular reflectance (RGB)
     float ambient[3];   //!< Ambient reflectance (RGB)
@@ -142,42 +142,42 @@ struct SoRtMaterial {
 };
 
 /*!
-  \struct SoRtTriangle
+  \struct SoScTriangle
   \brief A single world-space triangle with per-vertex positions, normals, and material.
 
   Positions and normals are stored in world space (model matrix already applied).
   Vertex ordering follows the scene graph; normals may point in either direction
   depending on the shape's winding.
 */
-struct SoRtTriangle {
+struct SoScTriangle {
     float      pos[3][3];   //!< World-space vertex positions [vertex 0/1/2][x/y/z]
     float      norm[3][3];  //!< World-space vertex normals   [vertex 0/1/2][x/y/z]
-    SoRtMaterial mat;       //!< Active material at this triangle
+    SoScMaterial mat;       //!< Active material at this triangle
 };
 
 /*!
-  \enum SoRtLightType
-  \brief Type tag for \c SoRtLightInfo.
+  \enum SoScLightType
+  \brief Type tag for \c SoScLightInfo.
 */
-enum SoRtLightType {
-    SO_RT_DIRECTIONAL,  //!< SoDirectionalLight — infinite parallel light
-    SO_RT_POINT,        //!< SoPointLight — positional light with attenuation
-    SO_RT_SPOT          //!< SoSpotLight — positional cone-limited light
+enum SoScLightType {
+    SO_SC_DIRECTIONAL,  //!< SoDirectionalLight — infinite parallel light
+    SO_SC_POINT,        //!< SoPointLight — positional light with attenuation
+    SO_SC_SPOT          //!< SoSpotLight — positional cone-limited light
 };
 
 /*!
-  \struct SoRtLightInfo
+  \struct SoScLightInfo
   \brief World-space descriptor for a single scene light.
 
   All positions and directions are already transformed to world space.
 
-  For \c SO_RT_DIRECTIONAL lights, only \c dir is used.
-  For \c SO_RT_POINT lights, only \c pos is used.
-  For \c SO_RT_SPOT lights, both \c pos and \c dir are used;
+  For \c SO_SC_DIRECTIONAL lights, only \c dir is used.
+  For \c SO_SC_POINT lights, only \c pos is used.
+  For \c SO_SC_SPOT lights, both \c pos and \c dir are used;
   \c dir is the cone axis (pointing away from the light source).
 */
-struct SoRtLightInfo {
-    SoRtLightType type;       //!< Light category
+struct SoScLightInfo {
+    SoScLightType type;       //!< Light category
     float rgb[3];             //!< Light colour (RGB)
     float intensity;          //!< Intensity scale factor
     float dir[3];             //!< World-space direction (away from source, unit vector)
@@ -187,16 +187,16 @@ struct SoRtLightInfo {
 };
 
 /*!
-  \struct SoRtTextOverlay
+  \struct SoScTextOverlay
   \brief An RGBA pixel buffer to be alpha-composited onto the framebuffer.
 
   Generated for \c SoText2, \c SoHUDLabel, and \c SoHUDButton elements.
   The buffer uses GL bottom-to-top row convention (row 0 = bottom of screen)
   to match \c SoOffscreenRenderer::getBuffer().
 
-  Composite onto the framebuffer with \c SoRaytracerSceneCollector::compositeOverlays().
+  Composite onto the framebuffer with \c SoSceneCollector::compositeOverlays().
 */
-struct SoRtTextOverlay {
+struct SoScTextOverlay {
     std::vector<unsigned char> pixbuf;  //!< RGBA pixels, bottom-to-top rows
     int x;  //!< Viewport-space left edge (pixels from left of frame, may be negative)
     int y;  //!< Viewport-space bottom edge (pixels from bottom, may be negative)
@@ -205,13 +205,13 @@ struct SoRtTextOverlay {
 };
 
 // ==========================================================================
-// SoRaytracerSceneCollector
+// SoSceneCollector
 // ==========================================================================
 
-class OBOL_DLL_API SoRaytracerSceneCollector {
+class OBOL_DLL_API SoSceneCollector {
 public:
-    SoRaytracerSceneCollector();
-    ~SoRaytracerSceneCollector();
+    SoSceneCollector();
+    ~SoSceneCollector();
 
     // ------------------------------------------------------------------
     // Scene collection
@@ -323,17 +323,17 @@ public:
     // ------------------------------------------------------------------
 
     //! World-space triangles collected during the last \c collect() call.
-    const std::vector<SoRtTriangle> & getTriangles() const;
+    const std::vector<SoScTriangle> & getTriangles() const;
 
     //! World-space light descriptors collected during the last \c collect() call.
-    const std::vector<SoRtLightInfo> & getLights() const;
+    const std::vector<SoScLightInfo> & getLights() const;
 
     /*!
       Pixel overlays collected during the last \c collect() or
       \c collectOverlaysOnly() call.  Composite these onto the framebuffer
       after ray tracing with \c compositeOverlays().
     */
-    const std::vector<SoRtTextOverlay> & getOverlays() const;
+    const std::vector<SoScTextOverlay> & getOverlays() const;
 
     // ------------------------------------------------------------------
     // Pixel overlay compositing
@@ -401,16 +401,16 @@ public:
                                                       int   numSegments = 32);
 
 private:
-    // Internal helpers (implementations in SoRaytracerSceneCollector.cpp).
+    // Internal helpers (implementations in SoSceneCollector.cpp).
     void collectImpl(SoNode * root,
                      const SbViewportRegion & renderVp,
                      const SbViewportRegion & proxyVp);
     void collectProxy(SoCallbackAction * action, SoSeparator * proxy);
 
     // Collected scene data
-    std::vector<SoRtTriangle>    tris_;
-    std::vector<SoRtLightInfo>   lights_;
-    std::vector<SoRtTextOverlay> overlays_;
+    std::vector<SoScTriangle>    tris_;
+    std::vector<SoScLightInfo>   lights_;
+    std::vector<SoScTextOverlay> overlays_;
 
     // Cache state for scene change detection
     SoNode *   cachedRoot_   = nullptr;
@@ -419,8 +419,8 @@ private:
     SbUniqueId cachedCamId_  = 0;
 
     // Non-copyable
-    SoRaytracerSceneCollector(const SoRaytracerSceneCollector &);
-    SoRaytracerSceneCollector & operator=(const SoRaytracerSceneCollector &);
+    SoSceneCollector(const SoSceneCollector &);
+    SoSceneCollector & operator=(const SoSceneCollector &);
 };
 
-#endif // !OBOL_SORAYTRACERSCENECOLLECTOR_H
+#endif // !OBOL_SOSCENECOLLECTOR_H

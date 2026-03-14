@@ -149,19 +149,19 @@ Obol ships two reference implementations:
 | `SoEmbreeContextManager` | [Intel Embree 4](https://www.embree.org/) (system library) | `tests/utils/embree_context_manager.h` | Requires `libembree-dev` |
 
 Both managers delegate **all** scene collection to the generic
-`SoRaytracerSceneCollector` library class (see below) and differ only in their
+`SoSceneCollector` library class (see below) and differ only in their
 BVH build and ray-intersection code.
 
-### SoRaytracerSceneCollector
+### SoSceneCollector
 
-`SoRaytracerSceneCollector` (`include/Inventor/SoRaytracerSceneCollector.h`) is
+`SoSceneCollector` (`include/Inventor/SoSceneCollector.h`) is
 a public Obol library class that encapsulates the full scene-collection
 pipeline that any CPU raytrace backend needs:
 
 | Capability | Description |
 |-----------|-------------|
-| Triangle collection | All `SoShape` subclasses → world-space `SoRtTriangle` list |
-| Light collection | `SoDirectionalLight`, `SoPointLight`, `SoSpotLight` → world-space `SoRtLightInfo` list |
+| Triangle collection | All `SoShape` subclasses → world-space `SoScTriangle` list |
+| Light collection | `SoDirectionalLight`, `SoPointLight`, `SoSpotLight` → world-space `SoScLightInfo` list |
 | Invisible shape pruning | `DrawStyle INVISIBLE` shapes pruned before geometry extraction |
 | Line proxy geometry | `SoLineSet` / `SoIndexedLineSet` → thin cylinder proxies (via `createCylinderProxy()`) |
 | Point proxy geometry | `SoPointSet` → small sphere proxies (via `createSphereProxy()`) |
@@ -175,7 +175,7 @@ pipeline that any CPU raytrace backend needs:
 Usage pattern:
 
 ```cpp
-SoRaytracerSceneCollector collector;
+SoSceneCollector collector;
 SbViewportRegion vp(800, 600);
 
 // Full scene rebuild:
@@ -200,8 +200,8 @@ collector.updateCameraId(cam);
 To integrate a new raytracing engine (e.g. OptiX, Embree, BRL-CAD librt):
 
 1. Create a `ContextManager` subclass (a single `.h` file is sufficient).
-2. Include `<Inventor/SoRaytracerSceneCollector.h>`.
-3. Add a `SoRaytracerSceneCollector` member.
+2. Include `<Inventor/SoSceneCollector.h>`.
+3. Add a `SoSceneCollector` member.
 4. In `renderScene()`:
    - Call `collector_.needsRebuild()` / `collector_.collect()` as above.
    - Build your backend's acceleration structure from `collector_.getTriangles()`.

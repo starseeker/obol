@@ -186,7 +186,7 @@ if(OBOL_BUILD_VIEWER)
     #
     # OBOL_VIEWER_USE_VULKAN (default ON when the Vulkan loader is found)
     # enables a hardware-accelerated Vulkan rasterisation panel.  Scene
-    # geometry is collected via SoRaytracerSceneCollector (same as NanoRT/
+    # geometry is collected via SoSceneCollector (same as NanoRT/
     # Embree); per-vertex Phong lighting is pre-computed on the CPU and the
     # GPU handles transformation, rasterisation, and depth testing.
     find_package(Vulkan QUIET)

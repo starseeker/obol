@@ -31,13 +31,13 @@
 \**************************************************************************/
 
 /*!
-  \class SoRaytracerSceneCollector SoRaytracerSceneCollector.h Inventor/SoRaytracerSceneCollector.h
-  \brief Utility class for collecting world-space scene data for CPU raytracing backends.
+  \class SoSceneCollector SoSceneCollector.h Inventor/SoSceneCollector.h
+  \brief Utility class for collecting world-space scene data for non-GL rendering backends.
 
   See the header file for full documentation.
 */
 
-#include <Inventor/SoRaytracerSceneCollector.h>
+#include <Inventor/SoSceneCollector.h>
 
 // Obol scene graph
 #include <Inventor/SbColor.h>
@@ -86,9 +86,9 @@
 // the callbacks direct access without class-member visibility.
 
 struct ScRaytracerCbData {
-    std::vector<SoRtTriangle> *    tris;
-    std::vector<SoRtLightInfo> *   lights;
-    std::vector<SoRtTextOverlay> * overlays;
+    std::vector<SoScTriangle> *    tris;
+    std::vector<SoScLightInfo> *   lights;
+    std::vector<SoScTextOverlay> * overlays;
     SbViewportRegion               proxyVp;
 
     /* Normal-matrix cache: recompute inverse-transpose only when the model
@@ -154,11 +154,11 @@ src_collectProxy(SoCallbackAction * action,
 // Constructor / destructor
 // ==========================================================================
 
-SoRaytracerSceneCollector::SoRaytracerSceneCollector()
+SoSceneCollector::SoSceneCollector()
 {
 }
 
-SoRaytracerSceneCollector::~SoRaytracerSceneCollector()
+SoSceneCollector::~SoSceneCollector()
 {
 }
 
@@ -167,7 +167,7 @@ SoRaytracerSceneCollector::~SoRaytracerSceneCollector()
 // ==========================================================================
 
 void
-SoRaytracerSceneCollector::reset()
+SoSceneCollector::reset()
 {
     tris_.clear();
     lights_.clear();
@@ -175,14 +175,14 @@ SoRaytracerSceneCollector::reset()
 }
 
 void
-SoRaytracerSceneCollector::collect(SoNode * root,
+SoSceneCollector::collect(SoNode * root,
                                    const SbViewportRegion & vp)
 {
     collectImpl(root, vp, vp);
 }
 
 void
-SoRaytracerSceneCollector::collect(SoNode * root,
+SoSceneCollector::collect(SoNode * root,
                                    const SbViewportRegion & renderVp,
                                    const SbViewportRegion & displayVp)
 {
@@ -190,7 +190,7 @@ SoRaytracerSceneCollector::collect(SoNode * root,
 }
 
 void
-SoRaytracerSceneCollector::collectOverlaysOnly(SoNode * root,
+SoSceneCollector::collectOverlaysOnly(SoNode * root,
                                                const SbViewportRegion & vp)
 {
     overlays_.clear();
@@ -208,20 +208,20 @@ SoRaytracerSceneCollector::collectOverlaysOnly(SoNode * root,
     cba.apply(root);
 }
 
-const std::vector<SoRtTriangle> &
-SoRaytracerSceneCollector::getTriangles() const
+const std::vector<SoScTriangle> &
+SoSceneCollector::getTriangles() const
 {
     return tris_;
 }
 
-const std::vector<SoRtLightInfo> &
-SoRaytracerSceneCollector::getLights() const
+const std::vector<SoScLightInfo> &
+SoSceneCollector::getLights() const
 {
     return lights_;
 }
 
-const std::vector<SoRtTextOverlay> &
-SoRaytracerSceneCollector::getOverlays() const
+const std::vector<SoScTextOverlay> &
+SoSceneCollector::getOverlays() const
 {
     return overlays_;
 }
@@ -231,7 +231,7 @@ SoRaytracerSceneCollector::getOverlays() const
 // ==========================================================================
 
 SbBool
-SoRaytracerSceneCollector::needsRebuild(SoNode * root, SoCamera * cam) const
+SoSceneCollector::needsRebuild(SoNode * root, SoCamera * cam) const
 {
     if (!root) return TRUE;
     if (root != cachedRoot_) return TRUE;
@@ -256,7 +256,7 @@ SoRaytracerSceneCollector::needsRebuild(SoNode * root, SoCamera * cam) const
 }
 
 void
-SoRaytracerSceneCollector::updateCacheKeysAfterRebuild(SoNode *  root,
+SoSceneCollector::updateCacheKeysAfterRebuild(SoNode *  root,
                                                         SoCamera * cam)
 {
     cachedRoot_   = root;
@@ -266,14 +266,14 @@ SoRaytracerSceneCollector::updateCacheKeysAfterRebuild(SoNode *  root,
 }
 
 void
-SoRaytracerSceneCollector::updateCameraId(SoCamera * cam, SoNode * root)
+SoSceneCollector::updateCameraId(SoCamera * cam, SoNode * root)
 {
     cachedCamId_  = cam  ? cam->getNodeId()  : 0;
     if (root) cachedRootId_ = root->getNodeId();
 }
 
 void
-SoRaytracerSceneCollector::resetCache()
+SoSceneCollector::resetCache()
 {
     cachedRoot_   = nullptr;
     cachedRootId_ = 0;
@@ -286,12 +286,12 @@ SoRaytracerSceneCollector::resetCache()
 // ==========================================================================
 
 void
-SoRaytracerSceneCollector::compositeOverlays(unsigned char * pixels,
+SoSceneCollector::compositeOverlays(unsigned char * pixels,
                                               unsigned int width,
                                               unsigned int height,
                                               unsigned int nrcomponents) const
 {
-    for (const SoRtTextOverlay & ov : overlays_) {
+    for (const SoScTextOverlay & ov : overlays_) {
         const int src_x0 = std::max(0, -ov.x);
         const int src_y0 = std::max(0, -ov.y);
         const int dst_x0 = std::max(0,  ov.x);
@@ -340,7 +340,7 @@ SoRaytracerSceneCollector::compositeOverlays(unsigned char * pixels,
 // ==========================================================================
 
 float
-SoRaytracerSceneCollector::computeWorldSpaceRadius(SoCallbackAction * action,
+SoSceneCollector::computeWorldSpaceRadius(SoCallbackAction * action,
                                                     float sizePx,
                                                     float viewportHeightPx)
 {
@@ -382,7 +382,7 @@ SoRaytracerSceneCollector::computeWorldSpaceRadius(SoCallbackAction * action,
 }
 
 SoSeparator *
-SoRaytracerSceneCollector::createWireframeCylinderProxy(float cylRadius,
+SoSceneCollector::createWireframeCylinderProxy(float cylRadius,
                                                          float tubeRadius,
                                                          int   numSegments)
 {
@@ -465,7 +465,7 @@ src_collectProxy(SoCallbackAction * action,
 // collectProxy (private class method): thin wrapper for public API users who
 // have a SoCallbackAction but not a ScRaytracerCbData.
 void
-SoRaytracerSceneCollector::collectProxy(SoCallbackAction * action,
+SoSceneCollector::collectProxy(SoCallbackAction * action,
                                          SoSeparator * proxy)
 {
     ScRaytracerCbData cbdata;
@@ -477,7 +477,7 @@ SoRaytracerSceneCollector::collectProxy(SoCallbackAction * action,
 }
 
 void
-SoRaytracerSceneCollector::collectImpl(SoNode *              root,
+SoSceneCollector::collectImpl(SoNode *              root,
                                         const SbViewportRegion & renderVp,
                                         const SbViewportRegion & proxyVp)
 {
@@ -556,7 +556,7 @@ src_triangleCB(void * ud,
     }
     const SbMatrix & normalMat = cbdata->normalMat;
 
-    SoRtTriangle tri;
+    SoScTriangle tri;
     const SoPrimitiveVertex * verts[3] = { v0, v1, v2 };
     for (int i = 0; i < 3; ++i) {
         SbVec3f wp, wn;
@@ -609,7 +609,7 @@ src_lineSetCB(void * ud,
     if (lineW <= 0.0f) lineW = 1.0f;
     const float vpH    = static_cast<float>(
         cbdata->proxyVp.getViewportSizePixels()[1]);
-    const float radius = SoRaytracerSceneCollector::computeWorldSpaceRadius(action, lineW, vpH);
+    const float radius = SoSceneCollector::computeWorldSpaceRadius(action, lineW, vpH);
 
     SoSeparator * proxy = ls->createCylinderProxy(coords, radius);
     proxy->ref();
@@ -637,7 +637,7 @@ src_indexedLineSetCB(void * ud,
     if (lineW <= 0.0f) lineW = 1.0f;
     const float vpH    = static_cast<float>(
         cbdata->proxyVp.getViewportSizePixels()[1]);
-    const float radius = SoRaytracerSceneCollector::computeWorldSpaceRadius(action, lineW, vpH);
+    const float radius = SoSceneCollector::computeWorldSpaceRadius(action, lineW, vpH);
 
     SoSeparator * proxy = ils->createCylinderProxy(coords, radius);
     proxy->ref();
@@ -664,7 +664,7 @@ src_pointSetCB(void * ud,
     if (ptSz <= 0.0f) ptSz = 1.0f;
     const float vpH    = static_cast<float>(
         cbdata->proxyVp.getViewportSizePixels()[1]);
-    const float radius = SoRaytracerSceneCollector::computeWorldSpaceRadius(action, ptSz, vpH);
+    const float radius = SoSceneCollector::computeWorldSpaceRadius(action, ptSz, vpH);
 
     SoSeparator * proxy = ps->createSphereProxy(coords, radius);
     proxy->ref();
@@ -689,10 +689,10 @@ src_cylinderLineCB(void * ud,
     if (lineW <= 0.0f) lineW = 1.0f;
     const float vpH     = static_cast<float>(
         cbdata->proxyVp.getViewportSizePixels()[1]);
-    const float tubeRad = SoRaytracerSceneCollector::computeWorldSpaceRadius(action, lineW, vpH);
+    const float tubeRad = SoSceneCollector::computeWorldSpaceRadius(action, lineW, vpH);
     const float cylRad  = cyl->radius.getValue();
 
-    SoSeparator * proxy = SoRaytracerSceneCollector::createWireframeCylinderProxy(cylRad, tubeRad);
+    SoSeparator * proxy = SoSceneCollector::createWireframeCylinderProxy(cylRad, tubeRad);
     proxy->ref();
     src_collectProxy(action, proxy, cbdata);
     proxy->unref();
@@ -709,7 +709,7 @@ src_text2CB(void * ud,
     const SoText2 * text = static_cast<const SoText2 *>(node);
     SoState * state = action->getState();
 
-    SoRtTextOverlay ov;
+    SoScTextOverlay ov;
     if (!text->buildPixelBuffer(state, ov.pixbuf, ov.x, ov.y, ov.w, ov.h))
         return SoCallbackAction::PRUNE;
 
@@ -765,7 +765,7 @@ src_hudLabelCB(void * ud,
     const int canvasW = maxWidth;
     const int canvasH = nlines * lineH;
 
-    SoRtTextOverlay ov;
+    SoScTextOverlay ov;
     ov.w = canvasW;
     ov.h = canvasH;
     ov.pixbuf.assign(static_cast<size_t>(canvasW) * canvasH * 4, 0);
@@ -842,7 +842,7 @@ src_hudButtonCB(void * ud,
     const int btnH = static_cast<int>(size[1]);
     if (btnW <= 0 || btnH <= 0) return SoCallbackAction::PRUNE;
 
-    SoRtTextOverlay ov;
+    SoScTextOverlay ov;
     ov.w = btnW;
     ov.h = btnH;
     ov.x = static_cast<int>(pos[0]);
@@ -958,8 +958,8 @@ src_directionalLightCB(void * ud,
     float wlen = wDir.length();
     if (wlen > 1e-6f) wDir /= wlen;
 
-    SoRtLightInfo li;
-    li.type      = SO_RT_DIRECTIONAL;
+    SoScLightInfo li;
+    li.type      = SO_SC_DIRECTIONAL;
     li.dir[0]    = wDir[0]; li.dir[1] = wDir[1]; li.dir[2] = wDir[2];
     li.pos[0]    = li.pos[1] = li.pos[2] = 0.0f;
     const SbColor & c = dl->color.getValue();
@@ -986,8 +986,8 @@ src_pointLightCB(void * ud,
     SbVec3f wPos;
     mm.multVecMatrix(pl->location.getValue(), wPos);
 
-    SoRtLightInfo li;
-    li.type      = SO_RT_POINT;
+    SoScLightInfo li;
+    li.type      = SO_SC_POINT;
     li.dir[0]    = li.dir[1] = li.dir[2] = 0.0f;
     li.pos[0]    = wPos[0]; li.pos[1] = wPos[1]; li.pos[2] = wPos[2];
     const SbColor & c = pl->color.getValue();
@@ -1017,8 +1017,8 @@ src_spotLightCB(void * ud,
     float wlen = wDir.length();
     if (wlen > 1e-6f) wDir /= wlen;
 
-    SoRtLightInfo li;
-    li.type         = SO_RT_SPOT;
+    SoScLightInfo li;
+    li.type         = SO_SC_SPOT;
     li.dir[0]       = wDir[0]; li.dir[1] = wDir[1]; li.dir[2] = wDir[2];
     li.pos[0]       = wPos[0]; li.pos[1] = wPos[1]; li.pos[2] = wPos[2];
     const SbColor & c = sl->color.getValue();

@@ -33,7 +33,7 @@ set(OBOL_MISC_FILES
 	SoEventManager.cpp
 	SoViewport.cpp
 	SoQuadViewport.cpp
-	SoRaytracerSceneCollector.cpp
+	SoSceneCollector.cpp
 )
 
 # Files excluded from public API documentation, included in complete documentation.

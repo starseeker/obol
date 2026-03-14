@@ -31,8 +31,8 @@
 \**************************************************************************/
 
 /*!
-  \class SoRaytracingParams SoRaytracingParams.h Inventor/nodes/SoRaytracingParams.h
-  \brief Scene graph node carrying rendering hints for CPU raytracing backends.
+  \class SoSceneRendererParams SoSceneRendererParams.h Inventor/nodes/SoSceneRendererParams.h
+  \brief Scene graph node carrying rendering hints for non-GL rendering backends.
 
   \ingroup coin_nodes
 
@@ -40,27 +40,27 @@
   fields and their semantics.  This node has no OpenGL side-effects.
 */
 
-#include <Inventor/nodes/SoRaytracingParams.h>
+#include <Inventor/nodes/SoSceneRendererParams.h>
 
 #include "nodes/SoSubNodeP.h"
 
-SO_NODE_SOURCE(SoRaytracingParams);
+SO_NODE_SOURCE(SoSceneRendererParams);
 
 /*!
   \copydetails SoNode::initClass(void)
 */
 void
-SoRaytracingParams::initClass(void)
+SoSceneRendererParams::initClass(void)
 {
-  SO_NODE_INTERNAL_INIT_CLASS(SoRaytracingParams, SO_FROM_OBOL_4_0);
+  SO_NODE_INTERNAL_INIT_CLASS(SoSceneRendererParams, SO_FROM_OBOL_4_0);
 }
 
 /*!
   Constructor.  Sets all fields to their default values.
 */
-SoRaytracingParams::SoRaytracingParams(void)
+SoSceneRendererParams::SoSceneRendererParams(void)
 {
-  SO_NODE_INTERNAL_CONSTRUCTOR(SoRaytracingParams);
+  SO_NODE_INTERNAL_CONSTRUCTOR(SoSceneRendererParams);
 
   SO_NODE_ADD_FIELD(shadowsEnabled,         (FALSE));
   SO_NODE_ADD_FIELD(maxReflectionBounces,   (0));
@@ -71,6 +71,6 @@ SoRaytracingParams::SoRaytracingParams(void)
 /*!
   Destructor.
 */
-SoRaytracingParams::~SoRaytracingParams()
+SoSceneRendererParams::~SoSceneRendererParams()
 {
 }
