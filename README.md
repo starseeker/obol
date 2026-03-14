@@ -50,10 +50,8 @@ BSD License (c) Kongsberg Oil & Gas Technologies AS
 
 Contributions by the Obol project are under the same terms and license as
 Coin.  Embedded code from other sources has its own licenses, but we do not
-include any code incompatible with the BSD license in core Obol.  The Mentor
-example files are LGPL.
-
-TODO - list other code copyright and license terms in doc/LICENSES.md
+include any code incompatible with the BSD license in core Obol - see COPYING
+for details.  The Mentor example files are LGPL.
 
 OpenGL and Open Inventor are trademarks of SGI Inc.
 
