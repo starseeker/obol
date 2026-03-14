@@ -258,7 +258,77 @@ if(OBOL_BUILD_VIEWER)
 endif() # OBOL_BUILD_VIEWER
 
 # -----------------------------------------------------------------------
-# Qt scene viewer  (obol_qt_viewer)
+# Minimalist FLTK viewer  (obol_minimalist_viewer)
+#
+# A stripped-down version of obol_viewer that uses BasicFLTKContextManager
+# (FLTK 1×1 window, no Pbuffers) as its sole context.  This matches the
+# class of context a naive application hands to Obol when it creates its
+# own Fl_Gl_Window.  Use it to iterate through the full testlib catalogue
+# and immediately discover which scenes crash, degrade or emit warnings
+# under a basic context, so those issues can be fixed proactively.
+#
+# Enabled automatically when obol_viewer is enabled (OBOL_BUILD_VIEWER=ON)
+# and FLTK GL context support is available.  Can also be force-enabled with
+# -DOBOL_BUILD_MINIMALIST_VIEWER=ON independent of OBOL_BUILD_VIEWER.
+# -----------------------------------------------------------------------
+option(OBOL_BUILD_MINIMALIST_VIEWER
+    "Build obol_minimalist_viewer (BasicFLTKContextManager scene stress-tester)"
+    ${OBOL_BUILD_VIEWER})
+
+if(OBOL_BUILD_MINIMALIST_VIEWER AND FLTK_FOUND AND OBOL_BUILD_TESTS)
+    add_executable(obol_minimalist_viewer obol_minimalist_viewer.cpp)
+
+    target_include_directories(obol_minimalist_viewer PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}           # testlib/test_registry.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/utils     # fltk_context_manager.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/testlib
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+        ${PROJECT_BINARY_DIR}/include
+        ${OBOL_TARGET_INCLUDE_DIRECTORIES}
+        ${FLTK_INCLUDE_DIRS}
+    )
+
+    # BasicFLTKContextManager always uses the FLTK GL path.
+    target_compile_definitions(obol_minimalist_viewer PRIVATE OBOL_VIEWER_FLTK_GL)
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_link_libraries(obol_minimalist_viewer
+            PRIVATE
+                -Wl,--whole-archive obol_testlib -Wl,--no-whole-archive
+                ${PROJECT_NAME}
+                ${OBOL_TARGET_LINK_LIBRARIES}
+                ${FLTK_LIBRARIES}
+        )
+    else()
+        target_link_libraries(obol_minimalist_viewer
+            PRIVATE
+                obol_testlib
+                ${PROJECT_NAME}
+                ${OBOL_TARGET_LINK_LIBRARIES}
+                ${FLTK_LIBRARIES}
+        )
+    endif()
+
+    if(UNIX AND NOT APPLE)
+        if(X11_FOUND)
+            target_link_libraries(obol_minimalist_viewer PRIVATE ${X11_X11_LIB})
+        endif()
+        if(TARGET OpenGL::GL)
+            target_link_libraries(obol_minimalist_viewer PRIVATE OpenGL::GL)
+        elseif(OPENGL_gl_LIBRARY)
+            target_link_libraries(obol_minimalist_viewer PRIVATE ${OPENGL_gl_LIBRARY})
+        endif()
+    endif()
+
+    find_package(Threads REQUIRED)
+    target_link_libraries(obol_minimalist_viewer PRIVATE Threads::Threads)
+
+    install(TARGETS obol_minimalist_viewer RUNTIME DESTINATION bin)
+    message(STATUS "obol_minimalist_viewer: enabled (BasicFLTKContextManager — basic context stress-tester)")
+endif() # OBOL_BUILD_MINIMALIST_VIEWER
+
+
 # Placed here so obol_testlib (scene catalogue) is already defined.
 # Enabled by -DOBOL_BUILD_QT_VIEWER=ON at CMake configure time (auto-
 # detected when Qt6 is found; requires OBOL_BUILD_TESTS=ON).

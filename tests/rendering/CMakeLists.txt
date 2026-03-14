@@ -464,7 +464,61 @@ set_tests_properties(stt_iosevka PROPERTIES
     TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
 )
 
-# ---- CTest image-comparison integration --------------------------------------
+# ---- render_basic_context: graceful-degradation stress test ------------------
+# Tests that Obol never crashes when given a BasicFLTKContextManager (FLTK
+# 1×1 native window, no Pbuffers) and that diagnostics are issued instead of
+# memory corruption when features like FBOs are unavailable.
+# Only built and run when FLTK and system OpenGL are available.
+if(FLTK_FOUND AND X11_FOUND AND (TARGET OpenGL::GL OR OPENGL_gl_LIBRARY))
+    add_executable(render_basic_context render_basic_context.cpp)
+    target_include_directories(render_basic_context PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/tests
+        ${CMAKE_SOURCE_DIR}/tests/utils
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+        ${PROJECT_BINARY_DIR}/include
+        ${OBOL_TARGET_INCLUDE_DIRECTORIES}
+        ${FLTK_INCLUDE_DIRS}
+    )
+    target_compile_definitions(render_basic_context PRIVATE OBOL_VIEWER_FLTK_GL)
+    target_link_libraries(render_basic_context
+        PRIVATE
+            ${PROJECT_NAME}
+            ${OBOL_TARGET_LINK_LIBRARIES}
+            ${FLTK_LIBRARIES}
+            ${X11_X11_LIB}
+    )
+    if(TARGET OpenGL::GL)
+        target_link_libraries(render_basic_context PRIVATE OpenGL::GL)
+    elseif(OPENGL_gl_LIBRARY)
+        target_link_libraries(render_basic_context PRIVATE ${OPENGL_gl_LIBRARY})
+    endif()
+    if(TARGET OpenGL::GLU)
+        target_link_libraries(render_basic_context PRIVATE OpenGL::GLU)
+    elseif(OPENGL_glu_LIBRARY)
+        target_link_libraries(render_basic_context PRIVATE ${OPENGL_glu_LIBRARY})
+    endif()
+    find_package(Threads REQUIRED)
+    target_link_libraries(render_basic_context PRIVATE Threads::Threads)
+    set_target_properties(render_basic_context PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
+    )
+    add_test(
+        NAME render_basic_context
+        COMMAND "${CMAKE_COMMAND}"
+            -DEXECUTABLE=$<TARGET_FILE:render_basic_context>
+            -DTEST_BASE=${CMAKE_CURRENT_BINARY_DIR}/test_output/render_basic_context
+            -DTEST_TIMEOUT=${IMAGE_COMPARISON_TEST_TIMEOUT}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/run_rendering_test.cmake"
+    )
+    set_tests_properties(render_basic_context PROPERTIES
+        TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
+    )
+    message(STATUS "render_basic_context: graceful-degradation test enabled")
+endif()
+
+
 # Control images live in the shared tests/control_images/ directory.
 # The run_image_test.cmake driver handles Xvfb wrapping for GLX builds.
 
