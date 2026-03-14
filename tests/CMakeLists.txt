@@ -558,40 +558,25 @@ install(TARGETS obol_unittest RUNTIME DESTINATION bin)
 set(CONTROL_IMAGES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/control_images")
 
 # image_comparator: standalone tool for comparing SGI RGB / PNG images
-# Prefer the bundled external/libpng (built as png_static in the parent
-# project) over any system libpng so that builds without libpng-dev still
-# produce a fully-featured comparator.
-if(TARGET png_static)
-    set(PNG_FOUND TRUE)
-    set(PNG_INCLUDE_DIRS
-          "${CMAKE_SOURCE_DIR}/external/libpng"
-          "${CMAKE_BINARY_DIR}/libpng_build")
-    set(PNG_LIBRARIES png_static)
-    message(STATUS "Tests: using bundled png_static for image tools")
-else()
-    find_package(PNG QUIET)
-endif()
+# Uses bundled lodepng for PNG support (no external dependencies required).
 add_executable(image_comparator utils/image_comparator.cpp)
-if(PNG_FOUND)
-    target_compile_definitions(image_comparator PRIVATE HAVE_LIBPNG)
-    target_include_directories(image_comparator PRIVATE ${PNG_INCLUDE_DIRS})
-    target_link_libraries(image_comparator ${PNG_LIBRARIES})
-else()
-    target_include_directories(image_comparator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils)
-endif()
+target_include_directories(image_comparator PRIVATE
+    "${CMAKE_SOURCE_DIR}/external"
+)
+target_link_libraries(image_comparator lodepng)
 set_target_properties(image_comparator PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
 )
 
-# rgb_to_png: convert SGI RGB files to PNG (requires libpng)
-if(PNG_FOUND)
-    add_executable(rgb_to_png utils/rgb_to_png.c)
-    target_include_directories(rgb_to_png PRIVATE ${PNG_INCLUDE_DIRS})
-    target_link_libraries(rgb_to_png ${PNG_LIBRARIES})
-    set_target_properties(rgb_to_png PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
-    )
-endif()
+# rgb_to_png: convert SGI RGB files to PNG using lodepng
+add_executable(rgb_to_png utils/rgb_to_png.cpp)
+target_include_directories(rgb_to_png PRIVATE
+    "${CMAKE_SOURCE_DIR}/external"
+)
+target_link_libraries(rgb_to_png lodepng)
+set_target_properties(rgb_to_png PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
+)
 
 # Output directory for test-generated images
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test_output")

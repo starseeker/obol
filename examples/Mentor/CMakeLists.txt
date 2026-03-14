@@ -222,27 +222,41 @@ add_headless_example(16.3.AttachEditor)
 # Chapter 17: OpenGL Integration
 add_headless_example(17.2.GLCallback)
 
-# Build image comparator utility (with optional PNG support via libpng)
+# Build image comparator utility using bundled lodepng
 # When building as part of the main project, reuse the image_comparator target
 # that is already defined in the tests/ directory to avoid duplicate targets.
-find_package(PNG QUIET)
 if(NOT TARGET image_comparator)
     add_executable(image_comparator image_comparator.cpp)
-    if(PNG_FOUND)
-        target_compile_definitions(image_comparator PRIVATE HAVE_LIBPNG)
-        target_include_directories(image_comparator PRIVATE ${PNG_INCLUDE_DIRS})
-        target_link_libraries(image_comparator ${PNG_LIBRARIES})
+    if(TARGET lodepng)
+        target_link_libraries(image_comparator lodepng)
+    else()
+        # Standalone build: compile lodepng alongside image_comparator
+        target_sources(image_comparator PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../external/lodepng.cpp"
+        )
+        target_include_directories(image_comparator PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../external"
+        )
     endif()
     set_target_properties(image_comparator PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
     )
 endif()
 
-# Build rgb_to_png converter (requires libpng)
-if(PNG_FOUND AND NOT TARGET rgb_to_png)
-    add_executable(rgb_to_png rgb_to_png.c)
-    target_include_directories(rgb_to_png PRIVATE ${PNG_INCLUDE_DIRS})
-    target_link_libraries(rgb_to_png ${PNG_LIBRARIES})
+# Build rgb_to_png converter using bundled lodepng
+if(NOT TARGET rgb_to_png)
+    add_executable(rgb_to_png rgb_to_png.cpp)
+    if(TARGET lodepng)
+        target_link_libraries(rgb_to_png lodepng)
+    else()
+        # Standalone build: compile lodepng alongside rgb_to_png
+        target_sources(rgb_to_png PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../external/lodepng.cpp"
+        )
+        target_include_directories(rgb_to_png PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../external"
+        )
+    endif()
     set_target_properties(rgb_to_png PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
     )
@@ -428,16 +442,11 @@ add_image_test(17.2.GLCallback)
 # Custom target to generate control images
 # Depends on all examples and rgb_to_png to ensure they are built first.
 # Produces PNG control images in control_images/ for repository storage.
-if(PNG_FOUND)
-    set(_gen_controls_deps rgb_to_png image_comparator)
-else()
-    set(_gen_controls_deps image_comparator)
-endif()
 add_custom_target(generate_mentor_controls
     COMMAND ${CMAKE_COMMAND} -E env BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR} 
             ${CMAKE_CURRENT_SOURCE_DIR}/generate_control_images.sh
     DEPENDS 
-        ${_gen_controls_deps}
+        rgb_to_png image_comparator
         02.1.HelloCone 02.2.EngineSpin 02.3.Trackball 02.4.Examiner
         03.1.Molecule 03.2.Robot 03.3.Naming
         04.1.Cameras 04.2.Lights
