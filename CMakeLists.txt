@@ -415,7 +415,9 @@ endif()
 if(OBOL_USE_OSMESA)
   set(OBOL_OUTPUT_NAME "Obol-osmesa")
   add_definitions(-DOBOL_OSMESA_BUILD)
-  add_definitions(-DUSE_MGL_NAMESPACE)  # Enable MGL name mangling to match osmesa library
+  # USE_MGL_NAMESPACE is set only on the Obol library target (see src/CMakeLists.txt)
+  # to avoid propagating it to test executables that include <GL/glx.h>, which
+  # conditionally includes "glx_mangle.h" (not present on modern Ubuntu 24.04).
   message(STATUS "Library will be named: lib${OBOL_OUTPUT_NAME}")
 else()
   set(OBOL_OUTPUT_NAME "Obol")
