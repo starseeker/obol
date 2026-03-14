@@ -1969,7 +1969,7 @@ SoOffscreenRenderer::getOpenGLVersion(int & major, int & minor, int & release) c
     // Use a unique ID so we never collide with an existing context that
     // belongs to a different backend (e.g. system-GL vs OSMesa).
     uint32_t unique_id = (uint32_t)SoGLCacheContextElement::getUniqueCacheContext();
-#ifdef OBOL_BUILD_DUAL_GL
+#ifdef OBOL_DUAL_GL_BUILD
     if (manager->isOSMesaContext(temp_context)) {
       coingl_register_osmesa_context(static_cast<int>(unique_id));
     }
@@ -2024,7 +2024,7 @@ SoOffscreenRenderer::isOpenGLExtensionSupported(const char * extension) const
 
   if (context_created) {
     uint32_t unique_id = (uint32_t)SoGLCacheContextElement::getUniqueCacheContext();
-#ifdef OBOL_BUILD_DUAL_GL
+#ifdef OBOL_DUAL_GL_BUILD
     if (manager->isOSMesaContext(temp_context)) {
       coingl_register_osmesa_context(static_cast<int>(unique_id));
     }
@@ -2068,7 +2068,7 @@ SoOffscreenRenderer::hasFramebufferObjectSupport(void) const
 
   if (context_created) {
     uint32_t unique_id = (uint32_t)SoGLCacheContextElement::getUniqueCacheContext();
-#ifdef OBOL_BUILD_DUAL_GL
+#ifdef OBOL_DUAL_GL_BUILD
     if (manager->isOSMesaContext(temp_context)) {
       coingl_register_osmesa_context(static_cast<int>(unique_id));
     }
@@ -2115,7 +2115,7 @@ SoOffscreenRenderer::isVersionAtLeast(int major, int minor, int release) const
 
   if (context_created) {
     uint32_t unique_id = (uint32_t)SoGLCacheContextElement::getUniqueCacheContext();
-#ifdef OBOL_BUILD_DUAL_GL
+#ifdef OBOL_DUAL_GL_BUILD
     if (manager->isOSMesaContext(temp_context)) {
       coingl_register_osmesa_context(static_cast<int>(unique_id));
     }

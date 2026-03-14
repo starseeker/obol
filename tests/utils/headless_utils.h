@@ -38,7 +38,7 @@
  * produce reference images for validation.
  *
  * Backend selection (compile-time):
- *   OBOL_OSMESA_BUILD: use OSMesa for truly headless operation
+ *   OBOL_SWRAST_BUILD: use OSMesa for truly headless operation
  *   default:             use system OpenGL (GLX on Linux) with Xvfb
  *
  * Both paths require a SoDB::ContextManager since this Coin fork's
@@ -228,10 +228,10 @@ inline bool renderToFile(
     return true;
 }
 
-#elif defined(OBOL_OSMESA_BUILD)
+#elif defined(OBOL_SWRAST_BUILD)
 // ============================================================================
 // OSMesa Backend: For offscreen/headless rendering without display server.
-// Used for pure-OSMesa builds only.  In OBOL_BUILD_DUAL_GL builds the
+// Used for pure-OSMesa builds only.  In OBOL_DUAL_GL_BUILD builds the
 // Coin scene traversal still uses system GL symbols, so tests for that build
 // fall through to the system-GL / GLX path below (requires Xvfb).
 // Headers come from the project's own submodule (external/osmesa/include/OSMesa/)
@@ -432,7 +432,52 @@ inline bool renderToFile(
     return true;
 }
 
-#else // !OBOL_OSMESA_BUILD
+#elif defined(OBOL_NO_OPENGL)
+// ============================================================================
+// No-OpenGL build: headless rendering is not supported.
+// Stubs are provided so code that includes headless_utils.h compiles, but
+// any attempt to call initCoinHeadless() or renderToFile() will fail/assert
+// at runtime (the library itself has no GL renderer).
+// ============================================================================
+#include <cstdlib>
+
+inline void initCoinHeadless() {
+    // In a no-OpenGL build there is no GL context manager to install.
+    // SoDB::init() expects a ContextManager; we provide a no-op one.
+    SoDB::init(nullptr);
+    SoNodeKit::init();
+    SoInteraction::init();
+}
+
+inline SoDB::ContextManager* getCoinHeadlessContextManager() {
+    return nullptr;
+}
+
+inline SoOffscreenRenderer* getSharedRenderer() {
+    static SoOffscreenRenderer *s_renderer = nullptr;
+    if (!s_renderer) {
+        SbViewportRegion vp(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        s_renderer = new SoOffscreenRenderer(nullptr, vp);
+    }
+    return s_renderer;
+}
+
+inline bool renderToFile(SoNode* /*root*/, const char* filename,
+                         int width = DEFAULT_WIDTH, int height = DEFAULT_HEIGHT,
+                         const SbColor& /*backgroundColor*/ = SbColor(0.0f, 0.0f, 0.0f)) {
+    (void)filename; (void)width; (void)height;
+    fprintf(stderr, "renderToFile: no-OpenGL build — rendering not supported\n");
+    return false;
+}
+
+inline bool writeToRGB(uint8_t* /*pixels*/, int /*width*/, int /*height*/,
+                       const char* filename) {
+    (void)filename;
+    fprintf(stderr, "writeToRGB: no-OpenGL build — not supported\n");
+    return false;
+}
+
+#else // !OBOL_SWRAST_BUILD && !OBOL_NO_OPENGL
 // ============================================================================
 // System OpenGL Backend: GLX on Linux (use Xvfb for headless operation)
 // ============================================================================
@@ -796,7 +841,7 @@ inline bool renderToFile(
     return true;
 }
 
-#endif // OBOL_OSMESA_BUILD
+#endif // OBOL_SWRAST_BUILD / OBOL_NO_OPENGL
 
 /**
  * Find camera in scene graph

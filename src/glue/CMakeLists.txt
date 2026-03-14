@@ -1,5 +1,5 @@
 # source files
-if(OBOL_NO_OPENGL)
+if(NOT OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
   # No-OpenGL build: use the no-op stub instead of the real GL dispatch layer.
   set(OBOL_GLUE_FILES
     dl.cpp
@@ -24,7 +24,7 @@ set(OBOL_GLUE_INTERNAL_FILES
 foreach(SRCFILE ${OBOL_GLUE_FILES})
 	set(OBOL_SOURCE ${OBOL_SOURCE} glue/${SRCFILE} CACHE INTERNAL "OBOL_SOURCE")
 endforeach(SRCFILE)
-if(OBOL_BUILD_DUAL_GL)
+if(OBOL_USE_SWRAST AND OBOL_USE_SYSTEM_GL)
 	set(OBOL_SOURCE ${OBOL_SOURCE} glue/gl_osmesa.cpp CACHE INTERNAL "OBOL_SOURCE")
 endif()
 
