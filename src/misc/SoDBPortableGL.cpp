@@ -180,10 +180,19 @@ static void pgl_noop_glPopAttrib(void) {}
 static void pgl_noop_glPushClientAttrib(GLbitfield) {}
 static void pgl_noop_glPopClientAttrib(void) {}
 
-/* glClear interceptor: strip bits that PortableGL does not support
- * (e.g. GL_ACCUM_BUFFER_BIT) so pgl_glClear does not raise GL_INVALID_VALUE. */
+/* glClear interceptor: translate standard OpenGL buffer-bit values to the
+ * PortableGL-internal enum values.  portablegl_compat_consts.h re-defines
+ * the GL_*_BUFFER_BIT macros to standard OpenGL values (COLOR=0x4000,
+ * DEPTH=0x0100, STENCIL=0x0400), but PortableGL's pgl_glClear implementation
+ * uses its own enum: COLOR=1<<10(0x400), DEPTH=1<<11(0x800), STENCIL=1<<12(0x1000).
+ * Bits that PortableGL does not support (e.g. GL_ACCUM_BUFFER_BIT) are dropped. */
 static void pgl_igl_Clear(GLbitfield mask) {
-    glClear(mask & (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT));
+    /* portablegl.h enum (not overridden by compat_consts.h, use literals): */
+    GLbitfield pgl_mask = 0;
+    if (mask & 0x4000u) pgl_mask |= (1u << 10); /* GL_COLOR_BUFFER_BIT   */
+    if (mask & 0x0100u) pgl_mask |= (1u << 11); /* GL_DEPTH_BUFFER_BIT   */
+    if (mask & 0x0400u) pgl_mask |= (1u << 12); /* GL_STENCIL_BUFFER_BIT */
+    if (pgl_mask) glClear(pgl_mask);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */

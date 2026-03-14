@@ -50,35 +50,44 @@
 /* Include PortableGL declarations (no implementation here). */
 #define PGL_PREFIX_TYPES 1
 #define PGL_PREFIX_GLSL  1
+#define PGL_PREFIX_GL    1
 #include <portablegl/portablegl.h>
+#include <portablegl/portablegl_compat_consts.h>
+
+/* Include the compat state so makeCurrent can set g_cur_compat. */
+#include "portablegl_compat_state.h"
+
+/* g_cur_compat is defined in portablegl_compat_funcs.cpp; declared here so
+ * CoinPortableGLContextData::makeCurrent() can set it. */
+extern thread_local ObolPGLCompatState* g_cur_compat;
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* Per-context data                                                             */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
 struct CoinPortableGLContextData {
-    glContext pgl_ctx;
-    pix_t*    backbuf;
-    int       width;
-    int       height;
-    glContext* saved_prev;
+    glContext          pgl_ctx;
+    pix_t*             backbuf;
+    int                width;
+    int                height;
+    glContext*         saved_prev;
+    ObolPGLCompatState compat;
+    ObolPGLCompatState* saved_compat;
 
     static glContext*& current_context() {
-        /* Meyer's singleton for the current-context tracker.  One instance
-         * per TU that includes this header; for single-threaded use this is
-         * safe and consistent. */
         static glContext* s_current = nullptr;
         return s_current;
     }
 
     CoinPortableGLContextData(int w, int h)
-        : backbuf(nullptr), width(w), height(h), saved_prev(nullptr)
-    {}
+        : backbuf(nullptr), width(w), height(h), saved_prev(nullptr), saved_compat(nullptr)
+    { compat.init(); }
 
     ~CoinPortableGLContextData() {
         if (current_context() == &pgl_ctx) {
             set_glContext(nullptr);
             current_context() = nullptr;
+            g_cur_compat = nullptr;
         }
         free_glContext(&pgl_ctx);
     }
@@ -90,15 +99,20 @@ struct CoinPortableGLContextData {
     bool isValid() const { return backbuf != nullptr; }
 
     void makeCurrent() {
-        saved_prev = current_context();
+        saved_prev   = current_context();
+        saved_compat = g_cur_compat;
         current_context() = &pgl_ctx;
         set_glContext(&pgl_ctx);
+        g_cur_compat = &compat;
+        pglSetUniform(&compat);
     }
 
     void restorePrev() {
         current_context() = saved_prev;
         set_glContext(saved_prev);
-        saved_prev = nullptr;
+        g_cur_compat = saved_compat;
+        saved_prev   = nullptr;
+        saved_compat = nullptr;
     }
 };
 

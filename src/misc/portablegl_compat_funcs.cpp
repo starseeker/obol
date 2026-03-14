@@ -34,9 +34,11 @@
 
 #define PGL_PREFIX_TYPES 1
 #define PGL_PREFIX_GLSL  1
+#define PGL_PREFIX_GL    1
 #include <portablegl/portablegl.h>
 
 #include "portablegl_compat_state.h"
+#include "portablegl_obol_shaders.h"
 
 #include <cstring>
 #include <cstdlib>
@@ -47,6 +49,16 @@
 
 /* Current compat state – set by SoDBPortableGL.cpp via makeContextCurrent. */
 thread_local ObolPGLCompatState* g_cur_compat = nullptr;
+
+/* Lazily-created default portablegl program (Gouraud shading), bound
+ * automatically by pgl_igl_End() when no explicit shader has been bound via
+ * pgl_igl_UseProgramObjectARB.  One default program per context is enough
+ * because the portablegl context (and its program table) is thread-local. */
+static thread_local GLuint s_default_gouraud_prog = 0;
+static thread_local GLuint s_default_phong_prog = 0;
+static thread_local GLuint s_default_flat_prog = 0;
+static thread_local GLuint s_default_tex_replace_prog = 0;
+static thread_local GLuint s_default_tex_phong_prog = 0;
 
 extern "C" {
 
@@ -377,13 +389,64 @@ static void imm_ensure_vbo() {
     s_imm_init = true;
 }
 
+/* Ensure the default per-shader-kind program is created (lazy, one per
+ * portablegl context) and return its handle. */
+static GLuint imm_default_prog_for_kind(ObolPGLShaderKind kind) {
+    GLuint* slot = nullptr;
+    switch (kind) {
+    case OBOL_PGL_SHADER_GOURAUD:          slot = &s_default_gouraud_prog;     break;
+    case OBOL_PGL_SHADER_PHONG:            slot = &s_default_phong_prog;        break;
+    case OBOL_PGL_SHADER_FLAT:             slot = &s_default_flat_prog;         break;
+    case OBOL_PGL_SHADER_TEXTURED_REPLACE: slot = &s_default_tex_replace_prog;  break;
+    case OBOL_PGL_SHADER_TEXTURED_PHONG:   slot = &s_default_tex_phong_prog;    break;
+    default: return 0;
+    }
+    if (*slot == 0) *slot = obol_pgl_create_shader(kind);
+    return *slot;
+}
+
+/* Choose the best default shader for the current compat state. */
+static GLuint imm_choose_default_prog() {
+    if (!g_cur_compat) return imm_default_prog_for_kind(OBOL_PGL_SHADER_GOURAUD);
+    /* Determine if we have textures and lighting based on compat state */
+    bool has_tex = (g_cur_compat->texunit_model[0] != 0);
+    bool has_light = false;
+    for (int i = 0; i < OBOL_PGL_MAX_LIGHTS; ++i) {
+        if (g_cur_compat->lights[i].enabled) { has_light = true; break; }
+    }
+    if (has_tex && has_light) return imm_default_prog_for_kind(OBOL_PGL_SHADER_TEXTURED_PHONG);
+    if (has_tex)              return imm_default_prog_for_kind(OBOL_PGL_SHADER_TEXTURED_REPLACE);
+    /* Default: Gouraud (per-vertex) lighting */
+    return imm_default_prog_for_kind(OBOL_PGL_SHADER_GOURAUD);
+}
+
 void pgl_igl_Begin(GLenum prim) {
     s_imm_prim=prim; s_in_begin=true; s_imm_verts.clear();
 }
 void pgl_igl_End() {
     if (!s_in_begin || s_imm_verts.empty()) { s_in_begin=false; return; }
     s_in_begin=false;
+
     imm_ensure_vbo();
+
+    /* Ensure a PortableGL shader is bound.  Obol's built-in renderer uses the
+     * GL 1.x fixed-function pipeline; we choose the best-matching C-function
+     * shader based on current compat state and bind it for this draw call. */
+    GLint cur_prog = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &cur_prog);
+    bool auto_bound = false;
+    if (cur_prog == 0) {
+        GLuint dflt = imm_choose_default_prog();
+        if (dflt != 0) {
+            glUseProgram(dflt);
+            if (g_cur_compat) pglSetUniform(g_cur_compat);
+            auto_bound = true;
+        }
+    } else {
+        /* Refresh uniforms in case matrix/material state changed. */
+        if (g_cur_compat) pglSetUniform(g_cur_compat);
+    }
+
     glBindVertexArray(s_imm_vao);
     glBindBuffer(GL_ARRAY_BUFFER,s_imm_vbo);
     glBufferData(GL_ARRAY_BUFFER,(GLsizei)(s_imm_verts.size()*sizeof(ImmVertex)),
@@ -409,6 +472,9 @@ void pgl_igl_End() {
         glDrawArrays(draw_mode, 0, (GLsizei)s_imm_verts.size());
     }
     glBindVertexArray(0);
+    /* Restore unbound state so explicit glUseProgramObjectARB calls in the
+     * same frame don't see our auto-bound shader as the current one. */
+    if (auto_bound) glUseProgram(0);
 }
 
 /* Helpers to emit a vertex with inherited current attribs */

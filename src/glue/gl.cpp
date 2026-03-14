@@ -3100,6 +3100,33 @@ SoGLContext_instance(int contextid)
     
     gi->extensionsstr = (const char *)glGetString(GL_EXTENSIONS);
 
+#ifdef OBOL_PORTABLEGL_BUILD
+    /* PortableGL does not expose GL_EXTENSIONS via glGetString().  Set the
+     * extension string directly so that Obol detects the functionality our
+     * compat layer provides (ARB shaders, VBOs, FBOs, multitexture, etc.).
+     * This avoids the glGetStringi fallback path which also fails on PGL.   */
+    if (gi->extensionsstr == NULL) {
+  
+      gi->extensionsstr =
+        "GL_ARB_shader_objects "
+        "GL_ARB_vertex_shader "
+        "GL_ARB_fragment_shader "
+        "GL_ARB_vertex_buffer_object "
+        "GL_ARB_framebuffer_object "
+        "GL_EXT_framebuffer_object "
+        "GL_ARB_multitexture "
+        "GL_ARB_texture_env_combine "
+        "GL_EXT_texture_env_combine "
+        "GL_ARB_depth_texture "
+        "GL_EXT_polygon_offset "
+        "GL_EXT_texture_object "
+        "GL_EXT_subtexture "
+        "GL_ARB_texture_compression "
+        "GL_EXT_blend_minmax "
+        "GL_ARB_occlusion_query ";
+    }
+#endif /* OBOL_PORTABLEGL_BUILD */
+
 #ifdef OBOL_OSMESA_BUILD
     if (SoGLContext_debug()) {
       cc_debugerror_postinfo("SoGLContext_instance", "Extensions string: %s", 

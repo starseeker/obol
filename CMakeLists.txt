@@ -94,7 +94,10 @@ option(OBOL_VIEWER_USE_FLTK_GL
     ON)
 
 find_package(FLTK QUIET)
-if(OBOL_BUILD_TESTS AND NOT FLTK_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/external/fltk/CMakeLists.txt")
+# Skip bundled FLTK build in PortableGL mode – portablegl uses its own
+# headless context manager and has no dependency on X11 or system OpenGL.
+if(OBOL_BUILD_TESTS AND NOT FLTK_FOUND AND NOT OBOL_USE_PORTABLEGL
+   AND EXISTS "${PROJECT_SOURCE_DIR}/external/fltk/CMakeLists.txt")
   message(STATUS "System FLTK not found; building bundled FLTK from external/fltk")
   set(FLTK_BUILD_FLUID        OFF CACHE BOOL "Build FLTK fluid tool"         FORCE)
   set(FLTK_BUILD_FLTK_OPTIONS OFF CACHE BOOL "Build FLTK fltk-options tool"  FORCE)

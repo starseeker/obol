@@ -469,12 +469,14 @@ set_tests_properties(stt_iosevka PROPERTIES
 # 1×1 native window, no Pbuffers) and that diagnostics are issued instead of
 # memory corruption when features like FBOs are unavailable.
 #
-# Two build paths:
+# Three build paths:
+#   PortableGL mode (OBOL_PORTABLEGL_BUILD): uses initCoinHeadless() with the
+#       PortableGL context manager — same headless path as OSMesa.
 #   OSMesa mode (RENDERING_USE_OSMESA): uses initCoinHeadless() with the
 #       OSMesa context manager — same headless path as all other OSMesa tests.
 #   System GL mode: uses BasicFLTKContextManager (FLTK 1×1 window); requires
 #       FLTK, X11, and system OpenGL.
-if(RENDERING_USE_OSMESA OR (FLTK_FOUND AND X11_FOUND AND (TARGET OpenGL::GL OR OPENGL_gl_LIBRARY)))
+if(OBOL_PORTABLEGL_BUILD OR RENDERING_USE_OSMESA OR (FLTK_FOUND AND X11_FOUND AND (TARGET OpenGL::GL OR OPENGL_gl_LIBRARY)))
     add_executable(render_basic_context render_basic_context.cpp)
     target_include_directories(render_basic_context PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
@@ -491,7 +493,12 @@ if(RENDERING_USE_OSMESA OR (FLTK_FOUND AND X11_FOUND AND (TARGET OpenGL::GL OR O
             ${PROJECT_NAME}
             ${OBOL_TARGET_LINK_LIBRARIES}
     )
-    if(RENDERING_USE_OSMESA)
+    if(OBOL_PORTABLEGL_BUILD)
+        # PortableGL mode: use initCoinHeadless() with PortableGL context manager.
+        # OBOL_PORTABLEGL_BUILD is already set via add_definitions() globally;
+        # headless_utils.h selects the portablegl path automatically.
+        message(STATUS "render_basic_context: graceful-degradation test enabled (PortableGL/headless path)")
+    elseif(RENDERING_USE_OSMESA)
         # OSMesa mode: use initCoinHeadless() (headless OSMesa context manager).
         # OBOL_VIEWER_FLTK_GL must NOT be defined — the #else branch in
         # render_basic_context.cpp uses headless_utils.h / initCoinHeadless().
@@ -703,7 +710,12 @@ target_include_directories(obol_render_tests_gl PRIVATE
 target_link_libraries(obol_render_tests_gl
     PUBLIC ${PROJECT_NAME} ${OBOL_TARGET_LINK_LIBRARIES}
 )
-if(RENDERING_USE_OSMESA)
+if(OBOL_PORTABLEGL_BUILD)
+    # PortableGL mode: OBOL_PORTABLEGL_BUILD already set globally via add_definitions().
+    # headless_utils.h will include portablegl_context_manager.h automatically.
+    # Include dirs for portablegl.h come from OBOL_TARGET_INCLUDE_DIRECTORIES.
+    message(STATUS "obol_render_tests_gl: using PortableGL headless backend")
+elseif(RENDERING_USE_OSMESA)
     target_compile_definitions(obol_render_tests_gl PRIVATE OBOL_OSMESA_BUILD)
     if(OSMESA_INCLUDE_DIR)
         target_include_directories(obol_render_tests_gl PRIVATE ${OSMESA_INCLUDE_DIR})

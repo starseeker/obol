@@ -134,15 +134,11 @@
 #ifndef GL_COLOR_MATERIAL_PARAMETER
 #  define GL_COLOR_MATERIAL_PARAMETER 0x0B56
 #endif
-#ifndef GL_FRONT
-#  define GL_FRONT               0x0404
-#endif
-#ifndef GL_BACK
-#  define GL_BACK                0x0405
-#endif
-#ifndef GL_FRONT_AND_BACK
-#  define GL_FRONT_AND_BACK      0x0408
-#endif
+/* NOTE: GL_FRONT (0x0404), GL_BACK (0x0405), and GL_FRONT_AND_BACK (0x0408)
+ * are intentionally NOT defined here.  PortableGL defines these as sequential
+ * enum members (GL_FRONT=184, GL_BACK=185, GL_FRONT_AND_BACK=186).  Defining
+ * macros with standard OpenGL values here would create a mismatch between
+ * calling code and portablegl's internal switch-case dispatch. */
 
 /* ─── Texture environment ─────────────────────────────────────────────────── */
 #ifndef GL_TEXTURE_ENV
@@ -163,9 +159,10 @@
 #ifndef GL_REPLACE
 #  define GL_REPLACE             0x1E01
 #endif
-#ifndef GL_BLEND
-#  define GL_BLEND               0x0BE2
-#endif
+/* NOTE: GL_BLEND (0x0BE2) is intentionally NOT defined here as a macro.
+ * PortableGL defines GL_BLEND as an enum member (=172) for use as a glEnable
+ * cap.  Defining it as a macro with the standard value would break
+ * glEnable(GL_BLEND) since portablegl's internal switch uses value 172. */
 
 /* ─── Texture coordinate generation ─────────────────────────────────────── */
 #ifndef GL_TEXTURE_GEN_S
@@ -302,6 +299,12 @@
 #ifndef GL_FOG_BIT
 #  define GL_FOG_BIT             0x00000080
 #endif
+/* NOTE: The buffer-bit constants below use standard OpenGL values.  These
+ * DO NOT match portablegl's internal enum values (COLOR=1<<10, DEPTH=1<<11,
+ * STENCIL=1<<12).  The pgl_igl_Clear interceptor in SoDBPortableGL.cpp
+ * translates standard values to portablegl's internal values before calling
+ * pgl_glClear().  The standard values are used here so that Obol source code
+ * can call glClear() with the correct symbolic constants. */
 #ifndef GL_DEPTH_BUFFER_BIT
 #  define GL_DEPTH_BUFFER_BIT    0x00000100
 #endif
@@ -321,6 +324,8 @@
 #  define GL_ENABLE_BIT          0x00002000
 #endif
 #ifndef GL_COLOR_BUFFER_BIT
+/* NOTE: standard GL value; pgl_igl_Clear translates this to portablegl's
+ * internal 1<<10 value before calling pgl_glClear(). */
 #  define GL_COLOR_BUFFER_BIT    0x00004000
 #endif
 #ifndef GL_HINT_BIT

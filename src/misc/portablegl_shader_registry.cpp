@@ -32,6 +32,7 @@
 
 #define PGL_PREFIX_TYPES 1
 #define PGL_PREFIX_GLSL  1
+#define PGL_PREFIX_GL    1
 #include <portablegl/portablegl.h>
 
 #include "portablegl_compat_state.h"
@@ -117,6 +118,7 @@ GLuint pgl_igl_CreateShaderObjectARB(GLenum type) {
     std::lock_guard<std::mutex> lk(s_reg_mutex);
     GLuint id = s_next_shader_id++;
     FakeShaderObj obj;
+    fprintf(stderr, "[PGL shader] CreateShaderObject type=%u → id=%u\n", (unsigned)type, id);
     obj.type        = type;
     obj.is_fragment = (type == GL_FRAGMENT_SHADER_ARB || type == 0x8B30u);
     s_shaders[id]   = std::move(obj);
@@ -206,6 +208,8 @@ void pgl_igl_LinkProgramARB(GLuint prog) {
 
     ObolPGLShaderKind kind = classify_glsl(vs_src, fs_src);
     GLuint pgl_prog = obol_pgl_create_shader(kind);
+    fprintf(stderr, "[PGL shader] LinkProgram %u → kind=%d pgl_prog=%u\n",
+            prog, (int)kind, pgl_prog);
 
     pit->second.kind       = kind;
     pit->second.pgl_handle = pgl_prog;
@@ -223,6 +227,7 @@ void pgl_igl_UseProgramObjectARB(GLuint prog) {
     std::lock_guard<std::mutex> lk(s_reg_mutex);
     auto it = s_programs.find(prog);
     if (it == s_programs.end() || it->second.pgl_handle == 0) {
+    
         glUseProgram(0); return;
     }
     glUseProgram(it->second.pgl_handle);
