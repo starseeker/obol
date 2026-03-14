@@ -1,4 +1,4 @@
-# Obol - minimalist rework of Coin
+# Obol - 3D Scene Display and Interaction Library
 
 ![Obol_Demo](docs/obol_viewer.png)
 ![Obol_Demo_Moving](docs/obol_viewer_moving.png)
