@@ -228,12 +228,14 @@ inline bool renderToFile(
     return true;
 }
 
-#elif defined(OBOL_SWRAST_BUILD)
+#elif defined(OBOL_SWRAST_BUILD) && !defined(OBOL_DUAL_GL_BUILD)
 // ============================================================================
 // Software-rasterizer (OSMesa) backend: for offscreen/headless rendering
-// without a display server.  Used for swrast-only builds.  In OBOL_DUAL_GL_BUILD
-// builds the Coin scene traversal still uses system GL symbols, so tests for
-// that build fall through to the system-GL / GLX path below (requires Xvfb).
+// without a display server.  Used for swrast-only builds only.
+// Dual-GL builds (OBOL_DUAL_GL_BUILD) do NOT enter this path: examples in
+// dual-GL builds use system GL symbols and fall through to the system-GL /
+// GLX path below (requires Xvfb).  OSMesa headers are not available to the
+// examples in a dual-GL build.
 // Headers come from the project's own submodule (external/osmesa/include/OSMesa/)
 // ============================================================================
 #include <OSMesa/osmesa.h>
