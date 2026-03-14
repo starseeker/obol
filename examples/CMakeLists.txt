@@ -19,7 +19,7 @@
 #   ├── arb8_dragger_example.cpp
 #   ├── truncated_cone_example.cpp
 #   ├── modern_api_example.h
-#   └── swrast_example.h
+#   └── osmesa_example.h
 #
 # Both FLTK and Qt viewers link against ObolEx (libObolEx) which provides
 # the shared scene catalogue and test registry (built in tests/testlib/).
