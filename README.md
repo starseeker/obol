@@ -38,13 +38,9 @@ so a small, ancient coin seemed like a good fit.
 ## Documentation
 
 * `docs/API_DIFFERENCES.md` — comprehensive API migration guide (Obol vs. Coin)
-* `docs/BUILD_OPTIONS.md` — CMake build options reference
+* `docs/BACKEND_SURVEY.md` — Documents which parts of the API can work without OpenGL
 * `docs/CONTEXT_MANAGEMENT_API.md` — `SoDB::ContextManager` API reference with worked examples
-* `docs/TESTING.md` — test suite overview and how to write new tests
-* `docs/COIN_MIGRATION_PLAN.md` — modernization status and completed work log
-* `docs/THREADING_MIGRATION.md` — C++17 threading migration details
 * `docs/STORAGE_MIGRATION.md` — thread-local storage migration analysis and status
-* `docs/PLATFORM_CLEANUP_SUMMARY.md` — platform-specific code removal summary
 
 ## License and trademarks
 
