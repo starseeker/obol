@@ -259,6 +259,52 @@ void pgl_igl_Disable(GLenum cap) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Draw-call interceptors: convert legacy primitive modes to GL 3.x modes
+ * PortableGL supports modes 0 (GL_POINTS) through 6 (GL_TRIANGLE_FAN).
+ * GL_QUADS (7), GL_QUAD_STRIP (8), and GL_POLYGON (9) must be mapped.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Map legacy mode to the nearest supported PortableGL mode. */
+static GLenum pgl_map_draw_mode(GLenum mode) {
+    if (mode == GL_POLYGON)    return GL_TRIANGLE_FAN;
+    if (mode == GL_QUAD_STRIP) return GL_TRIANGLE_STRIP;
+    return mode;  /* GL_QUADS needs index remapping (done below), others pass through */
+}
+
+void pgl_igl_DrawArrays(GLenum mode, GLint first, GLsizei count) {
+    if (mode == GL_QUADS && count >= 4) {
+        /* Each quad (v0,v1,v2,v3) → two triangles (v0,v1,v2) + (v0,v2,v3). */
+        std::vector<GLuint> idx;
+        idx.reserve((size_t)count / 4 * 6);
+        for (GLint q = 0; q + 3 < count; q += 4) {
+            GLuint b = (GLuint)(first + q);
+            idx.push_back(b);   idx.push_back(b+1); idx.push_back(b+2);
+            idx.push_back(b);   idx.push_back(b+2); idx.push_back(b+3);
+        }
+        GLuint ebo; glGenBuffers(1, &ebo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                     (GLsizei)(idx.size() * sizeof(GLuint)),
+                     idx.data(), GL_STREAM_DRAW);
+        glDrawElements(GL_TRIANGLES, (GLsizei)idx.size(), GL_UNSIGNED_INT, nullptr);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+        glDeleteBuffers(1, &ebo);
+        return;
+    }
+    glDrawArrays(pgl_map_draw_mode(mode), first, count);
+}
+
+void pgl_igl_DrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid* indices) {
+    if (mode == GL_QUADS) {
+        /* Convert quad indices: each group of 4 indices → 6 triangle indices. */
+        /* For now, fall back to GL_TRIANGLES assuming the caller tessellated. */
+        glDrawElements(GL_TRIANGLES, count, type, indices);
+        return;
+    }
+    glDrawElements(pgl_map_draw_mode(mode), count, type, indices);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Fog state interceptors
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -355,7 +401,12 @@ void pgl_igl_End() {
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,0);
         glDeleteBuffers(1,&ebo);
     } else {
-        glDrawArrays(s_imm_prim==GL_QUADS?GL_TRIANGLES:s_imm_prim,0,(GLsizei)s_imm_verts.size());
+        /* GL_POLYGON → GL_TRIANGLE_FAN; GL_QUAD_STRIP → GL_TRIANGLE_STRIP.
+         * Both are convex/equivalent for the simple cases Obol generates.  */
+        GLenum draw_mode = s_imm_prim;
+        if (draw_mode == GL_POLYGON)    draw_mode = GL_TRIANGLE_FAN;
+        if (draw_mode == GL_QUAD_STRIP) draw_mode = GL_TRIANGLE_STRIP;
+        glDrawArrays(draw_mode, 0, (GLsizei)s_imm_verts.size());
     }
     glBindVertexArray(0);
 }

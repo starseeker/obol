@@ -77,6 +77,8 @@ extern "C" {
     void pgl_igl_GetMaterialfv(GLenum,GLenum,GLfloat*);
     void pgl_igl_Enable(GLenum);
     void pgl_igl_Disable(GLenum);
+    void pgl_igl_DrawArrays(GLenum, GLint, GLsizei);
+    void pgl_igl_DrawElements(GLenum, GLsizei, GLenum, const GLvoid*);
     void pgl_igl_Begin(GLenum);
     void pgl_igl_End();
     void pgl_igl_Vertex2f(GLfloat,GLfloat);
@@ -200,8 +202,8 @@ struct PGLProcEntry { const char* name; void* fn; };
 
 static const PGLProcEntry s_pgl_proctable[] = {
     /* Core drawing */
-    { "glDrawArrays",              (void*)glDrawArrays              },
-    { "glDrawElements",            (void*)glDrawElements            },
+    { "glDrawArrays",              (void*)pgl_igl_DrawArrays        },
+    { "glDrawElements",            (void*)pgl_igl_DrawElements      },
     { "glDrawArraysInstanced",     (void*)glDrawArraysInstanced     },
     { "glDrawElementsInstanced",   (void*)glDrawElementsInstanced   },
     { "glMultiDrawArrays",         (void*)glMultiDrawArrays         },
