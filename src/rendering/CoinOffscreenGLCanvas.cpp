@@ -275,6 +275,13 @@ CoinOffscreenGLCanvas::tryActivateGLContext(void)
       coingl_register_osmesa_context(static_cast<int>(this->renderid));
     }
 #endif
+#if defined(OBOL_BUILD_DUAL_PORTABLEGL) || defined(OBOL_PORTABLEGL_BUILD)
+    /* In portablegl builds, register this context ID so that
+       SoGLContext_instance() dispatches to the PortableGL variant. */
+    if (mgr->isPortableGLContext(this->context)) {
+      coingl_register_portablegl_context(static_cast<int>(this->renderid));
+    }
+#endif
 
     // Note: HDC handling is Windows-specific and should be handled by 
     // the callback implementation if needed
@@ -440,11 +447,13 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
     return;
   }
 
-  // For OSMesa contexts, glReadPixels reads directly from the OSMesa buffer
-  // (no FBO involved).  For system-GL contexts, ensure the FBO is bound.
+  // For OSMesa and PortableGL contexts, glReadPixels reads directly from the
+  // backend's own buffer (no FBO involved).  For system-GL contexts, ensure
+  // the FBO is bound.
   SoDB::ContextManager * mgr = this->effectiveMgr();
-  const bool isOSMesa = mgr && this->context && mgr->isOSMesaContext(this->context);
-  if (!isOSMesa) {
+  const bool isOSMesaOrPGL = mgr && this->context &&
+      (mgr->isOSMesaContext(this->context) || mgr->isPortableGLContext(this->context));
+  if (!isOSMesaOrPGL) {
     if (this->fbo_initialized && this->fbo != 0) {
       SoGLContext_glBindFramebuffer(glue, GL_FRAMEBUFFER_EXT, this->fbo);
     }
@@ -809,15 +818,14 @@ CoinOffscreenGLCanvas::cleanupFBO(void)
 SbBool
 CoinOffscreenGLCanvas::bindFBO(void)
 {
-  // OSMesa renders directly to the buffer supplied at context creation time
-  // (via OSMesaMakeCurrent) – there is no separate framebuffer object needed.
-  // Attempting to create one would require GL_EXT_framebuffer_object support
-  // from the OSMesa implementation, which the bundled OSMesa may not provide.
-  // SoGLContext_glReadPixels() will read from the OSMesa buffer directly when an OSMesa
-  // context is current, so we can skip FBO entirely for these contexts.
+  // OSMesa and PortableGL render directly to their own back-buffer; no
+  // separate FBO is needed.  SoGLContext_glReadPixels() handles readback
+  // via the respective backend's buffer pointer.
   SoDB::ContextManager * mgr = this->effectiveMgr();
-  if (mgr && this->context && mgr->isOSMesaContext(this->context)) {
-    return TRUE;  // use OSMesa's own buffer – no FBO needed
+  if (mgr && this->context &&
+      (mgr->isOSMesaContext(this->context) ||
+       mgr->isPortableGLContext(this->context))) {
+    return TRUE;  // use the backend's own buffer – no FBO needed
   }
 
   if (!this->fbo_initialized) {
@@ -840,9 +848,11 @@ CoinOffscreenGLCanvas::bindFBO(void)
 void
 CoinOffscreenGLCanvas::unbindFBO(void)
 {
-  // No FBO to unbind for OSMesa contexts (see bindFBO comment).
+  // No FBO to unbind for OSMesa or PortableGL contexts (see bindFBO comment).
   SoDB::ContextManager * mgr = this->effectiveMgr();
-  if (mgr && this->context && mgr->isOSMesaContext(this->context)) {
+  if (mgr && this->context &&
+      (mgr->isOSMesaContext(this->context) ||
+       mgr->isPortableGLContext(this->context))) {
     return;
   }
 

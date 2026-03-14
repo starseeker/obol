@@ -67,6 +67,7 @@ extern "C" {
     void pgl_igl_Ortho(GLdouble,GLdouble,GLdouble,GLdouble,GLdouble,GLdouble);
     void pgl_igl_Frustum(GLdouble,GLdouble,GLdouble,GLdouble,GLdouble,GLdouble);
     void pgl_igl_Lightfv(GLenum,GLenum,const GLfloat*);
+    void pgl_igl_Lightf(GLenum,GLenum,GLfloat);
     void pgl_igl_Lighti(GLenum,GLenum,GLint);
     void pgl_igl_LightModelfv(GLenum,const GLfloat*);
     void pgl_igl_LightModeli(GLenum,GLint);
@@ -160,6 +161,30 @@ extern "C" {
 extern thread_local ObolPGLCompatState* g_cur_compat;
 
 /* ─────────────────────────────────────────────────────────────────────────── */
+/* No-op stubs for GL 1.x compatibility-profile functions that PortableGL      */
+/* does not implement.  These are needed so that SoGLContext's function pointer */
+/* table has valid non-null entries and Obol code can call them safely.         */
+/* ─────────────────────────────────────────────────────────────────────────── */
+static void pgl_noop_glFlush(void) {}
+static void pgl_noop_glFinish(void) {}
+static void pgl_noop_glIndexi(GLint) {}
+static void pgl_noop_glPixelTransferi(GLenum, GLint) {}
+static void pgl_noop_glPixelTransferf(GLenum, GLfloat) {}
+static void pgl_noop_glPixelMapfv(GLenum, GLsizei, const GLfloat*) {}
+static void pgl_noop_glPixelMapuiv(GLenum, GLsizei, const GLuint*) {}
+static void pgl_noop_glPixelMapusv(GLenum, GLsizei, const GLushort*) {}
+static void pgl_noop_glPushAttrib(GLbitfield) {}
+static void pgl_noop_glPopAttrib(void) {}
+static void pgl_noop_glPushClientAttrib(GLbitfield) {}
+static void pgl_noop_glPopClientAttrib(void) {}
+
+/* glClear interceptor: strip bits that PortableGL does not support
+ * (e.g. GL_ACCUM_BUFFER_BIT) so pgl_glClear does not raise GL_INVALID_VALUE. */
+static void pgl_igl_Clear(GLbitfield mask) {
+    glClear(mask & (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT));
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
 /* NOTE: glReadPixels and all other interceptors are now in                     */
 /* portablegl_compat_funcs.cpp and portablegl_shader_registry.cpp.             */
 /* This file only contains the context manager and proc-address table.         */
@@ -212,7 +237,7 @@ static const PGLProcEntry s_pgl_proctable[] = {
     { "glProvokingVertex",         (void*)glProvokingVertex         },
 
     /* Clear */
-    { "glClear",                   (void*)glClear                   },
+    { "glClear",                   (void*)pgl_igl_Clear             },
     { "glClearColor",              (void*)glClearColor              },
     { "glClearDepth",              (void*)glClearDepth              },
     { "glClearDepthf",             (void*)glClearDepthf             },
@@ -281,6 +306,7 @@ static const PGLProcEntry s_pgl_proctable[] = {
 
     /* Light state interceptors */
     { "glLightfv",                 (void*)pgl_igl_Lightfv           },
+    { "glLightf",                  (void*)pgl_igl_Lightf            },
     { "glLighti",                  (void*)pgl_igl_Lighti            },
     { "glLightModelfv",            (void*)pgl_igl_LightModelfv      },
     { "glLightModeli",             (void*)pgl_igl_LightModeli       },
@@ -370,6 +396,18 @@ static const PGLProcEntry s_pgl_proctable[] = {
     { "glFogfv",                   (void*)pgl_igl_Fogfv                   },
     { "glFogiv",                   (void*)pgl_igl_Fogiv                   },
     /* Misc */
+    { "glFlush",                   (void*)pgl_noop_glFlush          },
+    { "glFinish",                  (void*)pgl_noop_glFinish         },
+    { "glIndexi",                  (void*)pgl_noop_glIndexi         },
+    { "glPixelTransferi",          (void*)pgl_noop_glPixelTransferi },
+    { "glPixelTransferf",          (void*)pgl_noop_glPixelTransferf },
+    { "glPixelMapfv",              (void*)pgl_noop_glPixelMapfv     },
+    { "glPixelMapuiv",             (void*)pgl_noop_glPixelMapuiv    },
+    { "glPixelMapusv",             (void*)pgl_noop_glPixelMapusv    },
+    { "glPushAttrib",              (void*)pgl_noop_glPushAttrib     },
+    { "glPopAttrib",               (void*)pgl_noop_glPopAttrib      },
+    { "glPushClientAttrib",        (void*)pgl_noop_glPushClientAttrib },
+    { "glPopClientAttrib",         (void*)pgl_noop_glPopClientAttrib},
     { "glDrawBuffers",             (void*)glDrawBuffers             },
     { "glReadBuffer",              (void*)glReadBuffer              },
 

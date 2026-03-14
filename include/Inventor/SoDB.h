@@ -184,6 +184,15 @@ public:
     virtual SbBool isOSMesaContext(void * /*context*/) { return FALSE; }
 
     /**
+     * Returns TRUE if this context was created by a PortableGL software
+     * renderer.  PortableGL has its own back-buffer and does not need a
+     * traditional FBO for offscreen rendering; CoinOffscreenGLCanvas uses
+     * this flag to skip FBO creation (same as for OSMesa).
+     * Defaults to FALSE; override in PortableGL context managers.
+     */
+    virtual SbBool isPortableGLContext(void * /*context*/) { return FALSE; }
+
+    /**
      * Report the maximum offscreen rendering dimensions supported by this
      * backend.  CoinOffscreenGLCanvas calls this instead of probing the
      * global GL pipeline so that per-instance managers (e.g. an OSMesa

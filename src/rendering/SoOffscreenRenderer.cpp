@@ -2245,6 +2245,9 @@ SoOffscreenRendererP::offscreenContextsNotSupported(void)
 #elif defined(HAVE_OSMESA)
   // OSMesa provides offscreen rendering via software Mesa implementation
   return FALSE;
+#elif defined(OBOL_PORTABLEGL_BUILD)
+  // PortableGL provides CPU software offscreen rendering via SoDB::ContextManager
+  return FALSE;
 #endif
 
   // No win-system GL binding was found, so we're sure that offscreen

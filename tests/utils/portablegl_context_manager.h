@@ -102,6 +102,17 @@ struct CoinPortableGLContextData {
     }
 };
 
+/* getProcAddress delegates to the static table in SoDBPortableGL.cpp.
+ * Declared at namespace scope because extern "C" is not allowed inside
+ * a member function body (C++ linkage specifications are namespace-scope only). */
+#ifdef __cplusplus
+extern "C" {
+#endif
+void* obol_portablegl_getprocaddress(const char* funcName);
+#ifdef __cplusplus
+}
+#endif
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* SoDB::ContextManager implementation                                         */
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -120,6 +131,10 @@ public:
 
     virtual SbBool isOSMesaContext(void * /*context*/) override {
         return FALSE;
+    }
+
+    virtual SbBool isPortableGLContext(void * /*context*/) override {
+        return TRUE;
     }
 
     virtual void maxOffscreenDimensions(unsigned int & width,
@@ -143,11 +158,8 @@ public:
         delete static_cast<CoinPortableGLContextData*>(context);
     }
 
-    /* getProcAddress delegates to the static table in SoDBPortableGL.cpp.
-     * The symbol is declared extern "C" so this header does not need to pull
-     * in SoDBPortableGL.cpp directly. */
+    /* getProcAddress delegates to the static table in SoDBPortableGL.cpp. */
     virtual void * getProcAddress(const char * funcName) override {
-        extern "C" void* obol_portablegl_getprocaddress(const char*);
         return obol_portablegl_getprocaddress(funcName);
     }
 };

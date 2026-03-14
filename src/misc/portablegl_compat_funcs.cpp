@@ -157,6 +157,9 @@ void pgl_igl_Lightfv(GLenum light, GLenum pname, const GLfloat* p) {
     case GL_QUADRATIC_ATTENUATION:L.attenuation[2]=p[0]; break;
     }
 }
+void pgl_igl_Lightf(GLenum light, GLenum pname, GLfloat param) {
+    pgl_igl_Lightfv(light, pname, &param);
+}
 void pgl_igl_Lighti(GLenum light, GLenum pname, GLint param) {
     float f=(float)param; pgl_igl_Lightfv(light, pname, &f);
 }
@@ -205,7 +208,27 @@ void pgl_igl_Enable(GLenum cap) {
         }
         if (cap==GL_FOG) { g_cur_compat->fog_enabled=true; return; }
     }
-    glEnable(cap);
+    /* Only pass caps that PortableGL's glEnable() actually supports;
+     * silently drop GL 1.x fixed-function caps (GL_LIGHTING, GL_COLOR_MATERIAL,
+     * GL_NORMALIZE, etc.) that would cause GL_INVALID_ENUM.              */
+    switch (cap) {
+    case GL_CULL_FACE:
+    case GL_DEPTH_TEST:
+    case GL_DEPTH_CLAMP:
+    case GL_LINE_SMOOTH:
+    case GL_BLEND:
+    case GL_COLOR_LOGIC_OP:
+    case GL_POLYGON_OFFSET_POINT:
+    case GL_POLYGON_OFFSET_LINE:
+    case GL_POLYGON_OFFSET_FILL:
+    case GL_SCISSOR_TEST:
+    case GL_STENCIL_TEST:
+    case GL_DEBUG_OUTPUT:
+        glEnable(cap);
+        break;
+    default:
+        break; /* silently ignore unsupported fixed-function caps */
+    }
 }
 void pgl_igl_Disable(GLenum cap) {
     if (g_cur_compat) {
@@ -215,7 +238,24 @@ void pgl_igl_Disable(GLenum cap) {
         }
         if (cap==GL_FOG) { g_cur_compat->fog_enabled=false; return; }
     }
-    glDisable(cap);
+    switch (cap) {
+    case GL_CULL_FACE:
+    case GL_DEPTH_TEST:
+    case GL_DEPTH_CLAMP:
+    case GL_LINE_SMOOTH:
+    case GL_BLEND:
+    case GL_COLOR_LOGIC_OP:
+    case GL_POLYGON_OFFSET_POINT:
+    case GL_POLYGON_OFFSET_LINE:
+    case GL_POLYGON_OFFSET_FILL:
+    case GL_SCISSOR_TEST:
+    case GL_STENCIL_TEST:
+    case GL_DEBUG_OUTPUT:
+        glDisable(cap);
+        break;
+    default:
+        break;
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -386,21 +426,47 @@ void pgl_igl_PixelStorei(GLenum pname, GLint param) {
 void pgl_igl_ReadPixels(GLint x, GLint y, GLsizei width, GLsizei height,
                          GLenum format, GLenum type, GLvoid* pixels)
 {
-    if (format!=GL_RGBA || type!=GL_UNSIGNED_BYTE) {
-        if (pixels) memset(pixels,0,(size_t)width*height*4);
+    if (!pixels) return;
+
+    /* PortableGL's back buffer is always RGBA8. Map to requested format. */
+    const pix_t* src = static_cast<const pix_t*>(pglGetBackBuffer());
+    if (!src) {
+        /* No current context or back buffer not yet allocated. */
+        const size_t bpp = (format == GL_RGBA) ? 4 : 3;
+        memset(pixels, 0, (size_t)width * height * bpp);
         return;
     }
-    /* pglGetBackBuffer() returns c->back_buffer.buf (top row first in PGL),
-     * whereas OpenGL's glReadPixels returns bottom row first.
-     * We flip vertically when copying, and respect GL_PACK_ROW_LENGTH.     */
-    const pix_t* src = static_cast<const pix_t*>(pglGetBackBuffer());
-    if (!src || !pixels) return;
+
     GLsizei dst_stride = (g_pack_row_length > 0) ? g_pack_row_length : width;
     unsigned char* dst = static_cast<unsigned char*>(pixels);
-    for (GLsizei row=0; row<height; ++row) {
-        GLint src_row = y + (height-1-row);
-        const unsigned char* sptr = reinterpret_cast<const unsigned char*>(src + src_row*width) + x*4;
-        memcpy(dst + (size_t)row * dst_stride * 4, sptr, (size_t)width * 4);
+
+    if (format == GL_RGBA && type == GL_UNSIGNED_BYTE) {
+        /* Direct RGBA → RGBA copy with vertical flip. */
+        for (GLsizei row = 0; row < height; ++row) {
+            GLint src_row = y + (height - 1 - row);
+            const unsigned char* sptr = reinterpret_cast<const unsigned char*>(
+                src + src_row * width) + x * 4;
+            memcpy(dst + (size_t)row * dst_stride * 4, sptr, (size_t)width * 4);
+        }
+    } else if (format == GL_RGB && type == GL_UNSIGNED_BYTE) {
+        /* RGBA → RGB conversion with vertical flip. */
+        for (GLsizei row = 0; row < height; ++row) {
+            GLint src_row = y + (height - 1 - row);
+            const unsigned char* sptr = reinterpret_cast<const unsigned char*>(
+                src + src_row * width) + x * 4;
+            unsigned char* dptr = dst + (size_t)row * dst_stride * 3;
+            for (GLsizei col = 0; col < width; ++col) {
+                dptr[0] = sptr[0];
+                dptr[1] = sptr[1];
+                dptr[2] = sptr[2];
+                sptr += 4;
+                dptr += 3;
+            }
+        }
+    } else {
+        /* Unsupported format/type combination: zero-fill. */
+        const size_t bpp = (format == GL_RGBA) ? 4 : 3;
+        memset(pixels, 0, (size_t)width * height * bpp);
     }
 }
 

@@ -169,7 +169,61 @@ inline SoOffscreenRenderer* getSharedRenderer() {
     return s_renderer;
 }
 
-#else // !OBOL_OSMESA_BUILD
+#elif defined(OBOL_PORTABLEGL_BUILD)
+// ============================================================================
+// PortableGL Backend: CPU software renderer, no system GL/X11 required
+// ============================================================================
+// IMPORTANT: Do NOT include <GL/gl.h> or <GL/glx.h> here.
+#include "../../tests/utils/portablegl_context_manager.h"
+
+namespace {
+    inline CoinPortableGLContextManager & mentor_pgl_mgr_singleton() {
+        static CoinPortableGLContextManager instance;
+        return instance;
+    }
+} // anonymous namespace
+
+inline void initCoinHeadless() {
+    SoDB::init(&mentor_pgl_mgr_singleton());
+    SoNodeKit::init();
+    SoInteraction::init();
+}
+
+inline SoOffscreenRenderer* getSharedRenderer() {
+    static SoOffscreenRenderer *s_renderer = nullptr;
+    if (!s_renderer) {
+        SbViewportRegion vp(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        s_renderer = new SoOffscreenRenderer(&mentor_pgl_mgr_singleton(), vp);
+    }
+    return s_renderer;
+}
+
+inline bool renderToFile(
+    SoNode *root,
+    const char *filename,
+    int width = DEFAULT_WIDTH,
+    int height = DEFAULT_HEIGHT,
+    const SbColor &backgroundColor = SbColor(0.0f, 0.0f, 0.0f))
+{
+    if (!root || !filename) return false;
+    SoOffscreenRenderer *renderer = getSharedRenderer();
+    SbViewportRegion viewport(width, height);
+    renderer->setViewportRegion(viewport);
+    renderer->setComponents(SoOffscreenRenderer::RGB);
+    renderer->setBackgroundColor(backgroundColor);
+    if (!renderer->render(root)) {
+        fprintf(stderr, "Error: Failed to render scene (PortableGL)\n");
+        return false;
+    }
+    if (!renderer->writeToRGB(filename)) {
+        fprintf(stderr, "Error: Failed to write to RGB file %s\n", filename);
+        return false;
+    }
+    printf("Successfully rendered to %s (%dx%d) [PortableGL]\n", filename, width, height);
+    return true;
+}
+
+#else // !OBOL_OSMESA_BUILD && !OBOL_PORTABLEGL_BUILD
 // ============================================================================
 // System OpenGL Backend: GLX on Linux (use Xvfb for headless operation)
 // ============================================================================
@@ -481,7 +535,7 @@ inline bool renderToFile(
     return true;
 }
 
-#endif // OBOL_OSMESA_BUILD
+#endif // OBOL_OSMESA_BUILD / OBOL_PORTABLEGL_BUILD / system-GL
 
 /**
  * Find camera in scene graph

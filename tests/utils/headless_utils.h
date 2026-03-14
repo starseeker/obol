@@ -432,7 +432,75 @@ inline bool renderToFile(
     return true;
 }
 
-#else // !OBOL_OSMESA_BUILD
+#elif defined(OBOL_PORTABLEGL_BUILD)
+// ============================================================================
+// PortableGL Backend: CPU software renderer, no system GL/X11 required
+// ============================================================================
+// Uses CoinPortableGLContextManager from portablegl_context_manager.h.
+// IMPORTANT: Do NOT include <GL/gl.h> or <GL/glx.h> here – they define
+// GL_NO_ERROR and other tokens as macros that break portablegl.h's enum.
+#include "portablegl_context_manager.h"
+
+namespace {
+    inline CoinPortableGLContextManager & pgl_context_manager_singleton() {
+        static CoinPortableGLContextManager instance;
+        return instance;
+    }
+} // anonymous namespace
+
+inline void initCoinHeadless() {
+    SoDB::init(&pgl_context_manager_singleton());
+    SoNodeKit::init();
+    SoInteraction::init();
+}
+
+inline SoDB::ContextManager * getCoinHeadlessContextManager() {
+    return &pgl_context_manager_singleton();
+}
+
+inline SoOffscreenRenderer* getSharedRenderer() {
+    static SoOffscreenRenderer *s_renderer = nullptr;
+    if (!s_renderer) {
+        SbViewportRegion vp(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        s_renderer = new SoOffscreenRenderer(&pgl_context_manager_singleton(), vp);
+    }
+    return s_renderer;
+}
+
+inline bool renderToFile(
+    SoNode *root,
+    const char *filename,
+    int width = DEFAULT_WIDTH,
+    int height = DEFAULT_HEIGHT,
+    const SbColor &backgroundColor = SbColor(0.0f, 0.0f, 0.0f))
+{
+    if (!root || !filename) {
+        fprintf(stderr, "Error: Invalid parameters to renderToFile\n");
+        return false;
+    }
+
+    SoOffscreenRenderer *renderer = getSharedRenderer();
+    SbViewportRegion viewport(width, height);
+    renderer->setViewportRegion(viewport);
+    renderer->setComponents(SoOffscreenRenderer::RGB);
+    renderer->setBackgroundColor(backgroundColor);
+
+    if (!renderer->render(root)) {
+        fprintf(stderr, "Error: Failed to render scene (PortableGL)\n");
+        return false;
+    }
+
+    if (!renderer->writeToRGB(filename)) {
+        fprintf(stderr, "Error: Failed to write to RGB file %s\n", filename);
+        return false;
+    }
+
+    printf("Successfully rendered to %s (%dx%d) [PortableGL]\n",
+           filename, width, height);
+    return true;
+}
+
+#else // !OBOL_OSMESA_BUILD && !OBOL_PORTABLEGL_BUILD
 // ============================================================================
 // System OpenGL Backend: GLX on Linux (use Xvfb for headless operation)
 // ============================================================================
@@ -796,7 +864,7 @@ inline bool renderToFile(
     return true;
 }
 
-#endif // OBOL_OSMESA_BUILD
+#endif // OBOL_OSMESA_BUILD / OBOL_PORTABLEGL_BUILD / system-GL
 
 /**
  * Find camera in scene graph

@@ -619,8 +619,10 @@
 
 /* ─── glFinish / glFlush ─────────────────────────────────────────────────── */
 /* PortableGL is synchronous (CPU-based); Finish/Flush are no-ops.
- * Defined here so Obol source files that call them compile without changes.  */
-#ifndef GL_FINISH_DEFINED
+ * Only defined when the system GL/gl.h has NOT been included; system GL
+ * already declares these as extern, and we must not shadow them with a
+ * static inline that causes a linkage conflict.                               */
+#if !defined(__gl_h_) && !defined(GL_FINISH_DEFINED)
 #  define GL_FINISH_DEFINED
 static inline void glFinish(void) {}
 static inline void glFlush(void)  {}
@@ -818,8 +820,9 @@ static inline void glFlush(void)  {}
 #  define GL_PROXY_TEXTURE_3D               0x8070
 #endif
 /* glGetTexLevelParameteriv: PortableGL has no proxy texture mechanism.
- * Always indicate that the texture can be created (non-zero width).           */
-#ifndef GL_GETTEXLEVELPARAMETERIV_STUB
+ * Always indicate that the texture can be created (non-zero width).
+ * Only defined when system GL/gl.h has not been included.                     */
+#if !defined(__gl_h_) && !defined(GL_GETTEXLEVELPARAMETERIV_STUB)
 #  define GL_GETTEXLEVELPARAMETERIV_STUB
 static inline void glGetTexLevelParameteriv(GLenum /*target*/, GLint /*level*/,
                                             GLenum pname, GLint* params) {
@@ -842,7 +845,9 @@ static inline void glGetTexLevelParameteriv(GLenum /*target*/, GLint /*level*/,
 #endif
 #ifndef GL_SHADEMODEL_STUB
 #  define GL_SHADEMODEL_STUB
+#  if !defined(__gl_h_)
 static inline void glShadeModel(GLenum /*mode*/) {}
+#  endif
 #endif
 
 /* ─── Display lists (not supported in PortableGL) ───────────────────────── */

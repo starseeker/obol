@@ -835,6 +835,23 @@ SoGLContext_getprocaddress(const SoGLContext * glue, const char * symname)
     }
     return ptr;
   }
+  /* In a portablegl-only build, gl.cpp is compiled with PGL_PREFIX_GL=1 so
+     every gl* token in PROC() macros is already renamed to pgl_gl* by
+     portablegl_gl_mangle.h.  The proc table in SoDBPortableGL.cpp uses the
+     canonical (unprefixed) names "glFoo".  Strip the "pgl_" prefix and
+     retry so that PROC(w, glClearColor) → query "pgl_glClearColor" still
+     finds the "glClearColor" entry in the table.              */
+  if (strncmp(symname, "pgl_gl", 6) == 0) {
+    ptr = obol_portablegl_getprocaddress(symname + 4); /* skip "pgl_" */
+    if (ptr) {
+      if (SoGLContext_debug()) {
+        cc_debugerror_postinfo("SoGLContext_getprocaddress",
+                               "portablegl table (stripped pgl_): '%s' == %p",
+                               symname + 4, ptr);
+      }
+      return ptr;
+    }
+  }
   /* Fall through to context manager below for any names not in the table. */
 #elif defined(OBOL_OSMESA_BUILD) || defined(SOGL_PREFIX_SET)
   /* OSMesa path: resolve via OSMesaGetProcAddress first to guarantee we
