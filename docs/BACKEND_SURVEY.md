@@ -1,12 +1,16 @@
 # Obol Rendering Backend Feature Survey
 
-This document surveys Obol's feature set across three rendering backend tiers:
-1. **Any backend** (including nanort or another raytracing renderer)
+This document surveys Obol's feature set across four rendering backend tiers:
+1. **Any backend** (including raytracing or Vulkan rasterization)
 2. **OSMesa OpenGL 2.0 + extensions** (headless software rasterizer)
 3. **Full system OpenGL** (hardware-accelerated, all extensions)
+4. **Vulkan rasterization** (`SoVulkanContextManager`)
 
-It also describes what changes were made to allow raytracing backends to work
+It also describes what changes were made to allow non-GL backends to work
 with Obol's scene graph, and which features can be recast generically.
+
+For details on how system GL and OSMesa coexist in a single library build, see
+`docs/DUAL_GL_ARCHITECTURE.md`.
 
 ---
 
@@ -325,32 +329,60 @@ intersection works today without any OpenGL context.
 
 ---
 
+## Tier 4 — Vulkan Rasterization Backend
+
+`SoVulkanContextManager` (`tests/utils/vulkan_context_manager.h`) implements the
+`renderScene()` virtual to rasterize the Obol scene graph using the Vulkan API.
+It uses `SoRaytracerSceneCollector` (a subclass of `SoSceneCollector`) for
+geometry and light extraction, then issues Vulkan draw calls for rasterization.
+
+### Key characteristics
+
+| Property | Detail |
+|---------|--------|
+| API | Vulkan 1.0+ |
+| CI driver | Mesa lavapipe (`mesa-vulkan-drivers`) |
+| Pixel row order | Bottom-to-top (matching `SoOffscreenRenderer::getBuffer()`) |
+| Row-order explanation | Vulkan y-down NDC + OpenGL projection matrix = double-flip = bottom-up rows; no explicit flip needed |
+| Geometry pipeline | `SoRaytracerSceneCollector::collect()` → Vulkan vertex/index buffers |
+| Shading | CPU Phong pre-baking via scene collector; no GLSL required |
+| Text/HUD | `SoSceneCollector::compositeOverlays()` alpha-blended onto the framebuffer |
+
+### Limitations vs. full system GL
+
+- No GLSL shader support (materials are Phong-baked at scene collection time)
+- No shadow maps, bump mapping, or FBO-based effects
+- No texture mapping (planned)
+- Requires Vulkan SDK (`vulkan-sdk`, `libvulkan-dev`) or Mesa lavapipe for CI
+
+---
+
 ## Summary Table
 
-| Feature Category | Nanort/Embree/Raytrace | OSMesa GL 2.0 | Full System GL |
-|-----------------|------------------------|---------------|----------------|
-| Scene graph traversal | ✓ | ✓ | ✓ |
-| Bounding box computation | ✓ | ✓ | ✓ |
-| Ray picking | ✓ | ✓ | ✓ |
-| Transform/matrix math | ✓ | ✓ | ✓ |
-| Material data | ✓ (via SoSceneCollector) | ✓ | ✓ |
-| Light data | ✓ (via SoSceneCollector) | ✓ | ✓ |
-| Camera data | ✓ (via SoCallbackAction) | ✓ | ✓ |
-| Shape geometry (triangles) | ✓ (via generatePrimitives) | ✓ | ✓ |
-| Line/point geometry (proxy) | ✓ (via SoSceneCollector) | ✓ | ✓ |
-| Text/HUD overlays | ✓ (via SoSceneCollector) | ✓ | ✓ |
-| Scene change detection | ✓ (needsRebuild/updateCacheKeys) | — | — |
-| Texture image data | ✓ (via SoCallbackAction) | ✓ | ✓ |
-| Basic rasterization | ✗ | ✓ | ✓ |
-| VBO/vertex array rendering | ✗ | ✓ | ✓ |
-| GLSL shaders | ✗ | ✓ (GLSL 1.10) | ✓ |
-| Shadow rendering (VSM) | ✗ | ✓ | ✓ |
-| Bump mapping | ✗ | ✓ | ✓ |
-| FBO offscreen rendering | ✗ | ✓ | ✓ |
-| Occlusion queries | ✗ | ~(extension) | ✓ |
-| Anisotropic filtering | ✗ | ✗ | ✓ |
-| Stereo (quad buffer) | ✗ | ✗ | ✓ (hardware) |
-| NV vertex array range | ✗ | ✗ | ✓ (NVIDIA) |
-| Hardware acceleration | ✗ | ✗ | ✓ |
+| Feature Category | Nanort/Embree/Raytrace | Vulkan Rasterization | OSMesa GL 2.0 | Full System GL |
+|-----------------|------------------------|----------------------|---------------|----------------|
+| Scene graph traversal | ✓ | ✓ | ✓ | ✓ |
+| Bounding box computation | ✓ | ✓ | ✓ | ✓ |
+| Ray picking | ✓ | ✓ | ✓ | ✓ |
+| Transform/matrix math | ✓ | ✓ | ✓ | ✓ |
+| Material data | ✓ (via SoSceneCollector) | ✓ (Phong pre-baked) | ✓ | ✓ |
+| Light data | ✓ (via SoSceneCollector) | ✓ (via SoSceneCollector) | ✓ | ✓ |
+| Camera data | ✓ (via SoCallbackAction) | ✓ (via SoSceneCollector) | ✓ | ✓ |
+| Shape geometry (triangles) | ✓ (via generatePrimitives) | ✓ (via SoSceneCollector) | ✓ | ✓ |
+| Line/point geometry (proxy) | ✓ (via SoSceneCollector) | ✓ (via SoSceneCollector) | ✓ | ✓ |
+| Text/HUD overlays | ✓ (via SoSceneCollector) | ✓ (compositeOverlays) | ✓ | ✓ |
+| Scene change detection | ✓ (needsRebuild/updateCacheKeys) | ✓ (needsRebuild) | — | — |
+| Texture image data | ✓ (via SoCallbackAction) | ~ (planned) | ✓ | ✓ |
+| Basic rasterization | ✗ | ✓ (Vulkan) | ✓ | ✓ |
+| VBO/vertex array rendering | ✗ | ✗ (Vulkan buffers used) | ✓ | ✓ |
+| GLSL shaders | ✗ | ✗ | ✓ (GLSL 1.10) | ✓ |
+| Shadow rendering (VSM) | ✗ | ✗ | ✓ | ✓ |
+| Bump mapping | ✗ | ✗ | ✓ | ✓ |
+| FBO offscreen rendering | ✗ | ✗ | ✓ | ✓ |
+| Occlusion queries | ✗ | ✗ | ~(extension) | ✓ |
+| Anisotropic filtering | ✗ | ✗ | ✗ | ✓ |
+| Stereo (quad buffer) | ✗ | ✗ | ✗ | ✓ (hardware) |
+| NV vertex array range | ✗ | ✗ | ✗ | ✓ (NVIDIA) |
+| Hardware acceleration | ✗ | ✓ (GPU Vulkan) | ✗ | ✓ |
 
-Legend: ✓ = supported, ✗ = not supported, ~ = may work depending on driver
+Legend: ✓ = supported, ✗ = not supported, ~ = partial / planned
