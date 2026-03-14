@@ -43,7 +43,7 @@ can use them directly.
 | `SoGetPrimitiveCountAction` | Count primitives in scene | Any |
 | `SoHandleEventAction` | Distribute events through graph | Any |
 | `SoWriteAction` | Write scene graph to file | Any |
-| `SoRaytraceRenderAction` | **New** — traverse scene for raytracing backends | **Any** (see below) |
+| `SoSceneRenderAction` | **New** — traverse scene for raytracing backends | **Any** (see below) |
 
 ### Shape Geometry Generation (OpenGL-free)
 
@@ -53,7 +53,7 @@ invokes callbacks via `invokeTriangleCallbacks()` etc.  This code path:
 
 - Has **no OpenGL dependency**
 - Is used by `SoCallbackAction`, `SoRayPickAction`, and the new
-  `SoRaytraceRenderAction`
+  `SoSceneRenderAction`
 - Is also the fallback rendering path in `SoShape::GLRender()` for shapes
   that don't override it
 
@@ -209,7 +209,7 @@ The following features have an OpenGL-specific implementation today, but their
 
 | Feature | OpenGL Class | Raytrace Equivalent |
 |---------|-------------|---------------------|
-| Shape geometry | `sogl_render_*()` via `SoGLRenderAction` | Use `generatePrimitives()` via `SoRaytraceRenderAction` |
+| Shape geometry | `sogl_render_*()` via `SoGLRenderAction` | Use `generatePrimitives()` via `SoSceneRenderAction` |
 | Materials | `SoGLLazyElement` pushes to GL | Read from `SoLazyElement` / `SoCallbackAction::getMaterial()` |
 | Lights | `SoGLLightIdElement`, GL light state | `SoLightElement::getLights()` gives `SoLight*` nodes with properties |
 | Camera | `SoGLProjectionMatrixElement`, `SoGLViewingMatrixElement` | `SoCallbackAction::getViewingMatrix()`, `getProjectionMatrix()`, `getViewVolume()` |
@@ -247,12 +247,12 @@ Inside `collectTriangle`, use:
 - `action->getTextureImage()` — raw texture pixels
 - `SoLightElement::getLights(action->getState())` — all active lights
 
-### Approach 2: Use the New `SoRaytraceRenderAction`
+### Approach 2: Use the New `SoSceneRenderAction`
 
-`SoRaytraceRenderAction` is a new action class that inherits from
+`SoSceneRenderAction` is a new action class that inherits from
 `SoCallbackAction` and provides:
-- A named type (`SoRaytraceRenderAction::getClassTypeId()`) so shape nodes
-  can check `action->isOfType(SoRaytraceRenderAction::getClassTypeId())`
+- A named type (`SoSceneRenderAction::getClassTypeId()`) so shape nodes
+  can check `action->isOfType(SoSceneRenderAction::getClassTypeId())`
   if they want to detect the raytrace path
 - A `setViewportRegion()` / `getViewportRegion()` interface matching
   `SoGLRenderAction` for symmetry
@@ -261,15 +261,15 @@ Inside `collectTriangle`, use:
 - Documentation that makes the raytracing use case explicit
 
 ```cpp
-SoRaytraceRenderAction rta(SbViewportRegion(800, 600));
+SoSceneRenderAction rta(SbViewportRegion(800, 600));
 rta.addTriangleCallback(SoShape::getClassTypeId(), collectTriangle, myScene);
 rta.apply(root);
 // rta.getLights() gives the lights collected during traversal
 ```
 
-### Approach 3: Use `SoRaytracerSceneCollector` (Recommended)
+### Approach 3: Use `SoSceneCollector` (Recommended)
 
-`SoRaytracerSceneCollector` is the highest-level integration point and handles
+`SoSceneCollector` is the highest-level integration point and handles
 everything required by a practical raytracing backend:
 
 - World-space triangle collection with per-vertex normals and materials
@@ -282,7 +282,7 @@ everything required by a practical raytracing backend:
 - `compositeOverlays()` to alpha-blend text/HUD onto the framebuffer
 
 ```cpp
-SoRaytracerSceneCollector collector;
+SoSceneCollector collector;
 SbViewportRegion vp(800, 600);
 SoCamera * cam = findCamera(root);
 
@@ -308,7 +308,7 @@ worked examples of this pattern.
 
 A full integration (outside Obol itself) would:
 
-1. **Scene collection pass**: Call `SoRaytracerSceneCollector::collect()` to
+1. **Scene collection pass**: Call `SoSceneCollector::collect()` to
    extract all triangles with materials, world-space normals, lights, and
    text/HUD overlays.
 2. **BVH build**: Feed `collector.getTriangles()` into your backend's
@@ -333,12 +333,12 @@ intersection works today without any OpenGL context.
 | Bounding box computation | ✓ | ✓ | ✓ |
 | Ray picking | ✓ | ✓ | ✓ |
 | Transform/matrix math | ✓ | ✓ | ✓ |
-| Material data | ✓ (via SoRaytracerSceneCollector) | ✓ | ✓ |
-| Light data | ✓ (via SoRaytracerSceneCollector) | ✓ | ✓ |
+| Material data | ✓ (via SoSceneCollector) | ✓ | ✓ |
+| Light data | ✓ (via SoSceneCollector) | ✓ | ✓ |
 | Camera data | ✓ (via SoCallbackAction) | ✓ | ✓ |
 | Shape geometry (triangles) | ✓ (via generatePrimitives) | ✓ | ✓ |
-| Line/point geometry (proxy) | ✓ (via SoRaytracerSceneCollector) | ✓ | ✓ |
-| Text/HUD overlays | ✓ (via SoRaytracerSceneCollector) | ✓ | ✓ |
+| Line/point geometry (proxy) | ✓ (via SoSceneCollector) | ✓ | ✓ |
+| Text/HUD overlays | ✓ (via SoSceneCollector) | ✓ | ✓ |
 | Scene change detection | ✓ (needsRebuild/updateCacheKeys) | — | — |
 | Texture image data | ✓ (via SoCallbackAction) | ✓ | ✓ |
 | Basic rasterization | ✗ | ✓ | ✓ |

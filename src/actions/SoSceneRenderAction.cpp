@@ -31,8 +31,8 @@
 \**************************************************************************/
 
 /*!
-  \class SoRaytraceRenderAction SoRaytraceRenderAction.h Inventor/actions/SoRaytraceRenderAction.h
-  \brief Action for traversing a scene graph to collect geometry for a raytracing backend.
+  \class SoSceneRenderAction SoSceneRenderAction.h Inventor/actions/SoSceneRenderAction.h
+  \brief Action for traversing a scene graph to collect geometry for a rendering backend.
 
   \ingroup coin_actions
 
@@ -41,7 +41,7 @@
   or OSPRay.
 */
 
-#include <Inventor/actions/SoRaytraceRenderAction.h>
+#include <Inventor/actions/SoSceneRenderAction.h>
 
 #include <Inventor/elements/SoLightElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
@@ -51,7 +51,7 @@
 
 #include "actions/SoSubActionP.h"
 
-SO_ACTION_SOURCE(SoRaytraceRenderAction);
+SO_ACTION_SOURCE(SoSceneRenderAction);
 
 // Internal pre-callback used to collect enabled light nodes and their
 // world-space transforms during traversal.
@@ -59,8 +59,8 @@ static SoCallbackAction::Response
 raytrace_light_pre_cb(void * userdata, SoCallbackAction * action,
                       const SoNode * node)
 {
-  SoRaytraceRenderAction::LightCbData * data =
-    static_cast<SoRaytraceRenderAction::LightCbData *>(userdata);
+  SoSceneRenderAction::LightCbData * data =
+    static_cast<SoSceneRenderAction::LightCbData *>(userdata);
   // Capture the light node.  We cast away const since SoNodeList stores
   // non-const SoNode pointers, and we only read the light data later.
   data->lights->append(const_cast<SoNode *>(node));
@@ -72,9 +72,9 @@ raytrace_light_pre_cb(void * userdata, SoCallbackAction * action,
   \copydetails SoAction::initClass(void)
 */
 void
-SoRaytraceRenderAction::initClass(void)
+SoSceneRenderAction::initClass(void)
 {
-  SO_ACTION_INTERNAL_INIT_CLASS(SoRaytraceRenderAction, SoCallbackAction);
+  SO_ACTION_INTERNAL_INIT_CLASS(SoSceneRenderAction, SoCallbackAction);
 }
 
 /*!
@@ -82,11 +82,11 @@ SoRaytraceRenderAction::initClass(void)
   the render target (width/height in pixels).  This is used by shape nodes
   that compute screen-space geometry (e.g. SoText2, SoImage).
 */
-SoRaytraceRenderAction::SoRaytraceRenderAction(const SbViewportRegion & viewportregion)
+SoSceneRenderAction::SoSceneRenderAction(const SbViewportRegion & viewportregion)
   : inherited(viewportregion),
     vpregion(viewportregion)
 {
-  SO_ACTION_CONSTRUCTOR(SoRaytraceRenderAction);
+  SO_ACTION_CONSTRUCTOR(SoSceneRenderAction);
 
   // Initialize the callback data struct with pointers to the two caches.
   this->light_cb_data.lights     = &this->lights_cache;
@@ -103,7 +103,7 @@ SoRaytraceRenderAction::SoRaytraceRenderAction(const SbViewportRegion & viewport
 /*!
   Destructor.
 */
-SoRaytraceRenderAction::~SoRaytraceRenderAction(void)
+SoSceneRenderAction::~SoSceneRenderAction(void)
 {
 }
 
@@ -111,7 +111,7 @@ SoRaytraceRenderAction::~SoRaytraceRenderAction(void)
   Set the viewport region for the render target.
 */
 void
-SoRaytraceRenderAction::setViewportRegion(const SbViewportRegion & newregion)
+SoSceneRenderAction::setViewportRegion(const SbViewportRegion & newregion)
 {
   this->vpregion = newregion;
   this->inherited::setViewportRegion(newregion);
@@ -121,7 +121,7 @@ SoRaytraceRenderAction::setViewportRegion(const SbViewportRegion & newregion)
   Returns the current viewport region.
 */
 const SbViewportRegion &
-SoRaytraceRenderAction::getViewportRegion(void) const
+SoSceneRenderAction::getViewportRegion(void) const
 {
   return this->vpregion;
 }
@@ -151,7 +151,7 @@ SoRaytraceRenderAction::getViewportRegion(void) const
         field before using a light if you only want enabled lights.
 */
 const SoNodeList &
-SoRaytraceRenderAction::getLights(void) const
+SoSceneRenderAction::getLights(void) const
 {
   return this->lights_cache;
 }
@@ -161,7 +161,7 @@ SoRaytraceRenderAction::getLights(void) const
 // the scene graph.  The raytrace_light_pre_cb callback registered in the
 // constructor populates both caches as each SoLight node is visited.
 void
-SoRaytraceRenderAction::beginTraversal(SoNode * node)
+SoSceneRenderAction::beginTraversal(SoNode * node)
 {
   this->lights_cache.truncate(0);
   this->light_transforms_cache.truncate(0);
@@ -176,7 +176,7 @@ SoRaytraceRenderAction::beginTraversal(SoNode * node)
   \note Call this after apply(); the list is populated during traversal.
 */
 const SbList<SbMatrix> &
-SoRaytraceRenderAction::getLightTransforms(void) const
+SoSceneRenderAction::getLightTransforms(void) const
 {
   return this->light_transforms_cache;
 }

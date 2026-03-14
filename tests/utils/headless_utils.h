@@ -165,7 +165,7 @@ inline bool renderToFile(
 // Embree Backend: CPU raytracing via Intel Embree 4, no OpenGL required
 // ============================================================================
 // Uses SoEmbreeContextManager (see tests/utils/embree_context_manager.h) which
-// delegates scene collection to SoRaytracerSceneCollector and performs ray-
+// delegates scene collection to SoSceneCollector and performs ray-
 // triangle intersection via Embree's high-performance BVH.
 #include "embree_context_manager.h"
 

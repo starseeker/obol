@@ -224,7 +224,7 @@ endmacro()
 #   - OBOL_EMBREE_BUILD defined  →  headless_utils.h uses SoEmbreeContextManager
 #   - The system embree4 include path and link target
 #
-# Embree tests use SoRaytracerSceneCollector (the same generic scene collection
+# Embree tests use SoSceneCollector (the same generic scene collection
 # API used by the NanoRT backend) so the same scene-graph functionality is
 # exercised: proxy shapes for line/point sets, wireframe cylinder rings,
 # text/HUD overlays, lights, and invisible-shape pruning.
@@ -314,8 +314,8 @@ add_nanort_testlib_rendering_test(render_background_gradient)
 # DrawStyle LINES emits thin-cylinder proxy triangles (wireframe-as-cylinders)
 # so that the wireframe cone is visible in the NanoRT ray-tracing output.
 add_nanort_testlib_rendering_test(render_procedural_shape)
-# NanoRT shadow test: validates shadow-ray casting via SoRaytracingParams.
-# Uses SoDirectionalLight + SoRaytracingParams(shadowsEnabled=TRUE); does NOT
+# NanoRT shadow test: validates shadow-ray casting via SoSceneRendererParams.
+# Uses SoDirectionalLight + SoSceneRendererParams(shadowsEnabled=TRUE); does NOT
 # use SoShadowGroup (which requires OpenGL GLSL shaders).  The pixel-level
 # shadow validation (lit vs shadow regions on the ground plane) is only run
 # under the NanoRT build; the GL backend does a basic non-blank geometry check.

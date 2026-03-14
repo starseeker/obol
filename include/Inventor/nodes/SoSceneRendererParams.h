@@ -1,5 +1,5 @@
-#ifndef OBOL_SORAYTRACINGPARAMS_H
-#define OBOL_SORAYTRACINGPARAMS_H
+#ifndef OBOL_SOSCENERENDERERPARAMS_H
+#define OBOL_SOSCENERENDERERPARAMS_H
 
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
@@ -34,12 +34,12 @@
 \**************************************************************************/
 
 /*!
-  \class SoRaytracingParams SoRaytracingParams.h Inventor/nodes/SoRaytracingParams.h
-  \brief Scene graph node carrying rendering hints for CPU raytracing backends.
+  \class SoSceneRendererParams SoSceneRendererParams.h Inventor/nodes/SoSceneRendererParams.h
+  \brief Scene graph node carrying rendering hints for non-GL rendering backends.
 
   \ingroup coin_nodes
 
-  \c SoRaytracingParams is a pure-data scene graph node — it has \b no
+  \c SoSceneRendererParams is a pure-data scene graph node — it has \b no
   OpenGL side-effects and is silently ignored by \c SoGLRenderAction.
   Raytracing backends (nanort, OSPRay, BRL-CAD librt, …) find this node
   via \c SoSearchAction and read its fields to configure their rendering
@@ -50,18 +50,18 @@
 
   \b Default field values are chosen to be backward-compatible: a scene
   that already works with the nanort backend will behave identically whether
-  or not \c SoRaytracingParams is present.
+  or not \c SoSceneRendererParams is present.
 
   \b Placement: typically inserted near the top of the scene graph, before
   the camera and shapes:
   \code
   SoSeparator * root = new SoSeparator;
 
-  SoRaytracingParams * rtParams = new SoRaytracingParams;
-  rtParams->shadowsEnabled    = TRUE;
-  rtParams->maxReflectionBounces = 1;
-  rtParams->samplesPerPixel   = 4;
-  root->addChild(rtParams);
+  SoSceneRendererParams * rendParams = new SoSceneRendererParams;
+  rendParams->shadowsEnabled    = TRUE;
+  rendParams->maxReflectionBounces = 1;
+  rendParams->samplesPerPixel   = 4;
+  root->addChild(rendParams);
 
   root->addChild(camera);
   root->addChild(light);
@@ -70,7 +70,7 @@
 
   <b>FILE FORMAT/DEFAULTS:</b>
   \code
-    RaytracingParams {
+    SceneRendererParams {
         shadowsEnabled         FALSE
         maxReflectionBounces   0
         samplesPerPixel        1
@@ -78,7 +78,7 @@
     }
   \endcode
 
-  \sa SoRaytraceRenderAction, SoCallbackAction, docs/BACKEND_SURVEY.md
+  \sa SoSceneRenderAction, SoCallbackAction, docs/BACKEND_SURVEY.md
 */
 
 #include <Inventor/nodes/SoSubNode.h>
@@ -86,14 +86,14 @@
 #include <Inventor/fields/SoSFInt32.h>
 #include <Inventor/fields/SoSFFloat.h>
 
-class OBOL_DLL_API SoRaytracingParams : public SoNode {
+class OBOL_DLL_API SoSceneRendererParams : public SoNode {
   typedef SoNode inherited;
 
-  SO_NODE_HEADER(SoRaytracingParams);
+  SO_NODE_HEADER(SoSceneRendererParams);
 
 public:
   static void initClass(void);
-  SoRaytracingParams(void);
+  SoSceneRendererParams(void);
 
   /*!
     Enable hard-shadow casting via secondary shadow rays.  When \c TRUE
@@ -133,7 +133,7 @@ public:
   SoSFFloat ambientIntensity;
 
 protected:
-  virtual ~SoRaytracingParams();
+  virtual ~SoSceneRendererParams();
 };
 
-#endif // !OBOL_SORAYTRACINGPARAMS_H
+#endif // !OBOL_SOSCENERENDERERPARAMS_H

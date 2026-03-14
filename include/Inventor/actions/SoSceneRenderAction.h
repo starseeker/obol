@@ -1,5 +1,5 @@
-#ifndef OBOL_SORAYTRACERENDERACTION_H
-#define OBOL_SORAYTRACERENDERACTION_H
+#ifndef OBOL_SOSCENERENDERACTION_H
+#define OBOL_SOSCENERENDERACTION_H
 
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
@@ -34,8 +34,8 @@
 \**************************************************************************/
 
 /*!
-  \class SoRaytraceRenderAction SoRaytraceRenderAction.h Inventor/actions/SoRaytraceRenderAction.h
-  \brief Action for traversing a scene graph to collect geometry for a raytracing backend.
+  \class SoSceneRenderAction SoSceneRenderAction.h Inventor/actions/SoSceneRenderAction.h
+  \brief Action for traversing a scene graph to collect geometry for a rendering backend.
 
   \ingroup coin_actions
 
@@ -46,12 +46,12 @@
   <a href="https://github.com/lighttransport/nanort">nanort</a> or
   <a href="https://www.ospray.org/">OSPRay</a>.
 
-  \c SoRaytraceRenderAction inherits from \c SoCallbackAction, which already
+  \c SoSceneRenderAction inherits from \c SoCallbackAction, which already
   provides all the machinery needed to collect scene geometry and inspect
   scene state during traversal.  This class adds:
 
   \li A distinct type id so that shape nodes can detect the raytracing path
-      via \c action->isOfType(SoRaytraceRenderAction::getClassTypeId()).
+      via \c action->isOfType(SoSceneRenderAction::getClassTypeId()).
   \li A \c SbViewportRegion constructor argument, mirroring
       \c SoGLRenderAction for symmetry.
   \li A \c getLights() convenience method that returns the scene lights
@@ -87,7 +87,7 @@
 
   // ... in render code:
   MyScene scene;
-  SoRaytraceRenderAction rta(SbViewportRegion(800, 600));
+  SoSceneRenderAction rta(SbViewportRegion(800, 600));
   rta.addTriangleCallback(SoShape::getClassTypeId(), triangle_cb, &scene);
   rta.apply(root);
   // Now scene.verts and scene.indices contain the full tessellated geometry.
@@ -117,16 +117,16 @@
 #include <Inventor/lists/SbList.h>
 #include <Inventor/lists/SoNodeList.h>
 
-class OBOL_DLL_API SoRaytraceRenderAction : public SoCallbackAction {
+class OBOL_DLL_API SoSceneRenderAction : public SoCallbackAction {
   typedef SoCallbackAction inherited;
 
-  SO_ACTION_HEADER(SoRaytraceRenderAction);
+  SO_ACTION_HEADER(SoSceneRenderAction);
 
 public:
   static void initClass(void);
 
-  SoRaytraceRenderAction(const SbViewportRegion & viewportregion);
-  virtual ~SoRaytraceRenderAction(void);
+  SoSceneRenderAction(const SbViewportRegion & viewportregion);
+  virtual ~SoSceneRenderAction(void);
 
   void setViewportRegion(const SbViewportRegion & newregion);
   const SbViewportRegion & getViewportRegion(void) const;
@@ -182,8 +182,8 @@ private:
   SbList<SbMatrix> light_transforms_cache;
   LightCbData light_cb_data;
 
-  SoRaytraceRenderAction(const SoRaytraceRenderAction & rhs);
-  SoRaytraceRenderAction & operator=(const SoRaytraceRenderAction & rhs);
+  SoSceneRenderAction(const SoSceneRenderAction & rhs);
+  SoSceneRenderAction & operator=(const SoSceneRenderAction & rhs);
 };
 
-#endif // !OBOL_SORAYTRACERENDERACTION_H
+#endif // !OBOL_SOSCENERENDERACTION_H
