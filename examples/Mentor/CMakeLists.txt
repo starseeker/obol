@@ -56,10 +56,13 @@ if(TARGET Obol)
     endif()
     find_package(X11 QUIET)
     find_package(OpenGL QUIET)
+    # Path to shared utilities in tests/utils (headless_utils.h, stb_image.h, etc.)
+    set(_MENTOR_UTILS_DIR "${CMAKE_SOURCE_DIR}/tests/utils")
     macro(add_headless_example name)
         add_executable(${name} ${name}.cpp)
         target_include_directories(${name} PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}
+            ${_MENTOR_UTILS_DIR}
             ${PROJECT_SOURCE_DIR}/include
             ${PROJECT_SOURCE_DIR}/include/Inventor/annex
             ${PROJECT_BINARY_DIR}/include
@@ -94,9 +97,14 @@ else()
         include_directories(${CMAKE_CURRENT_SOURCE_DIR})
         find_package(X11 QUIET)
         find_package(OpenGL QUIET)
+        # Path to shared utilities in tests/utils
+        set(_MENTOR_UTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../tests/utils")
         macro(add_headless_example name)
             add_executable(${name} ${name}.cpp)
-            target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+            target_include_directories(${name} PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}
+                ${_MENTOR_UTILS_DIR}
+            )
             target_link_libraries(${name} Obol::Obol)
             if(EXAMPLES_USE_OSMESA)
                 target_compile_definitions(${name} PRIVATE OBOL_OSMESA_BUILD)
@@ -125,12 +133,15 @@ else()
         find_package(OpenGL REQUIRED)
         find_package(X11 QUIET)
         link_directories(${OBOL_LIB_DIR})
+        # Path to shared utilities in tests/utils
+        set(_MENTOR_UTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../tests/utils")
         macro(add_headless_example name)
             add_executable(${name} ${name}.cpp)
             target_include_directories(${name} PRIVATE
                 ${OBOL_BUILD_INCLUDE_DIR}
                 ${OBOL_INCLUDE_DIR}
-                ${CMAKE_CURRENT_SOURCE_DIR})
+                ${CMAKE_CURRENT_SOURCE_DIR}
+                ${_MENTOR_UTILS_DIR})
             target_link_libraries(${name} Obol ${OPENGL_LIBRARIES})
             if(EXAMPLES_USE_OSMESA)
                 target_compile_definitions(${name} PRIVATE OBOL_OSMESA_BUILD)
@@ -222,11 +233,11 @@ add_headless_example(16.3.AttachEditor)
 # Chapter 17: OpenGL Integration
 add_headless_example(17.2.GLCallback)
 
-# Build image comparator utility using bundled lodepng
+# Build image comparator utility using shared source from tests/utils/
 # When building as part of the main project, reuse the image_comparator target
 # that is already defined in the tests/ directory to avoid duplicate targets.
 if(NOT TARGET image_comparator)
-    add_executable(image_comparator image_comparator.cpp)
+    add_executable(image_comparator "${_MENTOR_UTILS_DIR}/image_comparator.cpp")
     if(TARGET lodepng)
         target_link_libraries(image_comparator lodepng)
     else()
@@ -243,9 +254,9 @@ if(NOT TARGET image_comparator)
     )
 endif()
 
-# Build rgb_to_png converter using bundled lodepng
+# Build rgb_to_png converter using shared source from tests/utils/
 if(NOT TARGET rgb_to_png)
-    add_executable(rgb_to_png rgb_to_png.cpp)
+    add_executable(rgb_to_png "${_MENTOR_UTILS_DIR}/rgb_to_png.cpp")
     if(TARGET lodepng)
         target_link_libraries(rgb_to_png lodepng)
     else()
