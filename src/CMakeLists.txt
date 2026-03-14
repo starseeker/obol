@@ -29,7 +29,6 @@ include_directories(BEFORE
   "${PROJECT_SOURCE_DIR}/include/Inventor/annex"
   "${PROJECT_BINARY_DIR}/src/shadows"
   "${PROJECT_SOURCE_DIR}"
-  "${PROJECT_SOURCE_DIR}/external/utf8/include"
   # Subdirectory-specific include paths (needed in single-lib mode where
   # subdirectory include_directories() calls don't propagate to the parent)
   "${PROJECT_SOURCE_DIR}/src/base/utf8/include"
