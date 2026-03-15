@@ -64,6 +64,9 @@ endforeach(SRCFILE)
 if(OBOL_USE_SWRAST)
 	set(OBOL_SOURCE ${OBOL_SOURCE} misc/SoDBOSMesa.cpp CACHE INTERNAL "OBOL_SOURCE")
 endif()
+if(OBOL_USE_PORTABLEGL)
+	set(OBOL_SOURCE ${OBOL_SOURCE} misc/SoDBPortableGL.cpp CACHE INTERNAL "OBOL_SOURCE")
+endif()
 
 # define documentation
 foreach(SRCFILE ${OBOL_MISC_FILES})

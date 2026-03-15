@@ -287,6 +287,26 @@ public:
    */
   static ContextManager * createOSMesaContextManager();
 
+  /*!
+   * Factory function that creates a PortableGL software-rendering context
+   * manager.  PortableGL implements the OpenGL 3.x core profile in software
+   * (no GPU or platform GL library required).
+   *
+   * Returns a newly allocated manager on success, or nullptr if Obol was
+   * built without PortableGL support (OBOL_USE_PORTABLEGL=OFF).  The caller
+   * takes ownership and is responsible for deleting the returned object after
+   * all SoOffscreenRenderer instances that use it have been destroyed.
+   *
+   * \note PortableGL requires the Obol rendering code to use the GL 3.x core
+   *       profile API (no fixed-function pipeline).  This is work-in-progress;
+   *       see docs/SOFTWARE_GL_COMPARISON.md for the migration plan.
+   *
+   *   auto mgr = std::unique_ptr<SoDB::ContextManager>(
+   *                   SoDB::createPortableGLContextManager());
+   *   if (mgr) renderer->setContextManager(mgr.get());
+   */
+  static ContextManager * createPortableGLContextManager();
+
 private:
   static SoGroup * readAllWrapper(SoInput * input, const SoType & grouptype);
 };

@@ -1633,5 +1633,28 @@ SoDB::createOSMesaContextManager()
 #endif
 }
 
+/* -----------------------------------------------------------------------
+ * SoDB::createPortableGLContextManager() factory
+ *
+ * The actual implementation lives in SoDBPortableGL.cpp which defines
+ * PORTABLEGL_IMPLEMENTATION to bring in the PortableGL software renderer
+ * as a single-TU compile.  In PortableGL-capable builds that TU exports
+ * coin_create_portablegl_context_manager_impl(); we forward to it.
+ * In builds without PortableGL support the function returns nullptr.
+ * --------------------------------------------------------------------- */
+#if defined(OBOL_PORTABLEGL_BUILD) || defined(OBOL_DUAL_PORTABLEGL_BUILD)
+extern "C" SoDB::ContextManager * coin_create_portablegl_context_manager_impl();
+#endif
+
+SoDB::ContextManager *
+SoDB::createPortableGLContextManager()
+{
+#if defined(OBOL_PORTABLEGL_BUILD) || defined(OBOL_DUAL_PORTABLEGL_BUILD)
+  return coin_create_portablegl_context_manager_impl();
+#else
+  return nullptr;
+#endif
+}
+
 /* *********************************************************************** */
 
