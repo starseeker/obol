@@ -851,6 +851,8 @@ sobase_audlist_add(void * pointer, void * type, void * closure)
 const SoAuditorList &
 SoBase::getAuditors(void) const
 {
+  // Exclusive lock: this function lazily writes to auditordict (both the
+  // initial dict creation and the per-object SoAuditorList entries).
   std::unique_lock<std::shared_mutex> lock(SoBase::PImpl::base_dict_mutex);
   if (SoBase::PImpl::auditordict == NULL) {
     SoBase::PImpl::auditordict = new SbHash<const SoBase *, SoAuditorList *>();
@@ -869,6 +871,7 @@ SoBase::getAuditors(void) const
     }
   }
   else {
+    // Capture l before inserting so the loop below has a valid pointer.
     l = new SoAuditorList;
     (*SoBase::PImpl::auditordict)[this] = l;
   }

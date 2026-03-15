@@ -72,9 +72,10 @@ public:
   static SoBaseSet * allbaseobj; // maps from SoBase * to NULL
 
   // Protects auditordict, name2obj, obj2name, and allbaseobj.
-  // Shared (read) lock for getName(), getNamedBase(), getNamedBases(), getAuditors().
-  // Exclusive (write) lock for setName(), addAuditor(), removeAuditor(), and
-  // the allbaseobj tracking in the constructor/destructor.
+  // Shared (read) lock for getName(), getNamedBase(), getNamedBases().
+  // Exclusive (write) lock for setName(), getAuditors() (lazy-initialises
+  // auditordict entries), the allbaseobj tracking in the constructor/destructor,
+  // and the auditordict cleanup in the destructor.
   static std::shared_mutex base_dict_mutex;
 
   static SbString * refwriteprefix;

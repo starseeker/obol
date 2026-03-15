@@ -272,86 +272,46 @@ on x86-64 and ARM64.
 
 ---
 
-### Blocker 5 — `SoBase::PImpl` global name/auditor dictionaries: no lock *(CRITICAL)*
+### Blocker 5 — `SoBase::PImpl` global name/auditor dictionaries ✅ **(Fixed)**
 
 **File:** `src/misc/SoBaseP.cpp`, `src/misc/SoBaseP.h`
 
-Four global data structures are accessed without synchronization:
-
-```cpp
-static SbHash<const SoBase *, SoAuditorList *> * auditordict;  // per-object auditors
-static SbHash<const char *, SbPList *>         * name2obj;     // name → object list
-static SbHash<const SoBase *, const char *>    * obj2name;     // object → name
-static SoBaseSet                               * allbaseobj;    // all live objects
-```
-
-`SoBase::setName()`, `SoBase::getName()`, `SoBase::getByName()`,
-`SoBase::addAuditor()`, `SoBase::removeAuditor()`, and the debug tracking list
-all mutate these without any lock.
-
-Because `SoAuditorList` is the core mechanism through which field changes
-propagate to sensors, engines, and nodes, races here can silently drop or
-double-deliver change notifications.
-
-**Fix required:** A `std::mutex` (or `std::shared_mutex`) protecting all
-operations on these four maps.
+Four global data structures were accessed without synchronization.  All four
+are now protected by `SoBase::PImpl::base_dict_mutex` (`std::shared_mutex`)
+declared in `SoBaseP.h` and defined in `SoBaseP.cpp`.  Shared (read) lock for
+`getName()`, `getNamedBase()`, `getNamedBases()`; exclusive (write) lock for
+`setName()`, `getAuditors()`, and the constructor/destructor tracking.
 
 ---
 
-### Blocker 6 — `SoGLCacheContextElement` static state: no lock *(HIGH)*
+### Blocker 6 — `SoGLCacheContextElement` static state ✅ **(Fixed)**
 
 **File:** `src/elements/GL/SoGLCacheContextElement.cpp`
 
-Three static lists and a counter used by all GL rendering paths share no lock:
-
-```cpp
-static int biggest_cache_context_id = 0;
-static SbList<so_glext_info *>              * extsupportlist;
-static SbList<SoGLDisplayList*>             * scheduledeletelist;
-static SbList<so_scheduledeletecb_info*>    * scheduledeletecblist;
-```
-
-`biggest_cache_context_id` is read and conditionally written in
-`SoGLCacheContextElement::set()` without a compare-and-swap, allowing two
-threads to each see the same value and both update it.  Concurrent appends to
-the `SbList` containers can corrupt the list's internal array.
-
-**Fix required:** Use `std::atomic<int>` for the context-id counter and a
-`std::mutex` for the three lists.
+`biggest_cache_context_id` is now `std::atomic<int>` with CAS-loop updates in
+`set()` and `fetch_add(1)` in `getUniqueCacheContext()`.  A `std::mutex
+glcache_list_mutex` protects all three `SbList` containers.
 
 ---
 
-### Blocker 7 — `SoDBP::notificationcounter`: non-atomic plain `int` *(MEDIUM)*
+### Blocker 7 — `SoDBP::notificationcounter`: non-atomic plain `int` ✅ **(Fixed in Phase 1)**
 
 **File:** `src/misc/SoDBP.h` and `src/misc/SoDB.cpp`
 
-```cpp
-static int notificationcounter;  // incremented in startNotify(), decremented in endNotify()
-```
-
-Even with the notify `cc_recmutex` held, the counter is not `volatile` or
-atomic; the compiler is free to cache its value in a register across the
-notification path.  More importantly, the zero-check in `endNotify()` that
-drives the immediate-sensor queue is then compared against a potentially stale
-value.
-
-**Fix required:** Change to `std::atomic<int>`.
+Changed to `std::atomic<int>` in Phase 1.
 
 ---
 
-### Blocker 8 — `SoActionMethodList` and `SoEnabledElementsList`: conditional locking *(MEDIUM)*
+### Blocker 8 — `SoActionMethodList` and `SoEnabledElementsList`: conditional locking ✅ **(Fixed)**
 
 **Files:** `src/lists/SoActionMethodList.cpp`, `src/lists/SoEnabledElementsList.cpp`
 
-Both use `OBOL_THREADSAFE`-guarded `SbRWMutex` objects, which is the right
-approach.  However, the locking in `SoActionMethodList` is only applied during
-`addMethod()` and `setUp()`, not during traversal look-ups.  Because these lists
-grow during `SoDB::init()` and type registration (which should complete before
-any concurrent traversal), the practical risk is low — but it is not provably
-safe.
-
-**Fix required:** Ensure all writers take the write lock and all readers take the
-read lock.  A `std::shared_mutex` is idiomatic in C++17.
+`SoActionMethodList` now uses `std::shared_mutex` (removing `OBOL_THREADSAFE`
+guard).  A new `getMethod(int)` function provides a shared-lock read path;
+`SoAction::traverse()` uses it instead of `operator[]` for the traversal lookup.
+`SoEnabledElementsList` uses `std::recursive_mutex` for per-instance locking
+and `std::atomic<int>` for `enable_counter`; `enable()` and `merge()` now take
+the per-instance lock.
 
 ---
 
@@ -508,19 +468,29 @@ changes and have well-understood fixes.
    notification pass; the atomic counter only needs relaxed ordering for the
    increment/decrement and acquire/release for the zero-check.
 
-### Phase 2 — Protect global object registries (Weeks 3–5)
+### Phase 2 — Protect global object registries ✅ **(Complete)**
 
-6. **`SoBase::PImpl` dicts** — add a `static std::shared_mutex base_dict_mutex`
-   in `SoBaseP.cpp`.  Reader-lock for `getByName()`, `getName()`,
-   `getAuditors()`; writer-lock for `setName()`, `addAuditor()`,
-   `removeAuditor()`, and `allbaseobj` tracking.  (1–2 days)
+6. **`SoBase::PImpl` dicts** — added `static std::shared_mutex base_dict_mutex`
+   in `SoBaseP.h`/`SoBaseP.cpp`.  Shared (read) lock for `getName()`,
+   `getNamedBase()`, `getNamedBases()`; exclusive (write) lock for `setName()`
+   (reads old name directly from `obj2name` to avoid recursive lock),
+   `getAuditors()` (lazy-initialises `auditordict` entries), and `allbaseobj`
+   / `auditordict` tracking in the constructor and destructor.
 
-7. **`SoGLCacheContextElement` statics** — `std::atomic<int>` for the context
-   ID counter; `std::mutex` around the three `SbList` operations.  (half a day)
+7. **`SoGLCacheContextElement` statics** — `std::atomic<int>` for
+   `biggest_cache_context_id`; `std::mutex glcache_list_mutex` around all
+   three `SbList` operations (`extsupportlist`, `scheduledeletelist`,
+   `scheduledeletecblist`).  `set()` uses a CAS loop; `getUniqueCacheContext()`
+   uses `fetch_add(1)`.
 
-8. **`SoActionMethodList` / `SoEnabledElementsList`** — verify that the
-   `OBOL_THREADSAFE` read locks are held for look-ups, not just writes.
-   (half a day)
+8. **`SoActionMethodList` / `SoEnabledElementsList`** — `SoActionMethodList`
+   upgraded from `SbMutex` to `std::shared_mutex` (removing `OBOL_THREADSAFE`
+   guard); added `getMethod(int)` with shared lock for the traversal read path;
+   `SoAction::traverse()` updated to use `getMethod()`.
+   `SoEnabledElementsList` uses `std::recursive_mutex` (allowing re-entrant
+   calls from `getElements()` → `merge()` → `enable()`); `enable_counter`
+   changed to `static std::atomic<int>`; explicit locks added to `enable()`
+   and `merge()`.
 
 ### Phase 3 — Design-level work (Weeks 5–10)
 

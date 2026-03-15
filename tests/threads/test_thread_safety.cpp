@@ -672,15 +672,10 @@ static bool test_sobase_setname_getname()
       oss << "node_" << idx << "_t" << tid << "_" << iter;
       n->setName(SbName(oss.str().c_str()));
 
-      // Read it back (shared lock path)
-      SbName got = n->getName();
-      if (got.getLength() == 0) {
-        // Name might have been overwritten by another thread — that's OK.
-        // We just require no crash and no empty-string mis-read.
-        // (A freshly named node with any name should have length > 0.)
-        // Actually, after setName above it could be overwritten by another
-        // thread before we call getName(), so don't fail here.
-      }
+      // Read it back (shared lock path). Another thread may have overwritten
+      // the name before we got here, so don't assert on the value — the test
+      // is a no-crash/no-sanitizer-alarm check for the locking paths.
+      (void)n->getName();
 
       // Also exercise getByName lookup (read path on name2obj)
       SoNodeList list;
