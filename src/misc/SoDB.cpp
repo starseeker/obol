@@ -1293,8 +1293,14 @@ SoDB::removeProgressCallback(ProgressCallbackType * func, void * userdata)
 }
 
 /*!
-  Returns \c TRUE if this is a thread safe version of Coin
-  (i.e. it was configured and built with --enable-threadsafe).
+  Returns \c TRUE always.
+
+  Thread safety is unconditional in Obol: the library is always built with
+  all data-race fixes active (atomic reference counts, mutex-protected name
+  and type registries, snapshot-based auditor delivery, etc.).  There is no
+  configuration flag that can disable thread safety.
+
+  \sa SoDB::readlock(), SoDB::writelock()
 */
 SbBool
 SoDB::isMultiThread(void)
@@ -1307,22 +1313,20 @@ SoDB::isMultiThread(void)
 // Inventor.
 
 /*!
+  Places a read lock on the global SoDB mutex.
 
-  Places a read lock on the global SoDB mutex. This can be used to
-  synchronize between threads that are reading/writing Coin scene
-  graphs.
+  Use this to allow multiple concurrent scene-graph traversals from different
+  threads while preventing concurrent writes.  All SoAction::apply() calls
+  acquire the global read lock internally, so application code typically only
+  needs this when explicitly traversing the scene graph outside of an action.
 
-  If you call this function, you must make sure that you also call
-  SoDB::readunlock(). If you fail to do this, you might experience
-  that your application locks up.
+  Must always be paired with a matching SoDB::readunlock() call; failing to do
+  so will deadlock the application.
 
-  All Coin actions have a read-lock on the global SoDB mutex while
-  traversing the scene graph.
+  Multiple threads may hold the read lock simultaneously.  The read lock blocks
+  SoDB::writelock() until all readers have released it.
 
   \sa SoDB::readunlock(), SoDB::writelock()
-
-  \since Coin 2.3
-  \since TGS Inventor 3.0
 */
 void
 SoDB::readlock(void)
@@ -1331,11 +1335,9 @@ SoDB::readlock(void)
 }
 
 /*!
-  Unlocks the read lock on the global SoDB mutex.
+  Releases the read lock acquired by SoDB::readlock().
 
   \sa SoDB::readlock()
-  \since Coin 2.3
-  \since TGS Inventor 3.0
 */
 void
 SoDB::readunlock(void)
@@ -1344,17 +1346,17 @@ SoDB::readunlock(void)
 }
 
 /*!
-  Places a write lock on the global SoDB mutex. This can be used to
-  prevent that the scene graph is read or traversed while you modify
-  the scene graph.
+  Places an exclusive write lock on the global SoDB mutex.
 
-  If you call this function, you must make sure that you also call
-  SoDB::writeunlock(). If you fail to do this, you might experience
-  that your application locks up.
+  Use this to prevent scene-graph traversals from running concurrently with
+  scene-graph mutations (node creation, field modification, route changes, etc.).
+  While the write lock is held, all SoDB::readlock() and SoDB::writelock()
+  calls from other threads will block until the lock is released.
 
-  \sa SoDB::readlock()
-  \since Coin 2.3
-  \since TGS Inventor 3.0
+  Must always be paired with a matching SoDB::writeunlock() call; failing to
+  do so will deadlock the application.
+
+  \sa SoDB::writeunlock(), SoDB::readlock()
 */
 void
 SoDB::writelock(void)
@@ -1363,11 +1365,9 @@ SoDB::writelock(void)
 }
 
 /*!
-  Unlocks the write lock on the global SoDB mutex.
+  Releases the write lock acquired by SoDB::writelock().
 
   \sa SoDB::writelock()
-  \since Coin 2.3
-  \since TGS Inventor 3.0
 */
 void
 SoDB::writeunlock(void)
