@@ -5,6 +5,7 @@ set(OBOL_RENDERING_FILES
 	SoGLDriverDatabase.cpp
 	SoGLImage.cpp
 	SoGLCubeMapImage.cpp
+	SoGLModernState.cpp
 	SoRenderManager.cpp
 	SoRenderManagerP.cpp
 	SoOffscreenRenderer.cpp
@@ -17,6 +18,8 @@ set(OBOL_RENDERING_FILES
 set(OBOL_RENDERING_INTERNAL_FILES
 	SoGL.h
 	SoGL.cpp
+	SoGLModernState.h
+	SoGLModernState.cpp
 	SoRenderManagerP.h
 	SoRenderManagerP.cpp
 	SoVBO.h

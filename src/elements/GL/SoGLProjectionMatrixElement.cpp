@@ -43,7 +43,7 @@
 #include "glue/glp.h"
 #include "config.h"
 
-
+#include "rendering/SoGLModernState.h"
 
 #include <Inventor/system/gl.h>
 
@@ -114,4 +114,12 @@ SoGLProjectionMatrixElement::updategl(void)
   SoGLContext_glMatrixMode(this->glue, GL_PROJECTION);
   SoGLContext_glLoadMatrixf(this->glue, (float*)this->projectionMatrix);
   SoGLContext_glMatrixMode(this->glue, GL_MODELVIEW);
+
+  /* Phase 1 modernization: also keep the per-context SoGLModernState in sync.
+   * The projection matrix is stored in OI row-major order in this->projectionMatrix;
+   * SoGLModernState::setProjectionMatrix() accepts the same OI row-major layout. */
+  uint32_t ctxid = SoGLContext_get_contextid(this->glue);
+  SoGLModernState * ms = SoGLModernState::forContext(ctxid);
+  if (ms)
+    ms->setProjectionMatrix((const float *)this->projectionMatrix);
 }

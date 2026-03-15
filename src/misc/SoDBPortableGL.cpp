@@ -132,19 +132,6 @@ public:
          * behaviour; this is the same as what happens in the no-OpenGL build. */
         return nullptr;
     }
-
-    /* Copy the rendered pixel buffer into a caller-supplied RGBA buffer.
-     * PortableGL's default pixel format is PGL_ABGR32 which, on little-
-     * endian platforms (x86/ARM), stores bytes as R, G, B, A in memory —
-     * matching the RGBA byte order that SoOffscreenRenderer::getBuffer()
-     * callers expect.  No byte swap is needed on little-endian. */
-    void getPixels(void * context, unsigned char * dest,
-                   unsigned int width, unsigned int height) override {
-        auto * d = static_cast<CoinPGLCtxData *>(context);
-        if (!d || !d->isValid() || !d->backbuf || !dest) return;
-        const size_t nbytes = (size_t)width * height * 4;
-        std::memcpy(dest, d->backbuf, nbytes);
-    }
 };
 
 /* -----------------------------------------------------------------------

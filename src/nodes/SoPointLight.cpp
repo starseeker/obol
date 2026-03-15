@@ -72,6 +72,7 @@
 #include <Inventor/system/gl.h>
 
 #include "nodes/SoSubNodeP.h"
+#include "rendering/SoGLModernState.h"
 
 // *************************************************************************
 
@@ -159,4 +160,31 @@ SoPointLight::GLRender(SoGLRenderAction * action)
   // turning off spot light properties for ordinary lights
   SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_SPOT_EXPONENT, 0.0);
   SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_SPOT_CUTOFF, 180.0);
+
+  /* Phase 1 modernization: register this point light with SoGLModernState. */
+  {
+    const SoGLContext * glue = sogl_glue_from_state(state);
+    uint32_t ctxid = SoGLContext_get_contextid(glue);
+    SoGLModernState * ms = SoGLModernState::forContext(ctxid);
+    if (ms) {
+      if (idx == 0) ms->resetLights();
+
+      SoGLModernState::Light ml;
+      ml.position[0] = posvec[0]; ml.position[1] = posvec[1];
+      ml.position[2] = posvec[2]; ml.position[3] = 1.0f; /* positional */
+      ml.ambient[0] = ml.ambient[1] = ml.ambient[2] = 0.0f; ml.ambient[3] = 1.0f;
+      SbColor col = this->color.getValue() * this->intensity.getValue();
+      ml.diffuse[0]  = ml.specular[0] = col[0];
+      ml.diffuse[1]  = ml.specular[1] = col[1];
+      ml.diffuse[2]  = ml.specular[2] = col[2];
+      ml.diffuse[3]  = ml.specular[3] = 1.0f;
+      ml.spotDirection[0] = 0.0f; ml.spotDirection[1] = 0.0f; ml.spotDirection[2] = -1.0f;
+      ml.spotCutoff         = -1.0f; /* non-spot */
+      ml.spotExponent       = 0.0f;
+      ml.constantAttenuation  = attenuation[2];
+      ml.linearAttenuation    = attenuation[1];
+      ml.quadraticAttenuation = attenuation[0];
+      ms->addLight(ml);
+    }
+  }
 }

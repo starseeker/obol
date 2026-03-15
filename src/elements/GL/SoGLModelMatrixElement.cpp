@@ -51,6 +51,7 @@
 #include "CoinTidbits.h"
 
 #include "misc/SoEnvironment.h"
+#include "rendering/SoGLModernState.h"
 
 #if OBOL_DEBUG
 #include <Inventor/errors/SoDebugError.h>
@@ -145,6 +146,7 @@ SoGLModelMatrixElement::pop(SoState * stateptr,
   else {
     SoGLContext_glPopMatrix(this->glue);
   }
+  updateModernState();
 }
 
 //! FIXME: write doc.
@@ -155,6 +157,7 @@ SoGLModelMatrixElement::makeEltIdentity()
   SbMatrix mat = SoGLViewingMatrixElement::getResetMatrix(this->state);
   SoGLContext_glLoadMatrixf(this->glue, mat[0]);
   inherited::makeEltIdentity();
+  updateModernState();
 }
 
 //! FIXME: write doc.
@@ -166,6 +169,7 @@ SoGLModelMatrixElement::setElt(const SbMatrix & matrix)
   mat.multLeft(matrix);
   SoGLContext_glLoadMatrixf(this->glue, mat[0]);
   inherited::setElt(matrix);
+  updateModernState();
 }
 
 //! FIXME: write doc.
@@ -175,6 +179,7 @@ SoGLModelMatrixElement::multElt(const SbMatrix &matrix)
 {
   SoGLContext_glMultMatrixf(this->glue, matrix[0]);
   inherited::multElt(matrix);
+  updateModernState();
 }
 
 //! FIXME: write doc.
@@ -184,6 +189,7 @@ SoGLModelMatrixElement::translateEltBy(const SbVec3f &translation)
 {
   SoGLContext_glTranslatef(this->glue, translation[0], translation[1], translation[2]);
   inherited::translateEltBy(translation);
+  updateModernState();
 }
 
 //! FIXME: write doc.
@@ -196,6 +202,7 @@ SoGLModelMatrixElement::rotateEltBy(const SbRotation &rotation)
   rotation.getValue(axis, angle);
   SoGLContext_glRotatef(this->glue, angle*180.0f/float(M_PI), axis[0], axis[1], axis[2]);
   inherited::rotateEltBy(rotation);
+  updateModernState();
 }
 
 //! FIXME: write doc.
@@ -205,6 +212,22 @@ SoGLModelMatrixElement::scaleEltBy(const SbVec3f &scaleFactor)
 {
   SoGLContext_glScalef(this->glue, scaleFactor[0], scaleFactor[1], scaleFactor[2]);
   inherited::scaleEltBy(scaleFactor);
+  updateModernState();
+}
+
+/*! \internal Update SoGLModernState with the current combined model-view matrix. */
+void
+SoGLModelMatrixElement::updateModernState()
+{
+  uint32_t ctxid = SoGLContext_get_contextid(this->glue);
+  SoGLModernState * ms = SoGLModernState::forContext(ctxid);
+  if (!ms) return;
+
+  /* The full model-view matrix is VIEW * MODEL.
+   * getResetMatrix() returns the view matrix; multLeft(model) gives VIEW * MODEL. */
+  SbMatrix mv = SoGLViewingMatrixElement::getResetMatrix(this->state);
+  mv.multLeft(this->modelMatrix);
+  ms->setModelViewMatrix((const float *) mv.getValue());
 }
 
 //! FIXME: write doc.

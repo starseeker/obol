@@ -106,6 +106,7 @@
 #include <Inventor/system/gl.h>
 
 #include "nodes/SoSubNodeP.h"
+#include "rendering/SoGLModernState.h"
 
 // *************************************************************************
 
@@ -200,6 +201,44 @@ SoDirectionalLight::GLRender(SoGLRenderAction * action)
   SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_CONSTANT_ATTENUATION, 1);
   SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_LINEAR_ATTENUATION, 0);
   SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_QUADRATIC_ATTENUATION, 0);
+
+  /* Phase 1 modernization: also register this light with SoGLModernState for
+   * shader-based rendering (built-in Phong shader).
+   * The light direction is already in the scene (eye) space because
+   * dirvec is computed from the transformed direction. */
+  {
+    const SoGLContext * glue = sogl_glue_from_state(state);
+    uint32_t ctxid = SoGLContext_get_contextid(glue);
+    SoGLModernState * ms = SoGLModernState::forContext(ctxid);
+    if (ms) {
+      if (idx == 0) ms->resetLights();   /* first light resets the array */
+
+      SoGLModernState::Light ml;
+      /* position: directional (w=0) */
+      ml.position[0] = dirvec[0];
+      ml.position[1] = dirvec[1];
+      ml.position[2] = dirvec[2];
+      ml.position[3] = 0.0f;
+      /* ambient: always zero for directional (matching fixed-function behaviour) */
+      ml.ambient[0] = ml.ambient[1] = ml.ambient[2] = 0.0f; ml.ambient[3] = 1.0f;
+      /* diffuse and specular: light colour * intensity */
+      SbColor col = this->color.getValue() * this->intensity.getValue();
+      ml.diffuse[0]  = ml.specular[0] = col[0];
+      ml.diffuse[1]  = ml.specular[1] = col[1];
+      ml.diffuse[2]  = ml.specular[2] = col[2];
+      ml.diffuse[3]  = ml.specular[3] = 1.0f;
+      /* not a spot light */
+      ml.spotDirection[0]  = 0.0f;
+      ml.spotDirection[1]  = 0.0f;
+      ml.spotDirection[2]  = -1.0f;
+      ml.spotCutoff         = -1.0f;
+      ml.spotExponent       = 0.0f;
+      ml.constantAttenuation  = 1.0f;
+      ml.linearAttenuation    = 0.0f;
+      ml.quadraticAttenuation = 0.0f;
+      ms->addLight(ml);
+    }
+  }
 }
 
 // *************************************************************************

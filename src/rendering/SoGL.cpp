@@ -75,6 +75,7 @@
 
 #include "glue/glp.h"
 #include "misc/SoEnvironment.h"
+#include "rendering/SoGLModernState.h"
 
 // *************************************************************************
 
@@ -165,6 +166,310 @@ sogl_generate_2d_circle(SbVec2f *coords, const int num, const float radius)
   }
 }
 
+/* =========================================================================
+ * Modern VAO+VBO rendering for a cone, a cylinder, and a cube.
+ * Each function follows the same pattern as sogl_render_sphere_modern:
+ *  1. Generate vertex data (position, normal, texcoord) CPU-side.
+ *  2. Upload to a temporary VAO + VBO (+ EBO for indexed drawing).
+ *  3. Activate the built-in Phong shader via SoGLModernState.
+ *  4. Issue glDrawElements / glDrawArrays.
+ *  5. Release GPU resources.
+ * ===================================================================== */
+
+/* --- Cone ------------------------------------------------------------ */
+
+static void
+sogl_render_cone_modern(SoGLModernState * ms,
+                        float radius, float height,
+                        int numslices,
+                        bool renderSide, bool renderBottom,
+                        bool needNormals, bool needTexCoords)
+{
+  int slices = numslices < 4 ? 4 : (numslices > 128 ? 128 : numslices);
+  float h2   = height * 0.5f;
+
+  /* The side of a cone consists of (slices) triangles: apex + two base verts.
+   * The bottom cap is a triangle fan from the base centre.
+   * We generate a flat array of (position+normal+texcoord) triangles.       */
+  const int STRIDE = 8;
+
+  /* Count triangles and allocate */
+  int trisSide   = renderSide   ? slices : 0;
+  int trisBottom = renderBottom ? slices : 0;
+  int totalTris  = trisSide + trisBottom;
+  if (totalTris == 0) return;
+
+  float * vtx = new float[totalTris * 3 * STRIDE];
+  int vi = 0;
+
+  /* Helper lambda to emit a vertex into vtx[] */
+  auto emit = [&](float px, float py, float pz,
+                  float nx, float ny, float nz,
+                  float u,  float v) {
+    vtx[vi++] = px; vtx[vi++] = py; vtx[vi++] = pz;
+    vtx[vi++] = nx; vtx[vi++] = ny; vtx[vi++] = nz;
+    vtx[vi++] = u;  vtx[vi++] = v;
+  };
+
+  /* Precompute base ring */
+  float * bx = new float[slices + 1];
+  float * bz = new float[slices + 1];
+  for (int i = 0; i <= slices; ++i) {
+    float theta = 2.0f * float(M_PI) * float(i) / float(slices);
+    bx[i] = -std::sin(theta) * radius;
+    bz[i] = -std::cos(theta) * radius;
+  }
+
+  if (renderSide) {
+    /* Cone side normal: perpendicular to the slant, lying in the xz plane.
+     * For vertex at angle theta: outward tangent normal has y component
+     * = sin(slant_angle) = radius / hypot(radius, height). */
+    float sn = height / std::sqrt(radius * radius + height * height);
+    float cn = radius / std::sqrt(radius * radius + height * height);
+
+    for (int i = 0; i < slices; ++i) {
+      float t0 = float(i)     / float(slices);
+      float t1 = float(i + 1) / float(slices);
+      /* Mid-slice normal for the apex vertex */
+      float amid = 2.0f * float(M_PI) * (float(i) + 0.5f) / float(slices);
+      float nxApex = cn * (-std::sin(amid));
+      float nzApex = cn * (-std::cos(amid));
+
+      /* Apex */
+      emit(0.0f, h2, 0.0f,
+           nxApex, sn, nzApex,
+           (t0 + t1) * 0.5f, 1.0f);
+      /* Base vertex i */
+      float nx0 = cn * (-std::sin(2.0f*float(M_PI)*float(i)  /float(slices)));
+      float nz0 = cn * (-std::cos(2.0f*float(M_PI)*float(i)  /float(slices)));
+      emit(bx[i], -h2, bz[i], nx0, sn, nz0, t0, 0.0f);
+      /* Base vertex i+1 */
+      float nx1 = cn * (-std::sin(2.0f*float(M_PI)*float(i+1)/float(slices)));
+      float nz1 = cn * (-std::cos(2.0f*float(M_PI)*float(i+1)/float(slices)));
+      emit(bx[i+1], -h2, bz[i+1], nx1, sn, nz1, t1, 0.0f);
+    }
+  }
+
+  if (renderBottom) {
+    for (int i = 0; i < slices; ++i) {
+      float t0 = float(i)     / float(slices);
+      float t1 = float(i + 1) / float(slices);
+      /* Centre */
+      emit(0.0f, -h2, 0.0f, 0.0f, -1.0f, 0.0f, 0.5f, 0.5f);
+      /* Rim (reversed winding for inward-facing bottom) */
+      emit(bx[i+1], -h2, bz[i+1], 0.0f, -1.0f, 0.0f,
+           0.5f + 0.5f * bx[i+1] / radius,
+           0.5f + 0.5f * bz[i+1] / radius);
+      emit(bx[i],   -h2, bz[i],   0.0f, -1.0f, 0.0f,
+           0.5f + 0.5f * bx[i]   / radius,
+           0.5f + 0.5f * bz[i]   / radius);
+    }
+  }
+
+  delete[] bx; delete[] bz;
+
+  GLuint vao = 0, vbo = 0;
+  glGenVertexArrays(1, &vao);
+  glBindVertexArray(vao);
+  glGenBuffers(1, &vbo);
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+  glBufferData(GL_ARRAY_BUFFER,
+               totalTris * 3 * STRIDE * (GLsizeiptr)sizeof(float),
+               vtx, GL_STATIC_DRAW);
+
+  const GLsizei byteStride = STRIDE * (GLsizei)sizeof(float);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, byteStride, (void*)(0*sizeof(float)));
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, byteStride, (void*)(3*sizeof(float)));
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, byteStride, (void*)(6*sizeof(float)));
+  glEnableVertexAttribArray(2);
+
+  ms->activatePhong(needNormals, false, needTexCoords, false);
+  glDrawArrays(GL_TRIANGLES, 0, totalTris * 3);
+  ms->deactivate();
+
+  glBindVertexArray(0);
+  glDeleteVertexArrays(1, &vao);
+  glDeleteBuffers(1, &vbo);
+  delete[] vtx;
+}
+
+/* --- Cylinder -------------------------------------------------------- */
+
+static void
+sogl_render_cylinder_modern(SoGLModernState * ms,
+                             float radius, float height,
+                             int numslices,
+                             bool renderSide, bool renderTop, bool renderBottom,
+                             bool needNormals, bool needTexCoords)
+{
+  int slices = numslices < 4 ? 4 : (numslices > 128 ? 128 : numslices);
+  float h2 = height * 0.5f;
+
+  const int STRIDE = 8;
+  /* Triangles: side = slices*2, top/bottom caps = slices each */
+  int trisSide   = renderSide   ? slices * 2 : 0;
+  int trisTop    = renderTop    ? slices      : 0;
+  int trisBottom = renderBottom ? slices      : 0;
+  int totalTris  = trisSide + trisTop + trisBottom;
+  if (totalTris == 0) return;
+
+  float * vtx = new float[totalTris * 3 * STRIDE];
+  int vi = 0;
+
+  auto emit = [&](float px, float py, float pz,
+                  float nx, float ny, float nz,
+                  float u,  float v) {
+    vtx[vi++] = px; vtx[vi++] = py; vtx[vi++] = pz;
+    vtx[vi++] = nx; vtx[vi++] = ny; vtx[vi++] = nz;
+    vtx[vi++] = u;  vtx[vi++] = v;
+  };
+
+  /* Precompute ring */
+  float * bx = new float[slices + 1];
+  float * bz = new float[slices + 1];
+  float * nx = new float[slices + 1];
+  float * nz = new float[slices + 1];
+  for (int i = 0; i <= slices; ++i) {
+    float theta = 2.0f * float(M_PI) * float(i) / float(slices);
+    bx[i] = -std::sin(theta) * radius;
+    bz[i] = -std::cos(theta) * radius;
+    nx[i] = -std::sin(theta);
+    nz[i] = -std::cos(theta);
+  }
+
+  if (renderSide) {
+    for (int i = 0; i < slices; ++i) {
+      float t0 = float(i)     / float(slices);
+      float t1 = float(i + 1) / float(slices);
+      /* Quad as two triangles (CCW winding for outward normals) */
+      emit(bx[i],   h2, bz[i],   nx[i], 0.0f, nz[i], t0, 1.0f);
+      emit(bx[i],  -h2, bz[i],   nx[i], 0.0f, nz[i], t0, 0.0f);
+      emit(bx[i+1], h2, bz[i+1], nx[i+1], 0.0f, nz[i+1], t1, 1.0f);
+
+      emit(bx[i+1], h2, bz[i+1], nx[i+1], 0.0f, nz[i+1], t1, 1.0f);
+      emit(bx[i],  -h2, bz[i],   nx[i], 0.0f, nz[i], t0, 0.0f);
+      emit(bx[i+1],-h2, bz[i+1], nx[i+1], 0.0f, nz[i+1], t1, 0.0f);
+    }
+  }
+
+  if (renderTop) {
+    for (int i = 0; i < slices; ++i) {
+      emit(0.0f, h2, 0.0f, 0.0f, 1.0f, 0.0f, 0.5f, 0.5f);
+      emit(bx[i],   h2, bz[i],   0.0f, 1.0f, 0.0f,
+           0.5f + 0.5f*bx[i]/radius, 0.5f + 0.5f*bz[i]/radius);
+      emit(bx[i+1], h2, bz[i+1], 0.0f, 1.0f, 0.0f,
+           0.5f + 0.5f*bx[i+1]/radius, 0.5f + 0.5f*bz[i+1]/radius);
+    }
+  }
+
+  if (renderBottom) {
+    for (int i = 0; i < slices; ++i) {
+      emit(0.0f, -h2, 0.0f, 0.0f, -1.0f, 0.0f, 0.5f, 0.5f);
+      emit(bx[i+1], -h2, bz[i+1], 0.0f, -1.0f, 0.0f,
+           0.5f + 0.5f*bx[i+1]/radius, 0.5f + 0.5f*bz[i+1]/radius);
+      emit(bx[i],   -h2, bz[i],   0.0f, -1.0f, 0.0f,
+           0.5f + 0.5f*bx[i]/radius, 0.5f + 0.5f*bz[i]/radius);
+    }
+  }
+
+  delete[] bx; delete[] bz; delete[] nx; delete[] nz;
+
+  GLuint vao = 0, vbo = 0;
+  glGenVertexArrays(1, &vao);
+  glBindVertexArray(vao);
+  glGenBuffers(1, &vbo);
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+  glBufferData(GL_ARRAY_BUFFER,
+               totalTris * 3 * STRIDE * (GLsizeiptr)sizeof(float),
+               vtx, GL_STATIC_DRAW);
+
+  const GLsizei byteStride = STRIDE * (GLsizei)sizeof(float);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, byteStride, (void*)(0*sizeof(float)));
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, byteStride, (void*)(3*sizeof(float)));
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, byteStride, (void*)(6*sizeof(float)));
+  glEnableVertexAttribArray(2);
+
+  ms->activatePhong(needNormals, false, needTexCoords, false);
+  glDrawArrays(GL_TRIANGLES, 0, totalTris * 3);
+  ms->deactivate();
+
+  glBindVertexArray(0);
+  glDeleteVertexArrays(1, &vao);
+  glDeleteBuffers(1, &vbo);
+  delete[] vtx;
+}
+
+/* --- Cube ------------------------------------------------------------ */
+
+static void
+sogl_render_cube_modern(SoGLModernState * ms,
+                        float w, float h, float d,
+                        bool needNormals, bool needTexCoords)
+{
+  /* 6 faces × 2 triangles × 3 vertices, interleaved pos(3)+norm(3)+uv(2) */
+  const int STRIDE = 8;
+  const int NUM_VERTS = 6 * 2 * 3;
+  float vtx[NUM_VERTS * STRIDE];
+  int vi = 0;
+
+  float hw = w * 0.5f, hh = h * 0.5f, hd = d * 0.5f;
+
+  auto emit = [&](float px, float py, float pz,
+                  float nx, float ny, float nz,
+                  float u,  float v) {
+    vtx[vi++] = px; vtx[vi++] = py; vtx[vi++] = pz;
+    vtx[vi++] = nx; vtx[vi++] = ny; vtx[vi++] = nz;
+    vtx[vi++] = u;  vtx[vi++] = v;
+  };
+
+  /* +Z face */
+  emit(-hw,-hh, hd, 0,0,1, 0,0); emit( hw,-hh, hd, 0,0,1, 1,0); emit( hw, hh, hd, 0,0,1, 1,1);
+  emit(-hw,-hh, hd, 0,0,1, 0,0); emit( hw, hh, hd, 0,0,1, 1,1); emit(-hw, hh, hd, 0,0,1, 0,1);
+  /* -Z face */
+  emit( hw,-hh,-hd, 0,0,-1, 0,0); emit(-hw,-hh,-hd, 0,0,-1, 1,0); emit(-hw, hh,-hd, 0,0,-1, 1,1);
+  emit( hw,-hh,-hd, 0,0,-1, 0,0); emit(-hw, hh,-hd, 0,0,-1, 1,1); emit( hw, hh,-hd, 0,0,-1, 0,1);
+  /* +X face */
+  emit( hw,-hh, hd, 1,0,0, 0,0); emit( hw,-hh,-hd, 1,0,0, 1,0); emit( hw, hh,-hd, 1,0,0, 1,1);
+  emit( hw,-hh, hd, 1,0,0, 0,0); emit( hw, hh,-hd, 1,0,0, 1,1); emit( hw, hh, hd, 1,0,0, 0,1);
+  /* -X face */
+  emit(-hw,-hh,-hd, -1,0,0, 0,0); emit(-hw,-hh, hd, -1,0,0, 1,0); emit(-hw, hh, hd, -1,0,0, 1,1);
+  emit(-hw,-hh,-hd, -1,0,0, 0,0); emit(-hw, hh, hd, -1,0,0, 1,1); emit(-hw, hh,-hd, -1,0,0, 0,1);
+  /* +Y face */
+  emit(-hw, hh, hd, 0,1,0, 0,0); emit( hw, hh, hd, 0,1,0, 1,0); emit( hw, hh,-hd, 0,1,0, 1,1);
+  emit(-hw, hh, hd, 0,1,0, 0,0); emit( hw, hh,-hd, 0,1,0, 1,1); emit(-hw, hh,-hd, 0,1,0, 0,1);
+  /* -Y face */
+  emit(-hw,-hh,-hd, 0,-1,0, 0,0); emit( hw,-hh,-hd, 0,-1,0, 1,0); emit( hw,-hh, hd, 0,-1,0, 1,1);
+  emit(-hw,-hh,-hd, 0,-1,0, 0,0); emit( hw,-hh, hd, 0,-1,0, 1,1); emit(-hw,-hh, hd, 0,-1,0, 0,1);
+
+  GLuint vao = 0, vbo = 0;
+  glGenVertexArrays(1, &vao);
+  glBindVertexArray(vao);
+  glGenBuffers(1, &vbo);
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+  glBufferData(GL_ARRAY_BUFFER,
+               sizeof(vtx), vtx, GL_STATIC_DRAW);
+
+  const GLsizei byteStride = STRIDE * (GLsizei)sizeof(float);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, byteStride, (void*)(0*sizeof(float)));
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, byteStride, (void*)(3*sizeof(float)));
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, byteStride, (void*)(6*sizeof(float)));
+  glEnableVertexAttribArray(2);
+
+  ms->activatePhong(needNormals, false, needTexCoords, false);
+  glDrawArrays(GL_TRIANGLES, 0, NUM_VERTS);
+  ms->deactivate();
+
+  glBindVertexArray(0);
+  glDeleteVertexArrays(1, &vao);
+  glDeleteBuffers(1, &vbo);
+}
+
 void
 sogl_render_cone(const float radius,
                  const float height,
@@ -173,6 +478,33 @@ sogl_render_cone(const float radius,
                  const unsigned int flagsin,
                  SoState * state)
 {
+  /* Phase 1 modernization: use VAO+VBO path when SoGLModernState is available. */
+  if (state) {
+    const SoGLContext * glue = sogl_glue_instance(state);
+    if (glue) {
+      uint32_t ctxid = SoGLContext_get_contextid(glue);
+      SoGLModernState * ms = SoGLModernState::forContext(ctxid);
+      if (ms && ms->isAvailable()) {
+        sogl_render_cone_modern(ms, radius, height, numslices,
+                                (flagsin & SOGL_RENDER_SIDE)   != 0,
+                                (flagsin & SOGL_RENDER_BOTTOM) != 0,
+                                (flagsin & SOGL_NEED_NORMALS)  != 0,
+                                (flagsin & SOGL_NEED_TEXCOORDS)!= 0);
+        if (SoComplexityTypeElement::get(state) ==
+            SoComplexityTypeElement::OBJECT_SPACE) {
+          SoGLCacheContextElement::shouldAutoCache(
+              state, SoGLCacheContextElement::DO_AUTO_CACHE);
+          SoGLCacheContextElement::incNumShapes(state);
+        } else {
+          SoGLCacheContextElement::shouldAutoCache(
+              state, SoGLCacheContextElement::DONT_AUTO_CACHE);
+        }
+        (void)material;
+        return;
+      }
+    }
+  }
+
   const SbBool * unitenabled = NULL;
   int maxunit = 0;
   const SoGLContext * glue = state ? sogl_glue_instance(state) : NULL;
@@ -342,6 +674,34 @@ sogl_render_cylinder(const float radius,
                      const unsigned int flagsin,
                      SoState * state)
 {
+  /* Phase 1 modernization: use VAO+VBO path when SoGLModernState is available. */
+  if (state) {
+    const SoGLContext * glue = sogl_glue_instance(state);
+    if (glue) {
+      uint32_t ctxid = SoGLContext_get_contextid(glue);
+      SoGLModernState * ms = SoGLModernState::forContext(ctxid);
+      if (ms && ms->isAvailable()) {
+        sogl_render_cylinder_modern(ms, radius, height, numslices,
+                                    (flagsin & SOGL_RENDER_SIDE)  != 0,
+                                    (flagsin & SOGL_RENDER_TOP)   != 0,
+                                    (flagsin & SOGL_RENDER_BOTTOM)!= 0,
+                                    (flagsin & SOGL_NEED_NORMALS) != 0,
+                                    (flagsin & SOGL_NEED_TEXCOORDS)!=0);
+        if (SoComplexityTypeElement::get(state) ==
+            SoComplexityTypeElement::OBJECT_SPACE) {
+          SoGLCacheContextElement::shouldAutoCache(
+              state, SoGLCacheContextElement::DO_AUTO_CACHE);
+          SoGLCacheContextElement::incNumShapes(state);
+        } else {
+          SoGLCacheContextElement::shouldAutoCache(
+              state, SoGLCacheContextElement::DONT_AUTO_CACHE);
+        }
+        (void)material;
+        return;
+      }
+    }
+  }
+
   const SbBool * unitenabled = NULL;
   int maxunit = 0;
   const SoGLContext * glue = state ? sogl_glue_instance(state) : NULL;
@@ -507,6 +867,111 @@ sogl_render_cylinder(const float radius,
   }
 }
 
+/* =========================================================================
+ * Modern (GL 3.3 core, VAO+VBO) rendering path for a sphere.
+ *
+ * Generates a UV sphere with (stacks+1) × (slices+1) vertices stored in an
+ * interleaved VBO, renders it with indexed triangles (glDrawElements), and
+ * uses the built-in Phong shader from SoGLModernState.
+ *
+ * This path is used instead of the immediate-mode path below when a
+ * SoGLModernState with compiled shaders is available for the current context.
+ * ===================================================================== */
+static void
+sogl_render_sphere_modern(SoGLModernState * ms,
+                          const float radius,
+                          const int numstacks,
+                          const int numslices,
+                          bool needNormals,
+                          bool needTexCoords,
+                          SoState * state)
+{
+  int stacks = numstacks < 3   ? 3   : (numstacks > 128 ? 128 : numstacks);
+  int slices  = numslices < 4   ? 4   : (numslices > 128 ? 128 : numslices);
+
+  /* Interleaved layout: position(3) + normal(3) + texcoord(2) = 8 floats */
+  const int STRIDE = 8;
+  int numVerts = (stacks + 1) * (slices + 1);
+  int numTris  = stacks * slices * 2;
+
+  float *   vtx = new float   [numVerts * STRIDE];
+  uint32_t* idx = new uint32_t[numTris  * 3];
+
+  /* Generate vertices */
+  for (int si = 0; si <= stacks; ++si) {
+    float phi = float(M_PI) * float(si) / float(stacks);
+    float sp  = std::sin(phi);
+    float cp  = std::cos(phi);
+    for (int sl = 0; sl <= slices; ++sl) {
+      float theta = 2.0f * float(M_PI) * float(sl) / float(slices);
+      float st    = std::sin(theta);
+      float ct    = std::cos(theta);
+      /* Normal = unit vector on sphere */
+      float nx = sp * ct, ny = cp, nz = sp * st;
+      float * v = vtx + (si * (slices + 1) + sl) * STRIDE;
+      v[0] = radius * nx; v[1] = radius * ny; v[2] = radius * nz; /* position  */
+      v[3] = nx;           v[4] = ny;           v[5] = nz;          /* normal    */
+      v[6] = float(sl) / float(slices);                              /* texcoord u */
+      v[7] = 1.0f - float(si) / float(stacks);                      /* texcoord v */
+    }
+  }
+
+  /* Generate triangle indices */
+  int ti = 0;
+  for (int si = 0; si < stacks; ++si) {
+    for (int sl = 0; sl < slices; ++sl) {
+      uint32_t v0 = (uint32_t)(si       * (slices + 1) + sl);
+      uint32_t v1 = v0 + 1;
+      uint32_t v2 = (uint32_t)((si + 1) * (slices + 1) + sl);
+      uint32_t v3 = v2 + 1;
+      idx[ti++] = v0; idx[ti++] = v2; idx[ti++] = v1;
+      idx[ti++] = v1; idx[ti++] = v2; idx[ti++] = v3;
+    }
+  }
+
+  /* Upload to GPU */
+  GLuint vao = 0, vbo = 0, ebo = 0;
+  glGenVertexArrays(1, &vao);
+  glBindVertexArray(vao);
+
+  glGenBuffers(1, &vbo);
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+  glBufferData(GL_ARRAY_BUFFER,
+               numVerts * STRIDE * (GLsizeiptr)sizeof(float), vtx, GL_STATIC_DRAW);
+
+  glGenBuffers(1, &ebo);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+               numTris * 3 * (GLsizeiptr)sizeof(uint32_t), idx, GL_STATIC_DRAW);
+
+  const GLsizei byteStride = STRIDE * (GLsizei)sizeof(float);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, byteStride,
+                        (void*)(0 * sizeof(float)));  /* aPosition */
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, byteStride,
+                        (void*)(3 * sizeof(float)));  /* aNormal   */
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, byteStride,
+                        (void*)(6 * sizeof(float)));  /* aTexCoord */
+  glEnableVertexAttribArray(2);
+
+  /* Activate built-in Phong shader and draw */
+  ms->activatePhong(needNormals, /*hasColors=*/false, needTexCoords, /*hasTexture=*/false);
+  glDrawElements(GL_TRIANGLES, numTris * 3, GL_UNSIGNED_INT, nullptr);
+  ms->deactivate();
+
+  /* Restore state and release GPU resources */
+  glBindVertexArray(0);
+  glDeleteVertexArrays(1, &vao);
+  glDeleteBuffers(1, &vbo);
+  glDeleteBuffers(1, &ebo);
+
+  delete[] vtx;
+  delete[] idx;
+
+  (void)state;   /* suppress unused-parameter warning for non-caching paths */
+}
+
 void
 sogl_render_sphere(const float radius,
                    const int numstacks,
@@ -515,6 +980,34 @@ sogl_render_sphere(const float radius,
                    const unsigned int flagsin,
                    SoState * state)
 {
+  /* Phase 1 modernization: use VAO+VBO path when a compiled SoGLModernState
+   * is available for this context.  Fall through to the legacy immediate-mode
+   * path if not (e.g. in headless / no-GLSL contexts). */
+  if (state) {
+    const SoGLContext * glue = sogl_glue_instance(state);
+    if (glue) {
+      uint32_t ctxid = SoGLContext_get_contextid(glue);
+      SoGLModernState * ms = SoGLModernState::forContext(ctxid);
+      if (ms && ms->isAvailable()) {
+        sogl_render_sphere_modern(ms, radius, numstacks, numslices,
+                                  (flagsin & SOGL_NEED_NORMALS)   != 0,
+                                  (flagsin & SOGL_NEED_TEXCOORDS) != 0,
+                                  state);
+        if (SoComplexityTypeElement::get(state) ==
+            SoComplexityTypeElement::OBJECT_SPACE) {
+          SoGLCacheContextElement::shouldAutoCache(
+              state, SoGLCacheContextElement::DO_AUTO_CACHE);
+          SoGLCacheContextElement::incNumShapes(state);
+        }
+        else {
+          SoGLCacheContextElement::shouldAutoCache(
+              state, SoGLCacheContextElement::DONT_AUTO_CACHE);
+        }
+        return;
+      }
+    }
+  }
+
   const SbBool * unitenabled = NULL;
   int maxunit = 0;
   const SoGLContext * glue = state ? sogl_glue_instance(state) : NULL;
@@ -826,6 +1319,25 @@ sogl_render_cube(const float width,
                  const unsigned int flagsin,
                  SoState * state)
 {
+  /* Phase 1 modernization: use VAO+VBO path when SoGLModernState is available. */
+  if (state) {
+    const SoGLContext * glue = sogl_glue_instance(state);
+    if (glue) {
+      uint32_t ctxid = SoGLContext_get_contextid(glue);
+      SoGLModernState * ms = SoGLModernState::forContext(ctxid);
+      if (ms && ms->isAvailable()) {
+        sogl_render_cube_modern(ms, width, height, depth,
+                                (flagsin & SOGL_NEED_NORMALS)   != 0,
+                                (flagsin & SOGL_NEED_TEXCOORDS) != 0);
+        SoGLCacheContextElement::shouldAutoCache(
+            state, SoGLCacheContextElement::DO_AUTO_CACHE);
+        SoGLCacheContextElement::incNumShapes(state);
+        (void)material;
+        return;
+      }
+    }
+  }
+
   const SbBool * unitenabled = NULL;
   int maxunit = 0;
   const SoGLContext * glue = state ? sogl_glue_instance(state) : NULL;

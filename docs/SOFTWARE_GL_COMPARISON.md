@@ -200,18 +200,47 @@ Priority order:
 
 1. **Matrix uniforms** (`SoGLModelMatrixElement`, `SoGLProjectionMatrixElement`,
    `SoGLMultiTextureMatrixElement`) — upload CPU-computed matrices to shader.
+   **Status: ✅ Phase 1 PR — `SoGLModelMatrixElement` and `SoGLProjectionMatrixElement`
+   now mirror all matrix changes into `SoGLModernState`.**
 2. **Built-in Obol shaders** — write `obol_phong.vert` / `obol_phong.frag` that
    replicate the fixed-function Phong model using uniforms.
+   **Status: ✅ Phase 1 PR — `src/rendering/obol_modern_shaders.h` provides GLSL 3.30
+   Phong and base-colour shader strings; `SoGLModernState` compiles and caches them.**
 3. **Geometry streaming** — convert all `glBegin`/`glEnd` paths in `SoGL.cpp` and
    shape nodes to VBO/VAO.
+   **Status: ✅ Phase 1 PR — `sogl_render_sphere`, `sogl_render_cone`,
+   `sogl_render_cylinder`, and `sogl_render_cube` now use the modern VAO+VBO path
+   (via `sogl_render_*_modern`) when `SoGLModernState` is available.  The
+   legacy immediate-mode path is retained as a fallback.**
 4. **Lighting uniforms** — `SoDirectionalLight`, `SoPointLight`, `SoSpotLight` upload
    to `Light[8]` uniform array.
+   **Status: ✅ Phase 1 PR — All three light nodes populate `SoGLModernState::Light`
+   structs via `addLight()`.  The data is uploaded by `activatePhong()`.**
 5. **Material uniforms** — `SoGLLazyElement` uploads to `Material` uniform struct.
+   **Status: ✅ Phase 1 PR — `SoGLLazyElement::send()` mirrors ambient/diffuse/specular/
+   emissive/shininess/twoSided into `SoGLModernState::setMaterial()` at the end of each
+   lazy-element flush.**
 6. **Display list removal** — remove `SoGLDisplayList` or replace with VBO cache hits.
+   **Status: 🔲 Not yet started.**
 7. **Accumulation buffer** — replace with FBO-based MSAA.
+   **Status: 🔲 Not yet started.**
 8. **Shader API** — migrate `SoGLSLShaderObject/Program` to core GL 3 entry points.
+   **Status: 🔲 Not yet started.**
+9. **Remaining geometry** — convert shape nodes (`SoFaceSet`, `SoTriangleStripSet`,
+   `SoQuadMesh`, `SoLineSet`, `SoIndexedPointSet`) glBegin/glEnd fallbacks and the
+   `SoPrimitiveVertexCache` glVertexPointer/glNormalPointer path to VAO+VBO.
+   **Status: 🔲 Not yet started.**
+10. **SoGLMultiTextureMatrixElement** — upload texture-matrix uniform.
+    **Status: 🔲 Not yet started.**
 
 Estimated scope: ~40 source files, ~5 000–8 000 lines changed.
+
+### New file introduced in Phase 1 (this PR)
+
+| File | Purpose |
+|------|---------|
+| `src/rendering/SoGLModernState.h` | Per-context modern GL state manager (header) |
+| `src/rendering/SoGLModernState.cpp` | Implementation: shader compilation, matrix/material/light tracking, VAO activation |
 
 ### Phase 2 — PortableGL Context Manager
 
