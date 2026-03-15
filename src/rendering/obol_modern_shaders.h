@@ -73,6 +73,13 @@
 /* Maximum number of simultaneously active lights (matches GL_MAX_LIGHTS = 8) */
 #define OBOL_MAX_LIGHTS 8
 
+/* Stringify helpers for use in shader source strings.  These must be defined
+ * before the shader macro strings that reference OBOL_MAX_LIGHTS_STR.
+ * Two-level indirection is required so that OBOL_MAX_LIGHTS is first
+ * expanded to its numeric value (8) and THEN stringified to "8". */
+#define OBOL_MAX_LIGHTS_XSTR(s) #s
+#define OBOL_MAX_LIGHTS_STR(x)  OBOL_MAX_LIGHTS_XSTR(x)
+
 /* =========================================================================
  * Phong vertex shader
  * ===================================================================== */
@@ -114,7 +121,7 @@
 #define OBOL_SHADER_PHONG_FRAG \
 "#version 330 core\n" \
 "\n" \
-"#define OBOL_MAX_LIGHTS " OBOL_MAX_LIGHTS_STR "\n" \
+"#define OBOL_MAX_LIGHTS " OBOL_MAX_LIGHTS_STR(OBOL_MAX_LIGHTS) "\n" \
 "\n" \
 "struct ObolLight {\n" \
 "    vec4  position;\n" \
@@ -246,12 +253,6 @@
 "    fragColor = vColor;\n" \
 "    if (uHasTexture) fragColor *= texture(uTexture, vTexCoord);\n" \
 "}\n"
-
-/* =========================================================================
- * Helper macro: stringify OBOL_MAX_LIGHTS for use inside shader strings
- * ===================================================================== */
-#define OBOL_MAX_LIGHTS_STRINGIFY(x) #x
-#define OBOL_MAX_LIGHTS_STR          OBOL_MAX_LIGHTS_STRINGIFY(OBOL_MAX_LIGHTS)
 
 /* =========================================================================
  * Utility: compile and link a shader program from source strings.

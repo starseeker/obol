@@ -3,7 +3,7 @@
 ## Executive Summary
 
 This document analyses what it would take to replace OSMesa with
-[PortableGL](https://github.com/rswinkle/PortableGL) as Obol's software-rasterised
+[PortableGL](https://github.com/rswinkle/PortableGL) as Obol's software-rasterized
 OpenGL backend, and identifies the major problems and obstacles.
 
 The core challenge is architectural: Obol currently relies heavily on OpenGL's
@@ -51,7 +51,7 @@ without depending on any platform GL library or GPU driver.
 | Headless operation | ✓ (native, via OSMesaMakeCurrent) | ✓ (pixel buffer, no windowing) |
 | Build complexity | High (submodule + name-mangling) | Low (single header) |
 | Maintenance | Upstream Mesa (large, slow-moving) | Small single-developer library |
-| Performance | Moderate (Mesa software pipeline) | Comparable (custom rasteriser) |
+| Performance | Moderate (Mesa software pipeline) | Comparable (custom rasterizer) |
 | CI dependency | Requires submodule + name-mangled build | Drop-in header |
 
 ---
@@ -352,7 +352,7 @@ After the migration, the backend matrix becomes:
 | PortableGL (software) | `OBOL_USE_PORTABLEGL=ON` | GL 3.3 core | `CoinPortableGLContextManager` |
 | No OpenGL | both OFF | n/a | Custom (`SoCallbackAction`, Vulkan, …) |
 
-OSMesa is **replaced** by PortableGL for the software-rasteriser role.  The dual-GL
+OSMesa is **replaced** by PortableGL for the software-rasterizer role.  The dual-GL
 mode (system GL + PortableGL) remains possible using PortableGL's thread-local context
 approach with no name-mangling.
 
