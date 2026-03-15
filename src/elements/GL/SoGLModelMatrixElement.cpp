@@ -114,17 +114,7 @@ SoGLModelMatrixElement::push(SoState * stateptr)
   this->state = prev->state;
   this->viewEltNodeId = prev->viewEltNodeId;
 
-  if (OBOL_HANDLE_STACK_OVERFLOW > 0) {
-    if (!this->stackoverflow) {
-      SoGLContext_glPushMatrix(this->glue);
-      if (glGetError() == 0x0503 /*GL_STACK_OVERFLOW*/) {
-        this->stackoverflow = TRUE;
-      }
-    }
-  }
-  else {
-    SoGLContext_glPushMatrix(this->glue);
-  }
+  /* GL3: no fixed-function matrix stack; matrices go via SoGLModernState. */
   inherited::push(stateptr);
 }
 
@@ -138,14 +128,6 @@ SoGLModelMatrixElement::pop(SoState * stateptr,
 
   const SoGLModelMatrixElement * prev = static_cast<const SoGLModelMatrixElement*>(prevTopElement);
 
-  if (prev->stackoverflow) {
-    SbMatrix mat = SoGLViewingMatrixElement::getResetMatrix(this->state);
-    mat.multLeft(this->modelMatrix);
-    SoGLContext_glLoadMatrixf(this->glue, mat[0]);
-  }
-  else {
-    SoGLContext_glPopMatrix(this->glue);
-  }
   updateModernState();
 }
 
@@ -155,7 +137,6 @@ void
 SoGLModelMatrixElement::makeEltIdentity()
 {
   SbMatrix mat = SoGLViewingMatrixElement::getResetMatrix(this->state);
-  SoGLContext_glLoadMatrixf(this->glue, mat[0]);
   inherited::makeEltIdentity();
   updateModernState();
 }
@@ -165,9 +146,6 @@ SoGLModelMatrixElement::makeEltIdentity()
 void
 SoGLModelMatrixElement::setElt(const SbMatrix & matrix)
 {
-  SbMatrix mat = SoGLViewingMatrixElement::getResetMatrix(this->state);
-  mat.multLeft(matrix);
-  SoGLContext_glLoadMatrixf(this->glue, mat[0]);
   inherited::setElt(matrix);
   updateModernState();
 }
@@ -177,7 +155,6 @@ SoGLModelMatrixElement::setElt(const SbMatrix & matrix)
 void
 SoGLModelMatrixElement::multElt(const SbMatrix &matrix)
 {
-  SoGLContext_glMultMatrixf(this->glue, matrix[0]);
   inherited::multElt(matrix);
   updateModernState();
 }
@@ -187,7 +164,6 @@ SoGLModelMatrixElement::multElt(const SbMatrix &matrix)
 void
 SoGLModelMatrixElement::translateEltBy(const SbVec3f &translation)
 {
-  SoGLContext_glTranslatef(this->glue, translation[0], translation[1], translation[2]);
   inherited::translateEltBy(translation);
   updateModernState();
 }
@@ -197,10 +173,6 @@ SoGLModelMatrixElement::translateEltBy(const SbVec3f &translation)
 void
 SoGLModelMatrixElement::rotateEltBy(const SbRotation &rotation)
 {
-  SbVec3f axis;
-  float angle;
-  rotation.getValue(axis, angle);
-  SoGLContext_glRotatef(this->glue, angle*180.0f/float(M_PI), axis[0], axis[1], axis[2]);
   inherited::rotateEltBy(rotation);
   updateModernState();
 }
@@ -210,7 +182,6 @@ SoGLModelMatrixElement::rotateEltBy(const SbRotation &rotation)
 void
 SoGLModelMatrixElement::scaleEltBy(const SbVec3f &scaleFactor)
 {
-  SoGLContext_glScalef(this->glue, scaleFactor[0], scaleFactor[1], scaleFactor[2]);
   inherited::scaleEltBy(scaleFactor);
   updateModernState();
 }
@@ -236,7 +207,6 @@ SbMatrix
 SoGLModelMatrixElement::pushMatrixElt()
 {
   this->viewEltNodeId = SoGLViewingMatrixElement::getNodeId(this->state);
-  SoGLContext_glPushMatrix(this->glue);
   return inherited::pushMatrixElt();
 }
 
@@ -245,7 +215,6 @@ SoGLModelMatrixElement::pushMatrixElt()
 void
 SoGLModelMatrixElement::popMatrixElt(const SbMatrix &matrix)
 {
-  SoGLContext_glPopMatrix(this->glue);
   if (this->viewEltNodeId != SoGLViewingMatrixElement::getNodeId(this->state)) {
     this->setElt(matrix);
   }

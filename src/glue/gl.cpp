@@ -2508,10 +2508,31 @@ w->glAreTexturesResident = (OBOL_PFNGLARETEXTURESRESIDENTPROC)PROC(w, glAreTextu
     }
   }
 
-  /*
-     Disable features based on known driver bugs  here.
-     FIXME: move the driver workarounds to some other module. pederb, 2007-07-04
-  */
+#ifdef OBOL_PORTABLEGL_BUILD
+  /* PortableGL implements GL 3.x core FBO but does not expose
+   * glGetFramebufferAttachmentParameteriv / glGetRenderbufferParameteriv.
+   * Load the available FBO functions directly and force has_fbo so that
+   * offscreen rendering works. */
+  if (!w->has_fbo) {
+    w->glBindRenderbuffer    = (OBOL_PFNGLBINDRENDERBUFFERPROC)SoGLContext_getprocaddress(w, "glBindRenderbuffer");
+    w->glDeleteRenderbuffers = (OBOL_PFNGLDELETERENDERBUFFERSPROC)SoGLContext_getprocaddress(w, "glDeleteRenderbuffers");
+    w->glGenRenderbuffers    = (OBOL_PFNGLGENRENDERBUFFERSPROC)SoGLContext_getprocaddress(w, "glGenRenderbuffers");
+    w->glRenderbufferStorage = (OBOL_PFNGLRENDERBUFFERSTORAGEPROC)SoGLContext_getprocaddress(w, "glRenderbufferStorage");
+    w->glBindFramebuffer     = (OBOL_PFNGLBINDFRAMEBUFFERPROC)SoGLContext_getprocaddress(w, "glBindFramebuffer");
+    w->glDeleteFramebuffers  = (OBOL_PFNGLDELETEFRAMEBUFFERSPROC)SoGLContext_getprocaddress(w, "glDeleteFramebuffers");
+    w->glGenFramebuffers     = (OBOL_PFNGLGENFRAMEBUFFERSPROC)SoGLContext_getprocaddress(w, "glGenFramebuffers");
+    w->glCheckFramebufferStatus = (OBOL_PFNGLCHECKFRAMEBUFFERSTATUSPROC)SoGLContext_getprocaddress(w, "glCheckFramebufferStatus");
+    w->glFramebufferTexture2D   = (OBOL_PFNGLFRAMEBUFFERTEXTURE2DPROC)SoGLContext_getprocaddress(w, "glFramebufferTexture2D");
+    w->glFramebufferRenderbuffer = (OBOL_PFNGLFRAMEBUFFERRENDERBUFFERPROC)SoGLContext_getprocaddress(w, "glFramebufferRenderbuffer");
+    w->glGenerateMipmap      = (OBOL_PFNGLGENERATEMIPMAPPROC)SoGLContext_getprocaddress(w, "glGenerateMipmap");
+    if (w->glBindRenderbuffer && w->glDeleteRenderbuffers && w->glGenRenderbuffers &&
+        w->glRenderbufferStorage && w->glBindFramebuffer && w->glDeleteFramebuffers &&
+        w->glGenFramebuffers && w->glCheckFramebufferStatus && w->glFramebufferTexture2D &&
+        w->glFramebufferRenderbuffer) {
+      w->has_fbo = TRUE;
+    }
+  }
+#endif /* OBOL_PORTABLEGL_BUILD */
 
 
   /*
@@ -2910,6 +2931,15 @@ SoGLContext_instance(int contextid)
      * setting up a SoGLContext instance was made when there is no
      * current OpenGL context. */
     gi->versionstr = (const char *)glGetString(GL_VERSION);
+#ifdef OBOL_PORTABLEGL_BUILD
+    /* PortableGL reports its own "0.x.y" version rather than a real OpenGL
+     * version string.  Override to "3.3 (PortableGL)" so that GL capability
+     * detection (FBO, shader model, etc.) works correctly. */
+    if (!gi->versionstr || gi->versionstr[0] == '0') {
+      static const char pgl_version[] = "3.3 (PortableGL)";
+      gi->versionstr = pgl_version;
+    }
+#endif
     
     /* Additional debugging for OSMesa context */
     if (SoGLContext_debug()) {

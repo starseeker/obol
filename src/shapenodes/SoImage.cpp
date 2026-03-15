@@ -521,14 +521,31 @@ SoImage::GLRender(SoGLRenderAction * action)
     float qz  = -nilpoint[2];
 
     SoGLContext_glEnable(sogl_glue_from_state(state), GL_TEXTURE_2D);
-    SoGLContext_glBegin(sogl_glue_from_state(state), GL_TRIANGLES);
-    SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 0.0f, 0.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx,  qy,  qz);
-    SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 1.0f, 0.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx1, qy,  qz);
-    SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 1.0f, 1.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx1, qy1, qz);
-    SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 0.0f, 0.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx,  qy,  qz);
-    SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 1.0f, 1.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx1, qy1, qz);
-    SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 0.0f, 1.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx,  qy1, qz);
-    SoGLContext_glEnd(sogl_glue_from_state(state));
+    /* GL3: use VAO/VBO for the textured quad (2 triangles). */
+    {
+      const float verts[6][5] = {
+        {qx,  qy,  qz, 0.0f, 0.0f},
+        {qx1, qy,  qz, 1.0f, 0.0f},
+        {qx1, qy1, qz, 1.0f, 1.0f},
+        {qx,  qy,  qz, 0.0f, 0.0f},
+        {qx1, qy1, qz, 1.0f, 1.0f},
+        {qx,  qy1, qz, 0.0f, 1.0f},
+      };
+      GLuint img_vao = 0, img_vbo = 0;
+      glGenVertexArrays(1, &img_vao);
+      glBindVertexArray(img_vao);
+      glGenBuffers(1, &img_vbo);
+      glBindBuffer(GL_ARRAY_BUFFER, img_vbo);
+      glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STREAM_DRAW);
+      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (const GLvoid*)0);
+      glEnableVertexAttribArray(0);
+      glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (const GLvoid*)(3 * sizeof(float)));
+      glEnableVertexAttribArray(2);
+      glDrawArrays(GL_TRIANGLES, 0, 6);
+      glBindVertexArray(0);
+      glDeleteBuffers(1, &img_vbo);
+      glDeleteVertexArrays(1, &img_vao);
+    }
     SoGLContext_glDisable(sogl_glue_from_state(state), GL_TEXTURE_2D);
 
     SoGLContext_glBindTexture(sogl_glue_from_state(state), GL_TEXTURE_2D, 0);

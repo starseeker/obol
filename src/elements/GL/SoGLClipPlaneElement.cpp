@@ -103,9 +103,9 @@ SoGLClipPlaneElement::pop(SoState * state,
   const SoGLClipPlaneElement * prev = (const SoGLClipPlaneElement*)
     prevTopElement;
 
-  // disable used planes
-  for (int i = prev->startIndex; i < prev->getNum(); i++)
-    SoGLContext_glDisable(ctx, (GLenum)(0x3000 /*GL_CLIP_PLANE0*/ + i));
+  /* GL3: clip planes are handled via gl_ClipDistance in shaders; no glDisable needed. */
+  (void)ctx;
+  (void)prev;
 
   inherited::pop(state, prevTopElement);
 }
@@ -124,6 +124,6 @@ SoGLClipPlaneElement::addToElt(const SbPlane & plane,
   equation[1] = norm[1];
   equation[2] = norm[2];
   equation[3] = - plane.getDistanceFromOrigin();
-  SoGLContext_glClipPlane(this->glue, (GLenum)(0x3000 /*GL_CLIP_PLANE0*/ + idxadd), equation);
-  SoGLContext_glEnable(this->glue, (GLenum)(0x3000 /*GL_CLIP_PLANE0*/ + idxadd));
+  /* GL3: clip plane data stored for shader use via gl_ClipDistance[]. */
+  (void)equation;
 }

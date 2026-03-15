@@ -778,16 +778,42 @@ pre_render_cb(void * userdata, SoGLRenderAction * action)
     // Draw gradient as two triangles (full-screen quad: y=0 → bot, y=1 → top)
     const SbColor & bot = thisp->gradient_bottom;
     const SbColor & top = thisp->gradient_top;
-    SoGLContext_glBegin(glue, GL_TRIANGLES);
-      // Triangle 1: bottom-left, bottom-right, top-right
-      SoGLContext_glColor3f(glue, bot[0], bot[1], bot[2]);  SoGLContext_glVertex2f(glue, 0.0f, 0.0f);
-      SoGLContext_glColor3f(glue, bot[0], bot[1], bot[2]);  SoGLContext_glVertex2f(glue, 1.0f, 0.0f);
-      SoGLContext_glColor3f(glue, top[0], top[1], top[2]);  SoGLContext_glVertex2f(glue, 1.0f, 1.0f);
-      // Triangle 2: bottom-left, top-right, top-left
-      SoGLContext_glColor3f(glue, bot[0], bot[1], bot[2]);  SoGLContext_glVertex2f(glue, 0.0f, 0.0f);
-      SoGLContext_glColor3f(glue, top[0], top[1], top[2]);  SoGLContext_glVertex2f(glue, 1.0f, 1.0f);
-      SoGLContext_glColor3f(glue, top[0], top[1], top[2]);  SoGLContext_glVertex2f(glue, 0.0f, 1.0f);
-    SoGLContext_glEnd(glue);
+    /* GL3: use VAO/VBO for the gradient quad (2 triangles, per-vertex color). */
+    {
+      const float verts[6][5] = {
+        {0.0f, 0.0f, 0.0f, bot[0], bot[1]},
+        {1.0f, 0.0f, 0.0f, bot[0], bot[1]},
+        {1.0f, 1.0f, 0.0f, top[0], top[1]},
+        {0.0f, 0.0f, 0.0f, bot[0], bot[1]},
+        {1.0f, 1.0f, 0.0f, top[0], top[1]},
+        {0.0f, 1.0f, 0.0f, top[0], top[1]},
+      };
+      /* Pack the missing bot[2] and top[2] values - use 7 floats per vertex. */
+      const float verts7[6][7] = {
+        {0.0f, 0.0f, 0.0f, bot[0], bot[1], bot[2], 1.0f},
+        {1.0f, 0.0f, 0.0f, bot[0], bot[1], bot[2], 1.0f},
+        {1.0f, 1.0f, 0.0f, top[0], top[1], top[2], 1.0f},
+        {0.0f, 0.0f, 0.0f, bot[0], bot[1], bot[2], 1.0f},
+        {1.0f, 1.0f, 0.0f, top[0], top[1], top[2], 1.0f},
+        {0.0f, 1.0f, 0.0f, top[0], top[1], top[2], 1.0f},
+      };
+      (void)verts; /* suppress unused warning */
+      GLuint grad_vao = 0, grad_vbo = 0;
+      glGenVertexArrays(1, &grad_vao);
+      glBindVertexArray(grad_vao);
+      glGenBuffers(1, &grad_vbo);
+      glBindBuffer(GL_ARRAY_BUFFER, grad_vbo);
+      glBufferData(GL_ARRAY_BUFFER, sizeof(verts7), verts7, GL_STREAM_DRAW);
+      /* position at attrib 0 (xyz), color at attrib 1 (rgba) */
+      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (const GLvoid*)0);
+      glEnableVertexAttribArray(0);
+      glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (const GLvoid*)(3 * sizeof(float)));
+      glEnableVertexAttribArray(1);
+      glDrawArrays(GL_TRIANGLES, 0, 6);
+      glBindVertexArray(0);
+      glDeleteBuffers(1, &grad_vbo);
+      glDeleteVertexArrays(1, &grad_vao);
+    }
 
     SoGLContext_glDepthMask(glue, GL_TRUE);
     // Restore SoGLModernState matrices from Coin state.
@@ -2260,6 +2286,9 @@ SoOffscreenRendererP::offscreenContextsNotSupported(void)
   return FALSE;
 #elif defined(HAVE_OSMESA)
   // OSMesa provides offscreen rendering via software Mesa implementation
+  return FALSE;
+#elif defined(OBOL_PORTABLEGL_BUILD)
+  // PortableGL provides software offscreen rendering
   return FALSE;
 #endif
 

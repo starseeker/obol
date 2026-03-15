@@ -642,15 +642,31 @@ SoText2::GLRender(SoGLRenderAction * action)
         // GL3: glTexEnvf removed — modern shader handles texture mode via uHasTexture uniform.
         SoGLContext_glEnable(sogl_glue_from_state(state), GL_TEXTURE_2D);
 
-        // GL3: GL_QUADS → two GL_TRIANGLES (BL,BR,TR) + (BL,TR,TL)
-        SoGLContext_glBegin(sogl_glue_from_state(state), GL_TRIANGLES);
-        SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 0.0f, 0.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx,  qy,  qz); /* BL */
-        SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 1.0f, 0.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx1, qy,  qz); /* BR */
-        SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 1.0f, 1.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx1, qy1, qz); /* TR */
-        SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 0.0f, 0.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx,  qy,  qz); /* BL */
-        SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 1.0f, 1.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx1, qy1, qz); /* TR */
-        SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 0.0f, 1.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx,  qy1, qz); /* TL */
-        SoGLContext_glEnd(sogl_glue_from_state(state));
+        /* GL3: VAO/VBO for the textured quad (2 triangles). */
+        {
+          const float qt[6][5] = {
+            {qx,  qy,  qz, 0.0f, 0.0f},
+            {qx1, qy,  qz, 1.0f, 0.0f},
+            {qx1, qy1, qz, 1.0f, 1.0f},
+            {qx,  qy,  qz, 0.0f, 0.0f},
+            {qx1, qy1, qz, 1.0f, 1.0f},
+            {qx,  qy1, qz, 0.0f, 1.0f},
+          };
+          GLuint t2_vao = 0, t2_vbo = 0;
+          glGenVertexArrays(1, &t2_vao);
+          glBindVertexArray(t2_vao);
+          glGenBuffers(1, &t2_vbo);
+          glBindBuffer(GL_ARRAY_BUFFER, t2_vbo);
+          glBufferData(GL_ARRAY_BUFFER, sizeof(qt), qt, GL_STREAM_DRAW);
+          glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (const GLvoid*)0);
+          glEnableVertexAttribArray(0);
+          glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (const GLvoid*)(3 * sizeof(float)));
+          glEnableVertexAttribArray(2);
+          glDrawArrays(GL_TRIANGLES, 0, 6);
+          glBindVertexArray(0);
+          glDeleteBuffers(1, &t2_vbo);
+          glDeleteVertexArrays(1, &t2_vao);
+        }
 
         SoGLContext_glDisable(sogl_glue_from_state(state), GL_TEXTURE_2D);
         SoGLContext_glBindTexture(sogl_glue_from_state(state), GL_TEXTURE_2D, 0);
@@ -1410,8 +1426,8 @@ SoText2P::setRasterPos3f(const SoGLContext * glue, GLfloat x, GLfloat y, GLfloat
   offvp = (offvp || y < 0) ? 1 : 0;  // FIXED: Operator precedence bug
   float offsety = y >= 0 ? 0 : y;
 
-  SoGLContext_glRasterPos3f(glue, rpx,rpy,z);
-  if (offvp) { SoGLContext_glBitmap(glue, 0, 0, 0, 0,offsetx,offsety, NULL); }
+  /* GL3: glRasterPos/glBitmap not available in core profile; text uses textured-quad path. */
+  (void)rpx; (void)rpy; (void)z; (void)offvp; (void)offsetx; (void)offsety;
 }
 
 // Update SbFont with current font state elements
