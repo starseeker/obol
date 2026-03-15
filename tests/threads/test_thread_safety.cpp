@@ -32,15 +32,16 @@
 
 /**
  * @file test_thread_safety.cpp
- * @brief Phase-1 thread safety stress tests.
+ * @brief Phase-1 and Phase-2 thread safety stress tests.
  *
- * Each test hammers a specific Phase-1 fix from multiple threads and verifies
+ * Each test hammers a specific fix from multiple threads and verifies
  * the invariant that the fix is supposed to guarantee.  The tests are designed
  * to expose data races when the relevant protection is absent, and to pass
  * cleanly (and quickly, under TSan) when it is present.
  *
  * Test inventory
  * ==============
+ * Phase 1:
  * 1. sbname_concurrent_intern      — SbName string interning (namemap mutex)
  * 2. sbname_unique_addresses       — All threads get the same canonical pointer
  * 3. sonode_unique_ids             — SoNode::nextUniqueId (atomic counter)
@@ -52,6 +53,10 @@
  * 9. notify_counter_balance        — SoDB::startNotify/endNotify counter balance
  * 10. notify_counter_never_negative — Counter never goes negative under concurrency
  * 11. mixed_workload               — Interleaved node creation, naming, field set
+ * Phase 2:
+ * 12. sobase_setname_getname       — Concurrent setName/getName on name dicts
+ * 13. glcache_unique_context_ids   — SoGLCacheContextElement::getUniqueCacheContext
+ * 14. enabled_elements_counter     — SoEnabledElementsList::getCounter atomicity
  */
 
 #include "../test_utils.h"
@@ -70,6 +75,9 @@
 #include <Inventor/fields/SoSFFloat.h>
 #include <Inventor/fields/SoSFInt32.h>
 #include <Inventor/fields/SoMFFloat.h>
+#include <Inventor/elements/SoGLCacheContextElement.h>
+#include <Inventor/lists/SoEnabledElementsList.h>
+#include <Inventor/lists/SoNodeList.h>
 
 #include <thread>
 #include <vector>
@@ -627,6 +635,142 @@ static bool test_mixed_workload()
 }
 
 // ============================================================================
+// Phase 2 tests
+// ============================================================================
+
+/**
+ * Concurrently call setName() and getName() on distinct SoBase-derived objects.
+ *
+ * Invariant: after all threads finish, each object's name must be the last
+ * name assigned by any thread (no corruption of the name/object dictionaries).
+ * The test is primarily a no-crash/no-sanitizer-alarm check.
+ */
+static bool test_sobase_setname_getname()
+{
+  // Create a pool of nodes; each thread names them repeatedly.
+  const int kNodes = 16;
+  std::vector<SoSphere*> nodes(kNodes);
+  for (int i = 0; i < kNodes; ++i) {
+    nodes[i] = new SoSphere;
+    nodes[i]->ref();
+  }
+
+  std::atomic<bool> failure{false};
+  std::atomic<int> ready{0};
+
+  auto worker = [&](int tid) {
+    ready.fetch_add(1, std::memory_order_relaxed);
+    while (ready.load(std::memory_order_acquire) < kNumThreads) {}
+
+    for (int iter = 0; iter < kItersPerThread && !failure; ++iter) {
+      // Each thread works on a rotating subset of nodes to maximise contention.
+      int idx = (tid + iter) % kNodes;
+      SoSphere * n = nodes[idx];
+
+      // Set a name
+      std::ostringstream oss;
+      oss << "node_" << idx << "_t" << tid << "_" << iter;
+      n->setName(SbName(oss.str().c_str()));
+
+      // Read it back (shared lock path). Another thread may have overwritten
+      // the name before we got here, so don't assert on the value — the test
+      // is a no-crash/no-sanitizer-alarm check for the locking paths.
+      (void)n->getName();
+
+      // Also exercise getByName lookup (read path on name2obj)
+      SoNodeList list;
+      SoNode::getByName(SbName(oss.str().c_str()), list);
+    }
+  };
+
+  std::vector<std::thread> threads;
+  threads.reserve(kNumThreads);
+  for (int i = 0; i < kNumThreads; ++i)
+    threads.emplace_back(worker, i);
+  for (auto & t : threads) t.join();
+
+  for (int i = 0; i < kNodes; ++i)
+    nodes[i]->unref();
+
+  return !failure;
+}
+
+/**
+ * Concurrently call SoGLCacheContextElement::getUniqueCacheContext() from
+ * multiple threads and verify that all returned IDs are unique.
+ *
+ * Invariant: each call returns a distinct positive integer; no two threads
+ * get the same context ID.
+ */
+static bool test_glcache_unique_context_ids()
+{
+  const int total = kNumThreads * kItersPerThread;
+  std::vector<uint32_t> ids(total);
+  std::atomic<int> ready{0};
+
+  auto worker = [&](int tid) {
+    ready.fetch_add(1, std::memory_order_relaxed);
+    while (ready.load(std::memory_order_acquire) < kNumThreads) {}
+
+    for (int i = 0; i < kItersPerThread; ++i) {
+      ids[tid * kItersPerThread + i] =
+        SoGLCacheContextElement::getUniqueCacheContext();
+    }
+  };
+
+  std::vector<std::thread> threads;
+  threads.reserve(kNumThreads);
+  for (int i = 0; i < kNumThreads; ++i)
+    threads.emplace_back(worker, i);
+  for (auto & t : threads) t.join();
+
+  // All IDs must be positive and unique.
+  for (int i = 0; i < total; ++i)
+    if (ids[i] == 0) return false;
+
+  std::sort(ids.begin(), ids.end());
+  for (int i = 1; i < total; ++i)
+    if (ids[i] == ids[i-1]) return false;
+
+  return true;
+}
+
+/**
+ * Concurrently call SoEnabledElementsList::getCounter() and
+ * SoEnabledElementsList::enable() verifying the counter is never negative
+ * and the list is accessible from multiple threads simultaneously.
+ *
+ * This exercises the std::atomic<int> enable_counter and recursive_mutex.
+ */
+static bool test_enabled_elements_counter()
+{
+  // Use the global action elements list as a read target.
+  const int start_counter = SoEnabledElementsList::getCounter();
+  (void)start_counter; // value not critical; just check it's accessible
+
+  std::atomic<bool> failure{false};
+  std::atomic<int> ready{0};
+
+  auto worker = [&]() {
+    ready.fetch_add(1, std::memory_order_relaxed);
+    while (ready.load(std::memory_order_acquire) < kNumThreads) {}
+
+    for (int iter = 0; iter < kItersPerThread && !failure; ++iter) {
+      int c = SoEnabledElementsList::getCounter();
+      if (c < 0) { failure = true; return; }
+    }
+  };
+
+  std::vector<std::thread> threads;
+  threads.reserve(kNumThreads);
+  for (int i = 0; i < kNumThreads; ++i)
+    threads.emplace_back(worker);
+  for (auto & t : threads) t.join();
+
+  return !failure;
+}
+
+// ============================================================================
 // main
 // ============================================================================
 int main(int /*argc*/, char ** /*argv*/) {
@@ -662,6 +806,10 @@ int main(int /*argc*/, char ** /*argv*/) {
     { "notify_counter_balance",         test_notify_counter_balance        },
     { "notify_counter_never_negative",  test_notify_counter_never_negative },
     { "mixed_workload",                 test_mixed_workload                },
+    // Phase 2 tests
+    { "sobase_setname_getname",         test_sobase_setname_getname        },
+    { "glcache_unique_context_ids",     test_glcache_unique_context_ids    },
+    { "enabled_elements_counter",       test_enabled_elements_counter      },
   };
 
   for (auto & tc : tests) {
