@@ -93,6 +93,7 @@
 #include <Inventor/annex/FXViz/nodes/SoShadowDirectionalLight.h>
 
 #include <Inventor/nodes/SoPointSet.h>
+#include <Inventor/nodes/SoIndexedPointSet.h>
 #include <Inventor/nodes/SoPackedColor.h>
 #include <Inventor/nodes/SoMaterialBinding.h>
 #include <Inventor/nodes/SoTriangleStripSet.h>
@@ -1585,6 +1586,50 @@ SoSeparator* createPointSet(int width, int height)
     root->addChild(coords);
 
     root->addChild(new SoPointSet);
+    return root;
+}
+
+// =========================================================================
+// createIndexedPointSet — same four coloured points, via SoIndexedPointSet
+// =========================================================================
+SoSeparator* createIndexedPointSet(int width, int height)
+{
+    (void)width; (void)height;
+    SoSeparator* root = new SoSeparator;
+    root->ref();
+
+    SoOrthographicCamera* cam = new SoOrthographicCamera;
+    cam->position    .setValue(0, 0, 1);
+    cam->nearDistance = 0.1f;
+    cam->farDistance  = 10.0f;
+    cam->height       = 2.0f;
+    root->addChild(cam);
+
+    SoDrawStyle* ds = new SoDrawStyle;
+    ds->pointSize.setValue(20.0f);
+    root->addChild(ds);
+
+    SoMaterial* mat = new SoMaterial;
+    mat->emissiveColor.setValue(0.8f, 0.2f, 0.2f);
+    mat->diffuseColor .setValue(0.0f, 0.0f, 0.0f);
+    root->addChild(mat);
+
+    static const float pts[4][3] = {
+        {-0.5f,  0.5f, 0.0f},
+        { 0.5f,  0.5f, 0.0f},
+        {-0.5f, -0.5f, 0.0f},
+        { 0.5f, -0.5f, 0.0f},
+    };
+    static const int32_t idx[4] = { 0, 1, 2, 3 };
+
+    SoCoordinate3* coords = new SoCoordinate3;
+    coords->point.setValues(0, 4, pts);
+    root->addChild(coords);
+
+    SoIndexedPointSet* ips = new SoIndexedPointSet;
+    ips->coordIndex.setValues(0, 4, idx);
+    root->addChild(ips);
+
     return root;
 }
 

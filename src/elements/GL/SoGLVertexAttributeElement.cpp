@@ -115,7 +115,6 @@ static void send_attribs(const Key & OBOL_UNUSED_ARG(key),
   }
 
   const int dataindex = *((const int *) closure);
-  const SoGLContext * glue = sogl_glue_instance(data->state);
 
 #if OBOL_DEBUG
   if (dataindex >= data->data->getNum()) {
@@ -131,31 +130,31 @@ static void send_attribs(const Key & OBOL_UNUSED_ARG(key),
   if (data->type == SoMFFloat::getClassTypeId()) {
     SoMFFloat * mfield = static_cast<SoMFFloat *>(data->data);
     const float * attribs = mfield->getValues(0);
-    glue->glVertexAttrib1fARB(data->index, attribs[dataindex]);
+    glVertexAttrib1f(data->index, attribs[dataindex]);
 
   } else if (data->type == SoMFVec2f::getClassTypeId()) {
 
     SoMFVec2f * mfield = static_cast<SoMFVec2f *>(data->data);
     const SbVec2f * attribs = mfield->getValues(0);
-    glue->glVertexAttrib2fvARB(data->index, attribs[dataindex].getValue());
+    glVertexAttrib2fv(data->index, attribs[dataindex].getValue());
 
   } else if (data->type == SoMFVec3f::getClassTypeId()) {
 
     SoMFVec3f * mfield = static_cast<SoMFVec3f *>(data->data);
     const SbVec3f * attribs = mfield->getValues(0);
-    glue->glVertexAttrib3fvARB(data->index, attribs[dataindex].getValue());
+    glVertexAttrib3fv(data->index, attribs[dataindex].getValue());
 
   } else if (data->type == SoMFVec4f::getClassTypeId()) {
 
     SoMFVec4f * mfield = static_cast<SoMFVec4f *>(data->data);
     const SbVec4f * attribs = mfield->getValues(0);
-    glue->glVertexAttrib4fvARB(data->index, attribs[dataindex].getValue());
+    glVertexAttrib4fv(data->index, attribs[dataindex].getValue());
 
   } else if (data->type == SoMFShort::getClassTypeId()) {
 
     SoMFShort * mfield = static_cast<SoMFShort *>(data->data);
     const short * attribs = mfield->getValues(0);
-    glue->glVertexAttrib1sARB(data->index, attribs[dataindex]);
+    glVertexAttrib1s(data->index, attribs[dataindex]);
 
   } else {
     assert(0 && "unknown attribute type");
@@ -170,7 +169,6 @@ static void query_attribs(const Key & key,
                           void * OBOL_UNUSED_ARG(closure))
 {
   SoVertexAttributeData * data = (SoVertexAttributeData *) attribdata;
-  const SoGLContext * glue = sogl_glue_instance(data->state);
 
   SoGLShaderProgram * shaderprogram =
     static_cast<SoGLShaderProgram *>(SoGLShaderProgramElement::get(data->state));
@@ -178,8 +176,8 @@ static void query_attribs(const Key & key,
   if (shaderprogram && shaderprogram->glslShaderProgramLinked(data->state)) {
     uint32_t shaderobj = shaderprogram->getGLSLShaderProgramHandle(data->state);
 
-    data->index = glue->glGetAttribLocationARB((OBOL_GLhandle) shaderobj,
-                                               const_cast<OBOL_GLchar*>(key));
+    data->index = glGetAttribLocation((GLuint) shaderobj,
+                                      const_cast<GLchar*>(key));
 #if OBOL_DEBUG
     if (data->index < 0) {
       SoDebugError::postWarning("SoGLVertexAttributeElement::addElt",
@@ -216,13 +214,12 @@ static void enable_vbo(const Key & OBOL_UNUSED_ARG(key),
     SoGLContext_glBindBuffer(glue, GL_ARRAY_BUFFER, 0);
     dataptr = attribdata->dataptr;
   }
+  glVertexAttribPointer(data->index,
+                        attribdata->num,
+                        attribdata->gltype,
+                        GL_FALSE, 0, dataptr);
 
-  glue->glVertexAttribPointerARB(data->index,
-                                 attribdata->num,
-                                 attribdata->gltype,
-                                 GL_FALSE, 0, dataptr);
-
-  glue->glEnableVertexAttribArrayARB(data->index);
+  glEnableVertexAttribArray(data->index);
 }
 
 //
@@ -230,17 +227,14 @@ static void enable_vbo(const Key & OBOL_UNUSED_ARG(key),
 //
 static void disable_vbo(const Key & OBOL_UNUSED_ARG(key),
                         const Type & attribdata,
-                        void * closure)
+                        void * OBOL_UNUSED_ARG(closure))
 {
   SoVertexAttributeData * data = (SoVertexAttributeData *) attribdata;
   // only disable vertex array rendering for attributes that were
   // actually used in the shader object
   if (data->index < 0) { return; }
 
-  SoGLRenderAction * action = static_cast<SoGLRenderAction *>(closure);
-  const SoGLContext * glue = sogl_glue_instance(action->getState());
-
-  glue->glDisableVertexAttribArrayARB(data->index);
+  glDisableVertexAttribArray(data->index);
 }
 
 //! FIXME: write doc.

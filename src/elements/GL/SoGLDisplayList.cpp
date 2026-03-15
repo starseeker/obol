@@ -190,6 +190,10 @@ void
 SoGLDisplayList::open(SoState * state, int index)
 {
   if (PRIVATE(this)->type == DISPLAY_LIST) {
+    // In a GL 3 core context (including PortableGL), display lists are not
+    // supported and glGenLists returns 0.  Silently skip recording so the
+    // scene graph renders without caching but without errors.
+    if (PRIVATE(this)->firstindex == 0) return;
     PRIVATE(this)->openindex = index;
     // using GL_COMPILE here instead of GL_COMPILE_AND_EXECUTE will
     // lead to much higher performance on nVidia cards, and doesn't
@@ -210,6 +214,7 @@ void
 SoGLDisplayList::close(SoState * OBOL_UNUSED_ARG(state))
 {
   if (PRIVATE(this)->type == DISPLAY_LIST) {
+    if (PRIVATE(this)->firstindex == 0) return; // no-op when display lists unavailable
     SoGLContext_glEndList(SoGLContext_instance(PRIVATE(this)->context));
     GLenum err = sogl_glerror_debugging() ? SoGLContext_glGetError(SoGLContext_instance(PRIVATE(this)->context)) : GL_NO_ERROR;
     if (err == GL_OUT_OF_MEMORY) {
@@ -239,6 +244,10 @@ void
 SoGLDisplayList::call(SoState * state, int index)
 {
   if (PRIVATE(this)->type == DISPLAY_LIST) {
+    if (PRIVATE(this)->firstindex == 0) {
+      this->addDependency(state);
+      return; // no-op when display lists unavailable
+    }
     SoGLContext_glCallList(SoGLContext_instance(PRIVATE(this)->context), (GLuint) (PRIVATE(this)->firstindex + index));
   }
   else {

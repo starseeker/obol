@@ -379,9 +379,20 @@ CoinOffscreenGLCanvas::destructContext(void)
   if (mgr && mgr->makeContextCurrent(this->context)) {
     // Clean up FBO resources before destroying context
     this->cleanupFBO();
-    
+
+    // Unbind the FBO while the context is still registered in Coin's system.
+    // This must happen before SoContextHandler::destructingContext() which
+    // deregisters the context; SoGLContext_instance() would otherwise fail.
+    this->unbindFBO();
+
+    // Run all context-destruction callbacks (deletes VAOs, VBOs, programs…).
+    // The GL context is still current so these operations succeed.
     SoContextHandler::destructingContext(this->renderid);
-    this->deactivateGLContext();
+
+    // Restore the context that was active before makeContextCurrent().
+    // The context object (this->context) holds the saved previous GL context
+    // pointer; restorePreviousContext() reads it to reinstate the right state.
+    mgr->restorePreviousContext(this->context);
   }
   else {
     if (CoinOffscreenGLCanvas::debug()) {

@@ -130,6 +130,9 @@ SoSeparator* createIndexedLineSet(int width = 800, int height = 600);
 /** SoPointSet: four distinctly coloured points in the four quadrants. */
 SoSeparator* createPointSet(int width = 800, int height = 600);
 
+/** SoIndexedPointSet: same four points using explicit coord indices. */
+SoSeparator* createIndexedPointSet(int width = 800, int height = 600);
+
 /** SoTriangleStripSet: emissive blue strip quad in lower half. */
 SoSeparator* createTriangleStripSet(int width = 800, int height = 600);
 

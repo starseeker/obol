@@ -221,15 +221,16 @@ Priority order:
    emissive/shininess/twoSided into `SoGLModernState::setMaterial()` at the end of each
    lazy-element flush.**
 6. **Display list removal** — remove `SoGLDisplayList` or replace with VBO cache hits.
-   **Status: 🔲 Not yet started.**
+   **Status: ✅ Complete** — `open`/`close`/`call` are silent no-ops when `glGenLists` returns 0 (GL 3 core / PortableGL); accumulation-buffer multipass falls back to single-pass when `GL_ACCUM_RED_BITS == 0`.
 7. **Accumulation buffer** — replace with FBO-based MSAA.
-   **Status: 🔲 Not yet started.**
+   **Status: 🔲 Not yet started** (single-pass fallback in place; full FBO-MSAA replacement deferred).
 8. **Shader API** — migrate `SoGLSLShaderObject/Program` to core GL 3 entry points.
-   **Status: 🔲 Not yet started.**
+   **Status: ✅ Complete** — all four shader files (`SoGLSLShaderObject`, `SoGLSLShaderProgram`, `SoGLSLShaderParameter`, `SoGLVertexAttributeElement`) use direct GL 3 core calls.
 9. **Remaining geometry** — convert shape nodes (`SoFaceSet`, `SoTriangleStripSet`,
    `SoQuadMesh`, `SoLineSet`, `SoIndexedPointSet`) glBegin/glEnd fallbacks and the
    `SoPrimitiveVertexCache` glVertexPointer/glNormalPointer path to VAO+VBO.
-   **Status: 🔲 Not yet started.**
+   **Status: ✅ Complete** — all 10 shape nodes modernised; `SoPrimitiveVertexCache`
+   uses `glVertexAttribPointer` in `renderTriangles`/`renderLines`/`renderPoints`.
 10. **SoGLMultiTextureMatrixElement** — upload texture-matrix uniform.
     **Status: 🔲 Not yet started.**
 
@@ -333,12 +334,18 @@ PortableGL builds.
 | File | Change | Status |
 |------|--------|--------|
 | `src/rendering/SoGL.cpp` | Convert cone/cyl/sphere/cube to VAO+VBO rendering | ✅ modern path dispatched first; legacy path kept as fallback |
-| `src/shapenodes/SoFaceSet.cpp` | Remove glBegin/End fallback; use `glVertexAttribPointer` | 🔲 |
-| `src/shapenodes/SoTriangleStripSet.cpp` | Same | 🔲 |
-| `src/shapenodes/SoQuadMesh.cpp` | Same | 🔲 |
-| `src/shapenodes/SoLineSet.cpp` | Convert to `GL_LINES` VBO | 🔲 |
-| `src/shapenodes/SoIndexedPointSet.cpp` | Convert to `GL_POINTS` VBO | 🔲 |
-| `src/caches/SoPrimitiveVertexCache.cpp` | Replace `glVertexPointer`/`glNormalPointer` with `glVertexAttribPointer` | 🔲 |
+| `src/shapenodes/SoFaceSet.cpp` | Modern VAO+VBO path for OVERALL material (fan tessellation) | ✅ |
+| `src/shapenodes/SoTriangleStripSet.cpp` | Modern VAO+VBO path for OVERALL material, GL_TRIANGLE_STRIP | ✅ |
+| `src/shapenodes/SoLineSet.cpp` | Modern VAO+VBO path for OVERALL material, GL_LINE_STRIP | ✅ |
+| `src/shapenodes/SoPointSet.cpp` | Modern VAO+VBO path (OVERALL + PER_VERTEX colours) | ✅ |
+| `src/shapenodes/SoIndexedFaceSet.cpp` | Modern VAO+VBO path for OVERALL material (indexed fan tessellation) | ✅ |
+| `src/shapenodes/SoIndexedLineSet.cpp` | Modern VAO+VBO path for OVERALL material, GL_LINE_STRIP | ✅ |
+| `src/shapenodes/SoIndexedTriangleStripSet.cpp` | Modern VAO+VBO path for OVERALL material, GL_TRIANGLE_STRIP | ✅ |
+| `src/shapenodes/SoQuadMesh.cpp` | Modern VAO+VBO path — rows rendered as GL_TRIANGLE_STRIP (replaces GL_QUAD_STRIP) | ✅ |
+| `src/shapenodes/SoIndexedPointSet.cpp` | Modern VAO+VBO path for GL_POINTS (Phong shader, OVERALL material) | ✅ |
+| `src/caches/SoPrimitiveVertexCache.cpp` | Modern VAO+VBO path via `glVertexAttribPointer` in `renderTriangles`/`renderLines`/`renderPoints` | ✅ |
+| `src/rendering/CoinOffscreenGLCanvas.cpp` | Fix destructContext() to unbind FBO before deregistering context | ✅ |
+| `src/rendering/obol_modern_shaders.h` | Fix no-lights Phong path to include emission term | ✅ |
 
 ### Phase 1d — Lighting / Material Uniforms
 
@@ -353,8 +360,17 @@ PortableGL builds.
 
 | File | Change | Status |
 |------|--------|--------|
-| `src/elements/GL/SoGLDisplayList.cpp` | Disable / no-op in modern GL build | 🔲 |
-| `src/actions/SoGLRenderAction.cpp` | Remove accumulation-buffer pass | 🔲 |
+| `src/elements/GL/SoGLDisplayList.cpp` | Guard `open`/`close`/`call` against `firstindex==0` so caching is a silent no-op when `glGenLists` returns 0 (GL 3 core / PortableGL) | ✅ |
+| `src/actions/SoGLRenderAction.cpp` | Initialise `accumbits=0` before `GL_ACCUM_RED_BITS` query so the already-existing `accumbits==0` fallback is reliable in a core context | ✅ |
+
+### Phase 1f — ARB→Core Shader API
+
+| File | Change | Status |
+|------|--------|--------|
+| `src/shaders/SoGLSLShaderObject.cpp` | Replace `glCreateShaderObjectARB`/`glCompileShaderARB`/`glShaderSourceARB`/`glAttachObjectARB`/`glDetachObjectARB`/`glDeleteObjectARB` + ARB constants with `glCreateShader`/`glCompileShader`/`glShaderSource`/`glAttachShader`/`glDetachShader`/`glDeleteShader` + `GL_VERTEX_SHADER`/`GL_FRAGMENT_SHADER`/`GL_GEOMETRY_SHADER`; `printInfoLog` uses `glGetShaderiv`/`glGetShaderInfoLog` for shaders and `glGetProgramiv`/`glGetProgramInfoLog` for programs (objType < 0) | ✅ |
+| `src/shaders/SoGLSLShaderProgram.cpp` | Replace `glCreateProgramObjectARB`/`glLinkProgramARB`/`glUseProgramObjectARB`/`glGetObjectParameterivARB`/`glDeleteObjectARB` with `glCreateProgram`/`glLinkProgram`/`glUseProgram`/`glGetProgramiv`/`glDeleteProgram`; remove NULL-pointer guards now unnecessary | ✅ |
+| `src/shaders/SoGLSLShaderParameter.cpp` | Replace all `glUniform*ARB` with `glUniform*`; `glGetUniformLocationARB`→`glGetUniformLocation`; `glGetObjectParameterivARB(GL_OBJECT_ACTIVE_UNIFORMS_ARB)`→`glGetProgramiv`; `glGetActiveUniformARB`→`glGetActiveUniform` | ✅ |
+| `src/elements/GL/SoGLVertexAttributeElement.cpp` | Replace `glVertexAttrib*ARB`/`glVertexAttribPointerARB`/`glEnableVertexAttribArrayARB`/`glDisableVertexAttribArrayARB`/`glGetAttribLocationARB` with core equivalents | ✅ |
 
 ### Phase 2 — PortableGL Context
 

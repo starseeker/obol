@@ -101,6 +101,11 @@
 #include "nodes/SoSubNodeP.h"
 #include "rendering/SoVBO.h"
 #include "rendering/SoGL.h"
+#include "rendering/SoGLModernState.h"
+
+#include <Inventor/elements/SoGLCacheContextElement.h>
+
+#include <cstring>
 
 // *************************************************************************
 
@@ -573,6 +578,120 @@ SoFaceSet::GLRender(SoGLRenderAction * action)
 
     const uint32_t contextid = action->getCacheContext();
     int numcoords = coords ? coords->getNum() : 0;
+
+    // -----------------------------------------------------------------------
+    // Phase 1c: Modern VAO+VBO rendering path.
+    // Activated when SoGLModernState is available and material binding is
+    // OVERALL (no per-vertex colour attribute needed).  Fan-triangulates
+    // every face and draws with the built-in Phong shader.
+    // -----------------------------------------------------------------------
+    {
+      SoGLModernState * ms = SoGLModernState::forContext(contextid);
+      if (ms && ms->isAvailable() && mbind == OVERALL && !doTextures
+          && coords && coords->is3D()) {
+        const SbVec3f * coords3d = coords->getArrayPtr3();
+        // Count total triangles (fan tessellation: n-gon → n-2 tris)
+        int numTris = 0;
+        const int32_t * fptr = ptr;
+        while (fptr < end) {
+          int n = *fptr++;
+          if (n >= 3) numTris += n - 2;
+        }
+        if (numTris > 0) {
+          const int STRIDE = 8; // pos(3)+norm(3)+uv(2)
+          float * vtx = new float[numTris * 3 * STRIDE];
+          float * vp = vtx;
+
+          SbVec3f dummyNorm(0.0f, 0.0f, 1.0f);
+          // OVERALL: first normal (or dummy)
+          const SbVec3f * overallNorm = (needNormals && normals) ? normals : &dummyNorm;
+
+          int normBase  = 0;   // leading normal index for the current face
+          int faceCount = 0;   // face counter (for PER_FACE indexing)
+          int currVidx  = idx; // current vertex coordinate index
+
+          fptr = ptr;
+          while (fptr < end) {
+            int n = *fptr++;
+            if (n < 3) {
+              currVidx += n;
+              if (nbind == PER_VERTEX && needNormals) normBase += n;
+              if (nbind == PER_FACE   && needNormals) faceCount++;
+              continue;
+            }
+
+            const SbVec3f * faceNorm = overallNorm;
+            if (needNormals && normals) {
+              if      (nbind == PER_FACE)   faceNorm = &normals[faceCount];
+              else if (nbind == PER_VERTEX) faceNorm = &normals[normBase];
+            }
+
+            // Fan tessellation: tris (v0,v1,v2), (v0,v2,v3), …
+            for (int i = 1; i < n - 1; ++i) {
+              // Helper lambda to write one vertex
+              auto writeVert = [&](int vi, const SbVec3f * nm) {
+                const SbVec3f & p = coords3d[vi];
+                vp[0] = p[0]; vp[1] = p[1]; vp[2] = p[2];
+                vp[3] = (*nm)[0]; vp[4] = (*nm)[1]; vp[5] = (*nm)[2];
+                vp[6] = 0.0f; vp[7] = 0.0f;
+                vp += STRIDE;
+              };
+
+              const SbVec3f * nm0 = (nbind == PER_VERTEX && needNormals && normals)
+                                    ? &normals[normBase]     : faceNorm;
+              const SbVec3f * nmi = (nbind == PER_VERTEX && needNormals && normals)
+                                    ? &normals[normBase + i] : faceNorm;
+              const SbVec3f * nm1 = (nbind == PER_VERTEX && needNormals && normals)
+                                    ? &normals[normBase + i + 1] : faceNorm;
+
+              writeVert(currVidx,         nm0);
+              writeVert(currVidx + i,     nmi);
+              writeVert(currVidx + i + 1, nm1);
+            }
+
+            currVidx += n;
+            if (nbind == PER_VERTEX && needNormals) normBase  += n;
+            if (nbind == PER_FACE   && needNormals) faceCount++;
+          }
+
+          // Upload to temporary VAO+VBO
+          GLuint vao = 0, vbo = 0;
+          glGenVertexArrays(1, &vao);
+          glBindVertexArray(vao);
+          glGenBuffers(1, &vbo);
+          glBindBuffer(GL_ARRAY_BUFFER, vbo);
+          glBufferData(GL_ARRAY_BUFFER,
+                       (GLsizeiptr)(numTris * 3 * STRIDE * (int)sizeof(float)),
+                       vtx, GL_STATIC_DRAW);
+          delete[] vtx;
+
+          const GLsizei byteStride = STRIDE * (GLsizei)sizeof(float);
+          glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, byteStride, (void*)0);
+          glEnableVertexAttribArray(0);
+          glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, byteStride,
+                                (void*)(3 * sizeof(float)));
+          glEnableVertexAttribArray(1);
+          glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, byteStride,
+                                (void*)(6 * sizeof(float)));
+          glEnableVertexAttribArray(2);
+
+          ms->activatePhong(needNormals, /*hasColors=*/false,
+                            /*hasTexCoords=*/false, /*hasTexture=*/false);
+          glDrawArrays(GL_TRIANGLES, 0, numTris * 3);
+          ms->deactivate();
+
+          glBindVertexArray(0);
+          glDeleteVertexArrays(1, &vao);
+          glDeleteBuffers(1, &vbo);
+
+          if (nc) this->readUnlockNormalCache();
+          SoGLCacheContextElement::shouldAutoCache(
+              state, SoGLCacheContextElement::DONT_AUTO_CACHE);
+          goto glrender_done;
+        }
+      }
+    }
+
     SoGLLazyElement* lelem = NULL;
     // check if we can render things using glDrawArrays
     SbBool dova =

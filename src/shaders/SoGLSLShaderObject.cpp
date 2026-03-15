@@ -91,35 +91,33 @@ SoGLSLShaderObject::load(const char* srcStr)
   default:
     assert(0 &&" unknown shader type");
   case VERTEX:
-    sType = GL_VERTEX_SHADER_ARB;
+    sType = GL_VERTEX_SHADER;
     break;
   case FRAGMENT:
-    sType = GL_FRAGMENT_SHADER_ARB;
+    sType = GL_FRAGMENT_SHADER;
     break;
   case GEOMETRY:
-    sType = GL_GEOMETRY_SHADER_EXT;
+    sType = GL_GEOMETRY_SHADER;
     break;
   }
 
   SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderObject::load() : previous errors", this->glctx);
 
-  this->shaderHandle = this->glctx->glCreateShaderObjectARB(sType);
+  this->shaderHandle = glCreateShader(sType);
   this->programid = 0;
 
   if (this->shaderHandle == 0) return;
   this->programid = soglshaderobject_idcounter++;
 
-  this->glctx->glShaderSourceARB(this->shaderHandle, 1, (const OBOL_GLchar **)&srcStr, NULL);
-  this->glctx->glCompileShaderARB(this->shaderHandle);
+  glShaderSource(this->shaderHandle, 1, (const GLchar **)&srcStr, NULL);
+  glCompileShader(this->shaderHandle);
 
   if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderObject::load()", this->glctx)) {
     this->shaderHandle = 0;
     return;
   }
 
-  this->glctx->glGetObjectParameterivARB(this->shaderHandle,
-                                         GL_OBJECT_COMPILE_STATUS_ARB,
-                                         &flag);
+  glGetShaderiv(this->shaderHandle, GL_COMPILE_STATUS, &flag);
   SoGLSLShaderObject::printInfoLog(this->GLContext(), this->shaderHandle,
                                    this->getShaderType());
 
@@ -130,7 +128,7 @@ void
 SoGLSLShaderObject::unload(void)
 {
   this->detach();
-  if (this->shaderHandle) { this->glctx->glDeleteObjectARB(this->shaderHandle); }
+  if (this->shaderHandle) { glDeleteShader(this->shaderHandle); }
   this->shaderHandle = 0;
   this->programHandle = 0;
   this->programid = 0;
@@ -153,7 +151,7 @@ SoGLSLShaderObject::attach(OBOL_GLhandle new_programHandle)
 
   if (this->shaderHandle) {
     this->programHandle = new_programHandle;
-    this->glctx->glAttachObjectARB(this->programHandle, this->shaderHandle);
+    glAttachShader(this->programHandle, this->shaderHandle);
     this->isattached = TRUE;
   }
 }
@@ -162,7 +160,7 @@ void
 SoGLSLShaderObject::detach(void)
 {
   if (this->isattached && this->programHandle && this->shaderHandle) {
-    this->glctx->glDetachObjectARB(this->programHandle, this->shaderHandle);
+    glDetachShader(this->programHandle, this->shaderHandle);
     this->isattached = FALSE;
     this->programHandle = 0;
   }
@@ -175,27 +173,40 @@ SoGLSLShaderObject::isAttached(void) const
 }
 
 void
-SoGLSLShaderObject::printInfoLog(const SoGLContext * g, OBOL_GLhandle handle, int objType)
+SoGLSLShaderObject::printInfoLog(const SoGLContext * OBOL_UNUSED_ARG(g), OBOL_GLhandle handle, int objType)
 {
   GLint length = 0;
 
-  g->glGetObjectParameterivARB(handle, GL_OBJECT_INFO_LOG_LENGTH_ARB, &length);
-
-  if (length > 1) {
-    OBOL_GLchar *infoLog = new OBOL_GLchar[length];
-    GLsizei charsWritten = 0;
-    g->glGetInfoLogARB(handle, length, &charsWritten, infoLog);
-    SbString s("GLSL");
-    switch (objType) {
-    case 0: s += "vertexShader "; break;
-    case 1: s += "fragmentShader "; break;
-    case 2: s += "geometryShader "; break;
-    default: ;// do nothing
+  if (objType < 0) {
+    // Program handle — use the program-specific query
+    glGetProgramiv(handle, GL_INFO_LOG_LENGTH, &length);
+    if (length > 1) {
+      GLchar *infoLog = new GLchar[length];
+      GLsizei charsWritten = 0;
+      glGetProgramInfoLog(handle, length, &charsWritten, infoLog);
+      SoDebugError::postInfo("SoGLSLShaderObject::printInfoLog",
+                             "GLSL program log: '%s'", infoLog);
+      delete [] infoLog;
     }
-    SoDebugError::postInfo("SoGLSLShaderObject::printInfoLog",
-                           "%s log: '%s'",
-                           s.getString(), infoLog);
-    delete [] infoLog;
+  } else {
+    // Shader handle — use the shader-specific query
+    glGetShaderiv(handle, GL_INFO_LOG_LENGTH, &length);
+    if (length > 1) {
+      GLchar *infoLog = new GLchar[length];
+      GLsizei charsWritten = 0;
+      glGetShaderInfoLog(handle, length, &charsWritten, infoLog);
+      SbString s("GLSL");
+      switch (objType) {
+      case 0: s += "vertexShader "; break;
+      case 1: s += "fragmentShader "; break;
+      case 2: s += "geometryShader "; break;
+      default: ;// do nothing
+      }
+      SoDebugError::postInfo("SoGLSLShaderObject::printInfoLog",
+                             "%s log: '%s'",
+                             s.getString(), infoLog);
+      delete [] infoLog;
+    }
   }
 }
 
@@ -240,8 +251,6 @@ SoGLSLShaderObject::updateCoinParameter(SoState * OBOL_UNUSED_ARG(state), const 
 {
   OBOL_GLhandle pHandle = this->programHandle;
   if (pHandle) {
-    const SoGLContext * glue = this->GLContext();
-
     // FIXME: set up a dict for the supported Coin variables
     SoShaderParameter1i * p = (SoShaderParameter1i*) param;
 
@@ -249,11 +258,11 @@ SoGLSLShaderObject::updateCoinParameter(SoState * OBOL_UNUSED_ARG(state), const 
       if (p->value.getValue() != value) p->value = value;
     }
     else {
-      GLint location = glue->glGetUniformLocationARB(pHandle,
-                                                     (const OBOL_GLchar *)name.getString());
+      GLint location = glGetUniformLocation(pHandle,
+                                            (const GLchar *)name.getString());
 
       if (location >= 0) {
-        glue->glUniform1iARB(location, value);
+        glUniform1i(location, value);
       }
     }
   }

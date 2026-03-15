@@ -203,7 +203,7 @@
 "    if (!gl_FrontFacing && uTwoSided) N = -N;\n" \
 "    vec4 litColor = (uNumLights > 0)\n" \
 "                    ? computePhong(N, vPositionEye)\n" \
-"                    : uMatDiffuse * vColor;\n" \
+"                    : uMatEmission + uMatDiffuse * vColor;\n" \
 "    if (uHasTexture) litColor *= texture(uTexture, vTexCoord);\n" \
 "    fragColor = clamp(litColor, 0.0, 1.0);\n" \
 "}\n"

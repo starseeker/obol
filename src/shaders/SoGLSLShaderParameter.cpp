@@ -64,7 +64,7 @@ SoGLSLShaderParameter::set1f(const SoGLShaderObject * shader,
                              const float value, const char *name, const int)
 {
   if (this->isValid(shader, name, GL_FLOAT))
-    shader->GLContext()->glUniform1fARB(this->location, value);
+    glUniform1f(this->location, value);
 }
 
 void
@@ -72,7 +72,7 @@ SoGLSLShaderParameter::set2f(const SoGLShaderObject * shader,
                              const float * value, const char *name, const int)
 {
   if (this->isValid(shader, name, GL_FLOAT_VEC2_ARB))
-    shader->GLContext()->glUniform2fARB(this->location, value[0], value[1]);
+    glUniform2f(this->location, value[0], value[1]);
 }
 
 void
@@ -80,7 +80,7 @@ SoGLSLShaderParameter::set3f(const SoGLShaderObject * shader,
                              const float * v, const char *name, const int)
 {
   if (this->isValid(shader, name, GL_FLOAT_VEC3_ARB))
-    shader->GLContext()->glUniform3fARB(this->location, v[0], v[1], v[2]);
+    glUniform3f(this->location, v[0], v[1], v[2]);
 }
 
 void
@@ -88,7 +88,7 @@ SoGLSLShaderParameter::set4f(const SoGLShaderObject * shader,
                              const float * v, const char *name, const int)
 {
   if (this->isValid(shader, name, GL_FLOAT_VEC4_ARB))
-    shader->GLContext()->glUniform4fARB(this->location, v[0], v[1], v[2], v[3]);
+    glUniform4f(this->location, v[0], v[1], v[2], v[3]);
 }
 
 
@@ -98,7 +98,7 @@ SoGLSLShaderParameter::set1fv(const SoGLShaderObject * shader, const int num,
 {
   int cnt = num;
   if (this->isValid(shader, name, GL_FLOAT, &cnt))
-    shader->GLContext()->glUniform1fvARB(this->location, cnt, value);
+    glUniform1fv(this->location, cnt, value);
 }
 
 void
@@ -107,7 +107,7 @@ SoGLSLShaderParameter::set2fv(const SoGLShaderObject * shader, const int num,
 {
   int cnt = num;
   if (this->isValid(shader, name, GL_FLOAT_VEC2_ARB, &cnt))
-    shader->GLContext()->glUniform2fvARB(this->location, cnt, value);
+    glUniform2fv(this->location, cnt, value);
 }
 
 void
@@ -116,7 +116,7 @@ SoGLSLShaderParameter::set3fv(const SoGLShaderObject * shader, const int num,
 {
   int cnt = num;
   if (this->isValid(shader, name, GL_FLOAT_VEC3_ARB, &cnt))
-    shader->GLContext()->glUniform3fvARB(this->location, cnt, value);
+    glUniform3fv(this->location, cnt, value);
 }
 
 void
@@ -125,7 +125,7 @@ SoGLSLShaderParameter::set4fv(const SoGLShaderObject * shader, const int num,
 {
   int cnt = num;
   if (this->isValid(shader, name, GL_FLOAT_VEC4_ARB, &cnt))
-    shader->GLContext()->glUniform4fvARB(this->location, cnt, value);
+    glUniform4fv(this->location, cnt, value);
 }
 
 void
@@ -134,7 +134,7 @@ SoGLSLShaderParameter::setMatrix(const SoGLShaderObject *shader,
                                  const int)
 {
   if (this->isValid(shader, name, GL_FLOAT_MAT4_ARB))
-    shader->GLContext()->glUniformMatrix4fvARB(this->location,1,FALSE,value);
+    glUniformMatrix4fv(this->location, 1, FALSE, value);
 }
 
 
@@ -145,7 +145,7 @@ SoGLSLShaderParameter::setMatrixArray(const SoGLShaderObject *shader,
 {
   int cnt = num;
   if (this->isValid(shader, name, GL_FLOAT_MAT4_ARB, &cnt))
-    shader->GLContext()->glUniformMatrix4fvARB(this->location,cnt,FALSE,value);
+    glUniformMatrix4fv(this->location, cnt, FALSE, value);
 }
 
 
@@ -154,7 +154,7 @@ SoGLSLShaderParameter::set1i(const SoGLShaderObject * shader,
                              const int32_t value, const char * name, const int)
 {
   if (this->isValid(shader, name, GL_INT))
-    shader->GLContext()->glUniform1iARB(this->location, value);
+    glUniform1i(this->location, value);
 }
 
 void
@@ -163,7 +163,7 @@ SoGLSLShaderParameter::set2i(const SoGLShaderObject * shader,
                              const int)
 {
   if (this->isValid(shader, name, GL_INT_VEC2_ARB))
-    shader->GLContext()->glUniform2iARB(this->location, value[0], value[1]);
+    glUniform2i(this->location, value[0], value[1]);
 }
 
 void
@@ -172,7 +172,7 @@ SoGLSLShaderParameter::set3i(const SoGLShaderObject * shader,
                              const int)
 {
   if (this->isValid(shader, name, GL_INT_VEC3_ARB))
-    shader->GLContext()->glUniform3iARB(this->location, v[0], v[1], v[2]);
+    glUniform3i(this->location, v[0], v[1], v[2]);
 }
 
 void
@@ -181,7 +181,7 @@ SoGLSLShaderParameter::set4i(const SoGLShaderObject * shader,
                              const int)
 {
   if (this->isValid(shader, name, GL_INT_VEC4_ARB))
-    shader->GLContext()->glUniform4iARB(this->location, v[0], v[1], v[2], v[3]);
+    glUniform4i(this->location, v[0], v[1], v[2], v[3]);
 }
 
 void
@@ -191,7 +191,7 @@ SoGLSLShaderParameter::set1iv(const SoGLShaderObject * shader,
                               const int)
 {
   if (this->isValid(shader, name, GL_INT))
-    shader->GLContext()->glUniform1ivARB(this->location, num, (const GLint*) value);
+    glUniform1iv(this->location, num, (const GLint*) value);
 }
 
 void
@@ -201,7 +201,7 @@ SoGLSLShaderParameter::set2iv(const SoGLShaderObject * shader,
                               const int)
 {
   if (this->isValid(shader, name, GL_INT_VEC2_ARB))
-    shader->GLContext()->glUniform2ivARB(this->location, num, (const GLint*)value);
+    glUniform2iv(this->location, num, (const GLint*)value);
 }
 
 void
@@ -211,7 +211,7 @@ SoGLSLShaderParameter::set3iv(const SoGLShaderObject * shader,
                               const int)
 {
   if (this->isValid(shader, name, GL_INT_VEC3_ARB))
-    shader->GLContext()->glUniform3ivARB(this->location, num, (const GLint*)v);
+    glUniform3iv(this->location, num, (const GLint*)v);
 }
 
 void
@@ -221,7 +221,7 @@ SoGLSLShaderParameter::set4iv(const SoGLShaderObject * shader,
                               const int)
 {
   if (this->isValid(shader, name, GL_INT_VEC4_ARB))
-    shader->GLContext()->glUniform4ivARB(this->location, num, (const GLint*)v);
+    glUniform4iv(this->location, num, (const GLint*)v);
 }
 
 SbBool
@@ -280,11 +280,10 @@ SoGLSLShaderParameter::isValid(const SoGLShaderObject * shader,
     return TRUE;
   }
 
-  const SoGLContext * g = shader->GLContext();
+  (void) shader->GLContext(); // context no longer needed; all calls are now direct GL3
 
   this->cacheSize = 0;
-  this->location = g->glGetUniformLocationARB(pHandle,
-                                              (const OBOL_GLchar *)name);
+  this->location = glGetUniformLocation(pHandle, (const GLchar *)name);
   this->programid = pId;
 
   if (this->location == -1)  {
@@ -296,13 +295,13 @@ SoGLSLShaderParameter::isValid(const SoGLShaderObject * shader,
     return FALSE;
   }
   GLint activeUniforms = 0;
-  g->glGetObjectParameterivARB(pHandle, GL_OBJECT_ACTIVE_UNIFORMS_ARB, &activeUniforms);
+  glGetProgramiv(pHandle, GL_OBJECT_ACTIVE_UNIFORMS_ARB, &activeUniforms);
 
   GLint i;
   GLint tmpSize = 0;
   GLenum tmpType;
   GLsizei length;
-  OBOL_GLchar myName[256];
+  GLchar myName[256];
 
   this->cacheName = name;
   this->isActive = FALSE; // set uniform to inactive while searching
@@ -310,8 +309,8 @@ SoGLSLShaderParameter::isValid(const SoGLShaderObject * shader,
   // this will only happen once after the variable has been added so
   // it's not a performance issue that we have to search for it here.
   for (i = 0; i < activeUniforms; i++) {
-    g->glGetActiveUniformARB(pHandle, i, 128, &length, &tmpSize,
-                             &tmpType, myName);
+    glGetActiveUniform(pHandle, i, 128, &length, &tmpSize,
+                       &tmpType, myName);
     if (this->cacheName == myName) {
       this->cacheSize = tmpSize;
       this->cacheType = tmpType;

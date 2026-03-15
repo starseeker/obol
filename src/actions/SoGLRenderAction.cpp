@@ -1730,7 +1730,10 @@ SoGLRenderActionP::render(SoNode * node)
   if (this->action->getNumPasses() > 1 && this->internal_multipass) {
     // Check if the current OpenGL context has an accumulation buffer
     // (rendering multiple passes doesn't make much sense otherwise).
-    GLint accumbits;
+    // In a GL 3 core context GL_ACCUM_RED_BITS is not a valid pname and
+    // glGetIntegerv generates GL_INVALID_ENUM; initialise to 0 so the
+    // already-existing check correctly falls back to single-pass rendering.
+    GLint accumbits = 0;
     SoGLContext_glGetIntegerv(SoGLContext_instance(this->cachecontext), GL_ACCUM_RED_BITS, &accumbits);
 
     if (accumbits == 0) {

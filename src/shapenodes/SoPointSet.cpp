@@ -111,6 +111,7 @@
 
 #include "nodes/SoSubNodeP.h"
 #include "rendering/SoGL.h"
+#include "rendering/SoGLModernState.h"
 #include "rendering/SoVBO.h"
 
 /*!
@@ -254,6 +255,114 @@ SoPointSet::GLRender(SoGLRenderAction * action)
   
   const SoGLContext * glue = sogl_glue_instance(state);
   const uint32_t contextid = action->getCacheContext();
+
+  // -------------------------------------------------------------------------
+  // Phase 1c: Modern VAO+VBO rendering path for point sets.
+  // Handles OVERALL and PER_VERTEX material bindings.
+  // -------------------------------------------------------------------------
+  {
+    SoGLModernState * ms = SoGLModernState::forContext(contextid);
+    if (ms && ms->isAvailable() && !doTextures && numpts > 0
+        && coords && coords->is3D()) {
+      const SbVec3f * coords3d = coords->getArrayPtr3();
+      const int STRIDE = 8; // pos(3)+norm(3)+uv(2)
+      float * vtx = new float[numpts * STRIDE];
+      float * vp  = vtx;
+
+      SbVec3f dummyNorm(0.0f, 0.0f, 1.0f);
+      const SbVec3f * overallNorm = (needNormals && normals) ? normals : &dummyNorm;
+
+      for (int i = 0; i < numpts; ++i) {
+        const SbVec3f & p = coords3d[idx + i];
+        const SbVec3f * nm = (nbind == PER_VERTEX && needNormals && normals)
+                             ? &normals[i] : overallNorm;
+        vp[0] = p[0]; vp[1] = p[1]; vp[2] = p[2];
+        vp[3] = (*nm)[0]; vp[4] = (*nm)[1]; vp[5] = (*nm)[2];
+        vp[6] = 0.0f; vp[7] = 0.0f;
+        vp += STRIDE;
+      }
+
+      // Build optional per-vertex color buffer (location 3)
+      float * colorBuf  = nullptr;
+      bool    hasColors = false;
+      if (mbind == PER_VERTEX) {
+        SoGLLazyElement * le = (SoGLLazyElement*)SoLazyElement::getInstance(state);
+        if (le) {
+          int numColors = le->getNumDiffuse();
+          if (numColors >= numpts) {
+            colorBuf  = new float[numpts * 4];
+            hasColors = true;
+            if (le->isPacked()) {
+              const uint32_t * pc = le->getPackedPointer();
+              for (int i = 0; i < numpts; ++i) {
+                uint32_t rgba = pc[i];
+                colorBuf[i*4+0] = ((rgba >> 24) & 0xFF) / 255.0f;
+                colorBuf[i*4+1] = ((rgba >> 16) & 0xFF) / 255.0f;
+                colorBuf[i*4+2] = ((rgba >>  8) & 0xFF) / 255.0f;
+                colorBuf[i*4+3] = ((rgba      ) & 0xFF) / 255.0f;
+              }
+            } else {
+              const SbColor * dc = le->getDiffusePointer();
+              const float   * tr = le->getTransparencyPointer();
+              int numTr = le->getNumTransparencies();
+              for (int i = 0; i < numpts; ++i) {
+                colorBuf[i*4+0] = dc[i][0];
+                colorBuf[i*4+1] = dc[i][1];
+                colorBuf[i*4+2] = dc[i][2];
+                colorBuf[i*4+3] = 1.0f - (tr && numTr > 1 ? tr[i] : (tr ? tr[0] : 0.0f));
+              }
+            }
+          }
+        }
+      }
+
+      GLuint vao = 0, vbo = 0, cvbo = 0;
+      glGenVertexArrays(1, &vao);
+      glBindVertexArray(vao);
+
+      glGenBuffers(1, &vbo);
+      glBindBuffer(GL_ARRAY_BUFFER, vbo);
+      glBufferData(GL_ARRAY_BUFFER,
+                   (GLsizeiptr)(numpts * STRIDE * (int)sizeof(float)),
+                   vtx, GL_STATIC_DRAW);
+      delete[] vtx;
+
+      const GLsizei byteStride = STRIDE * (GLsizei)sizeof(float);
+      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, byteStride, (void*)0);
+      glEnableVertexAttribArray(0);
+      glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, byteStride,
+                            (void*)(3 * sizeof(float)));
+      glEnableVertexAttribArray(1);
+      glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, byteStride,
+                            (void*)(6 * sizeof(float)));
+      glEnableVertexAttribArray(2);
+
+      if (hasColors && colorBuf) {
+        glGenBuffers(1, &cvbo);
+        glBindBuffer(GL_ARRAY_BUFFER, cvbo);
+        glBufferData(GL_ARRAY_BUFFER,
+                     (GLsizeiptr)(numpts * 4 * (int)sizeof(float)),
+                     colorBuf, GL_STATIC_DRAW);
+        delete[] colorBuf;
+        glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 0, (void*)0);
+        glEnableVertexAttribArray(3);
+      }
+
+      // Points use BASE_COLOR mode
+      ms->activateBaseColor(hasColors, false, false);
+      glDrawArrays(GL_POINTS, 0, numpts);
+      ms->deactivate();
+
+      glBindVertexArray(0);
+      glDeleteVertexArrays(1, &vao);
+      glDeleteBuffers(1, &vbo);
+      if (cvbo) glDeleteBuffers(1, &cvbo);
+
+      if (didpush) state->pop();
+      sogl_autocache_update(state, numpts/3, FALSE);
+      return;
+    }
+  }
 
   SbBool dova = 
     SoVBO::shouldRenderAsVertexArrays(state, contextid, numpts) && 
