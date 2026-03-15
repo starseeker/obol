@@ -674,11 +674,11 @@ SoIndexedFaceSet::GLRender(SoGLRenderAction * action)
           break;
         default:
           if (cnt > 4) {
-            indexer->beginTarget(GL_POLYGON);
+            indexer->beginTarget(GL_TRIANGLE_FAN);
             for (int j = 0; j < cnt; j++) {
-              indexer->targetVertex(GL_POLYGON, cindices[i+j]);
+              indexer->targetVertex(GL_TRIANGLE_FAN, cindices[i+j]);
             }
-            indexer->endTarget(GL_POLYGON);
+            indexer->endTarget(GL_TRIANGLE_FAN);
           }
         }
         i += cnt + 1;

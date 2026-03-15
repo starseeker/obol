@@ -144,7 +144,7 @@ SoGLPointSizeElement::updategl(void)
 {
   if (SoGLPointSizeElement::sizerange[0] == RANGE_NOT_CHECKED) {
     GLfloat vals[2];
-    SoGLContext_glGetFloatv(this->glue, GL_POINT_SIZE_RANGE, vals);
+    SoGLContext_glGetFloatv(this->glue, 0x0B12 /*GL_POINT_SIZE_RANGE*/, vals);
 
     // Matthias Koenig reported on coin-discuss that the OpenGL
     // implementation on SGI Onyx 2 InfiniteReality returns 0 for the

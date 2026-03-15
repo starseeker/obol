@@ -56,16 +56,21 @@
  * Per-context data for one PortableGL offscreen surface
  * ----------------------------------------------------------------------- */
 
+/* Thread-local pointer to the currently active CoinPGLContextData.
+ * Updated by makeCurrent() / restorePreviousContext() to allow nested
+ * context switches (e.g. SoSceneTexture2 creating a sub-context). */
+static CoinPGLContextData* s_pgl_current_ctx = nullptr;
+
 struct CoinPGLContextData {
     glContext  ctx;       /* PortableGL context struct (owns its buffers)  */
     pix_t*     backbuf;   /* Pointer to the rendered pixel buffer          */
     int        width, height;
     bool       valid;
     /* Previous context saved at makeContextCurrent() for later restore.  */
-    glContext*  prev_ctx;
+    CoinPGLContextData* prev_ctx_data;
 
     CoinPGLContextData(int w, int h)
-        : backbuf(nullptr), width(w), height(h), valid(false), prev_ctx(nullptr)
+        : backbuf(nullptr), width(w), height(h), valid(false), prev_ctx_data(nullptr)
     {
         valid = (init_glContext(&ctx, &backbuf, w, h) == GL_TRUE);
     }
@@ -79,10 +84,12 @@ struct CoinPGLContextData {
 
     bool makeCurrent() {
         if (!valid) return false;
-        /* There is no public "get current context" in PortableGL, so we
-         * cannot save the previous one portably.  For single-threaded use
-         * this is fine; concurrent users must serialise externally. */
-        prev_ctx = nullptr;
+        /* Save the currently active context so restorePreviousContext can
+         * reinstate it.  We track this via s_pgl_current_ctx rather than
+         * trying to read PortableGL's internal 'c' global (which is static
+         * to the PORTABLEGL_IMPLEMENTATION TU and not accessible here). */
+        prev_ctx_data = s_pgl_current_ctx;
+        s_pgl_current_ctx = this;
         set_glContext(&ctx);
         return true;
     }
@@ -118,7 +125,12 @@ public:
     void restorePreviousContext(void * context) override {
         auto * d = static_cast<CoinPGLContextData *>(context);
         if (!d) return;
-        set_glContext(d->prev_ctx); /* nullptr = no context current */
+        /* Restore the context that was active when makeContextCurrent was
+         * last called for 'd'.  If no outer context existed, set_glContext(nullptr)
+         * deactivates portablegl — that is the correct state since no context
+         * should be current outside of a render. */
+        s_pgl_current_ctx = d->prev_ctx_data;
+        set_glContext(d->prev_ctx_data ? &d->prev_ctx_data->ctx : nullptr);
     }
 
     void destroyContext(void * context) override {

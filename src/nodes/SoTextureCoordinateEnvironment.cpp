@@ -221,25 +221,7 @@ SoTextureCoordinateEnvironment::pick(SoPickAction * action)
 void
 SoTextureCoordinateEnvironment::handleTexgen(void * data)
 {
-  SoTextureCoordinateEnvironment * thisp = (SoTextureCoordinateEnvironment*)data;
-  // Configure OpenGL hardware sphere-map texture coordinate generation
-  // for the S and T coordinates.  GL_TEXTURE_GEN_MODE + GL_SPHERE_MAP is
-  // the correct API: SoGLContext_glTexGenf(thisp->cachedGlue, coord, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP).
-  // Using GL_SPHERE_MAP directly as the pname (as a naive reading of some
-  // older documentation suggests) is invalid and produces GL_INVALID_ENUM.
-  SoGLContext_glTexGenf(thisp->cachedGlue, GL_S, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
-  SoGLContext_glTexGenf(thisp->cachedGlue, GL_T, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
-
-  // supply dummy plane for R and Q so that texture generation works
-  // properly
-  SoGLContext_glTexGeni(thisp->cachedGlue, GL_R, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR);
-  SoGLContext_glTexGeni(thisp->cachedGlue, GL_Q, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR);
-  
-  float plane[4];
-  plane[0] = 0.0f;
-  plane[1] = 0.0f;
-  plane[2] = 0.0f;
-  plane[3] = 1.0f;
-  SoGLContext_glTexGenfv(thisp->cachedGlue, GL_R, GL_OBJECT_PLANE, plane);
-  SoGLContext_glTexGenfv(thisp->cachedGlue, GL_Q, GL_OBJECT_PLANE, plane);
+  // GL3: glTexGen* (fixed-function texture coordinate generation) removed.
+  // Sphere-map texcoord generation now requires a vertex shader implementation.
+  (void)data;
 }

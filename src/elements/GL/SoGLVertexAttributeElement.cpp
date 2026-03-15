@@ -130,31 +130,31 @@ static void send_attribs(const Key & OBOL_UNUSED_ARG(key),
   if (data->type == SoMFFloat::getClassTypeId()) {
     SoMFFloat * mfield = static_cast<SoMFFloat *>(data->data);
     const float * attribs = mfield->getValues(0);
-    glVertexAttrib1f(data->index, attribs[dataindex]);
+    SoGLContext_glVertexAttrib1f(sogl_glue_from_state(data->state), data->index, attribs[dataindex]);
 
   } else if (data->type == SoMFVec2f::getClassTypeId()) {
 
     SoMFVec2f * mfield = static_cast<SoMFVec2f *>(data->data);
     const SbVec2f * attribs = mfield->getValues(0);
-    glVertexAttrib2fv(data->index, attribs[dataindex].getValue());
+    SoGLContext_glVertexAttrib2fv(sogl_glue_from_state(data->state), data->index, attribs[dataindex].getValue());
 
   } else if (data->type == SoMFVec3f::getClassTypeId()) {
 
     SoMFVec3f * mfield = static_cast<SoMFVec3f *>(data->data);
     const SbVec3f * attribs = mfield->getValues(0);
-    glVertexAttrib3fv(data->index, attribs[dataindex].getValue());
+    SoGLContext_glVertexAttrib3fv(sogl_glue_from_state(data->state), data->index, attribs[dataindex].getValue());
 
   } else if (data->type == SoMFVec4f::getClassTypeId()) {
 
     SoMFVec4f * mfield = static_cast<SoMFVec4f *>(data->data);
     const SbVec4f * attribs = mfield->getValues(0);
-    glVertexAttrib4fv(data->index, attribs[dataindex].getValue());
+    SoGLContext_glVertexAttrib4fv(sogl_glue_from_state(data->state), data->index, attribs[dataindex].getValue());
 
   } else if (data->type == SoMFShort::getClassTypeId()) {
 
     SoMFShort * mfield = static_cast<SoMFShort *>(data->data);
     const short * attribs = mfield->getValues(0);
-    glVertexAttrib1s(data->index, attribs[dataindex]);
+    SoGLContext_glVertexAttrib1s(sogl_glue_from_state(data->state), data->index, attribs[dataindex]);
 
   } else {
     assert(0 && "unknown attribute type");

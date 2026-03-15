@@ -1557,7 +1557,7 @@ w->glAreTexturesResident = (OBOL_PFNGLARETEXTURESRESIDENTPROC)PROC(w, glAreTextu
      GL_VERSION == 1.1.2 - Build 4.13.01.3196
      GL_VENDOR == Intel
      GL_RENDERER == Intel Solano
-     GL_EXTENSIONS = GL_ARB_multitexture [...]
+     0x1F03 (GL_EXTENSIONS) = GL_ARB_multitexture [...]
 
      This problem is not yet handled in any way by Coin. What we
      should do about this is to detect the above chipset / driver and
@@ -1620,15 +1620,15 @@ w->glAreTexturesResident = (OBOL_PFNGLARETEXTURESRESIDENTPROC)PROC(w, glAreTextu
        this query when GL_ARB_fragment_program or GL_NV_fragment_program is
        present, even though it is a core GL 2.0 token.  Initialise tmp to 0
        so that we can detect a silent failure (GL_INVALID_ENUM without the
-       extension) and fall back to GL_MAX_TEXTURE_UNITS_ARB which is always
+       extension) and fall back to 0x84E2 (GL_MAX_TEXTURE_UNITS_ARB) which is always
        available whenever ARB_multitexture is supported. */
     GLint tmp = 0;
     glGetIntegerv(GL_MAX_TEXTURE_COORDS_ARB, &tmp);
     if (tmp < 1) {
       /* Clear any GL_INVALID_ENUM error raised by the failed query, then
-         fall back to GL_MAX_TEXTURE_UNITS_ARB (requires ARB_multitexture). */
+         fall back to 0x84E2 (GL_MAX_TEXTURE_UNITS_ARB) (requires ARB_multitexture). */
       while (glGetError() != GL_NO_ERROR) { }
-      glGetIntegerv(GL_MAX_TEXTURE_UNITS_ARB, &tmp);
+      glGetIntegerv(0x84E2 /*GL_MAX_TEXTURE_UNITS_ARB*/, &tmp);
     }
     w->maxtextureunits = (int) tmp;
   }
@@ -2508,10 +2508,17 @@ w->glAreTexturesResident = (OBOL_PFNGLARETEXTURESRESIDENTPROC)PROC(w, glAreTextu
     }
   }
 
-  /*
-     Disable features based on known driver bugs  here.
-     FIXME: move the driver workarounds to some other module. pederb, 2007-07-04
-  */
+#ifdef OBOL_PORTABLEGL_BUILD
+  /* PortableGL provides GL 3.x core FBO *stubs* (no-ops): glGenFramebuffers
+   * does not allocate real IDs, glCheckFramebufferStatus always returns 0,
+   * and glFramebufferTexture2D is a no-op.  Forcing has_fbo=TRUE causes
+   * SoSceneTexture2 to enter the FBO path, build an SoGLDisplayList that
+   * never gets a valid texture, and then crash when that orphaned display
+   * list is later used.  Keep has_fbo=FALSE; SoSceneTexture2 will fall back
+   * to its PBuffer path (which also gracefully degrades to a no-op on
+   * headless portablegl). */
+  w->has_fbo = FALSE;
+#endif /* OBOL_PORTABLEGL_BUILD */
 
 
   /*
@@ -2910,6 +2917,15 @@ SoGLContext_instance(int contextid)
      * setting up a SoGLContext instance was made when there is no
      * current OpenGL context. */
     gi->versionstr = (const char *)glGetString(GL_VERSION);
+#ifdef OBOL_PORTABLEGL_BUILD
+    /* PortableGL reports its own "0.x.y" version rather than a real OpenGL
+     * version string.  Override to "3.3 (PortableGL)" so that GL capability
+     * detection (FBO, shader model, etc.) works correctly. */
+    if (!gi->versionstr || gi->versionstr[0] == '0') {
+      static const char pgl_version[] = "3.3 (PortableGL)";
+      gi->versionstr = pgl_version;
+    }
+#endif
     
     /* Additional debugging for OSMesa context */
     if (SoGLContext_debug()) {
@@ -2986,7 +3002,7 @@ SoGLContext_instance(int contextid)
     }
 #endif
     
-    gi->extensionsstr = (const char *)glGetString(GL_EXTENSIONS);
+    gi->extensionsstr = (const char *)glGetString(0x1F03 /*GL_EXTENSIONS*/);
 
 #ifdef OBOL_SWRAST_BUILD
     if (SoGLContext_debug()) {
@@ -3002,6 +3018,17 @@ SoGLContext_instance(int contextid)
        The following code, supplied by Randall, implements this to end up with the
        same result as the old method.
     */
+#ifdef OBOL_PORTABLEGL_BUILD
+    /* PortableGL is a GL3 core software-renderer that provides no extension
+     * strings: glGetString(GL_EXTENSIONS) is not supported and glGetStringi
+     * always returns NULL.  Treat the extension list as empty and clear any
+     * pending GL_INVALID_ENUM so it does not linger in the error queue. */
+    if (gi->extensionsstr == NULL) {
+      static const char pgl_empty_extensions[] = "";
+      gi->extensionsstr = pgl_empty_extensions;
+      glGetError(); /* consume the GL_INVALID_ENUM from glGetString(GL_EXTENSIONS) */
+    }
+#else /* !OBOL_PORTABLEGL_BUILD */
     if (gi->extensionsstr == NULL) {
 #ifdef OBOL_SWRAST_BUILD
       if (SoGLContext_debug()) {
@@ -3023,7 +3050,7 @@ SoGLContext_instance(int contextid)
           char *ext_strings_buffer = (char *)malloc(buffer_size * sizeof (char));
           int buffer_pos = 0;
           for (int i_string = 0 ; i_string < num_strings ; i_string++) {
-            const char * extension_string = (char *)glGetStringi (GL_EXTENSIONS, i_string);
+            const char * extension_string = (char *)glGetStringi (0x1F03 /*GL_EXTENSIONS*/, i_string);
             int extension_string_length = (int)strlen(extension_string);
             if (buffer_pos + extension_string_length + 1 > buffer_size) {
               buffer_size += 1024;
@@ -3043,23 +3070,24 @@ SoGLContext_instance(int contextid)
         }
       } else {
         cc_debugerror_postwarning ("SoGLContext_instance",
-                                   "glGetString(GL_EXTENSIONS) returned null, but glGetStringi "
+                                   "glGetString(0x1F03 /*GL_EXTENSIONS*/) returned null, but glGetStringi "
                                    "procedure not found, so unable to get extensions for this GL driver, "
                                    "version: %s, vendor: %s", gi->versionstr, gi->vendorstr);
       }
     }
+#endif /* !OBOL_PORTABLEGL_BUILD */
 
     /* read some limits */
 
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &gltmp);
     gi->max_texture_size = gltmp;
 
-    glGetIntegerv(GL_MAX_LIGHTS, &gltmp);
+    glGetIntegerv(0x0D31 /*GL_MAX_LIGHTS*/, &gltmp);
     gi->max_lights = (int) gltmp;
 
     {
       GLfloat vals[2];
-      glGetFloatv(GL_POINT_SIZE_RANGE, vals);
+      glGetFloatv(0x0B12 /*GL_POINT_SIZE_RANGE*/, vals);
 
       /* Matthias Koenig reported on coin-discuss that the OpenGL
          implementation on SGI Onyx 2 InfiniteReality returns 0 for the
@@ -3078,7 +3106,7 @@ SoGLContext_instance(int contextid)
     }
     {
       GLfloat vals[2];
-      glGetFloatv(GL_LINE_WIDTH_RANGE, vals);
+      glGetFloatv(0x0B22 /*GL_LINE_WIDTH_RANGE*/, vals);
 
       /* Matthias Koenig reported on coin-discuss that the OpenGL
          implementation on SGI Onyx 2 InfiniteReality returns 0 for the
@@ -3102,7 +3130,7 @@ SoGLContext_instance(int contextid)
                              "glGetString(GL_RENDERER)=='%s'",
                              gi->rendererstr);
       cc_debugerror_postinfo("SoGLContext_instance",
-                             "glGetString(GL_EXTENSIONS)=='%s'",
+                             "glGetString(0x1F03 /*GL_EXTENSIONS*/)=='%s'",
                              gi->extensionsstr);
 
       cc_debugerror_postinfo("SoGLContext_instance",
@@ -3151,6 +3179,15 @@ SoGLContext_instance(int contextid)
       cb(contextid, cc_list_get(gl_instance_created_cblist, i*2+1));
     }
   }
+
+#ifdef OBOL_PORTABLEGL_BUILD
+  /* Clear any GL_INVALID_ENUM errors accumulated from querying fixed-function
+   * GL limits that PortableGL does not support (e.g. GL_MAX_LIGHTS, point and
+   * line size ranges).  These queries are harmless no-ops in portablegl but
+   * leave a pending error that would be falsely attributed to the first
+   * rendered node. */
+  while (glGetError() != GL_NO_ERROR) { /* drain */ }
+#endif
 
 #ifdef OBOL_SWRAST_BUILD
   if (SoGLContext_debug()) {
@@ -5369,10 +5406,10 @@ SoGLContext_context_max_dimensions(void * mgr_ptr, unsigned int * width, unsigne
   ok = manager->makeContextCurrent(ctx);
   if (!ok) { manager->destroyContext(ctx); return; }
 
-  glGetIntegerv(GL_MAX_VIEWPORT_DIMS, size);
+  glGetIntegerv(0x0D3A /*GL_MAX_VIEWPORT_DIMS*/, size);
   if (SoGLContext_debug()) {
     cc_debugerror_postinfo("SoGLContext_context_max_dimensions",
-                           "GL_MAX_VIEWPORT_DIMS==<%d, %d>",
+                           "0x0D3A /*GL_MAX_VIEWPORT_DIMS*/==<%d, %d>",
                            size[0], size[1]);
   }
 
@@ -5380,7 +5417,7 @@ SoGLContext_context_max_dimensions(void * mgr_ptr, unsigned int * width, unsigne
   if (!vendor) {
     /* glGetString(GL_VENDOR) returns NULL when no system GL context is current
      * (e.g. an OSMesa context was made current but system GL has a separate
-     * context slot).  System glGetIntegerv(GL_MAX_VIEWPORT_DIMS) also has no
+     * context slot).  System glGetIntegerv(GL_MAX_VIEWPORT_DIMS=0x0D3A) also has no
      * current context in this scenario so size[] is unreliable.
      * Provide a large default: OSMesa's size limit is RAM-only, so 16384 is
      * safe and covers any reasonable offscreen rendering request. */
@@ -5502,6 +5539,7 @@ compute_log(int value)
 }
 
 /*  proxy mipmap creation */
+#ifndef OBOL_PORTABLEGL_BUILD
 static SbBool
 proxy_mipmap_2d(int width, int height,
                 GLenum internalFormat,
@@ -5516,7 +5554,7 @@ proxy_mipmap_2d(int width, int height,
   glTexImage2D(GL_PROXY_TEXTURE_2D, 0, internalFormat, width, height, 0,
                format, type, NULL);
   glGetTexLevelParameteriv(GL_PROXY_TEXTURE_2D, 0,
-                           GL_TEXTURE_WIDTH, &w);
+                           0x1000 /*GL_TEXTURE_WIDTH*/, &w);
 
   if (w == 0) return FALSE;
   if (!mipmap) return TRUE;
@@ -5528,7 +5566,7 @@ proxy_mipmap_2d(int width, int height,
                  height, 0, format, type,
                  NULL);
     glGetTexLevelParameteriv(GL_PROXY_TEXTURE_2D, 0,
-                             GL_TEXTURE_WIDTH, &w);
+                             0x1000 /*GL_TEXTURE_WIDTH*/, &w);
     if (w == 0) return FALSE;
   }
   return TRUE;
@@ -5550,7 +5588,7 @@ proxy_mipmap_3d(const SoGLContext * glw, int width, int height, int depth,
                          width, height, depth, 0, format, type,
                          NULL);
   glGetTexLevelParameteriv(GL_PROXY_TEXTURE_3D, 0,
-                           GL_TEXTURE_WIDTH, &w);
+                           0x1000 /*GL_TEXTURE_WIDTH*/, &w);
   if (w == 0) return FALSE;
   if (!mipmap) return TRUE;
 
@@ -5562,11 +5600,12 @@ proxy_mipmap_3d(const SoGLContext * glw, int width, int height, int depth,
                            width, height, depth, 0, format, type,
                            NULL);
     glGetTexLevelParameteriv(GL_PROXY_TEXTURE_3D, 0,
-                             GL_TEXTURE_WIDTH, &w);
+                             0x1000 /*GL_TEXTURE_WIDTH*/, &w);
     if (w == 0) return FALSE;
   }
   return TRUE;
 }
+#endif /* !OBOL_PORTABLEGL_BUILD */
 
 /*!
   Note that the \e internalformat parameter corresponds to the \e
@@ -5588,7 +5627,14 @@ SoGLContext_is_texture_size_legal(const SoGLContext * glw,
       return TRUE;
     }
     if (SoGLContext_has_2d_proxy_textures(glw)) {
+#ifndef OBOL_PORTABLEGL_BUILD
       return proxy_mipmap_2d(xsize, ysize, internalformat, format, type, mipmap);
+#else
+      /* PortableGL: no proxy texture support; fall back to max_texture_size limit */
+      if (xsize > glw->max_texture_size) return FALSE;
+      if (ysize > glw->max_texture_size) return FALSE;
+      return TRUE;
+#endif
     }
     else {
       if (xsize > glw->max_texture_size) return FALSE;
@@ -5604,7 +5650,15 @@ SoGLContext_is_texture_size_legal(const SoGLContext * glw,
         if (zsize > OBOL_MAXIMUM_TEXTURE3_SIZE) return FALSE;
         return TRUE;
       }
+#ifndef OBOL_PORTABLEGL_BUILD
       return proxy_mipmap_3d(glw, xsize, ysize, zsize, internalformat, format, type, mipmap);
+#else
+      /* PortableGL: no proxy texture support; fall back to max_texture_size limit */
+      if (xsize > glw->max_texture_size) return FALSE;
+      if (ysize > glw->max_texture_size) return FALSE;
+      if (zsize > glw->max_texture_size) return FALSE;
+      return TRUE;
+#endif
     }
     else {
 #if OBOL_DEBUG
@@ -5650,10 +5704,10 @@ GLint SoGLContext_get_internal_texture_format(const SoGLContext * glw,
     SbBool usenewenums = glglue_allow_newer_opengl(glw) && SoGLContext_glversion_matches_at_least(glw,1,1,0);
     switch (numcomponents) {
     case 1:
-      format = usenewenums ? GL_LUMINANCE8 : GL_LUMINANCE;
+      format = usenewenums ? 0x8040 /*GL_LUMINANCE8*/ : GL_LUMINANCE;
       break;
     case 2:
-      format = usenewenums ? GL_LUMINANCE8_ALPHA8 : GL_LUMINANCE_ALPHA;
+      format = usenewenums ? 0x8045 /*GL_LUMINANCE8_ALPHA8*/ : GL_LUMINANCE_ALPHA;
       break;
     case 3:
       format = usenewenums ? GL_RGB8 : GL_RGB;
@@ -5729,9 +5783,9 @@ coin_glerror_string(GLenum errorcode)
     return INVALID_ENUM;
   case GL_INVALID_OPERATION:
     return INVALID_OPERATION;
-  case GL_STACK_OVERFLOW:
+  case 0x0503 /*GL_STACK_OVERFLOW*/:
     return STACK_OVERFLOW;
-  case GL_STACK_UNDERFLOW:
+  case 0x0504 /*GL_STACK_UNDERFLOW*/:
     return STACK_UNDERFLOW;
   case GL_OUT_OF_MEMORY:
     return OUT_OF_MEMORY;

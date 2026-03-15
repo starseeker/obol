@@ -126,8 +126,6 @@
 
 #include <vector>
 
-#include <Inventor/gl.h>
-
 #include <cstring>
 
 namespace ObolTest {
@@ -726,41 +724,68 @@ SoSeparator* createIosevkaText3(int width, int height)
 // 8. Gradient background
 // =========================================================================
 
-// Background gradient drawn via a SoCallback node using Obol's dispatched
-// GL wrappers (via <Inventor/gl.h>).  The gl*() calls below are macros
-// that expand to SoGLContext_glXxx(sogl_current_render_glue(), ...) so
-// they route to the correct backend in both system-GL and OSMesa renders.
-static void gradientCB(void* /*data*/, SoAction* action)
+// Background gradient using the Obol scene graph (GL3 compatible, no fixed-function).
+// Draws a full-viewport quad as two triangles with per-vertex colors.
+static SoSeparator* buildGradientScene(int width, int height)
 {
-    if (!action->isOfType(SoGLRenderAction::getClassTypeId())) return;
-    SoGLRenderAction* ra = static_cast<SoGLRenderAction*>(action);
-    const SbViewportRegion& vp = ra->getViewportRegion();
-    int w = vp.getViewportSizePixels()[0];
-    int h = vp.getViewportSizePixels()[1];
+    SoSeparator* bg = new SoSeparator;
 
-    glMatrixMode(GL_PROJECTION);
-    glPushMatrix(); glLoadIdentity();
-    glOrtho(0, w, 0, h, -1, 1);
-    glMatrixMode(GL_MODELVIEW);
-    glPushMatrix(); glLoadIdentity();
+    // Orthographic camera covering NDC [-1,1] range
+    SoOrthographicCamera* cam = new SoOrthographicCamera;
+    cam->position.setValue(0.0f, 0.0f, 1.0f);
+    cam->orientation.setValue(SbRotation::identity());
+    cam->height.setValue(2.0f);
+    cam->aspectRatio.setValue((float)width / (float)height);
+    cam->nearDistance.setValue(0.1f);
+    cam->farDistance.setValue(3.0f);
+    bg->addChild(cam);
 
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_LIGHTING);
+    // BASE_COLOR lighting (vertex colors, no lighting calculation)
+    SoLightModel* lm = new SoLightModel;
+    lm->model.setValue(SoLightModel::BASE_COLOR);
+    bg->addChild(lm);
 
-    glBegin(GL_QUADS);
-        // bottom: dark blue
-        glColor3f(0.05f, 0.05f, 0.20f); glVertex2f(0.0f, 0.0f);
-        glColor3f(0.05f, 0.05f, 0.20f); glVertex2f((float)w, 0.0f);
-        // top: lighter blue
-        glColor3f(0.20f, 0.35f, 0.60f); glVertex2f((float)w, (float)h);
-        glColor3f(0.20f, 0.35f, 0.60f); glVertex2f(0.0f, (float)h);
-    glEnd();
+    // Disable depth buffer for background pass
+    SoDrawStyle* ds = new SoDrawStyle;
+    bg->addChild(ds);
 
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_LIGHTING);
+    // Vertices: a full-screen quad as two triangles in NDC space
+    // Bottom color: dark blue  Top color: lighter blue
+    // Triangle 1: BL, BR, TR   Triangle 2: BL, TR, TL
+    SoCoordinate3* coords = new SoCoordinate3;
+    coords->point.set1Value(0, -1.0f, -1.0f, 0.0f); // BL
+    coords->point.set1Value(1,  1.0f, -1.0f, 0.0f); // BR
+    coords->point.set1Value(2,  1.0f,  1.0f, 0.0f); // TR
+    coords->point.set1Value(3, -1.0f, -1.0f, 0.0f); // BL
+    coords->point.set1Value(4,  1.0f,  1.0f, 0.0f); // TR
+    coords->point.set1Value(5, -1.0f,  1.0f, 0.0f); // TL
+    bg->addChild(coords);
 
-    glMatrixMode(GL_PROJECTION); glPopMatrix();
-    glMatrixMode(GL_MODELVIEW);  glPopMatrix();
+    SoPackedColor* colors = new SoPackedColor;
+    // SoPackedColor uses 0xAARRGGBB
+    // dark blue: RGB(0.05, 0.05, 0.20) = (13, 13, 51) = 0x0d0d33
+    // lighter blue: RGB(0.20, 0.35, 0.60) = (51, 89, 153) = 0x335999
+    const uint32_t bottomBlue = 0xff0d0d33u;
+    const uint32_t topBlue    = 0xff335999u;
+    colors->orderedRGBA.set1Value(0, bottomBlue); // BL
+    colors->orderedRGBA.set1Value(1, bottomBlue); // BR
+    colors->orderedRGBA.set1Value(2, topBlue);    // TR
+    colors->orderedRGBA.set1Value(3, bottomBlue); // BL
+    colors->orderedRGBA.set1Value(4, topBlue);    // TR
+    colors->orderedRGBA.set1Value(5, topBlue);    // TL
+    bg->addChild(colors);
+
+    SoMaterialBinding* mb = new SoMaterialBinding;
+    mb->value.setValue(SoMaterialBinding::PER_VERTEX);
+    bg->addChild(mb);
+
+    SoFaceSet* fs = new SoFaceSet;
+    // Two triangles, 3 vertices each
+    fs->numVertices.set1Value(0, 3);
+    fs->numVertices.set1Value(1, 3);
+    bg->addChild(fs);
+
+    return bg;
 }
 
 SoSeparator* createGradient(int width, int height)
@@ -768,12 +793,7 @@ SoSeparator* createGradient(int width, int height)
     SoSeparator* root = new SoSeparator;
     root->ref();
 
-    // Gradient background drawn first (before depth-tested geometry).
-    // Uses SoCallback + dispatched gl*() calls via <Inventor/gl.h> so
-    // it works correctly with both System GL and OSMesa backends.
-    SoCallback* bg = new SoCallback;
-    bg->setCallback(gradientCB, nullptr);
-    root->addChild(bg);
+    root->addChild(buildGradientScene(width, height));
 
     SoPerspectiveCamera* cam = addCameraAndLight(root);
 

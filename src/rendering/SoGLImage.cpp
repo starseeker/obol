@@ -1627,11 +1627,12 @@ translate_wrap(SoState *state, const SoGLImage::Wrap wrap)
       const SoGLContext * glw = sogl_glue_instance(state);
       if (SoGLDriverDatabase::isSupported(glw, SO_GL_TEXTURE_EDGE_CLAMP)) return (GLenum) GL_CLAMP_TO_EDGE;
     }
-    return (GLenum) GL_CLAMP;
+    // GL3: GL_CLAMP removed; use GL_CLAMP_TO_EDGE as the nearest equivalent.
+    return (GLenum) GL_CLAMP_TO_EDGE;
   }
   const SoGLContext * glw = sogl_glue_instance(state);
   if (SoGLDriverDatabase::isSupported(glw, SO_GL_TEXTURE_EDGE_CLAMP)) return (GLenum) GL_CLAMP_TO_EDGE;
-  return (GLenum) GL_CLAMP;
+  return (GLenum) GL_CLAMP_TO_EDGE;
 }
 
 void

@@ -114,6 +114,9 @@
 #include <Inventor/errors/SoDebugError.h>
 #endif // OBOL_DEBUG
 
+#include <Inventor/elements/SoGLViewingMatrixElement.h>
+#include "rendering/SoGLModernState.h"
+#include <vector>
 #include "nodes/SoSubNodeP.h"
 #include "rendering/SoGL.h"
 
@@ -210,25 +213,27 @@ SoIndexedMarkerSet::GLRender(SoGLRenderAction * action)
                                  SoProjectionMatrixElement::get(state));
   SbVec2s vpsize = vp.getViewportSizePixels();
 
-  // Symptom treatment against the complete marker set vanishing for certain
-  // view angles. We'll disable the clipping planes temporarily. Individual
-  // markers are still clipped using SoCullElement::cullTest() below.
-  // See https://github.com/coin3d/coin/pull-requests/52 for a test case.
-  GLint numPlanes = 0;
-  SoGLContext_glGetIntegerv(sogl_glue_from_state(state), GL_MAX_CLIP_PLANES, &numPlanes);
-  SbList<SbBool> planesEnabled;
-  for (GLint i = 0; i < numPlanes; ++i) {
-    planesEnabled.append(glIsEnabled(GL_CLIP_PLANE0 + i));
-    SoGLContext_glDisable(sogl_glue_from_state(state), GL_CLIP_PLANE0 + i);
-  }
+  // GL3: clip-plane disable/re-enable loop removed (GL_MAX_CLIP_PLANES / GL_CLIP_PLANE0
+  // not in GL 3 core).  SoCullElement::cullTest() in the render loop provides
+  // per-marker frustum culling.
 
-  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
-  SoGLContext_glPushMatrix(sogl_glue_from_state(state));
-  SoGLContext_glLoadIdentity(sogl_glue_from_state(state));
-  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_PROJECTION);
-  SoGLContext_glPushMatrix(sogl_glue_from_state(state));
-  SoGLContext_glLoadIdentity(sogl_glue_from_state(state));
-  SoGLContext_glOrtho(sogl_glue_from_state(state), 0, vpsize[0], 0, vpsize[1], -1.0f, 1.0f);
+  // GL3: set up screen-space ortho matrices via SoGLModernState.
+  SoGLModernState * ms_mk = SoGLModernState::forContext(action->getCacheContext());
+  if (ms_mk && ms_mk->isAvailable()) {
+    static const float ident[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    ms_mk->setModelViewMatrix(ident);
+    float W = static_cast<float>(vpsize[0]), H = static_cast<float>(vpsize[1]);
+    const float ortho[16] = {
+      2.0f/W, 0,      0,  -1.0f,
+      0,      2.0f/H, 0,  -1.0f,
+      0,      0,     -1.0f, 0,
+      0,      0,      0,   1.0f
+    };
+    ms_mk->setProjectionMatrix(ortho);
+    static const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    ms_mk->setMaterial(white, white, white, white, 0.0f);
+    ms_mk->activateBaseColor(false, true, true);
+  }
 
   for (int i = 0; i < numindices; i++) {
     int32_t idx = cindices[i];
@@ -243,14 +248,12 @@ SoIndexedMarkerSet::GLRender(SoGLRenderAction * action)
                                     i);
           firsterror = FALSE;
         }
-        // Don't render, jump back to top of for-loop and continue with
-        // next index.
         midx = this->markerIndex.getNum() - 1;
       }
 #endif // OBOL_DEBUG
 
     int marker = this->markerIndex[midx];
-    if (marker == SoMarkerSet::NONE) { continue; }//no marker to render
+    if (marker == SoMarkerSet::NONE) { continue; }
 
     SbVec2s size;
     const unsigned char * bytes;
@@ -266,55 +269,74 @@ SoIndexedMarkerSet::GLRender(SoGLRenderAction * action)
 
     SbVec3f point = glcoords->get3(idx);
 
-    // OpenGL's SoGLContext_glBitmap(sogl_glue_from_state(state)) will not be clipped against anything but
-    // the near and far planes. We want markers to also be clipped
-    // against other clipping planes, to behave like the SoPointSet
-    // superclass.
     const SbBox3f bbox(point, point);
-    // FIXME: if there are *heaps* of markers, this next line will
-    // probably become a bottleneck. Should really partition marker
-    // positions in a oct-tree data structure and cull several at
-    // the same time.  20031219 mortene.
     if (SoCullElement::cullTest(state, bbox, TRUE)) { continue; }
 
     projmatrix.multVecMatrix(point, point);
     point[0] = (point[0] + 1.0f) * 0.5f * vpsize[0];
     point[1] = (point[1] + 1.0f) * 0.5f * vpsize[1];
 
-    // To have the exact center point of the marker drawn at the
-    // projected 3D position.  (FIXME: I haven't actually checked that
-    // this is what TGS' implementation of the SoMarkerSet node does
-    // when rendering, but it seems likely. 20010823 mortene.)
-
     point[0] = point[0] - (size[0] - 1) / 2;
     point[1] = point[1] - (size[1] - 1) / 2;
 
-    //FIXME: this will probably fail if someone has overwritten one of the
-    //built-in markers. Currently there is no way of fetching a marker's
-    //alignment from outside the SoMarkerSet class though. 20090424 wiesener
-    int align = (marker >= SoMarkerSet::NUM_MARKERS) ? 1 : 4;
-    SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_ALIGNMENT, align);
-    SoGLContext_glRasterPos3f(sogl_glue_from_state(state), point[0], point[1], -point[2]);
-    SoGLContext_glBitmap(sogl_glue_from_state(state), size[0], size[1], 0, 0, 0, 0, bytes);
-  }
+    // GL3: convert 1-bit packed bitmap → RGBA texture, then render as quad.
+    int mw = size[0], mh = size[1];
+    int mal = (marker >= SoMarkerSet::NUM_MARKERS) ? 1 : 4;
+    std::vector<unsigned char> rgba(static_cast<size_t>(mw) * mh * 4, 0);
+    for (int my = 0; my < mh; ++my) {
+      for (int mx = 0; mx < mw; ++mx) {
+        int byterow = my * mal;
+        int bitidx  = mx / 8;
+        int bitpos  = 7 - (mx % 8);
+        if (bytes && ((bytes[byterow + bitidx] >> bitpos) & 1)) {
+          size_t pi = (static_cast<size_t>(my) * mw + mx) * 4;
+          rgba[pi+0] = rgba[pi+1] = rgba[pi+2] = rgba[pi+3] = 255;
+        }
+      }
+    }
 
-  for (GLint i = 0; i < numPlanes; ++i) {
-    if (planesEnabled[i]) {
-      SoGLContext_glEnable(sogl_glue_from_state(state), GL_CLIP_PLANE0 + i);
+    GLuint mk_texid = 0;
+    SoGLContext_glGenTextures(sogl_glue_from_state(state), 1, &mk_texid);
+    if (mk_texid) {
+      SoGLContext_glActiveTexture(sogl_glue_from_state(state), GL_TEXTURE0);
+      SoGLContext_glBindTexture(sogl_glue_from_state(state), GL_TEXTURE_2D, mk_texid);
+      SoGLContext_glTexParameteri(sogl_glue_from_state(state), GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+      SoGLContext_glTexParameteri(sogl_glue_from_state(state), GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+      SoGLContext_glTexParameteri(sogl_glue_from_state(state), GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      SoGLContext_glTexParameteri(sogl_glue_from_state(state), GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+      SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_ALIGNMENT, 1);
+      SoGLContext_glTexImage2D(sogl_glue_from_state(state), GL_TEXTURE_2D, 0, GL_RGBA,
+                               mw, mh, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+
+      float qx  = point[0], qy  = point[1], qz = -point[2];
+      float qx1 = qx + mw,  qy1 = qy + mh;
+      SoGLContext_glEnable(sogl_glue_from_state(state), GL_TEXTURE_2D);
+      SoGLContext_glBegin(sogl_glue_from_state(state), GL_TRIANGLES);
+      SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 0.0f, 0.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx,  qy,  qz);
+      SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 1.0f, 0.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx1, qy,  qz);
+      SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 1.0f, 1.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx1, qy1, qz);
+      SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 0.0f, 0.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx,  qy,  qz);
+      SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 1.0f, 1.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx1, qy1, qz);
+      SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 0.0f, 1.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx,  qy1, qz);
+      SoGLContext_glEnd(sogl_glue_from_state(state));
+      SoGLContext_glDisable(sogl_glue_from_state(state), GL_TEXTURE_2D);
+      SoGLContext_glBindTexture(sogl_glue_from_state(state), GL_TEXTURE_2D, 0);
+      SoGLContext_glDeleteTextures(sogl_glue_from_state(state), 1, &mk_texid);
     }
   }
 
-  // FIXME: this looks wrong, shouldn't we rather reset the alignment
-  // value to what it was previously?  20010824 mortene.
-  SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_ALIGNMENT, 4); // restore default value
-  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_PROJECTION);
-  SoGLContext_glPopMatrix(sogl_glue_from_state(state));
-  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
-  SoGLContext_glPopMatrix(sogl_glue_from_state(state));
+  SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_ALIGNMENT, 4);
+
+  // Restore SoGLModernState matrices from Coin state.
+  if (ms_mk && ms_mk->isAvailable()) {
+    SbMatrix mv = SoGLViewingMatrixElement::getResetMatrix(state);
+    mv.multLeft(SoModelMatrixElement::get(state));
+    ms_mk->setModelViewMatrix((const float*)mv.getValue());
+    const SbMatrix &proj = SoProjectionMatrixElement::get(state);
+    ms_mk->setProjectionMatrix((const float*)proj.getValue());
+  }
 
   state->pop();
 
-  // send approx number of points for autocache handling. Divide
-  // by three so that three points is the same as one triangle.
   sogl_autocache_update(state, numindices/3, FALSE);
 }

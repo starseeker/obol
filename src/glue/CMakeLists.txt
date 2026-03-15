@@ -1,5 +1,5 @@
 # source files
-if(NOT OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
+if(NOT OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL AND NOT OBOL_USE_PORTABLEGL)
   # No-OpenGL build: use the no-op stub instead of the real GL dispatch layer.
   set(OBOL_GLUE_FILES
     dl.cpp

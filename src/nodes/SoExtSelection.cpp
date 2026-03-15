@@ -129,6 +129,9 @@
 
 #include "nodes/SoSubNodeP.h"
 #include "../misc/SoEnvironment.h"
+#include "rendering/SoGLModernState.h"
+#include <Inventor/elements/SoGLViewingMatrixElement.h>
+#include <Inventor/elements/SoProjectionMatrixElement.h>
 
 // *************************************************************************
 
@@ -1087,44 +1090,34 @@ SoExtSelection::draw(SoGLRenderAction *action)
   SbVec2s vpo = vp.getViewportOriginPixels();
   SbVec2s vps = vp.getViewportSizePixels();
 
-  // matrices
-  SoGLContext_glMatrixMode(pimpl->cachedGlue, GL_MODELVIEW);
-  SoGLContext_glPushMatrix(pimpl->cachedGlue);
-  SoGLContext_glLoadIdentity(pimpl->cachedGlue);
-  SoGLContext_glMatrixMode(pimpl->cachedGlue, GL_PROJECTION);
-  SoGLContext_glPushMatrix(pimpl->cachedGlue);
-  SoGLContext_glLoadIdentity(pimpl->cachedGlue);
-  SoGLContext_glOrtho(pimpl->cachedGlue, vpo[0], vpo[0]+vps[0]-1,
-          vpo[1], vpo[0]+vps[1]-1,
-          -1, 1);
+  // GL3: set up screen-space ortho matrices via SoGLModernState.
+  SoGLModernState * ms_draw = SoGLModernState::forContext(action->getCacheContext());
+  if (ms_draw && ms_draw->isAvailable()) {
+    static const float ident[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    ms_draw->setModelViewMatrix(ident);
+    float l = static_cast<float>(vpo[0]), r = static_cast<float>(vpo[0]+vps[0]-1);
+    float b = static_cast<float>(vpo[1]), t = static_cast<float>(vpo[0]+vps[1]-1);
+    const float ortho[16] = {
+      2.0f/(r-l),      0,          0,  -(r+l)/(r-l),
+      0,          2.0f/(t-b),      0,  -(t+b)/(t-b),
+      0,               0,         -1.0f, 0,
+      0,               0,          0,   1.0f
+    };
+    ms_draw->setProjectionMatrix(ortho);
+    ms_draw->activateBaseColor();
+  }
 
-
-  // Because Mesa 3.4.2 can't properly push & pop GL_CURRENT_BIT, we have to
-  // save the current color for later.
-  GLfloat currentColor[4];
-  SoGLContext_glGetFloatv(pimpl->cachedGlue, GL_CURRENT_COLOR,currentColor);
-
-  // attributes
-  SoGLContext_glPushAttrib(pimpl->cachedGlue, GL_LIGHTING_BIT|
-               GL_FOG_BIT|
-               GL_DEPTH_BUFFER_BIT|
-               GL_TEXTURE_BIT|
-               GL_LINE_BIT|
-               GL_CURRENT_BIT);
-  SoGLContext_glDisable(pimpl->cachedGlue, GL_LIGHTING);
+  // GL3: glPushAttrib/glPopAttrib removed (GL_LIGHTING_BIT etc. not in GL3 core).
+  // GL3: glDisable(GL_LIGHTING)/glDisable(GL_FOG) removed (no fixed-function).
+  // GL3: GL_LINE_STIPPLE removed (use solid lines — dashed lasso is a TODO).
   SoGLContext_glDisable(pimpl->cachedGlue, GL_TEXTURE_2D);
-
   if(pimpl->has3DTextures) SoGLContext_glDisable(pimpl->cachedGlue, GL_TEXTURE_3D);
-  SoGLContext_glDisable(pimpl->cachedGlue, GL_FOG);
   SoGLContext_glDisable(pimpl->cachedGlue, GL_DEPTH_TEST);
 
   // line color & width
   SoGLContext_glColor3f(pimpl->cachedGlue, PRIVATE(this)->lassocolor[0],PRIVATE(this)->lassocolor[1],PRIVATE(this)->lassocolor[2]);
   SoGLContext_glLineWidth(pimpl->cachedGlue, PRIVATE(this)->lassowidth);
-
-  // stipple pattern
-  SoGLContext_glEnable(pimpl->cachedGlue, GL_LINE_STIPPLE);
-  SoGLContext_glLineStipple(pimpl->cachedGlue, 1, PRIVATE(this)->lassopattern);
+  // GL3: GL_LINE_STIPPLE removed; lasso rendered as solid lines.
 
   // --- RECTANGLE ---
 
@@ -1152,15 +1145,16 @@ SoExtSelection::draw(SoGLRenderAction *action)
   }
 
   // finish - restore state
-  SoGLContext_glMatrixMode(pimpl->cachedGlue, GL_PROJECTION);
-  SoGLContext_glPopMatrix(pimpl->cachedGlue);
-  SoGLContext_glMatrixMode(pimpl->cachedGlue, GL_MODELVIEW);
-  SoGLContext_glPopMatrix(pimpl->cachedGlue);
-
-  SoGLContext_glPopAttrib(pimpl->cachedGlue);
-
-  // Due to a Mesa 3.4.2 bug
-  SoGLContext_glColor3fv(pimpl->cachedGlue, currentColor);
+  // GL3: matrix pop/attrib pop removed.
+  // Restore SoGLModernState matrices from Coin state.
+  if (ms_draw && ms_draw->isAvailable()) {
+    SoState * draw_state = action->getState();
+    SbMatrix mv = SoGLViewingMatrixElement::getResetMatrix(draw_state);
+    mv.multLeft(SoModelMatrixElement::get(draw_state));
+    ms_draw->setModelViewMatrix((const float*)mv.getValue());
+    const SbMatrix &proj = SoProjectionMatrixElement::get(draw_state);
+    ms_draw->setProjectionMatrix((const float*)proj.getValue());
+  }
 }
 
 // Documented in superclass.
@@ -1836,9 +1830,9 @@ SoExtSelectionP::addTriangleToOffscreenBuffer(SoCallbackAction * action,
   offscreenviewvolume.getMatrices(affine, proj);
   affine.multLeft(mm);
 
-  SoGLContext_glMatrixMode(this->cachedGlue, GL_PROJECTION);
+  SoGLContext_glMatrixMode(this->cachedGlue, 0x1700 /*GL_PROJECTION*/);
   SoGLContext_glLoadMatrixf(this->cachedGlue, (float *)proj);
-  SoGLContext_glMatrixMode(this->cachedGlue, GL_MODELVIEW);
+  SoGLContext_glMatrixMode(this->cachedGlue, 0x1700 /*GL_MODELVIEW*/);
   SoGLContext_glLoadMatrixf(this->cachedGlue, (float *)affine);
 
   SoGLContext_glDepthFunc(this->cachedGlue, GL_LEQUAL);
@@ -2023,9 +2017,9 @@ SoExtSelectionP::addLineToOffscreenBuffer(SoCallbackAction * action,
   offscreenviewvolume.getMatrices(affine, proj);
   affine.multLeft(mm);
 
-  SoGLContext_glMatrixMode(this->cachedGlue, GL_PROJECTION);
+  SoGLContext_glMatrixMode(this->cachedGlue, 0x1701 /*GL_PROJECTION*/);
   SoGLContext_glLoadMatrixf(this->cachedGlue, (float *)proj);
-  SoGLContext_glMatrixMode(this->cachedGlue, GL_MODELVIEW);
+  SoGLContext_glMatrixMode(this->cachedGlue, 0x1700 /*GL_MODELVIEW*/);
   SoGLContext_glLoadMatrixf(this->cachedGlue, (float *)affine);
 
   SoGLContext_glDepthFunc(this->cachedGlue, GL_LEQUAL);
@@ -2173,9 +2167,9 @@ SoExtSelectionP::addPointToOffscreenBuffer(SoCallbackAction * action,
   offscreenviewvolume.getMatrices(affine, proj);
   affine.multLeft(mm);
 
-  SoGLContext_glMatrixMode(this->cachedGlue, GL_PROJECTION);
+  SoGLContext_glMatrixMode(this->cachedGlue, 0x1701 /*GL_PROJECTION*/);
   SoGLContext_glLoadMatrixf(this->cachedGlue, (float *)proj);
-  SoGLContext_glMatrixMode(this->cachedGlue, GL_MODELVIEW);
+  SoGLContext_glMatrixMode(this->cachedGlue, 0x1700 /*GL_MODELVIEW*/);
   SoGLContext_glLoadMatrixf(this->cachedGlue, (float *)affine);
 
   SoGLContext_glDepthFunc(this->cachedGlue, GL_LEQUAL);
@@ -2285,16 +2279,26 @@ SoExtSelectionP::offscreenRenderLassoCallback(void * userdata, SoAction * action
   SbVec2s vpo = vp.getViewportOriginPixels();
   SbVec2s vps = vp.getViewportSizePixels();
 
-  SoGLContext_glMatrixMode(pimpl->cachedGlue, GL_PROJECTION);
-  SoGLContext_glPushMatrix(pimpl->cachedGlue);
-  SoGLContext_glOrtho(pimpl->cachedGlue, vpo[0], vpo[0]+vps[0]-1,
-          vpo[1], vpo[0]+vps[1]-1,
-          -1, 1);
-  SoGLContext_glMatrixMode(pimpl->cachedGlue, GL_MODELVIEW);
-  SoGLContext_glPushMatrix(pimpl->cachedGlue);
-  SoGLContext_glLoadIdentity(pimpl->cachedGlue);
-  
-  SoGLContext_glDisable(pimpl->cachedGlue, GL_LIGHTING);
+  // GL3: matrix mode / ortho setup replaced with SoGLModernState ortho.
+  {
+    uint32_t ctxid = SoGLContext_get_contextid(pimpl->cachedGlue);
+    SoGLModernState * ms = SoGLModernState::forContext(ctxid);
+    if (ms && ms->isAvailable()) {
+      static const float ident[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+      ms->setModelViewMatrix(ident);
+      float l = float(vpo[0]), r = float(vpo[0]+vps[0]-1);
+      float b = float(vpo[1]), t = float(vpo[0]+vps[1]-1);
+      const float ortho[16] = {
+        2.0f/(r-l), 0, 0, -(r+l)/(r-l),
+        0, 2.0f/(t-b), 0, -(t+b)/(t-b),
+        0, 0, -1.0f, 0,
+        0, 0, 0, 1.0f
+      };
+      ms->setProjectionMatrix(ortho);
+      ms->activateBaseColor();
+    }
+  }
+  // GL3: glDisable(GL_LIGHTING) removed (no fixed-function lighting in GL3).
   SoGLContext_glDisable(pimpl->cachedGlue, GL_DEPTH_TEST);
   SoGLContext_glDisable(pimpl->cachedGlue, GL_CULL_FACE);
   
@@ -2315,10 +2319,7 @@ SoExtSelectionP::offscreenRenderLassoCallback(void * userdata, SoAction * action
     tessellator.addVertex(tmparray[i], const_cast<void*>(static_cast<const void*>(&tmparray[i])));
   tessellator.endPolygon();
 
-  SoGLContext_glMatrixMode(pimpl->cachedGlue, GL_PROJECTION);
-  SoGLContext_glPopMatrix(pimpl->cachedGlue);
-  SoGLContext_glMatrixMode(pimpl->cachedGlue, GL_MODELVIEW);
-  SoGLContext_glPopMatrix(pimpl->cachedGlue);
+  // GL3: matrix mode pop removed (no push/pop matrix stack in GL3).
 }
 
 void
@@ -2350,37 +2351,17 @@ SoExtSelectionP::offscreenRenderCallback(void * userdata, SoAction * action)
     20020802 mortene.
   */
 
-  // Because Mesa 3.4.2 can't properly push & pop GL_CURRENT_BIT, we have to
-  // save the current color for later.
-  GLfloat currentColor[4];
-  SoGLContext_glGetFloatv(pimpl->cachedGlue, GL_CURRENT_COLOR,currentColor);
-
-  SoGLContext_glPushAttrib(pimpl->cachedGlue, GL_LIGHTING_BIT|
-               GL_FOG_BIT|
-               GL_DEPTH_BUFFER_BIT|
-               GL_TEXTURE_BIT|
-               GL_LINE_BIT|
-               GL_CURRENT_BIT);
-
+  // GL3: glPushAttrib/glPopAttrib removed; GL_LIGHTING/GL_FOG disable removed.
   // Setup GL-state for offscreen context
-  SoGLContext_glDisable(pimpl->cachedGlue, GL_LIGHTING);
   SoGLContext_glDisable(pimpl->cachedGlue, GL_TEXTURE_2D);
   if(pimpl->has3DTextures)
     SoGLContext_glDisable(pimpl->cachedGlue, GL_TEXTURE_3D);
-  SoGLContext_glDisable(pimpl->cachedGlue, GL_FOG);
   SoGLContext_glDisable(pimpl->cachedGlue, GL_BLEND);
   SoGLContext_glEnable(pimpl->cachedGlue, GL_DEPTH_TEST);
 
   // --- Render all tris to offscreen buffer.
   pimpl->cbaction->apply(pimpl->offscreenheadnode);
   PUBLIC(pimpl)->touch();
-
-
-  // Restore all OpenGL States
-  SoGLContext_glPopAttrib(pimpl->cachedGlue);
-
-  // Due to a Mesa 3.4.2 bug
-  SoGLContext_glColor3fv(pimpl->cachedGlue, currentColor);
 }
 
 SbBool
@@ -2395,21 +2376,9 @@ SoExtSelectionP::checkOffscreenRendererCapabilities()
     return FALSE;
   }
 
-  GLboolean rgbmode;
-  SoGLContext_glGetBooleanv(this->cachedGlue, GL_RGBA_MODE, &rgbmode);
-  if (!rgbmode) {
-    SoDebugError::post("SoExtSelectionP::checkOffscreenRendererCapabilities",
-                       "Couldn't get an RGBA OpenGL context -- cannot "
-                       "proceed with VISIBLE_SHAPES selection. Check your "
-                       "system for driver errors.");
-    return FALSE;
-  }
-
-  // Check color-channel bitresolution
-  GLint red, green, blue;
-  SoGLContext_glGetIntegerv(this->cachedGlue, GL_RED_BITS, &red);
-  SoGLContext_glGetIntegerv(this->cachedGlue, GL_GREEN_BITS, &green);
-  SoGLContext_glGetIntegerv(this->cachedGlue, GL_BLUE_BITS, &blue);
+  // GL3: GL_RGBA_MODE removed; GL3 always uses RGBA mode.
+  // GL3: GL_RED_BITS / GL_GREEN_BITS / GL_BLUE_BITS removed; assume 8 bits per channel.
+  GLint red = 8, green = 8, blue = 8;
 
   // Calculate maximum colorcounter from RGB bit depth.
 #ifndef COLORBITS

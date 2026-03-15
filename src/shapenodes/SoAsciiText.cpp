@@ -143,6 +143,7 @@
 
 #include <cstring>
 #include <cfloat> // FLT_MIN
+#include <vector>
 
 
 #include "../base/SbUtf8.h" // Modern UTF-8 support
@@ -377,8 +378,11 @@ SoAsciiText::GLRender(SoGLRenderAction * action)
   SoMaterialBundle mb(action);
   mb.sendFirst();
   
-  SoGLContext_glBegin(sogl_glue_from_state(state), GL_TRIANGLES);
-  SoGLContext_glNormal3f(sogl_glue_from_state(state), 0.0f, 0.0f, 1.0f);
+  /* GL3: accumulate all glyph triangles into a CPU buffer, then upload as a
+   * single VAO/VBO draw call.  Each vertex: xyz(3) + normal(3) + uv(2) = 8 floats.
+   * The normal is constant (0,0,1) for all glyph triangles (they lie in the XY plane). */
+  std::vector<float> vdata; // 8 floats per vertex: x,y,z, nx,ny,nz, u,v
+  vdata.reserve(1024);
 
   float ypos = 0.0f;
   int i, n = this->string.getNum();
@@ -403,7 +407,6 @@ SoAsciiText::GLRender(SoGLRenderAction * action)
     uint32_t prevglyphchar = 0;
     const char * p = str.getString();
     size_t length = coin_utf8_validate_length(p);
-    // No assertion as zero length is handled correctly (results in a new line)
 
     for (unsigned int strcharidx = 0; strcharidx < length; strcharidx++) {
       uint32_t glyphidx = 0;
@@ -411,12 +414,8 @@ SoAsciiText::GLRender(SoGLRenderAction * action)
       glyphidx = coin_utf8_get_char(p);
       p = coin_utf8_next_char(p);
 
-      // Use SbFont directly instead of bridge
-      
-      // Update font size
       PRIVATE(this)->font->setSize(fontspec->size);
-      
-      // Get kerning
+
       if (strcharidx > 0 && prevglyphchar != 0) {
         SbVec2f kern = PRIVATE(this)->font->getGlyphKerning(prevglyphchar, glyphidx);
         xpos += kern[0] * stretchfactor * fontspec->size;
@@ -424,54 +423,63 @@ SoAsciiText::GLRender(SoGLRenderAction * action)
 
       prevglyphchar = glyphidx;
 
-      // Get geometry from SbFont
       int numvertices, numfaceindices;
       const float * vertices = PRIVATE(this)->font->getGlyphVertices(glyphidx, numvertices);
       const SbVec2f * coords = (const SbVec2f *) vertices;
       const int * faceindices = PRIVATE(this)->font->getGlyphFaceIndices(glyphidx, numfaceindices);
-      
+
       if (vertices && faceindices) {
         const int * ptr = faceindices;
         while (*ptr >= 0) {
-          SbVec2f v0, v1, v2;
           int idx2 = *ptr++;
           int idx1 = *ptr++;
           int idx0 = *ptr++;
-          
-          if (idx0 < numvertices && idx1 < numvertices && idx2 < numvertices) {
-            v2 = coords[idx2];
-            v1 = coords[idx1];
-            v0 = coords[idx0];
 
-            // FIXME: Is the text textured correctly when stretching is
-            // applied (when width values have been given that are
-            // not the same as the length of the string)? jornskaa 20040716
-            if (do2Dtextures) {
-              SoGLContext_glTexCoord2f(sogl_glue_from_state(state), v0[0] + xpos/fontspec->size, v0[1] + ypos/fontspec->size);
+          if (idx0 < numvertices && idx1 < numvertices && idx2 < numvertices) {
+            SbVec2f v[3] = { coords[idx0], coords[idx1], coords[idx2] };
+            for (int vi = 0; vi < 3; ++vi) {
+              vdata.push_back(v[vi][0] * fontspec->size + xpos);
+              vdata.push_back(v[vi][1] * fontspec->size + ypos);
+              vdata.push_back(0.0f);
+              vdata.push_back(0.0f); // nx
+              vdata.push_back(0.0f); // ny
+              vdata.push_back(1.0f); // nz
+              vdata.push_back(do2Dtextures ? v[vi][0] + xpos/fontspec->size : 0.0f);
+              vdata.push_back(do2Dtextures ? v[vi][1] + ypos/fontspec->size : 0.0f);
             }
-            SoGLContext_glVertex3f(sogl_glue_from_state(state), v0[0] * fontspec->size + xpos, v0[1] * fontspec->size + ypos, 0.0f);
-            
-            if (do2Dtextures) {
-              SoGLContext_glTexCoord2f(sogl_glue_from_state(state), v1[0] + xpos/fontspec->size, v1[1] + ypos/fontspec->size);
-            }
-            SoGLContext_glVertex3f(sogl_glue_from_state(state), v1[0] * fontspec->size + xpos, v1[1] * fontspec->size + ypos, 0.0f);
-            
-            if (do2Dtextures) {
-              SoGLContext_glTexCoord2f(sogl_glue_from_state(state), v2[0] + xpos/fontspec->size, v2[1] + ypos/fontspec->size);
-            }
-            SoGLContext_glVertex3f(sogl_glue_from_state(state), v2[0] * fontspec->size + xpos, v2[1] * fontspec->size + ypos, 0.0f);
           }
         }
       }
 
-      // Get advance
       SbVec2f advance = PRIVATE(this)->font->getGlyphAdvance(glyphidx);
       xpos += (advance[0] * stretchfactor * fontspec->size);
     }
 
     ypos -= fontspec->size * this->spacing.getValue();
   }
-  SoGLContext_glEnd(sogl_glue_from_state(state));
+
+  if (!vdata.empty()) {
+    const int numverts = (int)(vdata.size() / 8);
+    GLuint txt_vao = 0, txt_vbo = 0;
+    glGenVertexArrays(1, &txt_vao);
+    glBindVertexArray(txt_vao);
+    glGenBuffers(1, &txt_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, txt_vbo);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(vdata.size() * sizeof(float)), vdata.data(), GL_STREAM_DRAW);
+    /* attrib 0: position (xyz) */
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const GLvoid*)0);
+    glEnableVertexAttribArray(0);
+    /* attrib 1: normal (xyz) — constant (0,0,1) baked into every vertex */
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const GLvoid*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    /* attrib 2: texcoord (uv) */
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const GLvoid*)(6 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glDrawArrays(GL_TRIANGLES, 0, numverts);
+    glBindVertexArray(0);
+    glDeleteBuffers(1, &txt_vbo);
+    glDeleteVertexArrays(1, &txt_vao);
+  }
 
   PRIVATE(this)->unlock();
 

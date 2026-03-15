@@ -92,8 +92,10 @@ SoGLCoordinateElement::push(SoState * state)
 void
 SoGLCoordinateElement::send(const int index) const
 {
-  if (this->areCoords3D) SoGLContext_glVertex3fv(this->glue, (const GLfloat*)(this->coords3D + index));
-  else SoGLContext_glVertex4fv(this->glue, (const GLfloat*)(this->coords4D + index));
+  /* GL3: coordinates are uploaded as VAO vertex attrib (location 0) via
+   * SoPrimitiveVertexCache, not via glVertex3fv. This path is unused
+   * in modern rendering. */
+  (void)index;
 }
 
 //! FIXME: write doc.

@@ -165,7 +165,7 @@
 "        vec3 L;\n" \
 "        float att = 1.0;\n" \
 "        if (uLights[i].position.w == 0.0) {\n" \
-"            L = normalize(-uLights[i].position.xyz);\n" \
+"            L = normalize(uLights[i].position.xyz);\n" \
 "        } else {\n" \
 "            vec3 d = uLights[i].position.xyz - pos;\n" \
 "            float dist = length(d);\n" \
@@ -194,7 +194,7 @@
 "    }\n" \
 "    return uMatEmission\n" \
 "           + ambient  * uMatAmbient\n" \
-"           + diffuse  * uMatDiffuse\n" \
+"           + diffuse  * (uHasColors ? vColor : uMatDiffuse)\n" \
 "           + specular * uMatSpecular;\n" \
 "}\n" \
 "\n" \

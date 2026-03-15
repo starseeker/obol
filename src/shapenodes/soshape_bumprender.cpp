@@ -447,9 +447,7 @@ soshape_bumprender::renderBumpSpecular(SoState * state,
   SoGLContext_glActiveTexture(glue, GL_TEXTURE0);
 
   if (bumpmapmatrix != oldtexture0matrix) {
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_TEXTURE);
     SoGLContext_glLoadMatrixf(sogl_glue_from_state(state), bumpmapmatrix[0]);
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
   }
   
   bumpimage->getGLDisplayList(state)->call(state);
@@ -490,16 +488,12 @@ soshape_bumprender::renderBumpSpecular(SoState * state,
 
   if (oldtexture2matrix != SbMatrix::identity()) {
     SoGLContext_glActiveTexture(glue, GL_TEXTURE2);
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_TEXTURE);
     SoGLContext_glLoadIdentity(sogl_glue_from_state(state)); // load identity texture matrix
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
   }
 
   SoGLContext_glActiveTexture(glue, GL_TEXTURE1);
   if (oldtexture1matrix != SbMatrix::identity()) {
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_TEXTURE);
     SoGLContext_glLoadIdentity(sogl_glue_from_state(state)); // load identity texture matrix
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
   }
   SoGLContext_glEnable(sogl_glue_from_state(state), GL_TEXTURE_CUBE_MAP);
 
@@ -550,25 +544,19 @@ soshape_bumprender::renderBumpSpecular(SoState * state,
 
   if (oldtexture2matrix != SbMatrix::identity()) {
     SoGLContext_glActiveTexture(glue, GL_TEXTURE2);
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_TEXTURE);
     SoGLContext_glLoadMatrixf(sogl_glue_from_state(state), oldtexture2matrix[0]);
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
   }
 
   SoGLContext_glActiveTexture(glue, GL_TEXTURE1);
   SoGLContext_glDisable(sogl_glue_from_state(state), GL_TEXTURE_CUBE_MAP);
   if (oldtexture1matrix != SbMatrix::identity()) {
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_TEXTURE);
     SoGLContext_glLoadMatrixf(sogl_glue_from_state(state), oldtexture1matrix[0]);
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
   }
 
   SoGLContext_glActiveTexture(glue, GL_TEXTURE0);
 
   if (bumpmapmatrix != oldtexture0matrix) {
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_TEXTURE);
     SoGLContext_glLoadMatrixf(sogl_glue_from_state(state), oldtexture0matrix[0]);
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
   }
 
   state->pop();
@@ -619,28 +607,17 @@ soshape_bumprender::renderBump(SoState * state,
   SoGLContext_glActiveTexture(glue, GL_TEXTURE0);
 
   if (bumpmapmatrix != oldtexture0matrix) {
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_TEXTURE);
     SoGLContext_glLoadMatrixf(sogl_glue_from_state(state), bumpmapmatrix[0]);
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
   }
 
   bumpimage->getGLDisplayList(state)->call(state);
-  SoGLContext_glTexEnvi(sogl_glue_from_state(state), GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-  SoGLContext_glTexEnvi(sogl_glue_from_state(state), GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
-  SoGLContext_glTexEnvi(sogl_glue_from_state(state), GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_REPLACE);
 
   SoGLContext_glActiveTexture(glue, GL_TEXTURE1);
 
   if (oldtexture1matrix != SbMatrix::identity()) {
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_TEXTURE);
     SoGLContext_glLoadIdentity(sogl_glue_from_state(state)); // load identity texture matrix
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
   }
   SoGLContext_glEnable(sogl_glue_from_state(state), GL_TEXTURE_CUBE_MAP);
-  SoGLContext_glTexEnvi(sogl_glue_from_state(state), GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-  SoGLContext_glTexEnvi(sogl_glue_from_state(state), GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
-  SoGLContext_glTexEnvi(sogl_glue_from_state(state), GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_DOT3_RGB);
-  SoGLContext_glTexEnvi(sogl_glue_from_state(state), GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PREVIOUS);
 
   const SbVec3f * cmptr = this->cubemaplist.getArrayPtr();
   const SbVec3f * tsptr = this->tangentlist.getArrayPtr();
@@ -711,17 +688,13 @@ soshape_bumprender::renderBump(SoState * state,
 
   if (oldtexture1matrix != SbMatrix::identity()) {
     SoGLContext_glActiveTexture(glue, GL_TEXTURE1);
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_TEXTURE);
     SoGLContext_glLoadMatrixf(sogl_glue_from_state(state), oldtexture1matrix[0]);
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
   }
 
   SoGLContext_glActiveTexture(glue, GL_TEXTURE0);
 
   if (bumpmapmatrix != oldtexture0matrix) {
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_TEXTURE);
     SoGLContext_glLoadMatrixf(sogl_glue_from_state(state), oldtexture0matrix[0]);
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
   }
   state->pop();
 }

@@ -110,7 +110,7 @@ SoGLLightIdElement::pop(SoState * state,
   int prevdata = static_cast<const SoGLLightIdElement*>(prevTopElement)->data;
   // disable used light sources
   while (idx <= prevdata) {
-    SoGLContext_glDisable(glue, (GLenum)((int32_t)GL_LIGHT0 + idx));
+    SoGLContext_glDisable(glue, (GLenum)(0x4000 /*GL_LIGHT0*/ + idx));
     idx++;
   }
 }
@@ -154,7 +154,7 @@ SoGLLightIdElement::increment(SoState * const state,
 #endif
       return -1;
     }
-    SoGLContext_glEnable(glue, (GLenum)((int32_t)GL_LIGHT0 + element->data));
+    SoGLContext_glEnable(glue, (GLenum)(0x4000 /*GL_LIGHT0*/ + element->data));
 
     return element->data;
   }

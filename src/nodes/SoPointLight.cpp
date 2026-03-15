@@ -133,35 +133,16 @@ SoPointLight::GLRender(SoGLRenderAction * action)
 
   SoLightElement::add(state, this, SoModelMatrixElement::get(state) *
                       SoViewingMatrixElement::get(state));
-  
-  GLenum light = (GLenum) (idx + GL_LIGHT0);
+
+  // GL3: glLightfv/glLightf (fixed-function lighting) removed.
+  // Register this point light with SoGLModernState only.
 
   SbVec3f attenuation = SoEnvironmentElement::getLightAttenuation(state);
-  SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_QUADRATIC_ATTENUATION, attenuation[0]);
-  SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_LINEAR_ATTENUATION, attenuation[1]);
-  SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_CONSTANT_ATTENUATION, attenuation[2]);
-
-  SbColor4f lightcolor(0.0f, 0.0f, 0.0f, 1.0f);
-  // disable ambient contribution from this light source
-  SoGLContext_glLightfv(sogl_glue_from_state(state), light, GL_AMBIENT, lightcolor.getValue());
-
-  lightcolor.setRGB(this->color.getValue());
-  lightcolor *= this->intensity.getValue();
-
-  SoGLContext_glLightfv(sogl_glue_from_state(state), light, GL_DIFFUSE, lightcolor.getValue());
-  SoGLContext_glLightfv(sogl_glue_from_state(state), light, GL_SPECULAR, lightcolor.getValue());
+  SbColor col = this->color.getValue() * this->intensity.getValue();
 
   SbVec3f loc = this->location.getValue();
-
-  // point (or spot) light when w = 1.0
   SbVec4f posvec(loc[0], loc[1], loc[2], 1.0f);
-  SoGLContext_glLightfv(sogl_glue_from_state(state), light, GL_POSITION, posvec.getValue());
 
-  // turning off spot light properties for ordinary lights
-  SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_SPOT_EXPONENT, 0.0);
-  SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_SPOT_CUTOFF, 180.0);
-
-  /* Phase 1 modernization: register this point light with SoGLModernState. */
   {
     const SoGLContext * glue = sogl_glue_from_state(state);
     uint32_t ctxid = SoGLContext_get_contextid(glue);
@@ -173,7 +154,6 @@ SoPointLight::GLRender(SoGLRenderAction * action)
       ml.position[0] = posvec[0]; ml.position[1] = posvec[1];
       ml.position[2] = posvec[2]; ml.position[3] = 1.0f; /* positional */
       ml.ambient[0] = ml.ambient[1] = ml.ambient[2] = 0.0f; ml.ambient[3] = 1.0f;
-      SbColor col = this->color.getValue() * this->intensity.getValue();
       ml.diffuse[0]  = ml.specular[0] = col[0];
       ml.diffuse[1]  = ml.specular[1] = col[1];
       ml.diffuse[2]  = ml.specular[2] = col[2];
