@@ -520,46 +520,59 @@ The blockers fall into three natural phases, ordered by dependency and risk.
     / `#else` / `#endif` conditional blocks have been eliminated from 32
     source files using `unifdef -DOBOL_THREADSAFE`.  The threadsafe code paths
     (mutex locks, atomic operations, guarded includes) are now unconditional.
-    `SoDB::isMultiThread()` now returns `TRUE` unconditionally.
+    `SoDB::isMultiThread()` now returns `TRUE` unconditionally.  The
+    `OBOL_THREADSAFE` CMake option is kept only for backward compatibility;
+    it has no effect.  `config.h` always defines `OBOL_THREADSAFE 1`.
 
-### Phase 4 — Validation (ongoing)
+### Phase 4 — Validation ✅ **(Complete)**
 
-- Run the existing test suite under ThreadSanitizer (TSan): `cmake … -DCMAKE_CXX_FLAGS="-fsanitize=thread"`.
-- The test suite in `tests/threads/` now covers all three phases (16 tests):
+- **ThreadSanitizer (TSan) support** — A new `OBOL_TSAN` CMake option adds
+  `-fsanitize=thread -fno-omit-frame-pointer` and links with `-fsanitize=thread`
+  across the entire build.  Usage:
+  ```bash
+  cmake -DOBOL_TSAN=ON -DOBOL_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+  cmake --build build && ctest --output-on-failure
+  ```
+  `OBOL_TSAN` is mutually exclusive with `OBOL_COVERAGE`.
+
+- **Test suite** — The test suite in `tests/threads/` covers all three phases
+  (16 tests):
   - Phase 1 (tests 1–11): concurrent `SbName`, `SoNode` ID, `SoBase` refcount,
     `SoType` lookup, notification counter, mixed workload.
   - Phase 2 (tests 12–14): concurrent `setName`/`getName`, GL cache context
     IDs, enabled-elements counter.
   - Phase 3 (tests 15–16): concurrent auditor-list notification via field
     connect/disconnect; concurrent field connect/disconnect + notification.
-- Document the resulting thread-safety guarantees in the public API
-  documentation.
+
+- **Public API documentation** — The `SoDB` class documentation now contains
+  a *Thread Safety* section stating the supported scenarios (*Concurrent render*,
+  *Init-then-read*, *Mixed read/write*) and the single caveat (no sharing of
+  `SoAction`/`SoState` between threads).  Doxygen comments for
+  `SoDB::isMultiThread()`, `readlock()`, `readunlock()`, `writelock()`, and
+  `writeunlock()` have been rewritten to remove stale Coin references and
+  accurately describe current behaviour.
 
 ---
 
 ## Conclusion
 
-As of Phase 3, **all known blocking data races have been fixed**.  The
-remaining caveat is:
+As of Phase 4, **all known blocking data races have been fixed and the thread-safety
+work is complete**.  The remaining caveats are:
 
 - `SoState` must not be shared between threads (each `SoAction` owns its own
-  `SoState`; this is documented behaviour).
+  `SoState`; this is documented behaviour and stated in the `SoDB` class doxygen).
 - GL contexts must not migrate between threads without explicit platform API
-  calls (`glXMakeCurrent` etc.); the new `SoGLCacheContextElement` thread
+  calls (`glXMakeCurrent` etc.); the `SoGLCacheContextElement` thread
   affinity check will emit a `SoDebugError` warning if this is detected.
 
 The infrastructure for thread safety (mutex wrappers, thread-local storage,
-recursive mutexes for notification, atomic counters) is now uniformly active
+recursive mutexes for notification, atomic counters) is uniformly active
 across the library.  All `#ifdef OBOL_THREADSAFE` conditional guards have been
-removed; locking is unconditional.
+removed; locking is unconditional.  The `SoDB` public API documentation
+states the supported concurrency scenarios and the locking protocol.
 
-**Recommended next steps:**
+**Ongoing maintenance:**
 
-1. Run the full test suite under ThreadSanitizer to catch any remaining races
-   not covered by the existing 16 thread-safety stress tests.
+1. Run the thread-safety tests under `OBOL_TSAN=ON` in CI to catch regressions.
 2. Profile contention on the field recursive mutex in rendering-heavy workloads
    and consider lock-free alternatives if needed.
-3. Update the public API documentation to state the current thread-safety
-   guarantees: *Concurrent render* (each thread with its own GL context and
-   scene graph) is safe; *Mixed read/write* requires `SoDB::readlock()` /
-   `SoDB::writelock()` around mutations.
