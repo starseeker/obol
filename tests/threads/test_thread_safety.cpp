@@ -77,6 +77,7 @@
 #include <set>
 #include <mutex>
 #include <cassert>
+#include <cstdlib>
 #include <cstring>
 #include <sstream>
 #include <string>
@@ -86,8 +87,19 @@
 // ---------------------------------------------------------------------------
 // Test parameters — tune these for faster CI vs. more thorough local runs.
 // ---------------------------------------------------------------------------
-static const int kNumThreads      = 8;   // concurrent threads per test
-static const int kItersPerThread  = 2000; // iterations each thread executes
+// Test parameters — configurable via environment variables for CI vs. local:
+//   OBOL_TEST_THREADS  — number of concurrent threads per test (default: 8)
+//   OBOL_TEST_ITERS    — iterations each thread executes per test (default: 2000)
+// ---------------------------------------------------------------------------
+static int kNumThreads     = 8;
+static int kItersPerThread = 2000;
+
+static void init_test_params() {
+  if (const char * v = std::getenv("OBOL_TEST_THREADS"))
+    kNumThreads = std::max(2, std::atoi(v));
+  if (const char * v = std::getenv("OBOL_TEST_ITERS"))
+    kItersPerThread = std::max(1, std::atoi(v));
+}
 
 // ---------------------------------------------------------------------------
 // Null context manager (no GL needed for these tests)
@@ -621,6 +633,7 @@ int main(int /*argc*/, char ** /*argv*/) {
   static NullCtxMgr ctxMgr;
   SoDB::init(&ctxMgr);
   SoInteraction::init();
+  init_test_params();
 
   // Pre-warm every node type that appears in the concurrent tests.
   // SoFieldData::addEnumValue and other per-class lazy initialisation
