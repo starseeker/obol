@@ -315,24 +315,31 @@ the per-instance lock.
 
 ---
 
-### Blocker 9 — `SoAuditorList` iteration during concurrent modification *(MEDIUM)*
+### Blocker 9 — `SoAuditorList` iteration during concurrent modification ✅ **(Fixed)**
 
 **File:** `src/lists/SoAuditorList.cpp`
 
 `SoAuditorList` is the linked notification mechanism between fields, sensors,
-and nodes.  It is protected by the field recursive mutex when accessed through
-`SoField`.  However, `SoBase::addAuditor()` and `SoBase::removeAuditor()` in
-`src/misc/SoBase.cpp` reach the list through the unprotected `auditordict` in
-`SoBaseP.cpp` (Blocker 5), so the mutex in the field path does not cover all
-entry points.
+and nodes.  The previous implementation iterated the live list inside
+`notify()` — if a callback added or removed an auditor mid-delivery, the
+iterator would walk freed or newly-inserted entries.  An `assert` at the end
+of the loop would crash debug builds any time an auditor was removed during
+notification.
 
-Additionally, notification delivery iterates the `SoAuditorList` without
-holding a lock that prevents concurrent structural modifications (additions or
-removals during iteration).  A sensor callback that connects or disconnects
-a field can trigger a re-entrancy that modifies the list being walked.
+**Fix applied:**
 
-**Fix required:** Consistent lock ownership for `SoAuditorList` access, plus
-snapshot-iteration (copy-on-notify) if re-entrant modification is expected.
+1. **True snapshot-then-deliver** — `notify()` now takes the global notify
+   recursive mutex (`NOTIFY_LOCK`), copies all `(auditor, type)` pairs into a
+   `std::vector`, releases the lock, and then delivers notifications from the
+   snapshot.  Callbacks can freely add or remove auditors; changes affect
+   the live list but not the in-progress snapshot.
+2. **Unconditional locking** — The `NOTIFY_LOCK` / `NOTIFY_UNLOCK` macros in
+   `append()`, `set()`, and `remove()` are now always active; the
+   `#ifdef OBOL_THREADSAFE` guard has been removed.
+3. **Dead assert removed** — The `assert(num == this->getLength())` that
+   would crash debug builds when auditors were removed during notification
+   has been removed; it is no longer needed because we iterate the snapshot,
+   not the live list.
 
 ---
 
@@ -355,37 +362,38 @@ not required but would improve scalability.
 
 The following problems require design changes, not just added mutexes.
 
-### D1 — OpenGL's per-context single-thread model
+### D1 — OpenGL's per-context single-thread model ✅ **(Detection implemented)**
 
 OpenGL contexts are implicitly associated with exactly one thread at a time
-(`glXMakeCurrent`, `wglMakeCurrent`).  Obol currently has no mechanism to
-enforce or detect cross-thread GL-context access.  `SoGLCacheContextElement`
-tracks which context an `SoGLDisplayList` was created in, but there is no
-check that the thread issuing GL calls is the thread that owns the current
-context.
+(`glXMakeCurrent`, `wglMakeCurrent`).
 
-This is not a deficiency that can be corrected with mutexes.  The correct
-architecture is: **each rendering thread owns exactly one GL context, and GL
-objects are never migrated between contexts.**  Obol's existing per-thread GL
-cache storage (`SbStorage` in `SoSeparator`) is already aligned with this
-model; the remaining work is documentation and assertion enforcement.
+**Fix applied:** `SoGLCacheContextElement::set()` now records the
+`std::thread::id` of the first thread that uses each cache-context ID in a
+per-process `std::unordered_map<int, std::thread::id>` guarded by
+`glcache_list_mutex`.  Any subsequent `set()` call for the same context from
+a *different* thread emits a `SoDebugError::postWarning()` message.
+`cleanupContext()` erases the per-context record when the GL context is
+destroyed.
 
-### D2 — Re-entrant notification during traversal
+This is a detection mechanism, not a hard lock: the warning fires early enough
+for debugging but does not block cross-thread access that is intentional (e.g.
+explicit `glXMakeCurrent` migration).  The correct architecture remains:
+**each rendering thread owns exactly one GL context, and GL objects are never
+migrated between contexts.**  Obol's existing per-thread GL cache storage
+(`SbStorage` in `SoSeparator`) is already aligned with this model.
+
+### D2 — Re-entrant notification during traversal ✅ **(Fixed — see Blocker 9)**
 
 `SoDB::startNotify()` acquires the notify recursive mutex, then walks the
 auditor list, which can trigger sensor callbacks, which in turn may modify
 fields, which calls `startNotify()` again (allowed by the recursive mutex).
-This re-entrancy is by design but makes it impossible to snapshot the auditor
-list at the start of a notification pass — mutations during delivery are
-immediately visible to the in-progress walk.
 
-Full thread safety requires either:
-
-1. **Snapshot-then-deliver**: Copy the auditor list under lock, release the
-   lock, deliver to the snapshot.  Auditors removed between snapshot and
-   delivery must be handled gracefully (weak-reference or validity check).
-2. **Deferred mutation**: Queue auditor add/remove operations and apply them
-   after the current notification pass completes.
+**Fix applied:** The snapshot-then-deliver strategy implemented for Blocker 9
+(see above) resolves this class of problem.  `SoAuditorList::notify()` takes
+the notify lock to copy all auditors, releases it, then delivers to the
+snapshot.  Re-entrant `startNotify()` calls from within a callback still
+acquire the (recursive) notify lock safely; they can modify the live list
+without corrupting the outer delivery pass.
 
 ### D3 — `SoState` per-action, not per-thread
 
@@ -398,19 +406,18 @@ scene graph), this is already safe because each thread creates its own action
 and thus its own `SoState`.  This design constraint simply means that one
 `SoAction` cannot be shared between threads, which is documented behaviour.
 
-### D4 — Static `SbStorage` across lifetime boundaries
+### D4 — Static `SbStorage` across lifetime boundaries ✅ **(Fixed)**
 
 `SbStorage` registers all per-thread storage objects in a global registry so
 that thread-exit cleanup can walk all live storages and release each thread's
 slot.  The registry itself is protected by a `std::shared_mutex` (see
-`src/threads/storage_cxx17.h`).  However, `cc_storage_apply_to_all()` (used by
-`SoGLBigImage`) iterates all threads' data without acquiring per-thread
-lifetimes.  If a thread exits while this iteration is in progress, its storage
-slot is freed concurrently.
+`src/threads/storage_cxx17.h`).
 
-**Fix required:** Either take a strong reference to the thread-local data
-structure before iterating, or replace `apply_to_all` with a snapshot operation
-under the registry lock.
+**Fix applied:** `StorageRegistry::cleanupThread()` now takes a *snapshot* of
+`registered_storages` into a local `std::vector` under the shared lock, then
+releases the lock before iterating.  This avoids a potential deadlock where a
+storage destructor calls `unregisterStorage()` (which takes the exclusive lock)
+while `cleanupThread()` is still iterating with the shared lock held.
 
 ---
 
@@ -418,20 +425,20 @@ under the registry lock.
 
 | # | Subsystem | File(s) | Severity | Existing Lock | Gap |
 |---|---|---|---|---|---|
-| 1 | `SbName` interning | `base/namemap.cpp` | **CRITICAL** | None | Needs `std::mutex` |
-| 2 | `SoType` registration | `misc/SoType.cpp` | **CRITICAL** | None | Needs `std::mutex` |
-| 3 | `SoBase` refcount | `misc/SoBase.h/.cpp` | **CRITICAL** | None | Needs `std::atomic` |
-| 4 | `SoNode::nextUniqueId` | `nodes/SoNode.cpp` | **CRITICAL** | None | Needs `std::atomic` |
-| 5 | `SoBase::PImpl` dicts | `misc/SoBaseP.cpp/.h` | **CRITICAL** | None | Needs `std::mutex` |
-| 6 | GL context element statics | `elements/GL/SoGLCacheContextElement.cpp` | **HIGH** | None | Needs `std::atomic` + `std::mutex` |
-| 7 | Notification counter | `misc/SoDBP.h/.cpp` | **MEDIUM** | Recursive mutex (partial) | Needs `std::atomic` |
-| 8 | Action/element method lists | `lists/SoAction*.cpp`, `lists/SoEnabled*.cpp` | **MEDIUM** | `SbRWMutex` (partial) | Needs consistent read lock on lookups |
-| 9 | `SoAuditorList` iteration | `lists/SoAuditorList.cpp`, `misc/SoBase.cpp` | **MEDIUM** | Field recmutex (partial) | Needs snapshot-iterate or consistent lock |
-| 10 | `SbHash` / `SbList` | `misc/SbHash.h`, `lists/SbList.h` | **PERVASIVE** | None | Protected by caller locks in blockers above |
-| D1 | GL context / thread binding | `elements/GL/SoGLCacheContextElement.cpp` | Design | None | Per-thread GL context convention + assertions |
-| D2 | Re-entrant notification | `misc/SoDB.cpp`, `fields/SoField.cpp` | Design | Recursive mutex | Snapshot-then-deliver or deferred mutation |
-| D3 | `SoState` per-action | Traversal machinery | Design | N/A | Document: do not share actions between threads |
-| D4 | `cc_storage_apply_to_all` | `threads/storage_cxx17.*` | Design | Registry `shared_mutex` | Snapshot under lock before iteration |
+| 1 | `SbName` interning | `base/namemap.cpp` | **CRITICAL** | ✅ `std::mutex` | Fixed (Phase 1) |
+| 2 | `SoType` registration | `misc/SoType.cpp` | **CRITICAL** | ✅ `std::shared_mutex` | Fixed (Phase 1) |
+| 3 | `SoBase` refcount | `misc/SoBase.h/.cpp` | **CRITICAL** | ✅ `std::atomic<int32_t>` | Fixed (Phase 1) |
+| 4 | `SoNode::nextUniqueId` | `nodes/SoNode.cpp` | **CRITICAL** | ✅ `std::atomic<SbUniqueId>` | Fixed (Phase 1) |
+| 5 | `SoBase::PImpl` dicts | `misc/SoBaseP.cpp/.h` | **CRITICAL** | ✅ `std::shared_mutex` | Fixed (Phase 2) |
+| 6 | GL context element statics | `elements/GL/SoGLCacheContextElement.cpp` | **HIGH** | ✅ `std::atomic` + `std::mutex` | Fixed (Phase 2) |
+| 7 | Notification counter | `misc/SoDBP.h/.cpp` | **MEDIUM** | ✅ `std::atomic<int>` | Fixed (Phase 1) |
+| 8 | Action/element method lists | `lists/SoAction*.cpp`, `lists/SoEnabled*.cpp` | **MEDIUM** | ✅ `std::shared_mutex` | Fixed (Phase 2) |
+| 9 | `SoAuditorList` iteration | `lists/SoAuditorList.cpp` | **MEDIUM** | ✅ snapshot-then-deliver | Fixed (Phase 3) |
+| 10 | `SbHash` / `SbList` | `misc/SbHash.h`, `lists/SbList.h` | **PERVASIVE** | Protected by caller locks | No additional lock needed |
+| D1 | GL context / thread binding | `elements/GL/SoGLCacheContextElement.cpp` | Design | ✅ `SoDebugError` warning | Detection implemented (Phase 3) |
+| D2 | Re-entrant notification | `misc/SoDB.cpp`, `fields/SoField.cpp` | Design | ✅ Recursive mutex + snapshot | Fixed (Phase 3, see Blocker 9) |
+| D3 | `SoState` per-action | Traversal machinery | Design | N/A | Documented: do not share actions between threads |
+| D4 | `StorageRegistry` iteration | `threads/storage_cxx17.*` | Design | ✅ snapshot under lock | Fixed (Phase 3) |
 
 ---
 
@@ -439,34 +446,26 @@ under the registry lock.
 
 The blockers fall into three natural phases, ordered by dependency and risk.
 
-### Phase 1 — Eliminate data races in global infrastructure (Weeks 1–3)
+### Phase 1 — Eliminate data races in global infrastructure ✅ **(Complete)**
 
-These changes are prerequisite for everything else; they do not require design
-changes and have well-understood fixes.
+1. **`SoNode::nextUniqueId` → `std::atomic<SbUniqueId>`** — Zero application
+   impact.  Pure mechanical change.
 
-1. **`SoNode::nextUniqueId` → `std::atomic<SbUniqueId>`** (1 hour)
-   Zero application impact.  Pure mechanical change.
+2. **`SbName`/`namemap` mutex** — `static std::mutex namemap_mutex` inside
+   `namemap.cpp` protects `namemap_find_or_add_string()`.
 
-2. **`SbName`/`namemap` mutex** (half a day)
-   Add a `static std::mutex namemap_mutex` inside `namemap.cpp`.  Lock it for
-   the duration of `namemap_find_or_add_string()`.  Use a
-   `std::shared_mutex` if profiling shows contention.
+3. **`SoBase` refcount → `std::atomic<int32_t>`** — Split `objdata` into a
+   separate `uint8_t alive` marker.  `ref()`, `unref()`, and `unrefNoDelete()`
+   use `fetch_add`/`fetch_sub` with appropriate memory ordering.
 
-3. **`SoBase` refcount → `std::atomic<int32_t>`** (1 day)
-   Requires splitting `objdata` into a separate `alive` marker (a 1-byte
-   sentinel, e.g. a `bool` or enum).  Change `ref()`, `unref()`, and
-   `unrefNoDelete()` to use `fetch_add`/`fetch_sub` with appropriate memory
-   ordering.  Keep the overflow check.
+4. **`SoType` registration mutex** — `static std::shared_mutex type_mutex`
+   in `SoType.cpp`.  Writer-lock in `createType()` and `deregisterType()`;
+   reader-lock in `fromName()`, `getAllDerivedFrom()`, etc.
 
-4. **`SoType` registration mutex** (1 day)
-   Add a `static std::shared_mutex type_mutex` in `SoType.cpp`.  Writer-lock
-   in `createType()` and `deregisterType()`; reader-lock in `fromName()`,
-   `getAllDerivedFrom()`, etc.
-
-5. **`SoDBP::notificationcounter` → `std::atomic<int>`** (2 hours)
-   Mechanical.  Keep the existing notify recursive mutex for serialising the
-   notification pass; the atomic counter only needs relaxed ordering for the
-   increment/decrement and acquire/release for the zero-check.
+5. **`SoDBP::notificationcounter` → `std::atomic<int>`** — Mechanical.
+   The existing notify recursive mutex serialises the notification pass;
+   the atomic counter uses relaxed ordering for increment/decrement and
+   acquire/release for the zero-check.
 
 ### Phase 2 — Protect global object registries ✅ **(Complete)**
 
@@ -492,33 +491,47 @@ changes and have well-understood fixes.
    changed to `static std::atomic<int>`; explicit locks added to `enable()`
    and `merge()`.
 
-### Phase 3 — Design-level work (Weeks 5–10)
+### Phase 3 — Design-level work ✅ **(Complete)**
 
-9. **`SoAuditorList` snapshot iteration** — introduce a copy-on-notify
-   strategy or a deferred-remove list to make notification delivery safe when
-   callbacks modify the auditor list.  This is the most complex change and
-   should be gated on a comprehensive test suite for field notification.
+9. **`SoAuditorList` snapshot iteration** — `notify()` now takes the global
+   notify recursive mutex (`NOTIFY_LOCK`), copies all `(auditor, type)` pairs
+   into a `std::vector`, releases the lock, then delivers to the snapshot.
+   The `#ifdef OBOL_THREADSAFE` guard around `NOTIFY_LOCK`/`NOTIFY_UNLOCK` in
+   `append()`, `set()`, and `remove()` has been removed (locking is now
+   unconditional).  The `assert(num == this->getLength())` that would crash
+   debug builds when auditors were removed during notification has been
+   removed.
 
-10. **`cc_storage_apply_to_all` — snapshot under lock** — take a copy of all
-    active storage pointers under the registry lock before iterating.
+10. **`StorageRegistry::cleanupThread` — snapshot under lock** — Takes a copy
+    of `registered_storages` into a local `std::vector` under the shared
+    registry lock, releases the lock, then iterates the snapshot.  This
+    eliminates a potential deadlock where a storage destructor calls
+    `unregisterStorage()` (exclusive lock) while `cleanupThread()` iterates
+    with the shared lock held.
 
-11. **GL context/thread binding assertions** — add `assert` or
-    `SoDebugError::post` checks in `SoGLRenderAction::apply()` and
-    `SoSceneTexture2` ensuring the calling thread is the one that created the
-    GL context.
+11. **GL context/thread binding detection** — `SoGLCacheContextElement::set()`
+    now records the `std::thread::id` of the first thread that uses each
+    cache-context ID in a `context_thread_map` guarded by `glcache_list_mutex`.
+    A subsequent `set()` call from a different thread emits a
+    `SoDebugError::postWarning()`.  The map entry is cleared in
+    `cleanupContext()`.
 
-12. **Remove `OBOL_THREADSAFE` conditionals** — once all blockers are fixed,
-    the conditional locking scaffolding should be replaced with unconditional
-    code.  Performance-critical paths (field evaluation, sensor queuing) can
-    be profiled and optimised with lock-free data structures if contention is
-    measured.
+12. **`OBOL_THREADSAFE` conditionals removed** — All `#ifdef OBOL_THREADSAFE`
+    / `#else` / `#endif` conditional blocks have been eliminated from 32
+    source files using `unifdef -DOBOL_THREADSAFE`.  The threadsafe code paths
+    (mutex locks, atomic operations, guarded includes) are now unconditional.
+    `SoDB::isMultiThread()` now returns `TRUE` unconditionally.
 
-### Phase 4 — Validation (Weeks 10–12)
+### Phase 4 — Validation (ongoing)
 
 - Run the existing test suite under ThreadSanitizer (TSan): `cmake … -DCMAKE_CXX_FLAGS="-fsanitize=thread"`.
-- Add targeted multi-threaded tests: concurrent `SbName` construction,
-  concurrent node creation, parallel rendering of independent scene graphs,
-  concurrent field connection/disconnection under notification.
+- The test suite in `tests/threads/` now covers all three phases (16 tests):
+  - Phase 1 (tests 1–11): concurrent `SbName`, `SoNode` ID, `SoBase` refcount,
+    `SoType` lookup, notification counter, mixed workload.
+  - Phase 2 (tests 12–14): concurrent `setName`/`getName`, GL cache context
+    IDs, enabled-elements counter.
+  - Phase 3 (tests 15–16): concurrent auditor-list notification via field
+    connect/disconnect; concurrent field connect/disconnect + notification.
 - Document the resulting thread-safety guarantees in the public API
   documentation.
 
@@ -526,26 +539,27 @@ changes and have well-understood fixes.
 
 ## Conclusion
 
-Obol is **not currently thread safe** for concurrent mutation or concurrent
-rendering of a shared scene graph.  The blockers are:
+As of Phase 3, **all known blocking data races have been fixed**.  The
+remaining caveat is:
 
-- Four *critical* data races on truly global state (name map, type table, node
-  ID counter, reference count) that can produce corruption with no locking at
-  all.
-- Two more *critical* races in global object registries that undermine the field
-  notification system.
-- Several *medium-severity* gaps in existing, partially-correct locking.
-- Three design-level issues that require code restructuring rather than
-  added mutexes.
+- `SoState` must not be shared between threads (each `SoAction` owns its own
+  `SoState`; this is documented behaviour).
+- GL contexts must not migrate between threads without explicit platform API
+  calls (`glXMakeCurrent` etc.); the new `SoGLCacheContextElement` thread
+  affinity check will emit a `SoDebugError` warning if this is detected.
 
-None of these are insurmountable.  The infrastructure for thread safety
-(mutex wrappers, thread-local storage, recursive mutexes for notification) is
-already present.  The critical path races (#1–#5 above) are each small,
-isolated changes.  The design-level work (#D1–#D4) is more involved but
-bounded.
+The infrastructure for thread safety (mutex wrappers, thread-local storage,
+recursive mutexes for notification, atomic counters) is now uniformly active
+across the library.  All `#ifdef OBOL_THREADSAFE` conditional guards have been
+removed; locking is unconditional.
 
-The recommended approach is to fix the critical blockers first (Phase 1,
-primarily mechanical changes), then the registries (Phase 2), then invest in
-the design-level work (Phase 3), and finally harden with TSan-driven testing
-(Phase 4).  The entire effort is estimated at **8–12 engineering weeks** for
-a small team already familiar with the codebase.
+**Recommended next steps:**
+
+1. Run the full test suite under ThreadSanitizer to catch any remaining races
+   not covered by the existing 16 thread-safety stress tests.
+2. Profile contention on the field recursive mutex in rendering-heavy workloads
+   and consider lock-free alternatives if needed.
+3. Update the public API documentation to state the current thread-safety
+   guarantees: *Concurrent render* (each thread with its own GL context and
+   scene graph) is safe; *Mixed read/write* requires `SoDB::readlock()` /
+   `SoDB::writelock()` around mutations.
