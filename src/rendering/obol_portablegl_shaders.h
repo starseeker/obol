@@ -200,8 +200,10 @@ static void pgl_phong_fs(float* fs_input,
             vec4 L;
             float att = 1.0f;
             if (li.position[3] == 0.0f) {
-                /* Directional: position stores -direction (toward light).
-                 * Use it directly as L (no additional negation). */
+                /* Directional: SoDirectionalLight::GLRender stores
+                 * ml.position = -light.direction (i.e. toward the light),
+                 * matching the OpenGL fixed-function GL_POSITION convention.
+                 * Use it directly as L – do NOT negate again. */
                 L.x = li.position[0]; L.y = li.position[1];
                 L.z = li.position[2]; L.w = 0.0f;
                 pgl_normalize_xyz(&L);
