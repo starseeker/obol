@@ -108,6 +108,7 @@ extern "C" {
     void pgl_igl_TexCoord3f(GLfloat,GLfloat,GLfloat);
     void pgl_igl_TexCoord3fv(const GLfloat*);
     void pgl_igl_TexCoord4fv(const GLfloat*);
+    void pgl_igl_BindTexture(GLenum,GLuint);
     void pgl_igl_PixelStorei(GLenum,GLint);
     void pgl_igl_ReadPixels(GLint,GLint,GLsizei,GLsizei,GLenum,GLenum,GLvoid*);
     void pgl_igl_GenFramebuffers(GLsizei,GLuint*);
@@ -182,6 +183,28 @@ static void pgl_noop_glFlush(void) {}
 static void pgl_noop_glFinish(void) {}
 static void pgl_noop_glIndexi(GLint) {}
 
+/* glGetString interceptor: PortableGL reports version "0.100.0" which is
+ * below the OpenGL 1.3 threshold required for Coin to enable multitexture
+ * (glActiveTexture, glMultiTexCoord*).  Override with a minimum set of
+ * strings that represent what the compat layer actually supports.
+ *
+ * GL_VERSION  "1.5"  – enables GL 1.1/1.2/1.3/1.4/1.5 function loading;
+ *                      keeps us below GL 2.0 to avoid GLSL auto-detection.
+ * GL_EXTENSIONS – advertise the extensions used by Coin's extension checks
+ *                 so single-texture, FBO, and ARB-program code paths work. */
+static const GLubyte* pgl_igl_GetString(GLenum name) {
+    static const GLubyte pgl_version[]    = "1.5 (PortableGL compat)";
+    static const GLubyte pgl_extensions[] =
+        "GL_ARB_multitexture "
+        "GL_ARB_texture_rectangle "
+        "GL_EXT_framebuffer_object ";
+    switch (name) {
+        case 0x1F02u: /* GL_VERSION    */ return pgl_version;
+        case 0x1F03u: /* GL_EXTENSIONS */ return pgl_extensions;
+        default: return glGetString(name);
+    }
+}
+
 /* glGetBooleanv interceptor: PortableGL doesn't implement GL_RGBA_MODE but
  * Obol queries it in SoGLLazyElement to decide between RGBA and color-index
  * rendering modes.  PortableGL is always in RGBA mode; return GL_TRUE for that
@@ -190,6 +213,52 @@ static void pgl_igl_GetBooleanv(GLenum pname, GLboolean* params) {
     if (!params) return;
     if (pname == GL_RGBA_MODE) { *params = GL_TRUE; return; }
     glGetBooleanv(pname, params);
+}
+
+/* glGetFloatv interceptor: PortableGL doesn't implement GL_POINT_SIZE_RANGE
+ * or GL_LINE_WIDTH_RANGE.  SoGLPointSizeElement and SoGLLineWidthElement query
+ * these to clamp the requested size into a legal range.  If unhandled, the
+ * glGetFloatv call returns GL_INVALID_ENUM and the output buffer is left
+ * uninitialised – if sizerange[1] ends up <= 0 the point/line size gets
+ * clamped to 0 and nothing is drawn.  Return the full PortableGL range.    */
+static void pgl_igl_GetFloatv(GLenum pname, GLfloat* params) {
+    if (!params) return;
+    if (pname == GL_POINT_SIZE_RANGE) {
+        params[0] = 1.0f;
+        params[1] = 255.0f;
+        return;
+    }
+    if (pname == GL_LINE_WIDTH_RANGE) {
+        params[0] = 1.0f;
+        params[1] = 255.0f;
+        return;
+    }
+    glGetFloatv(pname, params);
+}
+
+/* glGetIntegerv interceptor: PortableGL doesn't implement several OpenGL
+ * capability queries that Coin uses during context initialisation.
+ *
+ *  GL_MAX_TEXTURE_COORDS_ARB  (0x8871) - number of texture coord units
+ *  GL_MAX_TEXTURE_UNITS_ARB   (0x84E2) - number of multi-texture units
+ *  GL_MAX_LIGHTS              (0x0D31) - PortableGL uses compile-time limit
+ *
+ * Without returning sensible values here:
+ *   - maxtextureunits == 0, so SoSceneTexture2 never sets the texture state
+ *     (unit 0 is not < maxunits) and the scene renders without textures.
+ *   - Lights beyond GL_MAX_LIGHTS are silently capped by the compat layer.    */
+static void pgl_igl_GetIntegerv(GLenum pname, GLint* params) {
+    if (!params) return;
+    if (pname == 0x8871u /*GL_MAX_TEXTURE_COORDS_ARB*/ ||
+        pname == 0x84E2u /*GL_MAX_TEXTURE_UNITS_ARB*/) {
+        *params = 1;     /* PortableGL supports one texture unit */
+        return;
+    }
+    if (pname == 0x0D31u /*GL_MAX_LIGHTS*/) {
+        *params = OBOL_PGL_MAX_LIGHTS;
+        return;
+    }
+    glGetIntegerv(pname, params);
 }
 static void pgl_noop_glPixelTransferi(GLenum, GLint) {}
 static void pgl_noop_glPixelTransferf(GLenum, GLfloat) {}
@@ -205,6 +274,58 @@ static void pgl_noop_glPopClientAttrib(void) {}
 static void pgl_noop_glIndexPointer(GLenum, GLsizei, const GLvoid*) {}
 static void pgl_noop_glInterleavedArrays(GLenum, GLsizei, const GLvoid*) {}
 static void pgl_noop_glArrayElement(GLint) {}
+
+/* glTexEnv stubs: PortableGL has no fixed-function texture environment;
+ * our shaders hard-code GL_MODULATE behaviour.  Providing stubs prevents
+ * Coin from flagging the context as "severely broken" and skipping texture
+ * rendering when GL_LIGHTING / per-vertex colour is the active path.      */
+static void pgl_noop_glTexEnvi (GLenum, GLenum, GLint)         {}
+static void pgl_noop_glTexEnvf (GLenum, GLenum, GLfloat)       {}
+static void pgl_noop_glTexEnviv(GLenum, GLenum, const GLint*)  {}
+static void pgl_noop_glTexEnvfv(GLenum, GLenum, const GLfloat*){}
+
+/* Display-list stubs: PortableGL has no display-list hardware.
+ * We implement GL_COMPILE_AND_EXECUTE semantics by letting all GL calls
+ * between glNewList / glEndList execute immediately (they go straight to
+ * PortableGL as normal).  We allocate fake list IDs so that
+ * SoGLDisplayList does not error out; glCallList is a no-op because the
+ * geometry was already drawn during the initial recording pass.           */
+static GLuint s_dl_next_id = 1;  /* monotonically increasing fake handle */
+static GLuint pgl_igl_glGenLists(GLsizei range) {
+    if (range <= 0) return 0;
+    GLuint first = s_dl_next_id;
+    s_dl_next_id += (GLuint)range;
+    return first;
+}
+/* glNewList: recording starts – all subsequent GL calls go through
+ * normally (execute-mode), so the geometry IS drawn.                      */
+static void pgl_noop_glNewList   (GLuint, GLenum)     {}
+static void pgl_noop_glEndList   (void)               {}
+/* glCallList: the geometry was drawn during glNewList..glEndList already,
+ * so a second replay here would double-draw.  Keep as no-op.             */
+static void pgl_noop_glCallList  (GLuint)              {}
+static void pgl_noop_glCallLists (GLsizei, GLenum, const GLvoid*) {}
+static void pgl_noop_glDeleteLists(GLuint, GLsizei)   {}
+static void pgl_noop_glListBase  (GLuint)              {}
+static GLboolean pgl_noop_glIsList(GLuint) { return GL_FALSE; }
+
+/* Multitexture stubs (GL 1.3): PortableGL supports only one texture unit
+ * (GL_TEXTURE0).  glActiveTexture is already a no-op in PortableGL.
+ * Providing the remaining multitexture entry points (all no-ops except
+ * glMultiTexCoord* which forward to regular texture-coord updates) allows
+ * Coin's SoGLContext_has_multitexture() check to pass and enables the
+ * standard texture rendering path.                                       */
+static void pgl_noop_glClientActiveTexture(GLenum) {}
+/* glMultiTexCoord: forward unit-0 calls to the single PortableGL texture
+ * coordinate.  Calls for other texture units are no-ops.                 */
+static void pgl_igl_MultiTexCoord2f (GLenum unit, GLfloat s, GLfloat t)
+{ if (unit == 0x84C0u /*GL_TEXTURE0*/) pgl_igl_TexCoord2f(s, t); }
+static void pgl_igl_MultiTexCoord2fv(GLenum unit, const GLfloat* v)
+{ if (unit == 0x84C0u && v) pgl_igl_TexCoord2f(v[0], v[1]); }
+static void pgl_igl_MultiTexCoord3fv(GLenum unit, const GLfloat* v)
+{ if (unit == 0x84C0u && v) pgl_igl_TexCoord2f(v[0], v[1]); }
+static void pgl_igl_MultiTexCoord4fv(GLenum unit, const GLfloat* v)
+{ if (unit == 0x84C0u && v) pgl_igl_TexCoord2f(v[0], v[1]); }
 
 /* glClear interceptor: translate standard OpenGL buffer-bit values to the
  * PortableGL-internal enum values.  portablegl_compat_consts.h re-defines
@@ -282,11 +403,11 @@ static const PGLProcEntry s_pgl_proctable[] = {
 
     /* Queries */
     { "glGetError",                (void*)glGetError                },
-    { "glGetString",               (void*)glGetString               },
+    { "glGetString",               (void*)pgl_igl_GetString         },
     { "glGetStringi",              (void*)glGetStringi              },
     { "glGetBooleanv",             (void*)pgl_igl_GetBooleanv       },
-    { "glGetFloatv",               (void*)glGetFloatv               },
-    { "glGetIntegerv",             (void*)glGetIntegerv             },
+    { "glGetFloatv",               (void*)pgl_igl_GetFloatv         },
+    { "glGetIntegerv",             (void*)pgl_igl_GetIntegerv       },
     { "glIsEnabled",               (void*)glIsEnabled               },
 
     /* Buffers (VBOs) */
@@ -310,8 +431,19 @@ static const PGLProcEntry s_pgl_proctable[] = {
     /* Textures */
     { "glGenTextures",             (void*)glGenTextures             },
     { "glDeleteTextures",          (void*)glDeleteTextures          },
-    { "glBindTexture",             (void*)glBindTexture             },
+    { "glBindTexture",             (void*)pgl_igl_BindTexture       },
     { "glActiveTexture",           (void*)glActiveTexture           },
+    { "glActiveTextureARB",        (void*)glActiveTexture           },
+    { "glClientActiveTexture",     (void*)pgl_noop_glClientActiveTexture },
+    { "glClientActiveTextureARB",  (void*)pgl_noop_glClientActiveTexture },
+    { "glMultiTexCoord2f",         (void*)pgl_igl_MultiTexCoord2f   },
+    { "glMultiTexCoord2fv",        (void*)pgl_igl_MultiTexCoord2fv  },
+    { "glMultiTexCoord3fv",        (void*)pgl_igl_MultiTexCoord3fv  },
+    { "glMultiTexCoord4fv",        (void*)pgl_igl_MultiTexCoord4fv  },
+    { "glMultiTexCoord2fARB",      (void*)pgl_igl_MultiTexCoord2f   },
+    { "glMultiTexCoord2fvARB",     (void*)pgl_igl_MultiTexCoord2fv  },
+    { "glMultiTexCoord3fvARB",     (void*)pgl_igl_MultiTexCoord3fv  },
+    { "glMultiTexCoord4fvARB",     (void*)pgl_igl_MultiTexCoord4fv  },
     { "glTexParameteri",           (void*)glTexParameteri           },
     { "glTexParameterfv",          (void*)glTexParameterfv          },
     { "glTexParameteriv",          (void*)glTexParameteriv          },
@@ -368,6 +500,27 @@ static const PGLProcEntry s_pgl_proctable[] = {
     { "glIndexPointer",            (void*)pgl_noop_glIndexPointer   },
     { "glInterleavedArrays",       (void*)pgl_noop_glInterleavedArrays},
     { "glArrayElement",            (void*)pgl_noop_glArrayElement   },
+
+    /* Texture-environment stubs: PortableGL has no fixed-function TexEnv;
+     * stubs prevent Coin from flagging the context as "severely broken".  */
+    { "glTexEnvi",                 (void*)pgl_noop_glTexEnvi        },
+    { "glTexEnvf",                 (void*)pgl_noop_glTexEnvf        },
+    { "glTexEnviv",                (void*)pgl_noop_glTexEnviv       },
+    { "glTexEnvfv",                (void*)pgl_noop_glTexEnvfv       },
+
+    /* Display-list stubs: PortableGL has no display-list hardware.
+     * glGenLists returns a fake-but-valid handle so Coin can reserve
+     * a list slot.  glNewList/glEndList are no-ops so all calls in the
+     * recording block execute immediately.  glCallList is a no-op because
+     * the geometry was already rendered during the recording pass.         */
+    { "glGenLists",                (void*)pgl_igl_glGenLists        },
+    { "glNewList",                 (void*)pgl_noop_glNewList        },
+    { "glEndList",                 (void*)pgl_noop_glEndList        },
+    { "glCallList",                (void*)pgl_noop_glCallList       },
+    { "glCallLists",               (void*)pgl_noop_glCallLists      },
+    { "glDeleteLists",             (void*)pgl_noop_glDeleteLists    },
+    { "glListBase",                (void*)pgl_noop_glListBase       },
+    { "glIsList",                  (void*)pgl_noop_glIsList         },
 
     /* Immediate mode interceptors */
     { "glBegin",                   (void*)pgl_igl_Begin             },
@@ -531,6 +684,9 @@ struct PGLContextData {
         set_glContext(saved_prev);
         g_cur_compat = nullptr;
         saved_prev = nullptr;
+        /* Reset cached program/VAO/VBO IDs: the restored context has its own
+         * object-name namespace, so handles from the inner context are stale.*/
+        pgl_igl_reset_context_caches();
     }
 };
 

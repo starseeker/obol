@@ -120,6 +120,9 @@ struct CoinPortableGLContextData {
         g_cur_compat = saved_compat;
         saved_prev   = nullptr;
         saved_compat = nullptr;
+        /* Reset cached program/VAO/VBO IDs: the restored context has its own
+         * object-name namespace, so handles from the inner context are stale.*/
+        pgl_igl_reset_context_caches();
     }
 };
 

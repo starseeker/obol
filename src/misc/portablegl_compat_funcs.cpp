@@ -254,6 +254,11 @@ void pgl_igl_Enable(GLenum cap) {
         if (cap==GL_FOG) { g_cur_compat->fog_enabled=true; return; }
         /* GL_LIGHTING enable/disable maps to light_model PHONG/BASE_COLOR */
         if (cap==GL_LIGHTING) { g_cur_compat->light_model=1; return; }
+        /* GL_TEXTURE_2D: mark texture unit 0 as active for shader selection */
+        if (cap==0x0DE1u /*GL_TEXTURE_2D*/) {
+            g_cur_compat->texunit_model[0]=1; /* non-zero = texturing enabled */
+            return;
+        }
     }
     /* Only pass caps that PortableGL's glEnable() actually supports;
      * silently drop GL 1.x fixed-function caps (GL_LIGHTING, GL_COLOR_MATERIAL,
@@ -286,6 +291,11 @@ void pgl_igl_Disable(GLenum cap) {
         if (cap==GL_FOG) { g_cur_compat->fog_enabled=false; return; }
         /* GL_LIGHTING enable/disable maps to light_model PHONG/BASE_COLOR */
         if (cap==GL_LIGHTING) { g_cur_compat->light_model=0; return; }
+        /* GL_TEXTURE_2D: mark texture unit 0 as inactive */
+        if (cap==0x0DE1u /*GL_TEXTURE_2D*/) {
+            g_cur_compat->texunit_model[0]=0;
+            return;
+        }
     }
     switch (cap) {
     case GL_CULL_FACE:
@@ -371,7 +381,11 @@ static GLenum pgl_map_draw_mode(GLenum mode) {
     return mode;  /* GL_QUADS needs index remapping (done below), others pass through */
 }
 
+static bool imm_ensure_shader(); /* forward declaration – defined below */
+
 void pgl_igl_DrawArrays(GLenum mode, GLint first, GLsizei count) {
+    /* Ensure a shader is bound; auto-select based on compat state if needed. */
+    bool auto_bound = imm_ensure_shader();
     if (mode == GL_QUADS && count >= 4) {
         /* Each quad (v0,v1,v2,v3) → two triangles (v0,v1,v2) + (v0,v2,v3). */
         std::vector<GLuint> idx;
@@ -389,19 +403,24 @@ void pgl_igl_DrawArrays(GLenum mode, GLint first, GLsizei count) {
         glDrawElements(GL_TRIANGLES, (GLsizei)idx.size(), GL_UNSIGNED_INT, nullptr);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
         glDeleteBuffers(1, &ebo);
+        if (auto_bound) glUseProgram(0);
         return;
     }
     glDrawArrays(pgl_map_draw_mode(mode), first, count);
+    if (auto_bound) glUseProgram(0);
 }
 
 void pgl_igl_DrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid* indices) {
+    bool auto_bound = imm_ensure_shader();
     if (mode == GL_QUADS) {
         /* Convert quad indices: each group of 4 indices → 6 triangle indices. */
         /* For now, fall back to GL_TRIANGLES assuming the caller tessellated. */
         glDrawElements(GL_TRIANGLES, count, type, indices);
+        if (auto_bound) glUseProgram(0);
         return;
     }
     glDrawElements(pgl_map_draw_mode(mode), count, type, indices);
+    if (auto_bound) glUseProgram(0);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -507,6 +526,30 @@ static GLuint imm_choose_default_prog() {
     return imm_default_prog_for_kind(OBOL_PGL_SHADER_GOURAUD);
 }
 
+/* Ensure a PortableGL shader is bound for an imminent draw call.  If
+ * cur_program == 0 (no shader bound), select the best-matching shader based
+ * on the current compat state (texture presence and lighting).  Refresh
+ * uniforms regardless so matrix/material changes take effect.
+ *
+ * Returns TRUE when a shader was auto-bound (caller may wish to unbind after
+ * the draw call), FALSE when the caller's own shader is already active.      */
+static bool imm_ensure_shader() {
+    GLint cur_prog = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &cur_prog);
+    if (cur_prog == 0) {
+        GLuint dflt = imm_choose_default_prog();
+        if (dflt != 0) {
+            glUseProgram(dflt);
+            if (g_cur_compat) pglSetUniform(g_cur_compat);
+            return true;
+        }
+        return false;
+    }
+    /* Caller's own shader is active; just refresh the uniforms. */
+    if (g_cur_compat) pglSetUniform(g_cur_compat);
+    return false;
+}
+
 void pgl_igl_Begin(GLenum prim) {
     s_imm_prim=prim; s_in_begin=true; s_imm_verts.clear();
 }
@@ -519,20 +562,7 @@ void pgl_igl_End() {
     /* Ensure a PortableGL shader is bound.  Obol's built-in renderer uses the
      * GL 1.x fixed-function pipeline; we choose the best-matching C-function
      * shader based on current compat state and bind it for this draw call. */
-    GLint cur_prog = 0;
-    glGetIntegerv(GL_CURRENT_PROGRAM, &cur_prog);
-    bool auto_bound = false;
-    if (cur_prog == 0) {
-        GLuint dflt = imm_choose_default_prog();
-        if (dflt != 0) {
-            glUseProgram(dflt);
-            if (g_cur_compat) pglSetUniform(g_cur_compat);
-            auto_bound = true;
-        }
-    } else {
-        /* Refresh uniforms in case matrix/material state changed. */
-        if (g_cur_compat) pglSetUniform(g_cur_compat);
-    }
+    bool auto_bound = imm_ensure_shader();
 
     glBindVertexArray(s_imm_vao);
     /* ImmVertex VAO has PGL_ATTR_COLOR enabled with per-vertex data. */
@@ -619,6 +649,22 @@ void pgl_igl_TexCoord2fv(const GLfloat* v)              { if(v) pgl_igl_TexCoord
 void pgl_igl_TexCoord3f (GLfloat s_,GLfloat t_,GLfloat) { pgl_igl_TexCoord2f(s_,t_); }
 void pgl_igl_TexCoord3fv(const GLfloat* v)              { if(v) pgl_igl_TexCoord2f(v[0],v[1]); }
 void pgl_igl_TexCoord4fv(const GLfloat* v)              { if(v) pgl_igl_TexCoord2f(v[0],v[1]); }
+
+/* glBindTexture interceptor: intercept to track bound texture per unit in
+ * the compat state (tex_unit[0]).  This lets imm_choose_default_prog() know
+ * that a texture IS bound and select the textured-replace shader.  We still
+ * call through to PortableGL's glBindTexture so the actual binding happens.  */
+void pgl_igl_BindTexture(GLenum target, GLuint texture) {
+    if (g_cur_compat && target == 0x0DE1u /*GL_TEXTURE_2D*/) {
+        g_cur_compat->tex_unit[0] = texture;
+        /* Also update texunit_model[0]: non-zero texture means texturing ON */
+        if (texture != 0) {
+            if (g_cur_compat->texunit_model[0] == 0)
+                g_cur_compat->texunit_model[0] = 1; /* mark as active */
+        }
+    }
+    glBindTexture(target, texture);
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * glPixelStorei  –  track GL_PACK_ROW_LENGTH for ReadPixels
