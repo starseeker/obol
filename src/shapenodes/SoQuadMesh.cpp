@@ -962,12 +962,15 @@ SoQuadMesh::GLRender(SoGLRenderAction * action)
   // Renders each row pair as a GL_TRIANGLE_STRIP. Vertices are interleaved:
   // row i: (i,0),(i+1,0),(i,1),(i+1,1),...  which gives the same topology
   // as GL_QUAD_STRIP but using only GL 3 core primitives.
-  // Activated for OVERALL material, 3D coords, OVERALL or PER_VERTEX normals.
+  // Activated for OVERALL or PER_VERTEX material, 3D coords,
+  // OVERALL or PER_VERTEX normals, no texturing.
   // -------------------------------------------------------------------------
   {
     const uint32_t ctxid = action->getCacheContext();
     SoGLModernState * ms = SoGLModernState::forContext(ctxid);
-    if (ms && ms->isAvailable() && mbind == OVERALL && !doTextures
+    const bool perVertexColor = (mbind == PER_VERTEX);
+    if (ms && ms->isAvailable()
+        && (mbind == OVERALL || perVertexColor) && !doTextures
         && coords && coords->is3D()
         && !pl
         && (nbind == OVERALL || nbind == PER_VERTEX)) {
@@ -986,6 +989,19 @@ SoQuadMesh::GLRender(SoGLRenderAction * action)
       SbVec3f dummyNorm(0.0f, 0.0f, 1.0f);
       const SbVec3f * overallNorm = (needNormals && normals) ? normals : &dummyNorm;
 
+      // Per-vertex color buffer (R,G,B,A uint8) — filled only if perVertexColor
+      uint8_t * clrbuf = perVertexColor ? new uint8_t[totalVerts * 4] : nullptr;
+      uint8_t * cp = clrbuf;
+
+      // Packed RGBA colors from the lazy element (format 0xRRGGBBAA)
+      const uint32_t * packedColors = nullptr;
+      int numPackedColors = 0;
+      if (perVertexColor) {
+        SoLazyElement * lazy = SoLazyElement::getInstance(state);
+        packedColors  = SoLazyElement::getPackedColors(state);
+        numPackedColors = lazy->getNumDiffuse();
+      }
+
       for (int row = 0; row < numStrips; ++row) {
         for (int col = 0; col < rowsize; ++col) {
           // Two vertices per column position: row and row+1
@@ -1001,11 +1017,22 @@ SoQuadMesh::GLRender(SoGLRenderAction * action)
             vp[3] = (*nm)[0]; vp[4] = (*nm)[1]; vp[5] = (*nm)[2];
             vp[6] = 0.0f; vp[7] = 0.0f;
             vp += STRIDE;
+
+            if (perVertexColor && cp) {
+              int cidx = (vidx < numPackedColors) ? vidx : (numPackedColors - 1);
+              uint32_t packed = (packedColors && numPackedColors > 0)
+                                    ? packedColors[cidx] : 0xFFFFFFFFu;
+              cp[0] = static_cast<uint8_t>((packed >> 24) & 0xff); // R
+              cp[1] = static_cast<uint8_t>((packed >> 16) & 0xff); // G
+              cp[2] = static_cast<uint8_t>((packed >>  8) & 0xff); // B
+              cp[3] = static_cast<uint8_t>( packed        & 0xff); // A
+              cp += 4;
+            }
           }
         }
       }
 
-      GLuint vao = 0, vbo = 0;
+      GLuint vao = 0, vbo = 0, cvbo = 0;
       glGenVertexArrays(1, &vao);
       glBindVertexArray(vao);
       glGenBuffers(1, &vbo);
@@ -1025,7 +1052,20 @@ SoQuadMesh::GLRender(SoGLRenderAction * action)
                             (void*)(6 * sizeof(float)));
       glEnableVertexAttribArray(2);
 
-      ms->activatePhong(needNormals, false, false, false);
+      if (perVertexColor && clrbuf) {
+        glGenBuffers(1, &cvbo);
+        glBindBuffer(GL_ARRAY_BUFFER, cvbo);
+        glBufferData(GL_ARRAY_BUFFER,
+                     (GLsizeiptr)(totalVerts * 4 * (int)sizeof(uint8_t)),
+                     clrbuf, GL_STATIC_DRAW);
+        delete[] clrbuf; clrbuf = nullptr;
+        glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, (void*)0);
+        glEnableVertexAttribArray(3);
+      } else {
+        glDisableVertexAttribArray(3);
+      }
+
+      ms->activatePhong(needNormals, perVertexColor, false, false);
 
       for (int row = 0; row < numStrips; ++row) {
         glDrawArrays(GL_TRIANGLE_STRIP, row * vertsPerStrip, vertsPerStrip);
@@ -1035,6 +1075,8 @@ SoQuadMesh::GLRender(SoGLRenderAction * action)
       glBindVertexArray(0);
       glDeleteVertexArrays(1, &vao);
       glDeleteBuffers(1, &vbo);
+      if (cvbo) glDeleteBuffers(1, &cvbo);
+      delete[] clrbuf;
 
       if (nc) this->readUnlockNormalCache();
       if (didpush) state->pop();
