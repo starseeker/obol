@@ -295,7 +295,13 @@ SoGLSLShaderParameter::isValid(const SoGLShaderObject * shader,
     return FALSE;
   }
   GLint activeUniforms = 0;
+#ifndef OBOL_PORTABLEGL_BUILD
+  // GL_ACTIVE_UNIFORMS and glGetActiveUniform are GL 3.x core entry-points
+  // not implemented by PortableGL (which uses C function-pointer shaders).
+  // In PortableGL builds skip the introspection loop and treat the uniform
+  // as active with size/type unknown; user shaders are unsupported anyway.
   glGetProgramiv(pHandle, GL_OBJECT_ACTIVE_UNIFORMS_ARB, &activeUniforms);
+#endif
 
   GLint i;
   GLint tmpSize = 0;
@@ -308,6 +314,7 @@ SoGLSLShaderParameter::isValid(const SoGLShaderObject * shader,
 
   // this will only happen once after the variable has been added so
   // it's not a performance issue that we have to search for it here.
+#ifndef OBOL_PORTABLEGL_BUILD
   for (i = 0; i < activeUniforms; i++) {
     glGetActiveUniform(pHandle, i, 128, &length, &tmpSize,
                        &tmpType, myName);
@@ -318,6 +325,14 @@ SoGLSLShaderParameter::isValid(const SoGLShaderObject * shader,
       break;
     }
   }
+#else
+  // PortableGL: skip uniform introspection; mark as active and rely on the
+  // uniform location (already verified above) to be correct.
+  (void)i; (void)tmpSize; (void)tmpType; (void)length; (void)myName;
+  this->cacheSize = (num ? (*num > 0 ? *num : 1) : 1);
+  this->cacheType = GL_FLOAT; // best-guess fallback
+  this->isActive = TRUE;
+#endif
   if (!this->isActive) {
     // not critical, but warn user so they can remove the unused parameter
 #if OBOL_DEBUG

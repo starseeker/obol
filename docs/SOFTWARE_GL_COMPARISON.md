@@ -256,6 +256,10 @@ See `src/misc/SoDBPortableGL.cpp` and `tests/utils/portablegl_context_manager.h`
 
 ### Phase 3 — Dual Build (System GL + PortableGL)
 
+**Status: ✅ Complete** — CI now tests `portablegl-only` and `dual-portablegl` builds
+(replacing the former `swrast-only` / `dual` OSMesa builds).  All test and example
+infrastructure supports PortableGL headless builds.
+
 Extend the existing dual-GL architecture so that PortableGL contexts can coexist with
 system-GL contexts in the same process.
 
@@ -387,6 +391,11 @@ PortableGL builds.
 |------|--------|--------|
 | `CMakeLists.txt` | Add `OBOL_USE_PORTABLEGL` option; remove OSMesa dependency paths | ✅ exists |
 | `src/CMakeLists.txt` | Conditionally compile `SoDBPortableGL.cpp` | ✅ exists |
+| `.github/workflows/ci.yml` | Replace OSMesa (`swrast-only`, `dual`) builds with PortableGL (`portablegl-only`, `dual-portablegl`) in CI matrix | ✅ complete |
+| `tests/utils/headless_utils.h` | Add `OBOL_PORTABLEGL_BUILD` backend section (uses `SoDB::createPortableGLContextManager()`); analogous to the OSMesa section | ✅ complete |
+| `tests/rendering/CMakeLists.txt` | Add `RENDERING_USE_PORTABLEGL` detection; update render_basic_context, obol_render_tests_gl, shadow test, and nogl condition for PortableGL | ✅ complete |
+| `tests/CMakeLists.txt` | Add PortableGL-only path for `obol_render` (OBOL_PORTABLEGL_BUILD globally defined; no extra flags needed) | ✅ complete |
+| `examples/Mentor/CMakeLists.txt` | Add `EXAMPLES_USE_PORTABLEGL` detection and PortableGL branch in all three `add_headless_example` macro variants | ✅ complete |
 
 ---
 

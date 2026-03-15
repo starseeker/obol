@@ -2406,4 +2406,5 @@ Therefore we define the value for GL_NUM_EXTENSIONS here
 /*** WGL enums, end ***************************************************/
 /**********************************************************************/
 
+
 #endif /* ! OBOL_GL_H */

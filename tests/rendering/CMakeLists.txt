@@ -11,21 +11,29 @@
 # the test fails, indicating a rendering regression.
 #
 # Backend selection (inherits from parent project):
-#   OBOL_USE_SWRAST=ON (without OBOL_USE_SYSTEM_GL)  → define OBOL_SWRAST_BUILD, link OSMesa
+#   OBOL_USE_PORTABLEGL=ON (without OBOL_USE_SYSTEM_GL) → PortableGL headless backend
+#   OBOL_USE_SWRAST=ON (without OBOL_USE_SYSTEM_GL)     → OSMesa headless backend (legacy)
 #   default               → system OpenGL via GLX (needs X server / Xvfb)
 # =============================================================================
 
 # ---- Backend detection -------------------------------------------------------
-# Inherit from parent: swrast-only means using OSMesa context for rendering tests.
-# Dual-GL builds use system GL (GLX+Xvfb); swrast layer is in the library
-# but scene traversal uses system GL symbols.
-if(OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
+# PortableGL-only takes priority over OSMesa-only when both are configured.
+# Dual builds (system GL present) use GLX; the software backend is in the
+# library but scene traversal uses system GL symbols.
+if(OBOL_USE_PORTABLEGL AND NOT OBOL_USE_SYSTEM_GL)
+    set(RENDERING_USE_PORTABLEGL ON)
+    set(RENDERING_USE_SWRAST OFF)
+elseif(OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
+    set(RENDERING_USE_PORTABLEGL OFF)
     set(RENDERING_USE_SWRAST ON)
 else()
+    set(RENDERING_USE_PORTABLEGL OFF)
     set(RENDERING_USE_SWRAST OFF)
 endif()
 
-if(RENDERING_USE_SWRAST)
+if(RENDERING_USE_PORTABLEGL)
+    message(STATUS "Rendering tests: PortableGL headless backend")
+elseif(RENDERING_USE_SWRAST)
     set(OSMESA_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/external/osmesa/include")
     if(TARGET osmesa_interface)
         set(OSMESA_LINK_TARGET osmesa_interface)
@@ -472,11 +480,11 @@ set_tests_properties(stt_iosevka PROPERTIES
 # memory corruption when features like FBOs are unavailable.
 #
 # Two build paths:
-#   swrast mode (RENDERING_USE_SWRAST): uses initCoinHeadless() with the
-#       OSMesa context manager — same headless path as all other swrast tests.
+#   headless mode (RENDERING_USE_PORTABLEGL or RENDERING_USE_SWRAST): uses
+#       initCoinHeadless() with the appropriate context manager.
 #   System GL mode: uses BasicFLTKContextManager (FLTK 1×1 window); requires
 #       FLTK, X11, and system OpenGL.
-if(RENDERING_USE_SWRAST OR (FLTK_FOUND AND X11_FOUND AND (TARGET OpenGL::GL OR OPENGL_gl_LIBRARY)))
+if(RENDERING_USE_PORTABLEGL OR RENDERING_USE_SWRAST OR (FLTK_FOUND AND X11_FOUND AND (TARGET OpenGL::GL OR OPENGL_gl_LIBRARY)))
     add_executable(render_basic_context render_basic_context.cpp)
     target_include_directories(render_basic_context PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
@@ -493,7 +501,12 @@ if(RENDERING_USE_SWRAST OR (FLTK_FOUND AND X11_FOUND AND (TARGET OpenGL::GL OR O
             ${PROJECT_NAME}
             ${OBOL_TARGET_LINK_LIBRARIES}
     )
-    if(RENDERING_USE_SWRAST)
+    if(RENDERING_USE_PORTABLEGL)
+        # PortableGL mode: use initCoinHeadless() (PortableGL context manager).
+        # OBOL_PORTABLEGL_BUILD is already globally defined; no extra flags needed.
+        # OBOL_VIEWER_FLTK_GL must NOT be defined.
+        message(STATUS "render_basic_context: graceful-degradation test enabled (PortableGL/headless path)")
+    elseif(RENDERING_USE_SWRAST)
         # Swrast mode: use initCoinHeadless() (headless OSMesa context manager).
         # OBOL_VIEWER_FLTK_GL must NOT be defined — the #else branch in
         # render_basic_context.cpp uses headless_utils.h / initCoinHeadless().
@@ -705,7 +718,11 @@ target_include_directories(obol_render_tests_gl PRIVATE
 target_link_libraries(obol_render_tests_gl
     PUBLIC ${PROJECT_NAME} ${OBOL_TARGET_LINK_LIBRARIES}
 )
-if(RENDERING_USE_SWRAST)
+if(RENDERING_USE_PORTABLEGL)
+    # PortableGL mode: OBOL_PORTABLEGL_BUILD is already globally defined.
+    # No additional includes or link libraries needed for the test library.
+    # headless_utils.h uses SoDB::createPortableGLContextManager() which is in libObol.
+elseif(RENDERING_USE_SWRAST)
     target_compile_definitions(obol_render_tests_gl PRIVATE OBOL_SWRAST_BUILD)
     if(OSMESA_INCLUDE_DIR)
         target_include_directories(obol_render_tests_gl PRIVATE ${OSMESA_INCLUDE_DIR})
@@ -758,11 +775,11 @@ add_rendering_image_test(render_quad_viewport_lod  RMSE_THRESHOLD 20.0)
 add_rendering_image_test(render_viewport_scene     RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_scene_texture     RMSE_THRESHOLD 20.0)
 add_rendering_image_test(render_array_multiple_copy RMSE_THRESHOLD 15.0)
-# Shadow rendering: control image generated with OSMesa backend (SoShadowGroup
-# GLSL shader compilation crashes on headless GLX pixmap contexts due to
-# multiple GL contexts in the same process).  Only register the image
-# comparison test when building with OSMesa so GLX builds don't crash.
-if(RENDERING_USE_SWRAST)
+# Shadow rendering: control image generated with OSMesa/PortableGL backend
+# (SoShadowGroup GLSL shader compilation crashes on headless GLX pixmap contexts
+# due to multiple GL contexts in the same process).  Safe to run with any
+# headless backend (OSMesa or PortableGL) since neither uses GLX.
+if(RENDERING_USE_SWRAST OR RENDERING_USE_PORTABLEGL)
     add_rendering_image_test(render_shadow RMSE_THRESHOLD 25.0)
 endif()
 
@@ -878,9 +895,10 @@ set_tests_properties(render_nanort PROPERTIES
     TIMEOUT ${IMAGE_COMPARISON_TEST_TIMEOUT}
 )
 
-# Shadow rendering validation test: only safe to run with OSMesa (SoShadowGroup
-# GLSL shader compilation crashes on headless GLX pixmap contexts).
-if(RENDERING_USE_SWRAST)
+# Shadow rendering validation test: safe to run with any headless backend
+# (OSMesa or PortableGL); SoShadowGroup GLSL shader compilation crashes on
+# headless GLX pixmap contexts but not on software-rasterizer backends.
+if(RENDERING_USE_SWRAST OR RENDERING_USE_PORTABLEGL)
     add_test(
         NAME render_shadow
         COMMAND "${CMAKE_COMMAND}"
@@ -895,10 +913,10 @@ if(RENDERING_USE_SWRAST)
 endif()
 
 # ---- No-OpenGL scene graph test (no-GL build only) --------------------------
-# Verifies that the no-GL build (both OBOL_USE_SWRAST and OBOL_USE_SYSTEM_GL
-# are OFF) can initialise, traverse, and query a scene graph without any
-# OpenGL calls or display server.
-if(NOT OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
+# Verifies that the no-GL build (OBOL_USE_SWRAST, OBOL_USE_SYSTEM_GL, and
+# OBOL_USE_PORTABLEGL are all OFF) can initialise, traverse, and query a
+# scene graph without any OpenGL calls or display server.
+if(NOT OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL AND NOT OBOL_USE_PORTABLEGL)
     add_executable(nogl_scenegraph_test nogl_scenegraph_test.cpp)
     target_include_directories(nogl_scenegraph_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
