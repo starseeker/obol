@@ -183,6 +183,15 @@ static void pgl_noop_glFlush(void) {}
 static void pgl_noop_glFinish(void) {}
 static void pgl_noop_glIndexi(GLint) {}
 
+/* GL 1.5 VBO query functions not implemented in PortableGL.
+ * Provide stubs so glglue_init detects full VBO support and enables the
+ * VBO render path.  The functions are not called by the rendering hot path;
+ * they exist only for the completeness check in glglue_init.              */
+static GLboolean pgl_stub_glIsBuffer(GLuint id) { return id ? GL_TRUE : GL_FALSE; }
+static void      pgl_stub_glGetBufferSubData(GLenum, GLintptr, GLsizeiptr, void*) {}
+static void      pgl_stub_glGetBufferParameteriv(GLenum, GLenum p, GLint *v) { if (v) *v = 0; }
+static void      pgl_stub_glGetBufferPointerv(GLenum, GLenum, void **p) { if (p) *p = NULL; }
+
 /* glGetString interceptor: PortableGL reports version "0.100.0" which is
  * below the OpenGL 1.3 threshold required for Coin to enable multitexture
  * (glActiveTexture, glMultiTexCoord*).  Override with a minimum set of
@@ -418,6 +427,10 @@ static const PGLProcEntry s_pgl_proctable[] = {
     { "glBufferSubData",           (void*)glBufferSubData           },
     { "glMapBuffer",               (void*)glMapBuffer               },
     { "glUnmapBuffer",             (void*)glUnmapBuffer             },
+    { "glIsBuffer",                (void*)pgl_stub_glIsBuffer         },
+    { "glGetBufferSubData",        (void*)pgl_stub_glGetBufferSubData },
+    { "glGetBufferParameteriv",    (void*)pgl_stub_glGetBufferParameteriv },
+    { "glGetBufferPointerv",       (void*)pgl_stub_glGetBufferPointerv    },
 
     /* Vertex arrays (VAOs) */
     { "glGenVertexArrays",         (void*)glGenVertexArrays         },
@@ -639,15 +652,16 @@ void* obol_portablegl_getprocaddress(const char* name)
 static glContext* s_current_pgl_context = nullptr;
 
 struct PGLContextData {
-    glContext          pgl_ctx;
-    pix_t*             backbuf;
-    int                width;
-    int                height;
-    glContext*         saved_prev;
-    ObolPGLCompatState compat;
+    glContext           pgl_ctx;
+    pix_t*              backbuf;
+    int                 width;
+    int                 height;
+    glContext*          saved_prev;
+    ObolPGLCompatState* saved_compat;
+    ObolPGLCompatState  compat;
 
     PGLContextData(int w, int h)
-        : backbuf(nullptr), width(w), height(h), saved_prev(nullptr)
+        : backbuf(nullptr), width(w), height(h), saved_prev(nullptr), saved_compat(nullptr)
     { compat.init(); }
 
     ~PGLContextData() {
@@ -664,7 +678,8 @@ struct PGLContextData {
     }
 
     void makeCurrent() {
-        saved_prev       = s_current_pgl_context;
+        saved_prev        = s_current_pgl_context;
+        saved_compat      = g_cur_compat;
         s_current_pgl_context = &pgl_ctx;
         set_glContext(&pgl_ctx);
         g_cur_compat = &compat;
@@ -682,8 +697,9 @@ struct PGLContextData {
     void restorePrev() {
         s_current_pgl_context = saved_prev;
         set_glContext(saved_prev);
-        g_cur_compat = nullptr;
-        saved_prev = nullptr;
+        g_cur_compat  = saved_compat;
+        saved_prev    = nullptr;
+        saved_compat  = nullptr;
         /* Reset cached program/VAO/VBO IDs: the restored context has its own
          * object-name namespace, so handles from the inner context are stale.*/
         pgl_igl_reset_context_caches();

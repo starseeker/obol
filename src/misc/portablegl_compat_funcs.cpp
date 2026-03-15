@@ -255,7 +255,7 @@ void pgl_igl_Enable(GLenum cap) {
         /* GL_LIGHTING enable/disable maps to light_model PHONG/BASE_COLOR */
         if (cap==GL_LIGHTING) { g_cur_compat->light_model=1; return; }
         /* GL_TEXTURE_2D: mark texture unit 0 as active for shader selection */
-        if (cap==0x0DE1u /*GL_TEXTURE_2D*/) {
+        if (cap==(GLenum)GL_TEXTURE_2D) {
             g_cur_compat->texunit_model[0]=1; /* non-zero = texturing enabled */
             return;
         }
@@ -292,7 +292,7 @@ void pgl_igl_Disable(GLenum cap) {
         /* GL_LIGHTING enable/disable maps to light_model PHONG/BASE_COLOR */
         if (cap==GL_LIGHTING) { g_cur_compat->light_model=0; return; }
         /* GL_TEXTURE_2D: mark texture unit 0 as inactive */
-        if (cap==0x0DE1u /*GL_TEXTURE_2D*/) {
+        if (cap==(GLenum)GL_TEXTURE_2D) {
             g_cur_compat->texunit_model[0]=0;
             return;
         }
@@ -655,7 +655,7 @@ void pgl_igl_TexCoord4fv(const GLfloat* v)              { if(v) pgl_igl_TexCoord
  * that a texture IS bound and select the textured-replace shader.  We still
  * call through to PortableGL's glBindTexture so the actual binding happens.  */
 void pgl_igl_BindTexture(GLenum target, GLuint texture) {
-    if (g_cur_compat && target == 0x0DE1u /*GL_TEXTURE_2D*/) {
+    if (g_cur_compat && target == (GLenum)GL_TEXTURE_2D) {
         g_cur_compat->tex_unit[0] = texture;
         /* Also update texunit_model[0]: non-zero texture means texturing ON */
         if (texture != 0) {

@@ -1716,6 +1716,14 @@ w->glAreTexturesResident = (OBOL_PFNGLARETEXTURESRESIDENTPROC)PROC(w, glAreTextu
   }
   w->maxtextureunits = 1; /* when multitexturing is not available */
   if (w->glActiveTexture) {
+#if defined(OBOL_PORTABLEGL_BUILD) || (defined(SOGL_PREFIX_SET) && defined(PGL_PREFIX_GL))
+    /* PortableGL has exactly one texture unit.  The glGetIntegerv calls below
+     * would query pgl_glGetIntegerv (name-mangled), which does not know
+     * GL_MAX_TEXTURE_UNITS_ARB/GL_MAX_TEXTURE_COORDS_ARB and returns 0,
+     * causing maxtextureunits to be set to 0 and texturing to be completely
+     * disabled.  Hard-code the correct value for PGL. */
+    w->maxtextureunits = 1;
+#else
     /* GL_MAX_TEXTURE_COORDS_ARB (== GL_MAX_TEXTURE_COORDS, 0x8871) reports
        the number of texture coordinate units available for glMultiTexCoord*.
        Some implementations (including older Mesa/OSMesa builds) only accept
@@ -1733,6 +1741,7 @@ w->glAreTexturesResident = (OBOL_PFNGLARETEXTURESRESIDENTPROC)PROC(w, glAreTextu
       glGetIntegerv(GL_MAX_TEXTURE_UNITS_ARB, &tmp);
     }
     w->maxtextureunits = (int) tmp;
+#endif /* OBOL_PORTABLEGL_BUILD */
   }
 
   w->glCompressedTexImage1D = NULL;
@@ -3021,7 +3030,18 @@ SoGLContext_instance(int contextid)
     /* NB: if you are getting a crash here, it's because an attempt at
      * setting up a SoGLContext instance was made when there is no
      * current OpenGL context. */
+#if defined(OBOL_PORTABLEGL_BUILD) || (defined(SOGL_PREFIX_SET) && defined(PGL_PREFIX_GL))
+    /* In a PortableGL build, glGetString maps to pgl_glGetString (PortableGL's
+     * native function) which returns "0.100.0" – PortableGL's own version, not
+     * an OpenGL version.  Hard-code the compat version string ("1.5") that our
+     * interceptor pgl_igl_GetString returns so that glglue_init version checks
+     * (≥1.1, ≥1.3, etc.) pass and texture objects, multitexture and other
+     * GL 1.x features are enabled. */
+    static const char pgl_compat_version[] = "1.5 (PortableGL compat)";
+    gi->versionstr = pgl_compat_version;
+#else
     gi->versionstr = (const char *)glGetString(GL_VERSION);
+#endif
     
     /* Additional debugging for OSMesa context */
     if (SoGLContext_debug()) {
@@ -3054,7 +3074,13 @@ SoGLContext_instance(int contextid)
   /* Platform-specific initialization is no longer needed with callback-based contexts.
      Applications are responsible for providing complete OpenGL contexts through callbacks. */
 
+#if defined(OBOL_PORTABLEGL_BUILD) || (defined(SOGL_PREFIX_SET) && defined(PGL_PREFIX_GL))
+    static const char pgl_compat_vendor[]   = "PortableGL";
+    static const char pgl_compat_renderer[] = "PortableGL Software Renderer";
+    gi->vendorstr = pgl_compat_vendor;
+#else
     gi->vendorstr = (const char *)glGetString(GL_VENDOR);
+#endif
 
 #ifdef OBOL_OSMESA_BUILD
     if (SoGLContext_debug()) {
@@ -3082,7 +3108,11 @@ SoGLContext_instance(int contextid)
       cc_debugerror_postinfo("SoGLContext_instance", "OpenGL error before GL_RENDERER: 0x%x", error_before_renderer);
     }
     
+    #if defined(OBOL_PORTABLEGL_BUILD) || (defined(SOGL_PREFIX_SET) && defined(PGL_PREFIX_GL))
+    gi->rendererstr = pgl_compat_renderer;
+#else
     gi->rendererstr = (const char *)glGetString(GL_RENDERER);
+#endif
     
     GLenum error_after_renderer = glGetError();
     if (error_after_renderer != GL_NO_ERROR) {
