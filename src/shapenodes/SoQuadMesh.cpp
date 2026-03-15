@@ -396,7 +396,7 @@ namespace { namespace SoGL { namespace QuadMesh {
 
       for (int i = 0; i < colsize-1; i++) {
         int j = 0;
-        SoGLContext_glBegin(glue, GL_QUAD_STRIP);
+        SoGLContext_glBegin(glue, GL_TRIANGLE_STRIP);
         if ((AttributeBinding)NormalBinding == PER_ROW) {
           currnormal = normals++;
           SoGLContext_glNormal3fv(glue, (const GLfloat *)currnormal);
