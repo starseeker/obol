@@ -3031,6 +3031,17 @@ SoGLContext_instance(int contextid)
        The following code, supplied by Randall, implements this to end up with the
        same result as the old method.
     */
+#ifdef OBOL_PORTABLEGL_BUILD
+    /* PortableGL is a GL3 core software-renderer that provides no extension
+     * strings: glGetString(GL_EXTENSIONS) is not supported and glGetStringi
+     * always returns NULL.  Treat the extension list as empty and clear any
+     * pending GL_INVALID_ENUM so it does not linger in the error queue. */
+    if (gi->extensionsstr == NULL) {
+      static const char pgl_empty_extensions[] = "";
+      gi->extensionsstr = pgl_empty_extensions;
+      glGetError(); /* consume the GL_INVALID_ENUM from glGetString(GL_EXTENSIONS) */
+    }
+#else /* !OBOL_PORTABLEGL_BUILD */
     if (gi->extensionsstr == NULL) {
 #ifdef OBOL_SWRAST_BUILD
       if (SoGLContext_debug()) {
@@ -3077,6 +3088,7 @@ SoGLContext_instance(int contextid)
                                    "version: %s, vendor: %s", gi->versionstr, gi->vendorstr);
       }
     }
+#endif /* !OBOL_PORTABLEGL_BUILD */
 
     /* read some limits */
 
@@ -3180,6 +3192,15 @@ SoGLContext_instance(int contextid)
       cb(contextid, cc_list_get(gl_instance_created_cblist, i*2+1));
     }
   }
+
+#ifdef OBOL_PORTABLEGL_BUILD
+  /* Clear any GL_INVALID_ENUM errors accumulated from querying fixed-function
+   * GL limits that PortableGL does not support (e.g. GL_MAX_LIGHTS, point and
+   * line size ranges).  These queries are harmless no-ops in portablegl but
+   * leave a pending error that would be falsely attributed to the first
+   * rendered node. */
+  while (glGetError() != GL_NO_ERROR) { /* drain */ }
+#endif
 
 #ifdef OBOL_SWRAST_BUILD
   if (SoGLContext_debug()) {

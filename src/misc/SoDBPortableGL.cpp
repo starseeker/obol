@@ -95,6 +95,35 @@ static void pgl_glColor4ub(GLubyte, GLubyte, GLubyte, GLubyte) {}
 static void pgl_glColorMaterial(GLenum, GLenum) {}
 static void pgl_glViewport_nop(GLint, GLint, GLsizei, GLsizei) {}
 
+/* PortableGL does not implement the GL3 buffer-query helpers.  Provide
+ * harmless stubs so that the VBO-detection path in gl.cpp can find all
+ * the required function pointers and leaves has_vertex_buffer_object=TRUE. */
+static void  pgl_glGetBufferSubData(GLenum, GLintptr, GLsizeiptr, GLvoid*) {}
+static void  pgl_glGetBufferParameteriv(GLenum target, GLenum pname, GLint* params)
+{
+    if (!params) return;
+    /* Minimal useful answers so that callers don't crash. */
+    if (pname == 0x8764 /*GL_BUFFER_SIZE*/)   { *params = 0; return; }
+    if (pname == 0x8765 /*GL_BUFFER_USAGE*/)  { *params = 0x88B4 /*GL_STATIC_DRAW*/; return; }
+    if (pname == 0x88BC /*GL_BUFFER_ACCESS*/) { *params = 0x88B8 /*GL_READ_WRITE*/; return; }
+    if (pname == 0x88BD /*GL_BUFFER_MAPPED*/) { *params = GL_FALSE; return; }
+    *params = 0;
+}
+static void  pgl_glGetBufferPointerv(GLenum, GLenum, GLvoid**) {}
+static GLboolean pgl_glIsBuffer(GLuint buffer) { return buffer != 0 ? GL_TRUE : GL_FALSE; }
+
+/* PortableGL's glGetString does not handle GL_EXTENSIONS (returns NULL with
+ * GL_INVALID_ENUM).  Return an empty string so the extension-detection code
+ * in gl.cpp gets a non-NULL result and stops looking. */
+static const GLubyte* pgl_glGetString(GLenum name)
+{
+    if (name == 0x1F03 /*GL_EXTENSIONS*/) {
+        static const GLubyte empty[] = "";
+        return empty;
+    }
+    return glGetString(name);
+}
+
 struct CoinPGLCtxData {
     glContext ctx;         /* PortableGL context (owns pixel + depth buf)   */
     pix_t*   backbuf;      /* Back-buffer pointer (managed by PortableGL)   */
@@ -109,6 +138,12 @@ struct CoinPGLCtxData {
         : backbuf(nullptr), w(w_), h(h_), valid(false), prev_ctx(nullptr)
     {
         valid = (init_glContext(&ctx, &backbuf, w, h) == GL_TRUE);
+        if (valid) {
+            /* PortableGL enables its stdout debug callback by default.
+             * Silence it: Obol handles error reporting via SoDebugError. */
+            set_glContext(&ctx);
+            glDebugMessageCallback(nullptr, nullptr);
+        }
     }
 
     ~CoinPGLCtxData() {
@@ -269,6 +304,9 @@ public:
         if (strcmp(funcName, "glGenVertexArrays") == 0) return (void*)glGenVertexArrays;
         if (strcmp(funcName, "glGenerateMipmap") == 0) return (void*)glGenerateMipmap;
         if (strcmp(funcName, "glGetAttribLocation") == 0) return (void*)glGetAttribLocation;
+        if (strcmp(funcName, "glGetBufferSubData") == 0) return (void*)pgl_glGetBufferSubData;
+        if (strcmp(funcName, "glGetBufferParameteriv") == 0) return (void*)pgl_glGetBufferParameteriv;
+        if (strcmp(funcName, "glGetBufferPointerv") == 0) return (void*)pgl_glGetBufferPointerv;
         if (strcmp(funcName, "glGetBooleanv") == 0) return (void*)glGetBooleanv;
         if (strcmp(funcName, "glGetDoublev") == 0) return (void*)glGetDoublev;
         if (strcmp(funcName, "glGetError") == 0) return (void*)glGetError;
@@ -279,7 +317,7 @@ public:
         if (strcmp(funcName, "glGetProgramiv") == 0) return (void*)glGetProgramiv;
         if (strcmp(funcName, "glGetShaderInfoLog") == 0) return (void*)glGetShaderInfoLog;
         if (strcmp(funcName, "glGetShaderiv") == 0) return (void*)glGetShaderiv;
-        if (strcmp(funcName, "glGetString") == 0) return (void*)glGetString;
+        if (strcmp(funcName, "glGetString") == 0) return (void*)pgl_glGetString;
         if (strcmp(funcName, "glGetStringi") == 0) return (void*)glGetStringi;
         if (strcmp(funcName, "glGetTexParameterIiv") == 0) return (void*)glGetTexParameterIiv;
         if (strcmp(funcName, "glGetTexParameterIuiv") == 0) return (void*)glGetTexParameterIuiv;
@@ -290,6 +328,7 @@ public:
         if (strcmp(funcName, "glGetTextureParameterfv") == 0) return (void*)glGetTextureParameterfv;
         if (strcmp(funcName, "glGetTextureParameteriv") == 0) return (void*)glGetTextureParameteriv;
         if (strcmp(funcName, "glGetUniformLocation") == 0) return (void*)glGetUniformLocation;
+        if (strcmp(funcName, "glIsBuffer") == 0) return (void*)pgl_glIsBuffer;
         if (strcmp(funcName, "glIsEnabled") == 0) return (void*)glIsEnabled;
         if (strcmp(funcName, "glIsFramebuffer") == 0) return (void*)glIsFramebuffer;
         if (strcmp(funcName, "glIsProgram") == 0) return (void*)glIsProgram;

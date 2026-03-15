@@ -1085,10 +1085,14 @@ SoGLRenderAction::beginTraversal(SoNode * node)
     PRIVATE(this)->needglinit = FALSE;
 
     const SoGLContext * glue = SoGLContext_instance(PRIVATE(this)->cachecontext);
+#ifndef OBOL_PORTABLEGL_BUILD
+    /* Fixed-function GL state — not available in portablegl (GL3 core only).
+     * The modern VAO/VBO+shader pipeline handles lighting and normals via shaders. */
     // we are always using 0x0B57 in Coin
     SoGLContext_glColorMaterial(glue, GL_FRONT_AND_BACK, 0x1201);
     SoGLContext_glEnable(glue, 0x0B57);
     SoGLContext_glEnable(glue, 0x0BA1);
+#endif /* !OBOL_PORTABLEGL_BUILD */
 
     // initialize the depth function to the default Coin/Inventor
     // value.  SoGLDepthBufferElement doesn't check for this, it just
@@ -1099,11 +1103,15 @@ SoGLRenderAction::beginTraversal(SoNode * node)
     SoGLContext_glDepthFunc(glue, GL_LEQUAL);
 
     if (PRIVATE(this)->smoothing) {
+#ifndef OBOL_PORTABLEGL_BUILD
       SoGLContext_glEnable(glue, 0x0B10);
+#endif
       SoGLContext_glEnable(glue, GL_LINE_SMOOTH);
     }
     else {
+#ifndef OBOL_PORTABLEGL_BUILD
       SoGLContext_glDisable(glue, 0x0B10);
+#endif
       SoGLContext_glDisable(glue, GL_LINE_SMOOTH);
     }
   }
