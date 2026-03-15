@@ -83,6 +83,7 @@ add_testlib_rendering_test(render_clip_plane)
 add_testlib_rendering_test(render_indexed_face_set)
 add_testlib_rendering_test(render_quad_mesh)
 add_testlib_rendering_test(render_indexed_line_set)
+add_testlib_rendering_test(render_indexed_point_set)
 add_testlib_rendering_test(render_lod)
 add_testlib_rendering_test(render_point_set)
 add_testlib_rendering_test(render_scene_texture)
@@ -750,6 +751,7 @@ add_rendering_image_test(render_alpha_test       RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_indexed_face_set  RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_quad_mesh         RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_indexed_line_set  RMSE_THRESHOLD 15.0)
+add_rendering_image_test(render_indexed_point_set RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_point_set         RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_lod               RMSE_THRESHOLD 15.0)
 add_rendering_image_test(render_quad_viewport_lod  RMSE_THRESHOLD 20.0)
@@ -805,6 +807,7 @@ foreach(_vtest render_sphere_position render_checker_texture
                render_face_set render_line_set render_switch_visibility
                render_vertex_colors render_clip_plane
                render_indexed_face_set render_quad_mesh render_indexed_line_set
+               render_indexed_point_set
                render_lod render_point_set
                render_background_gradient
                render_scene_texture render_scene_texture_multi_mgr render_array_multiple_copy

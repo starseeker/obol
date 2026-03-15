@@ -79,6 +79,7 @@
 
 #include "misc/SbHash.h"
 #include "rendering/SoGL.h"
+#include "rendering/SoGLModernState.h"
 #include "rendering/SoVBO.h"
 #include "rendering/SoVertexArrayIndexer.h"
 #include "SbBasicP.h"
@@ -216,6 +217,18 @@ public:
                    const SbBool color, const SbBool normal,
                    const SbBool texture, const SbBool * enabled,
                    const int tex_last_enabled);
+
+  /* Modern GL 3 core path: set up glVertexAttribPointer on a caller-created
+   * VAO.  Layout matches the built-in shaders in obol_modern_shaders.h:
+   *   location 0 – position  (3 floats)
+   *   location 1 – normal    (3 floats)
+   *   location 2 – texcoord  (2 floats, from first two components of SbVec4f)
+   *   location 3 – color     (4 ubytes normalised → vec4)
+   * The caller is responsible for glBindVertexArray before / after. */
+  void enableModernAttribs(uint32_t contextid,
+                           SbBool color, SbBool normal, SbBool texture);
+
+  void disableModernAttribs(SbBool color, SbBool normal, SbBool texture);
 
   unsigned long countVBOSize(const SoGLContext * glue,
                              const uint32_t contextid,
@@ -364,6 +377,43 @@ SoPrimitiveVertexCache::renderTriangles(SoState * state, const int arrays) const
   const uint32_t contextid = SoGLCacheContextElement::get(state);
   const SoGLContext * glue = SoGLContext_instance(static_cast<int>(contextid));
 
+  // -------------------------------------------------------------------------
+  // Phase 1c: Modern GL 3 core path via SoGLModernState + VAO+VBO.
+  // Activated when SoGLModernState is available (system GL or PortableGL build).
+  // -------------------------------------------------------------------------
+  {
+    SoGLModernState * ms = SoGLModernState::forContext(contextid);
+    if (ms && ms->isAvailable()) {
+      SoGLCacheContextElement::shouldAutoCache(state,
+                                               SoGLCacheContextElement::DONT_AUTO_CACHE);
+      SoPrimitiveVertexCacheP * thisp =
+          const_cast<SoPrimitiveVertexCacheP *>(&PRIVATE(this).get());
+
+      GLuint vao = 0;
+      glGenVertexArrays(1, &vao);
+      glBindVertexArray(vao);
+
+      thisp->enableModernAttribs(contextid, color, normal, texture);
+
+      // Activate built-in shader – phong when normals available, base-color otherwise
+      ms->activatePhong(normal, color, texture, false);
+
+      // render via the existing indexed drawing infrastructure (uses VBO EBO)
+      PRIVATE(this)->triangleindexer->render(glue, TRUE, contextid);
+
+      ms->deactivate();
+      thisp->disableModernAttribs(color, normal, texture);
+      glBindVertexArray(0);
+      glDeleteVertexArrays(1, &vao);
+
+      if (color) {
+        SoGLLazyElement::getInstance(state)->reset(state,
+                                                   SoLazyElement::DIFFUSE_MASK);
+      }
+      return;
+    }
+  }
+
   SbBool renderasvbo =
     PRIVATE(this)->vertexvbo ||
     SoGLVBOElement::shouldCreateVBO(state, PRIVATE(this)->vertexlist.getLength());
@@ -422,6 +472,30 @@ SoPrimitiveVertexCache::renderLines(SoState * state, const int arrays) const
   const SoGLContext * glue = sogl_glue_instance(state);
   const uint32_t contextid = SoGLCacheContextElement::get(state);
 
+  // Modern GL 3 core path
+  {
+    SoGLModernState * ms = SoGLModernState::forContext(contextid);
+    if (ms && ms->isAvailable()) {
+      SoPrimitiveVertexCacheP * thisp =
+          const_cast<SoPrimitiveVertexCacheP *>(&PRIVATE(this).get());
+      GLuint vao = 0;
+      glGenVertexArrays(1, &vao);
+      glBindVertexArray(vao);
+      thisp->enableModernAttribs(contextid, color, normal, texture);
+      ms->activateBaseColor(color, texture, false);
+      PRIVATE(this)->lineindexer->render(glue, TRUE, contextid);
+      ms->deactivate();
+      thisp->disableModernAttribs(color, normal, texture);
+      glBindVertexArray(0);
+      glDeleteVertexArrays(1, &vao);
+      if (color) {
+        SoGLLazyElement::getInstance(state)->reset(state,
+                                                   SoLazyElement::DIFFUSE_MASK);
+      }
+      return;
+    }
+  }
+
   if (SoGLDriverDatabase::isSupported(glue, SO_GL_VERTEX_ARRAY)) {
     SoPrimitiveVertexCacheP * thisp = const_cast<SoPrimitiveVertexCacheP *>(&PRIVATE(this).get());
     thisp->enableArrays(glue, color, normal, texture, enabled, last_enabled);
@@ -461,6 +535,30 @@ SoPrimitiveVertexCache::renderPoints(SoState * state, const int arrays) const
   }
   const SoGLContext * glue = sogl_glue_instance(state);
   const uint32_t contextid = SoGLCacheContextElement::get(state);
+
+  // Modern GL 3 core path
+  {
+    SoGLModernState * ms = SoGLModernState::forContext(contextid);
+    if (ms && ms->isAvailable()) {
+      SoPrimitiveVertexCacheP * thisp =
+          const_cast<SoPrimitiveVertexCacheP *>(&PRIVATE(this).get());
+      GLuint vao = 0;
+      glGenVertexArrays(1, &vao);
+      glBindVertexArray(vao);
+      thisp->enableModernAttribs(contextid, color, normal, texture);
+      ms->activateBaseColor(color, texture, false);
+      PRIVATE(this)->pointindexer->render(glue, TRUE, contextid);
+      ms->deactivate();
+      thisp->disableModernAttribs(color, normal, texture);
+      glBindVertexArray(0);
+      glDeleteVertexArrays(1, &vao);
+      if (color) {
+        SoGLLazyElement::getInstance(state)->reset(state,
+                                                   SoLazyElement::DIFFUSE_MASK);
+      }
+      return;
+    }
+  }
 
   if (SoGLDriverDatabase::isSupported(glue, SO_GL_VERTEX_ARRAY)) {
     SoPrimitiveVertexCacheP * thisp = const_cast<SoPrimitiveVertexCacheP *>(&PRIVATE(this).get());
@@ -1083,6 +1181,85 @@ SoPrimitiveVertexCacheP::disableVBOs(const SoGLContext * glue,
 {
   this->disableArrays(glue, color, normal, texture, enabled, tex_last_enabled);
   SoGLContext_glBindBuffer(glue, GL_ARRAY_BUFFER, 0); // Reset VBO binding
+}
+
+// ---------------------------------------------------------------------------
+// Modern GL 3 core helper: bind vertex attribute arrays on the currently
+// bound VAO.  VBOs are created / reused from the existing SoVBO objects.
+// Attribute layout matches obol_modern_shaders.h:
+//   loc 0 = position (3 floats)
+//   loc 1 = normal   (3 floats)
+//   loc 2 = texcoord (2 floats, first two of the SbVec4f)
+//   loc 3 = color    (4 unsigned bytes, normalised)
+// ---------------------------------------------------------------------------
+
+void
+SoPrimitiveVertexCacheP::enableModernAttribs(uint32_t contextid,
+                                             SbBool color, SbBool normal,
+                                             SbBool texture)
+{
+  // Positions – always present
+  if (this->vertexvbo == NULL) {
+    this->vertexvbo = new SoVBO;
+    this->vertexvbo->setBufferData(this->vertexlist.getArrayPtr(),
+                                   this->vertexlist.getLength() * 3 * sizeof(float));
+  }
+  this->vertexvbo->bindBuffer(contextid);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (const GLvoid*)0);
+  glEnableVertexAttribArray(0);
+
+  // Normals (location 1)
+  if (normal) {
+    if (this->normalvbo == NULL) {
+      this->normalvbo = new SoVBO;
+      this->normalvbo->setBufferData(this->normallist.getArrayPtr(),
+                                     this->normallist.getLength() * 3 * sizeof(float));
+    }
+    this->normalvbo->bindBuffer(contextid);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, (const GLvoid*)0);
+    glEnableVertexAttribArray(1);
+  } else {
+    // Supply a default normal (0,0,1) via a constant attrib
+    glVertexAttrib3f(1, 0.0f, 0.0f, 1.0f);
+  }
+
+  // Texcoords (location 2) – use first two components of SbVec4f
+  if (texture) {
+    if (this->texcoord0vbo == NULL) {
+      this->texcoord0vbo = new SoVBO;
+      this->texcoord0vbo->setBufferData(this->texcoordlist.getArrayPtr(),
+                                        this->texcoordlist.getLength() * 4 * sizeof(float));
+    }
+    this->texcoord0vbo->bindBuffer(contextid);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (const GLvoid*)0);
+    glEnableVertexAttribArray(2);
+  } else {
+    glVertexAttrib2f(2, 0.0f, 0.0f);
+  }
+
+  // Colors (location 3) – RGBA unsigned bytes, normalised to [0,1]
+  if (color) {
+    if (this->rgbavbo == NULL) {
+      this->rgbavbo = new SoVBO;
+      this->rgbavbo->setBufferData(this->rgbalist.getArrayPtr(),
+                                   this->rgbalist.getLength() * sizeof(uint8_t));
+    }
+    this->rgbavbo->bindBuffer(contextid);
+    glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, (const GLvoid*)0);
+    glEnableVertexAttribArray(3);
+  }
+
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void
+SoPrimitiveVertexCacheP::disableModernAttribs(SbBool color, SbBool normal,
+                                              SbBool texture)
+{
+  glDisableVertexAttribArray(0);
+  if (normal)  glDisableVertexAttribArray(1);
+  if (texture) glDisableVertexAttribArray(2);
+  if (color)   glDisableVertexAttribArray(3);
 }
 
 void

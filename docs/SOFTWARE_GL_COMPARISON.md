@@ -229,7 +229,8 @@ Priority order:
 9. **Remaining geometry** — convert shape nodes (`SoFaceSet`, `SoTriangleStripSet`,
    `SoQuadMesh`, `SoLineSet`, `SoIndexedPointSet`) glBegin/glEnd fallbacks and the
    `SoPrimitiveVertexCache` glVertexPointer/glNormalPointer path to VAO+VBO.
-   **Status: 🔲 Not yet started.**
+   **Status: ✅ Complete** — all 10 shape nodes modernised; `SoPrimitiveVertexCache`
+   uses `glVertexAttribPointer` in `renderTriangles`/`renderLines`/`renderPoints`.
 10. **SoGLMultiTextureMatrixElement** — upload texture-matrix uniform.
     **Status: 🔲 Not yet started.**
 
@@ -340,11 +341,11 @@ PortableGL builds.
 | `src/shapenodes/SoIndexedFaceSet.cpp` | Modern VAO+VBO path for OVERALL material (indexed fan tessellation) | ✅ |
 | `src/shapenodes/SoIndexedLineSet.cpp` | Modern VAO+VBO path for OVERALL material, GL_LINE_STRIP | ✅ |
 | `src/shapenodes/SoIndexedTriangleStripSet.cpp` | Modern VAO+VBO path for OVERALL material, GL_TRIANGLE_STRIP | ✅ |
+| `src/shapenodes/SoQuadMesh.cpp` | Modern VAO+VBO path — rows rendered as GL_TRIANGLE_STRIP (replaces GL_QUAD_STRIP) | ✅ |
+| `src/shapenodes/SoIndexedPointSet.cpp` | Modern VAO+VBO path for GL_POINTS (Phong shader, OVERALL material) | ✅ |
+| `src/caches/SoPrimitiveVertexCache.cpp` | Modern VAO+VBO path via `glVertexAttribPointer` in `renderTriangles`/`renderLines`/`renderPoints` | ✅ |
 | `src/rendering/CoinOffscreenGLCanvas.cpp` | Fix destructContext() to unbind FBO before deregistering context | ✅ |
 | `src/rendering/obol_modern_shaders.h` | Fix no-lights Phong path to include emission term | ✅ |
-| `src/shapenodes/SoQuadMesh.cpp` | Convert to modern GL | 🔲 |
-| `src/shapenodes/SoIndexedPointSet.cpp` | Convert to modern GL | 🔲 |
-| `src/caches/SoPrimitiveVertexCache.cpp` | Replace `glVertexPointer`/`glNormalPointer` with `glVertexAttribPointer` | 🔲 |
 
 ### Phase 1d — Lighting / Material Uniforms
 

@@ -118,8 +118,10 @@
 
 #include "nodes/SoSubNodeP.h"
 #include "rendering/SoGL.h"
+#include "rendering/SoGLModernState.h"
 #include "rendering/SoVBO.h"
 #include "rendering/SoVertexArrayIndexer.h"
+#include <Inventor/elements/SoGLCacheContextElement.h>
 
 #define LOCK_VAINDEXER(obj) SoBase::staticDataLock()
 #define UNLOCK_VAINDEXER(obj) SoBase::staticDataUnlock()
@@ -319,6 +321,83 @@ SoIndexedPointSet::GLRender(SoGLRenderAction * action)
 
   const SoGLContext * glue = sogl_glue_instance(state);
   const uint32_t contextid = action->getCacheContext();
+
+  // -------------------------------------------------------------------------
+  // Phase 1c: Modern VAO+VBO rendering path for indexed point sets.
+  // Handles OVERALL material with OVERALL or PER_VERTEX_INDEXED normals.
+  // -------------------------------------------------------------------------
+  {
+    SoGLModernState * ms = SoGLModernState::forContext(contextid);
+    if (ms && ms->isAvailable() && mbind == OVERALL && !doTextures
+        && glcoords && glcoords->is3D() && numindices > 0) {
+      const SbVec3f * coords3d = glcoords->getArrayPtr3();
+
+      // Count valid (non-negative) indices
+      int validPts = 0;
+      for (int i = 0; i < numindices; ++i)
+        if (cindices[i] >= 0) ++validPts;
+
+      if (validPts > 0) {
+        const int STRIDE = 8; // pos(3)+norm(3)+uv(2)
+        float * vtx = new float[validPts * STRIDE];
+        float * vp  = vtx;
+
+        SbVec3f dummyNorm(0.0f, 0.0f, 1.0f);
+        const SbVec3f * overallNorm =
+            (needNormals && normals) ? normals : &dummyNorm;
+
+        for (int i = 0; i < numindices; ++i) {
+          int32_t idx = cindices[i];
+          if (idx < 0) continue;
+          const SbVec3f & p = coords3d[idx];
+          const SbVec3f * nm = overallNorm;
+          if (nbind == PER_VERTEX_INDEXED && needNormals && normals
+              && nindices != NULL)
+            nm = &normals[nindices[i]];
+          else if (nbind == PER_VERTEX && needNormals && normals)
+            nm = &normals[i];
+          vp[0] = p[0]; vp[1] = p[1]; vp[2] = p[2];
+          vp[3] = (*nm)[0]; vp[4] = (*nm)[1]; vp[5] = (*nm)[2];
+          vp[6] = 0.0f; vp[7] = 0.0f;
+          vp += STRIDE;
+        }
+
+        GLuint vao = 0, vbo = 0;
+        glGenVertexArrays(1, &vao);
+        glBindVertexArray(vao);
+        glGenBuffers(1, &vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER,
+                     (GLsizeiptr)(validPts * STRIDE * (int)sizeof(float)),
+                     vtx, GL_STATIC_DRAW);
+        delete[] vtx;
+
+        const GLsizei byteStride = STRIDE * (GLsizei)sizeof(float);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, byteStride, (void*)0);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, byteStride,
+                              (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, byteStride,
+                              (void*)(6 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+
+        ms->activatePhong(needNormals, false, false, false);
+        glDrawArrays(GL_POINTS, 0, validPts);
+        ms->deactivate();
+
+        glBindVertexArray(0);
+        glDeleteVertexArrays(1, &vao);
+        glDeleteBuffers(1, &vbo);
+
+        if (didpush) state->pop();
+        SoGLCacheContextElement::shouldAutoCache(
+            state, SoGLCacheContextElement::DONT_AUTO_CACHE);
+        sogl_autocache_update(state, numindices/3, FALSE);
+        return;
+      }
+    }
+  }
 
   SbBool dova =
     SoVBO::shouldRenderAsVertexArrays(state, contextid, numindices) &&
