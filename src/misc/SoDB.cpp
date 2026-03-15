@@ -64,6 +64,7 @@
 
 #include "config.h"
 
+#include <atomic>
 #include <cstdlib>
 #include <cassert>
 #include <cstring>
@@ -1046,7 +1047,7 @@ SoDB::startNotify(void)
 #ifdef OBOL_THREADSAFE
   (void) cc_recmutex_internal_notify_lock();
 #endif // OBOL_THREADSAFE
-  SoDBP::notificationcounter++;
+  SoDBP::notificationcounter.fetch_add(1, std::memory_order_acq_rel);
 }
 
 /*!
@@ -1055,7 +1056,7 @@ SoDB::startNotify(void)
 SbBool
 SoDB::isNotifying(void)
 {
-  return SoDBP::notificationcounter > 0;
+  return SoDBP::notificationcounter.load(std::memory_order_acquire) > 0;
 }
 
 /*!
@@ -1064,8 +1065,8 @@ SoDB::isNotifying(void)
 void
 SoDB::endNotify(void)
 {
-  SoDBP::notificationcounter--;
-  if (SoDBP::notificationcounter == 0) {
+  int newcount = SoDBP::notificationcounter.fetch_sub(1, std::memory_order_acq_rel) - 1;
+  if (newcount == 0) {
     // Process zero-priority sensors after notification has been done.
     SoSensorManager * sm = SoDB::getSensorManager();
     if (sm->isDelaySensorPending()) sm->processImmediateQueue();

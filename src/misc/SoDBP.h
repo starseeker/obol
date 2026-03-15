@@ -43,6 +43,7 @@
 #include <Inventor/SbString.h>
 
 #include "misc/SbHash.h"
+#include <atomic>
 
 class SoSensor;
 class SbRWMutex;
@@ -87,7 +88,7 @@ public:
   static SoSensorManager * sensormanager;
   static SoTimerSensor * globaltimersensor;
   static UInt32ToInt16Map * converters;
-  static int notificationcounter;
+  static std::atomic<int> notificationcounter;
   static SbBool isinitialized;
 
   static SbBool is3dsFile(SoInput * in);
