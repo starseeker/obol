@@ -146,19 +146,8 @@ soshape_bigtexture::endShape(SoState * state,
 {
   this->clip_triangles(state);
 
-  // clear texture matrix. We've already calculated the world space
-  // texture coordinates.
-  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_TEXTURE);
-  SoGLContext_glPushMatrix(sogl_glue_from_state(state));
-  SoGLContext_glLoadIdentity(sogl_glue_from_state(state));
-  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
-
-  // disable texgen functions, we always supply texture coordinates
-  SoGLContext_glPushAttrib(sogl_glue_from_state(state), GL_ENABLE_BIT);
-  SoGLContext_glDisable(sogl_glue_from_state(state), GL_TEXTURE_GEN_S);
-  SoGLContext_glDisable(sogl_glue_from_state(state), GL_TEXTURE_GEN_T);
-  SoGLContext_glDisable(sogl_glue_from_state(state), GL_TEXTURE_GEN_R);
-  SoGLContext_glDisable(sogl_glue_from_state(state), GL_TEXTURE_GEN_Q);
+  // GL3: texture matrix stack and fixed-function texgen are removed.
+  // Texture coordinates are always supplied explicitly; no texgen disable needed.
 
   const int numreg = this->numregions;
   for (int i = 0; i < numreg; i++) {
@@ -196,13 +185,7 @@ soshape_bigtexture::endShape(SoState * state,
     }
   }
 
-  // enable texgen (if active)
-  SoGLContext_glPopAttrib(sogl_glue_from_state(state));
-
-  // restore texture matrix
-  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_TEXTURE);
-  SoGLContext_glPopMatrix(sogl_glue_from_state(state));
-  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
+  // GL3: fixed-function texgen/matrix stack removed; nothing to restore.
 
   // return TRUE if all textures were created in the correct resolution
   return ! this->image->exceededChangeLimit();
