@@ -113,10 +113,8 @@
 // Threading support
 #include "threads/threadp.h"
 
-#ifdef OBOL_THREADSAFE
 #include <Inventor/threads/SbRWMutex.h>
 #include "threads/recmutexp.h"
-#endif // OBOL_THREADSAFE
 
 #ifdef HAVE_3DS_IMPORT_CAPABILITIES
 #include "3ds/3dsLoader.h"
@@ -272,9 +270,7 @@ SoDB::init(ContextManager * context_manager)
 
 #ifdef HAVE_THREADS
   // Modern C++17 threading doesn't require explicit initialization
-#ifdef OBOL_THREADSAFE
   SoDBP::globalmutex = new SbRWMutex(SbRWMutex::READ_PRECEDENCE);
-#endif // OBOL_THREADSAFE
 #endif // HAVE_THREADS
 
   coin_init_tidbits();
@@ -1044,9 +1040,7 @@ SoDB::isInitialized(void)
 void
 SoDB::startNotify(void)
 {
-#ifdef OBOL_THREADSAFE
   (void) cc_recmutex_internal_notify_lock();
-#endif // OBOL_THREADSAFE
   SoDBP::notificationcounter.fetch_add(1, std::memory_order_acq_rel);
 }
 
@@ -1071,9 +1065,7 @@ SoDB::endNotify(void)
     SoSensorManager * sm = SoDB::getSensorManager();
     if (sm->isDelaySensorPending()) sm->processImmediateQueue();
   }
-#ifdef OBOL_THREADSAFE
   (void) cc_recmutex_internal_notify_unlock();
-#endif // OBOL_THREADSAFE
 
 }
 
@@ -1307,11 +1299,7 @@ SoDB::removeProgressCallback(ProgressCallbackType * func, void * userdata)
 SbBool
 SoDB::isMultiThread(void)
 {
-#ifdef OBOL_THREADSAFE
   return TRUE;
-#else // OBOL_THREADSAFE
-  return FALSE;
-#endif // !OBOL_THREADSAFE
 }
 
 // Note that the function names of the next four functions below are
@@ -1339,9 +1327,7 @@ SoDB::isMultiThread(void)
 void
 SoDB::readlock(void)
 {
-#ifdef OBOL_THREADSAFE
   SoDBP::globalmutex->readLock();
-#endif // OBOL_THREADSAFE
 }
 
 /*!
@@ -1354,9 +1340,7 @@ SoDB::readlock(void)
 void
 SoDB::readunlock(void)
 {
-#ifdef OBOL_THREADSAFE
   SoDBP::globalmutex->readUnlock();
-#endif // OBOL_THREADSAFE
 }
 
 /*!
@@ -1375,9 +1359,7 @@ SoDB::readunlock(void)
 void
 SoDB::writelock(void)
 {
-#ifdef OBOL_THREADSAFE
   SoDBP::globalmutex->writeLock();
-#endif // OBOL_THREADSAFE
 }
 
 /*!
@@ -1390,9 +1372,7 @@ SoDB::writelock(void)
 void
 SoDB::writeunlock(void)
 {
-#ifdef OBOL_THREADSAFE
   SoDBP::globalmutex->writeUnlock();
-#endif // OBOL_THREADSAFE
 }
 
 // *************************************************************************
