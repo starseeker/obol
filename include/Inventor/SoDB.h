@@ -184,6 +184,15 @@ public:
     virtual SbBool isOSMesaContext(void * /*context*/) { return FALSE; }
 
     /**
+     * Return TRUE if this context renders into its own internal software
+     * framebuffer (e.g. PortableGL, OSMesa) rather than an FBO or system
+     * GL surface.  When TRUE, CoinOffscreenGLCanvas skips FBO creation and
+     * pixel readback is performed via glReadPixels (which the backend must
+     * intercept).  The default returns FALSE.
+     */
+    virtual SbBool hasSoftwareOwnBuffer(void * /*context*/) { return FALSE; }
+
+    /**
      * Report the maximum offscreen rendering dimensions supported by this
      * backend.  CoinOffscreenGLCanvas calls this instead of probing the
      * global GL pipeline so that per-instance managers (e.g. an OSMesa

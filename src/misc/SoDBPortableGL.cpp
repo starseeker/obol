@@ -47,6 +47,46 @@
  * Per-context state
  * --------------------------------------------------------------------- */
 
+/* PortableGL glReadPixels implementation.
+ * Reads from the current portablegl back buffer (pglGetBackBuffer()).
+ * The portablegl back buffer uses PGL_ABGR32 format on little-endian
+ * systems: each pix_t uint32 stores bytes as R G B A (LSB first).
+ * We use glGetIntegerv(GL_VIEWPORT) to obtain the framebuffer width so
+ * that row-stride math is correct without needing a stored context ptr. */
+static void pgl_glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h,
+                              GLenum format, GLenum type, GLvoid* pixels)
+{
+    if (!pixels || type != GL_UNSIGNED_BYTE) return;
+    pix_t* backbuf = static_cast<pix_t*>(pglGetBackBuffer());
+    if (!backbuf) return;
+    /* Determine stride from viewport width */
+    GLint vp[4] = {0, 0, 0, 0};
+    glGetIntegerv(GL_VIEWPORT, vp);
+    const int fbw = vp[2] > 0 ? vp[2] : w; /* fallback: stride = requested width */
+    uint8_t* dst = static_cast<uint8_t*>(pixels);
+    for (int row = y; row < y + h; ++row) {
+        for (int col = x; col < x + w; ++col) {
+            pix_t p = backbuf[row * fbw + col];
+            /* PGL_ABGR32 in memory on LE: byte0=R, byte1=G, byte2=B, byte3=A */
+            uint8_t r = (uint8_t)((p >>  0) & 0xFF);
+            uint8_t g = (uint8_t)((p >>  8) & 0xFF);
+            uint8_t b = (uint8_t)((p >> 16) & 0xFF);
+            uint8_t a = (uint8_t)((p >> 24) & 0xFF);
+            if (format == (GLenum)0x1907 /* GL_RGB */) {
+                *dst++ = r; *dst++ = g; *dst++ = b;
+            } else { /* GL_RGBA */
+                *dst++ = r; *dst++ = g; *dst++ = b; *dst++ = a;
+            }
+        }
+    }
+}
+
+/* No-op stubs for GL functions absent from PortableGL */
+static void pgl_glFlush(void) {}
+static void pgl_glColor4ub(GLubyte, GLubyte, GLubyte, GLubyte) {}
+static void pgl_glColorMaterial(GLenum, GLenum) {}
+static void pgl_glViewport_nop(GLint, GLint, GLsizei, GLsizei) {}
+
 struct CoinPGLCtxData {
     glContext ctx;         /* PortableGL context (owns pixel + depth buf)   */
     pix_t*   backbuf;      /* Back-buffer pointer (managed by PortableGL)   */
@@ -87,6 +127,13 @@ public:
      * calls through the mgl* / osmesa_ symbol namespace. */
     SbBool isOSMesaContext(void * /*context*/) override {
         return FALSE;
+    }
+
+    /* PortableGL renders into its own internal software back-buffer;
+     * no FBO is needed for offscreen rendering.  Signal this to
+     * CoinOffscreenGLCanvas so it skips FBO creation/binding. */
+    SbBool hasSoftwareOwnBuffer(void * /*context*/) override {
+        return TRUE;
     }
 
     void maxOffscreenDimensions(unsigned int & width, unsigned int & height) const override {
@@ -195,6 +242,11 @@ public:
         if (strcmp(funcName, "glEnable") == 0) return (void*)glEnable;
         if (strcmp(funcName, "glEnableVertexArrayAttrib") == 0) return (void*)glEnableVertexArrayAttrib;
         if (strcmp(funcName, "glEnableVertexAttribArray") == 0) return (void*)glEnableVertexAttribArray;
+        /* PortableGL stubs: functions absent from the GL3 core subset */
+        if (strcmp(funcName, "glFlush") == 0) return (void*)pgl_glFlush;
+        if (strcmp(funcName, "glFinish") == 0) return (void*)pgl_glFlush;  /* same no-op */
+        if (strcmp(funcName, "glColor4ub") == 0) return (void*)pgl_glColor4ub;
+        if (strcmp(funcName, "glColorMaterial") == 0) return (void*)pgl_glColorMaterial;
         if (strcmp(funcName, "glFramebufferRenderbuffer") == 0) return (void*)glFramebufferRenderbuffer;
         if (strcmp(funcName, "glFramebufferTexture") == 0) return (void*)glFramebufferTexture;
         if (strcmp(funcName, "glFramebufferTexture1D") == 0) return (void*)glFramebufferTexture1D;
@@ -254,6 +306,7 @@ public:
         if (strcmp(funcName, "glPolygonOffset") == 0) return (void*)glPolygonOffset;
         if (strcmp(funcName, "glProvokingVertex") == 0) return (void*)glProvokingVertex;
         if (strcmp(funcName, "glReadBuffer") == 0) return (void*)glReadBuffer;
+        if (strcmp(funcName, "glReadPixels") == 0) return (void*)pgl_glReadPixels;
         if (strcmp(funcName, "glRenderbufferStorage") == 0) return (void*)glRenderbufferStorage;
         if (strcmp(funcName, "glRenderbufferStorageMultisample") == 0) return (void*)glRenderbufferStorageMultisample;
         if (strcmp(funcName, "glScissor") == 0) return (void*)glScissor;

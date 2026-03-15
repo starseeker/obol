@@ -2511,26 +2511,25 @@ w->glAreTexturesResident = (OBOL_PFNGLARETEXTURESRESIDENTPROC)PROC(w, glAreTextu
 #ifdef OBOL_PORTABLEGL_BUILD
   /* PortableGL implements GL 3.x core FBO but does not expose
    * glGetFramebufferAttachmentParameteriv / glGetRenderbufferParameteriv.
-   * Load the available FBO functions directly and force has_fbo so that
-   * offscreen rendering works. */
-  if (!w->has_fbo) {
-    w->glBindRenderbuffer    = (OBOL_PFNGLBINDRENDERBUFFERPROC)SoGLContext_getprocaddress(w, "glBindRenderbuffer");
-    w->glDeleteRenderbuffers = (OBOL_PFNGLDELETERENDERBUFFERSPROC)SoGLContext_getprocaddress(w, "glDeleteRenderbuffers");
-    w->glGenRenderbuffers    = (OBOL_PFNGLGENRENDERBUFFERSPROC)SoGLContext_getprocaddress(w, "glGenRenderbuffers");
-    w->glRenderbufferStorage = (OBOL_PFNGLRENDERBUFFERSTORAGEPROC)SoGLContext_getprocaddress(w, "glRenderbufferStorage");
-    w->glBindFramebuffer     = (OBOL_PFNGLBINDFRAMEBUFFERPROC)SoGLContext_getprocaddress(w, "glBindFramebuffer");
-    w->glDeleteFramebuffers  = (OBOL_PFNGLDELETEFRAMEBUFFERSPROC)SoGLContext_getprocaddress(w, "glDeleteFramebuffers");
-    w->glGenFramebuffers     = (OBOL_PFNGLGENFRAMEBUFFERSPROC)SoGLContext_getprocaddress(w, "glGenFramebuffers");
-    w->glCheckFramebufferStatus = (OBOL_PFNGLCHECKFRAMEBUFFERSTATUSPROC)SoGLContext_getprocaddress(w, "glCheckFramebufferStatus");
-    w->glFramebufferTexture2D   = (OBOL_PFNGLFRAMEBUFFERTEXTURE2DPROC)SoGLContext_getprocaddress(w, "glFramebufferTexture2D");
-    w->glFramebufferRenderbuffer = (OBOL_PFNGLFRAMEBUFFERRENDERBUFFERPROC)SoGLContext_getprocaddress(w, "glFramebufferRenderbuffer");
-    w->glGenerateMipmap      = (OBOL_PFNGLGENERATEMIPMAPPROC)SoGLContext_getprocaddress(w, "glGenerateMipmap");
-    if (w->glBindRenderbuffer && w->glDeleteRenderbuffers && w->glGenRenderbuffers &&
-        w->glRenderbufferStorage && w->glBindFramebuffer && w->glDeleteFramebuffers &&
-        w->glGenFramebuffers && w->glCheckFramebufferStatus && w->glFramebufferTexture2D &&
-        w->glFramebufferRenderbuffer) {
-      w->has_fbo = TRUE;
-    }
+   * Load FBO function pointers directly via the context manager and
+   * force has_fbo so that offscreen rendering works. */
+  {
+    /* Always (re-)load via our direct portablegl symbol table, bypassing
+     * the cc_dl_sym path which may lag behind context creation. */
+    w->glBindRenderbuffer    = (OBOL_PFNGLBINDRENDERBUFFERPROC)   (void*)glBindRenderbuffer;
+    w->glDeleteRenderbuffers = (OBOL_PFNGLDELETERENDERBUFFERSPROC)(void*)glDeleteRenderbuffers;
+    w->glGenRenderbuffers    = (OBOL_PFNGLGENRENDERBUFFERSPROC)   (void*)glGenRenderbuffers;
+    w->glRenderbufferStorage = (OBOL_PFNGLRENDERBUFFERSTORAGEPROC)(void*)glRenderbufferStorage;
+    w->glBindFramebuffer     = (OBOL_PFNGLBINDFRAMEBUFFERPROC)    (void*)glBindFramebuffer;
+    w->glDeleteFramebuffers  = (OBOL_PFNGLDELETEFRAMEBUFFERSPROC) (void*)glDeleteFramebuffers;
+    w->glGenFramebuffers     = (OBOL_PFNGLGENFRAMEBUFFERSPROC)    (void*)glGenFramebuffers;
+    w->glCheckFramebufferStatus = (OBOL_PFNGLCHECKFRAMEBUFFERSTATUSPROC)(void*)glCheckFramebufferStatus;
+    w->glFramebufferTexture1D   = (OBOL_PFNGLFRAMEBUFFERTEXTURE1DPROC)  (void*)glFramebufferTexture1D;
+    w->glFramebufferTexture2D   = (OBOL_PFNGLFRAMEBUFFERTEXTURE2DPROC)  (void*)glFramebufferTexture2D;
+    w->glFramebufferTexture3D   = (OBOL_PFNGLFRAMEBUFFERTEXTURE3DPROC)  (void*)glFramebufferTexture3D;
+    w->glFramebufferRenderbuffer = (OBOL_PFNGLFRAMEBUFFERRENDERBUFFERPROC)(void*)glFramebufferRenderbuffer;
+    w->glGenerateMipmap      = (OBOL_PFNGLGENERATEMIPMAPPROC)     (void*)glGenerateMipmap;
+    w->has_fbo = TRUE;
   }
 #endif /* OBOL_PORTABLEGL_BUILD */
 
