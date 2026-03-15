@@ -64,6 +64,8 @@
 #include <atomic>
 #include <cassert>
 #include <cstring>
+#include <mutex>
+#include <shared_mutex>
 
 #include "CoinTidbits.h"
 #include <Inventor/SoDB.h>
@@ -206,6 +208,7 @@ SoBase::SoBase(void)
 #if OBOL_DEBUG
   if (SoBase::PImpl::trackbaseobjects) {
     //void * dummy;
+    std::unique_lock<std::shared_mutex> lock(SoBase::PImpl::base_dict_mutex);
     assert(SoBase::PImpl::allbaseobj->find(this)==SoBase::PImpl::allbaseobj->const_end());
     (*SoBase::PImpl::allbaseobj)[this]=NULL;
   }
@@ -229,21 +232,21 @@ SoBase::~SoBase()
   // check that we are still alive.
   this->alive = (~ALIVE_PATTERN) & 0xf;
 
-  if (SoBase::PImpl::auditordict) {
-    //SoAuditorList * l;
-    if (SoBase::PImpl::auditordict->find(this)!=SoBase::PImpl::auditordict->const_end()) {
-      SoBase::PImpl::auditordict->erase(this);
-      //delete l;
+  {
+    std::unique_lock<std::shared_mutex> lock(SoBase::PImpl::base_dict_mutex);
+    if (SoBase::PImpl::auditordict) {
+      if (SoBase::PImpl::auditordict->find(this)!=SoBase::PImpl::auditordict->const_end()) {
+        SoBase::PImpl::auditordict->erase(this);
+      }
     }
+#if OBOL_DEBUG
+    if (SoBase::PImpl::trackbaseobjects) {
+      const size_t ok = SoBase::PImpl::allbaseobj->erase(this);
+      assert(ok && "something fishy going on in debug object tracking");
+    }
+#endif // OBOL_DEBUG
   }
   this->auditortree.clear(); // std::map cleanup
-
-#if OBOL_DEBUG
-  if (SoBase::PImpl::trackbaseobjects) {
-    const size_t ok = SoBase::PImpl::allbaseobj->erase(this);
-    assert(ok && "something fishy going on in debug object tracking");
-  }
-#endif // OBOL_DEBUG
 }
 
 //
@@ -638,7 +641,7 @@ SoBase::getName(void) const
   // you have invoked SoDB::cleanup().
   assert(SoBase::PImpl::obj2name);
 
-  //const char * value = NULL;
+  std::shared_lock<std::shared_mutex> lock(SoBase::PImpl::base_dict_mutex);
   SbHash<const SoBase *, const char *>::const_iterator tmp = SoBase::PImpl::obj2name->find(this);
   SbBool found = (tmp != SoBase::PImpl::obj2name->const_end());
   return SbName(found ? tmp->obj : "");
@@ -671,8 +674,18 @@ SoBase::setName(const SbName & newname)
   // un-deallocated SoBase-instances were allocated from. (I.e., run it
   // in a debugger and check the backtrace.)  -mortene.
 
+  std::unique_lock<std::shared_mutex> lock(SoBase::PImpl::base_dict_mutex);
+
+  // Read old name directly from the dict (not via getName(), which would
+  // try to acquire a shared lock on the same mutex we already hold).
+  SbName oldName;
+  {
+    SbHash<const SoBase *, const char *>::const_iterator tmp =
+      SoBase::PImpl::obj2name->find(this);
+    oldName = SbName(tmp != SoBase::PImpl::obj2name->const_end() ? tmp->obj : "");
+  }
+
   // remove old name first
-  SbName oldName = this->getName();
   if (oldName != SbName::empty()) SoBase::removeName(this, oldName.getString());
 
   // semantics in the original SGI Inventor is to not build a separate
@@ -838,6 +851,7 @@ sobase_audlist_add(void * pointer, void * type, void * closure)
 const SoAuditorList &
 SoBase::getAuditors(void) const
 {
+  std::unique_lock<std::shared_mutex> lock(SoBase::PImpl::base_dict_mutex);
   if (SoBase::PImpl::auditordict == NULL) {
     SoBase::PImpl::auditordict = new SbHash<const SoBase *, SoAuditorList *>();
     coin_atexit((coin_atexit_f*)SoBase::PImpl::cleanup_auditordict, CC_ATEXIT_NORMAL);
@@ -855,7 +869,8 @@ SoBase::getAuditors(void) const
     }
   }
   else {
-    (*SoBase::PImpl::auditordict)[this] = new SoAuditorList;
+    l = new SoAuditorList;
+    (*SoBase::PImpl::auditordict)[this] = l;
   }
   
   // Traverse the std::map and call sobase_audlist_add for each entry
@@ -943,6 +958,7 @@ SoBase::decrementCurrentWriteCounter(void)
 SoBase *
 SoBase::getNamedBase(const SbName & name, SoType type)
 {
+  std::shared_lock<std::shared_mutex> lock(SoBase::PImpl::base_dict_mutex);
   SbHash<const char*, SbPList*>::const_iterator iter = 
     SoBase::PImpl::name2obj->find((const char *)name);
   if (iter!=SoBase::PImpl::name2obj->const_end()) {
@@ -968,6 +984,7 @@ SoBase::getNamedBases(const SbName & name, SoBaseList & baselist, SoType type)
 {
   int matches = 0;
 
+  std::shared_lock<std::shared_mutex> lock(SoBase::PImpl::base_dict_mutex);
   SbHash<const char*, SbPList*>::const_iterator iter = 
     SoBase::PImpl::name2obj->find((const char *)name);
   if (iter!=SoBase::PImpl::name2obj->const_end()) {
