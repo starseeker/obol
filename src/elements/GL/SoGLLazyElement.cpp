@@ -225,8 +225,9 @@ SoGLLazyElement::sendPackedDiffuse(const uint32_t col) const
 inline void
 SoGLLazyElement::sendLightModel(const int32_t model) const
 {
-  if (model == PHONG) SoGLContext_glEnable(this->glue, GL_LIGHTING);
-  else SoGLContext_glDisable(this->glue, GL_LIGHTING);
+  // GL3: GL_LIGHTING removed from core; SoGLModernState activates Phong/BaseColor shader.
+  if (model == PHONG) SoGLContext_glEnable(this->glue, 0x0B50 /*GL_LIGHTING*/);
+  else SoGLContext_glDisable(this->glue, 0x0B50 /*GL_LIGHTING*/);
   this->glstate.lightmodel = model;
   this->cachebitmask |= LIGHT_MODEL_MASK;
 }
@@ -234,8 +235,8 @@ SoGLLazyElement::sendLightModel(const int32_t model) const
 inline void
 SoGLLazyElement::sendFlatshading(const SbBool onoff) const
 {
-  if (onoff) glShadeModel(GL_FLAT);
-  else glShadeModel(GL_SMOOTH);
+  // GL3: glShadeModel removed (flat/smooth shading done via 'flat' interpolation qualifier in shaders).
+  (void)onoff;
   this->glstate.flatshading = (int32_t) onoff;
   this->cachebitmask |= SHADE_MODEL_MASK;
 }
@@ -243,13 +244,8 @@ SoGLLazyElement::sendFlatshading(const SbBool onoff) const
 inline void
 SoGLLazyElement::sendAlphaTest(int func, float value) const
 {
-  if (func) {
-    SoGLContext_glAlphaFunc(this->glue, (GLenum) func, value);
-    SoGLContext_glEnable(this->glue, GL_ALPHA_TEST);
-  }
-  else {
-    SoGLContext_glDisable(this->glue, GL_ALPHA_TEST);
-  }
+  // GL3: GL_ALPHA_TEST removed from core (use 'discard' in fragment shader instead).
+  (void)func; (void)value;
   this->cachebitmask |= ALPHATEST_MASK;
   this->glstate.alphatestfunc = func;
   this->glstate.alphatestvalue = value;
@@ -267,7 +263,8 @@ SoGLLazyElement::sendVertexOrdering(const VertexOrdering ordering) const
 inline void
 SoGLLazyElement::sendTwosideLighting(const SbBool onoff) const
 {
-  SoGLContext_glLightModeli(this->glue, GL_LIGHT_MODEL_TWO_SIDE, onoff ? GL_TRUE : GL_FALSE);
+  // GL3: GL_LIGHT_MODEL_TWO_SIDE removed; two-sided lighting is handled via shaders/SoGLModernState.
+  (void)onoff;
   this->glstate.twoside = (int32_t) onoff;
   this->cachebitmask |= TWOSIDE_MASK;
 }
@@ -284,17 +281,15 @@ SoGLLazyElement::sendBackfaceCulling(const SbBool onoff) const
 static inline void
 send_gl_material(const SoGLContext * glue, GLenum pname, const SbColor & color)
 {
-  GLfloat col[4];
-  color.getValue(col[0], col[1], col[2]);
-  col[3] = 1.0f;
-  SoGLContext_glMaterialfv(glue, GL_FRONT_AND_BACK, pname, col);
+  // GL3: glMaterialfv (fixed-function material) removed. State tracked for SoGLModernState.
+  (void)glue; (void)pname; (void)color;
 }
 
 
 inline void
 SoGLLazyElement::sendAmbient(const SbColor & color) const
 {
-  send_gl_material(this->glue, GL_AMBIENT, color);
+  send_gl_material(this->glue, 0x1200 /*GL_AMBIENT*/, color);
   this->glstate.ambient = color;
   this->cachebitmask |= AMBIENT_MASK;
 }
@@ -302,7 +297,7 @@ SoGLLazyElement::sendAmbient(const SbColor & color) const
 inline void
 SoGLLazyElement::sendEmissive(const SbColor & color) const
 {
-  send_gl_material(this->glue, GL_EMISSION, color);
+  send_gl_material(this->glue, 0x1600 /*GL_EMISSION*/, color);
   this->glstate.emissive = color;
   this->cachebitmask |= EMISSIVE_MASK;
 }
@@ -310,7 +305,7 @@ SoGLLazyElement::sendEmissive(const SbColor & color) const
 inline void
 SoGLLazyElement::sendSpecular(const SbColor & color) const
 {
-  send_gl_material(this->glue, GL_SPECULAR, color);
+  send_gl_material(this->glue, 0x1202 /*GL_SPECULAR*/, color);
   this->glstate.specular = color;
   this->cachebitmask |= SPECULAR_MASK;
 }
@@ -318,7 +313,8 @@ SoGLLazyElement::sendSpecular(const SbColor & color) const
 inline void
 SoGLLazyElement::sendShininess(const float shine) const
 {
-  SoGLContext_glMaterialf(this->glue, GL_FRONT_AND_BACK, GL_SHININESS, shine*128.0f);
+  // GL3: GL_SHININESS/glMaterialf removed; shininess passed via SoGLModernState.
+  (void)shine;
   this->glstate.shininess = shine;
   this->cachebitmask |= SHININESS_MASK;
 }
@@ -326,13 +322,8 @@ SoGLLazyElement::sendShininess(const float shine) const
 inline void
 SoGLLazyElement::sendTransparency(const int stipplenum) const
 {
-  if (stipplenum == 0) {
-    SoGLContext_glDisable(this->glue, GL_POLYGON_STIPPLE);
-  }
-  else {
-    if (this->glstate.stipplenum <= 0) SoGLContext_glEnable(this->glue, GL_POLYGON_STIPPLE);
-    SoGLContext_glPolygonStipple(this->glue, stipple_patterns[stipplenum]);
-  }
+  // GL3: GL_POLYGON_STIPPLE removed. Transparency handled via alpha blending.
+  (void)stipplenum;
   this->glstate.stipplenum = stipplenum;
   this->cachebitmask |= TRANSPARENCY_MASK;
 }
@@ -423,14 +414,9 @@ SoGLLazyElement::init(SoState * stateptr)
   // a cache though.
   this->cachebitmask = 0;
 
-  SoGLContext_glDisable(this->glue, GL_POLYGON_STIPPLE);
-
-  GLboolean rgba;
-  SoGLContext_glGetBooleanv(this->glue, GL_RGBA_MODE, &rgba);
-  if (!rgba) this->colorindex = TRUE;
-  else {
-    this->sendPackedDiffuse(0xccccccff);
-  }
+  // GL3: GL_POLYGON_STIPPLE removed. GL3 always uses RGBA mode.
+  this->colorindex = FALSE;
+  this->sendPackedDiffuse(0xccccccff);
 }
 
 void

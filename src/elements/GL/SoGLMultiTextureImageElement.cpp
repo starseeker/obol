@@ -333,30 +333,10 @@ SoGLMultiTextureImageElement::updateGL(const int unit)
     SoGLImage::tagImage(state, glud.glimage);
 
     if (SoTextureCombineElement::isDefault(state, unit)) {
-      switch (ud.model) {
-      case DECAL:
-        SoGLContext_glTexEnvi(this->glue, GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL);
-        break;
-      case MODULATE:
-        SoGLContext_glTexEnvi(this->glue, GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-        break;
-      case BLEND:
-        SoGLContext_glTexEnvi(this->glue, GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_BLEND);
-        SoGLContext_glTexEnvfv(this->glue, GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, ud.blendColor.getValue());
-        break;
-      case REPLACE:
-        // GL_REPLACE mode was introduced with OpenGL 1.1. It is
-        // considered the client code's responsibility to check
-        // that it can use this mode.
-        //
-        // FIXME: ..but we should do a sanity check anyway.
-        // 20030901 mortene.
-        SoGLContext_glTexEnvi(this->glue, GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-        break;
-      default:
-        assert(0 && "unknown model");
-        break;
-      }
+      // GL3: glTexEnvi (fixed-function texture environment) removed from core profile.
+      // Texture blending modes are now handled in fragment shaders.
+      // State is tracked for future shader-based implementation.
+      (void)0; // suppress empty block warning
     }
     else {
       SoTextureCombineElement::apply(state, unit);

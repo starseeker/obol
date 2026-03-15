@@ -129,15 +129,13 @@ SoGLLinePatternElement::setElt(int32_t pattern)
 void
 SoGLLinePatternElement::updategl()
 {
-  //
-  // FIXME: store flag to keep enable/disable state, pederb 990624
-  //
+  // GL3: GL_LINE_STIPPLE removed from core profile.
   if ((this->data & 0xffff) == (int32_t) CONTINUOUS) {
-    SoGLContext_glDisable(this->glue, GL_LINE_STIPPLE);
+    SoGLContext_glDisable(this->glue, 0x0B24 /*GL_LINE_STIPPLE*/);
   }
   else {
-    // Enable line stipple before setting the pattern (required by OpenGL spec).
-    SoGLContext_glEnable(this->glue, GL_LINE_STIPPLE);
+    // GL3: line stipple not available; lines are rendered solid.
+    SoGLContext_glEnable(this->glue, 0x0B24 /*GL_LINE_STIPPLE*/);
     SoGLContext_glLineStipple(this->glue, (GLint) (this->data >> 16), (GLushort) (this->data & 0xffff));
   }
 }

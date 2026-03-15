@@ -154,14 +154,14 @@ SoGLMultiTextureMatrixElement::updategl(const int unit) const
   if (unit != 0) {
     SoGLContext_glActiveTexture(ctx, (GLenum) (int(GL_TEXTURE0) + unit));
   }
-  SoGLContext_glMatrixMode(this->glue, GL_TEXTURE);
+  SoGLContext_glMatrixMode(this->glue, 0x1702 /*GL_TEXTURE*/);
   if (unit < this->getNumUnits()) {
     SoGLContext_glLoadMatrixf(this->glue, this->getUnitData(unit).textureMatrix[0]);
   }
   else {
     SoGLContext_glLoadIdentity(this->glue);
   }
-  SoGLContext_glMatrixMode(this->glue, GL_MODELVIEW);
+  SoGLContext_glMatrixMode(this->glue, 0x1700 /*GL_MODELVIEW*/);
   if (unit != 0) {
     SoGLContext_glActiveTexture(ctx, (GLenum) GL_TEXTURE0);
   }

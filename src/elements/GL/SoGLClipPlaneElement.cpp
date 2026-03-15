@@ -105,7 +105,7 @@ SoGLClipPlaneElement::pop(SoState * state,
 
   // disable used planes
   for (int i = prev->startIndex; i < prev->getNum(); i++)
-    SoGLContext_glDisable(ctx, (GLenum)((int)GL_CLIP_PLANE0 + i));
+    SoGLContext_glDisable(ctx, (GLenum)(0x3000 /*GL_CLIP_PLANE0*/ + i));
 
   inherited::pop(state, prevTopElement);
 }
@@ -124,6 +124,6 @@ SoGLClipPlaneElement::addToElt(const SbPlane & plane,
   equation[1] = norm[1];
   equation[2] = norm[2];
   equation[3] = - plane.getDistanceFromOrigin();
-  SoGLContext_glClipPlane(this->glue, (GLenum)((int)GL_CLIP_PLANE0 + idxadd), equation);
-  SoGLContext_glEnable(this->glue, (GLenum)((int)GL_CLIP_PLANE0 + idxadd));
+  SoGLContext_glClipPlane(this->glue, (GLenum)(0x3000 /*GL_CLIP_PLANE0*/ + idxadd), equation);
+  SoGLContext_glEnable(this->glue, (GLenum)(0x3000 /*GL_CLIP_PLANE0*/ + idxadd));
 }

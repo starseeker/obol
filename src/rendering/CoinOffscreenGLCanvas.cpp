@@ -461,61 +461,10 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
     }
   }
 
-  SoGLContext_glPushAttrib(glue, GL_ALL_ATTRIB_BITS);
-
-  // First reset all settings that can influence the result of a
-  // glReadPixels() call, to make sure we get the actual contents of
-  // the buffer, unmodified.
-  //
-  // The values set up below matches the default settings of an
-  // OpenGL driver.
-  //
-  // IMPORTANT: GL_PACK_* are *client* pixel-store parameters; they are NOT
-  // saved/restored by glPushAttrib/glPopAttrib (which only covers server
-  // state).  We therefore explicitly reset every pack pixel-store value to
-  // the GL default both here (before we use them) and after glPopAttrib at
-  // the end of this function.  This prevents any lingering GL_PACK_ROW_LENGTH
-  // from contaminating subsequent glReadPixels calls in other code paths
-  // (e.g. SoSceneTexture2::updatePBuffer) that may share the same GL context.
-
-  SoGLContext_glPixelStorei(glue, GL_PACK_SWAP_BYTES, 0);
-  SoGLContext_glPixelStorei(glue, GL_PACK_LSB_FIRST, 0);
-  SoGLContext_glPixelStorei(glue, GL_PACK_ROW_LENGTH, (GLint)dstrowsize);
-  SoGLContext_glPixelStorei(glue, GL_PACK_SKIP_ROWS, 0);
-  SoGLContext_glPixelStorei(glue, GL_PACK_SKIP_PIXELS, 0);
-
-  // FIXME: should use best possible alignment, for speediest
-  // operation. 20050617 mortene.
-//   SoGLContext_glPixelStorei(glue, GL_PACK_ALIGNMENT, 4);
+  // GL3: glPushAttrib/glPopAttrib, glPixelTransfer*, glPixelMap*, GL_PACK_LSB_FIRST etc. removed.
+  // Only GL_PACK_ALIGNMENT is meaningful in GL3 core for glReadPixels.
+  (void)dstrowsize; // GL_PACK_ROW_LENGTH removed from GL3 core
   SoGLContext_glPixelStorei(glue, GL_PACK_ALIGNMENT, 1);
-
-  SoGLContext_glPixelTransferi(glue, GL_MAP_COLOR, 0);
-  SoGLContext_glPixelTransferi(glue, GL_MAP_STENCIL, 0);
-  SoGLContext_glPixelTransferi(glue, GL_INDEX_SHIFT, 0);
-  SoGLContext_glPixelTransferi(glue, GL_INDEX_OFFSET, 0);
-  SoGLContext_glPixelTransferf(glue, GL_RED_SCALE, 1);
-  SoGLContext_glPixelTransferf(glue, GL_RED_BIAS, 0);
-  SoGLContext_glPixelTransferf(glue, GL_GREEN_SCALE, 1);
-  SoGLContext_glPixelTransferf(glue, GL_GREEN_BIAS, 0);
-  SoGLContext_glPixelTransferf(glue, GL_BLUE_SCALE, 1);
-  SoGLContext_glPixelTransferf(glue, GL_BLUE_BIAS, 0);
-  SoGLContext_glPixelTransferf(glue, GL_ALPHA_SCALE, 1);
-  SoGLContext_glPixelTransferf(glue, GL_ALPHA_BIAS, 0);
-  SoGLContext_glPixelTransferf(glue, GL_DEPTH_SCALE, 1);
-  SoGLContext_glPixelTransferf(glue, GL_DEPTH_BIAS, 0);
-
-  GLuint i = 0;
-  GLfloat f = 0.0f;
-  SoGLContext_glPixelMapfv(glue, GL_PIXEL_MAP_I_TO_I, 1, &f);
-  SoGLContext_glPixelMapuiv(glue, GL_PIXEL_MAP_S_TO_S, 1, &i);
-  SoGLContext_glPixelMapfv(glue, GL_PIXEL_MAP_I_TO_R, 1, &f);
-  SoGLContext_glPixelMapfv(glue, GL_PIXEL_MAP_I_TO_G, 1, &f);
-  SoGLContext_glPixelMapfv(glue, GL_PIXEL_MAP_I_TO_B, 1, &f);
-  SoGLContext_glPixelMapfv(glue, GL_PIXEL_MAP_I_TO_A, 1, &f);
-  SoGLContext_glPixelMapfv(glue, GL_PIXEL_MAP_R_TO_R, 1, &f);
-  SoGLContext_glPixelMapfv(glue, GL_PIXEL_MAP_G_TO_G, 1, &f);
-  SoGLContext_glPixelMapfv(glue, GL_PIXEL_MAP_B_TO_B, 1, &f);
-  SoGLContext_glPixelMapfv(glue, GL_PIXEL_MAP_A_TO_A, 1, &f);
 
   // The flushing of the OpenGL pipeline before and after the
   // glReadPixels() call is done as a work-around for a reported
@@ -538,7 +487,7 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
   //
   // mortene.
 
-  SoGLContext_glFlush(glue); glFinish();
+  SoGLContext_glFlush(glue); /* glFinish removed — not in portablegl core */
 
   assert((nrcomponents >= 1) && (nrcomponents <= 4));
 
@@ -569,21 +518,9 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
     }
     delete[] readbuffer;
   }
-  SoGLContext_glFlush(glue); glFinish();
+  SoGLContext_glFlush(glue);
 
-  SoGLContext_glPopAttrib(glue);
-
-  // glPushAttrib/glPopAttrib does NOT save/restore client pixel-store state
-  // (GL_PACK_ROW_LENGTH etc.).  Explicitly reset them to the GL defaults so
-  // that any subsequent glReadPixels call — in SoSceneTexture2, shadow maps,
-  // or any other node that shares this context — sees a clean state and does
-  // not inherit our tiling row-length.
-  SoGLContext_glPixelStorei(glue, GL_PACK_ROW_LENGTH,  0);
-  SoGLContext_glPixelStorei(glue, GL_PACK_SKIP_ROWS,   0);
-  SoGLContext_glPixelStorei(glue, GL_PACK_SKIP_PIXELS, 0);
-  SoGLContext_glPixelStorei(glue, GL_PACK_SWAP_BYTES,  0);
-  SoGLContext_glPixelStorei(glue, GL_PACK_LSB_FIRST,   0);
-  SoGLContext_glPixelStorei(glue, GL_PACK_ALIGNMENT,   4); /* GL default */
+  SoGLContext_glPixelStorei(glue, GL_PACK_ALIGNMENT, 4); /* restore GL default */
 }
 
 // *************************************************************************

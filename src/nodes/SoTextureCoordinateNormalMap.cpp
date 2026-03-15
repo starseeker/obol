@@ -190,8 +190,7 @@ SoTextureCoordinateNormalMap::pick(SoPickAction * action)
 void
 SoTextureCoordinateNormalMap::handleTexgen(void * data)
 {
-  SoTextureCoordinateNormalMap * thisp = (SoTextureCoordinateNormalMap*)data;
-  SoGLContext_glTexGeni(thisp->cachedGlue, GL_S, GL_TEXTURE_GEN_MODE, GL_NORMAL_MAP);
-  SoGLContext_glTexGeni(thisp->cachedGlue, GL_T, GL_TEXTURE_GEN_MODE, GL_NORMAL_MAP);  
-  SoGLContext_glTexGeni(thisp->cachedGlue, GL_R, GL_TEXTURE_GEN_MODE, GL_NORMAL_MAP);
+  // GL3: glTexGen* (fixed-function texture coordinate generation) removed.
+  // Normal-map texcoord generation now requires a vertex shader implementation.
+  (void)data;
 }

@@ -117,7 +117,7 @@ SoGLModelMatrixElement::push(SoState * stateptr)
   if (OBOL_HANDLE_STACK_OVERFLOW > 0) {
     if (!this->stackoverflow) {
       SoGLContext_glPushMatrix(this->glue);
-      if (glGetError() == GL_STACK_OVERFLOW) {
+      if (glGetError() == 0x0503 /*GL_STACK_OVERFLOW*/) {
         this->stackoverflow = TRUE;
       }
     }

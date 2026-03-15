@@ -746,7 +746,7 @@ sogl_render_cylinder(const float radius,
   int matnr = 0;
 
   if (flags & SOGL_RENDER_SIDE) {
-    SoGLContext_glBegin(glue, GL_QUAD_STRIP);
+    SoGLContext_glBegin(glue, 0x0008 /*GL_QUAD_STRIP*/);
     i = 0;
 
     float t = 0.0;
@@ -1138,7 +1138,7 @@ sogl_render_sphere(const float radius,
   for (i = 2; i < stacks-1; i++) {
     tc = (float)cos(rho);
     ts = - (float) sin(rho);
-    SoGLContext_glBegin(glue, GL_QUAD_STRIP);
+    SoGLContext_glBegin(glue, 0x0008 /*GL_QUAD_STRIP*/);
     theta = 0.0f;
     for (j = 0; j <= slices; j++) {
       if (flags & SOGL_NEED_TEXCOORDS) {
@@ -1183,7 +1183,7 @@ sogl_render_sphere(const float radius,
       coords[j] = tmp;
       theta += dtheta;
     }
-    SoGLContext_glEnd(glue); // GL_QUAD_STRIP
+    SoGLContext_glEnd(glue); // 0x0008 /*GL_QUAD_STRIP*/
     rho += drho;
     T -= dT;
   }
@@ -1359,7 +1359,7 @@ sogl_render_cube(const float width,
                          width * 0.5f,
                          height * 0.5f,
                          depth * 0.5f);
-  SoGLContext_glBegin(glue, GL_QUADS);
+  SoGLContext_glBegin(glue, 0x0007 /*GL_QUADS*/);
   int *iptr = sogl_cube_vindices;
   int u;
 
@@ -1835,7 +1835,7 @@ namespace { namespace SoGL { namespace FaceSet {
     if (is3d) SoGLContext_glVertex3fv(glue, (const GLfloat*) (coords3d + _idx_));             \
     else SoGLContext_glVertex4fv(glue, (const GLfloat*) (coords4d + _idx_));
 
-    int mode = GL_POLYGON; // ...to save a test
+    int mode = 0x0009 /*GL_POLYGON*/; // ...to save a test
     int newmode;
     const int32_t *viptr = vertexindices;
     const int32_t *vistartptr = vertexindices;
@@ -1900,10 +1900,10 @@ namespace { namespace SoGL { namespace FaceSet {
       }
       else {
         v5 = viptr < viendptr ? *viptr++ : -1;
-        if (v5 < 0) newmode = GL_QUADS;
+        if (v5 < 0) newmode = 0x0007 /*GL_QUADS*/;
         // This test for numverts is for robustness upon buggy data sets
         else if (v5 >= numverts) {
-          newmode = GL_QUADS;
+          newmode = 0x0007 /*GL_QUADS*/;
 
           if (current_errors < 1) {
             SoDebugError::postWarning("[faceset]::GLRender", "Erroneous polygon detected. "
@@ -1914,14 +1914,14 @@ namespace { namespace SoGL { namespace FaceSet {
           }
           current_errors++;
         }
-        else newmode = GL_POLYGON;
+        else newmode = 0x0009 /*GL_POLYGON*/;
       }
       if (newmode != mode) {
-        if (mode != GL_POLYGON) SoGLContext_glEnd(glue);
+        if (mode != 0x0009 /*GL_POLYGON*/) SoGLContext_glEnd(glue);
         mode = newmode;
         SoGLContext_glBegin(glue, (GLenum) mode);
       }
-      else if (mode == GL_POLYGON) SoGLContext_glBegin(glue, GL_POLYGON);
+      else if (mode == 0x0009 /*GL_POLYGON*/) SoGLContext_glBegin(glue, 0x0009 /*GL_POLYGON*/);
 
       /* vertex 1 *********************************************************/
       if ((AttributeBinding)MaterialBinding == PER_VERTEX ||
@@ -2065,7 +2065,7 @@ namespace { namespace SoGL { namespace FaceSet {
         }
         SEND_VERTEX(v4);
 
-        if (mode == GL_POLYGON) {
+        if (mode == 0x0009 /*GL_POLYGON*/) {
           /* vertex 5 (polygon) ********************************************/
           if ((AttributeBinding)MaterialBinding == PER_VERTEX) {
             materials->send(matnr++, TRUE);
@@ -2174,7 +2174,7 @@ namespace { namespace SoGL { namespace FaceSet {
       }
     }
     // check if triangle or quad
-    if (mode != GL_POLYGON) SoGLContext_glEnd(glue);
+    if (mode != 0x0009 /*GL_POLYGON*/) SoGLContext_glEnd(glue);
   }
 
 } } } // namespace

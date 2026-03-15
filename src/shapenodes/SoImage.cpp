@@ -163,6 +163,9 @@
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
 #include <Inventor/elements/SoGLLazyElement.h>
+#include <Inventor/elements/SoViewingMatrixElement.h>
+#include <Inventor/elements/SoProjectionMatrixElement.h>
+#include <Inventor/elements/SoGLViewingMatrixElement.h>
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/errors/SoReadError.h>
 #include <Inventor/lists/SbStringList.h>
@@ -173,6 +176,9 @@
 #include "glue/glp.h"
 #include "nodes/SoSubNodeP.h"
 #include "base/SbImageFormatHandler.h"
+#include "rendering/SoGLModernState.h"
+#include <vector>
+#include <cstring>
 #include "base/SbJpegImageHandler.h"
 
 
@@ -442,83 +448,101 @@ SoImage::GLRender(SoGLRenderAction * action)
     srch = vpsize[1]-ypos;
   }
 
-  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
-  SoGLContext_glPushMatrix(sogl_glue_from_state(state));
-  SoGLContext_glLoadIdentity(sogl_glue_from_state(state));
-  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_PROJECTION);
-  SoGLContext_glPushMatrix(sogl_glue_from_state(state));
-  SoGLContext_glLoadIdentity(sogl_glue_from_state(state));
-  SoGLContext_glOrtho(sogl_glue_from_state(state), 0, vpsize[0], 0, vpsize[1], -1.0f, 1.0f);
+  // GL3: glDrawPixels is removed in core profile.  Upload the image as a
+  // GL_TEXTURE_2D and render it as a screen-space textured quad instead.
+  // Cropping (skipx/skipy/srcw/srch) is handled manually since
+  // GL_UNPACK_SKIP_PIXELS / GL_UNPACK_ROW_LENGTH are not in GL 3 core.
 
-  float oldzx, oldzy;
-
-  if (orgsize != size) { // use glPixelZoom to scale image
-    SoGLContext_glGetFloatv(sogl_glue_from_state(state), GL_ZOOM_X, &oldzx);
-    SoGLContext_glGetFloatv(sogl_glue_from_state(state), GL_ZOOM_Y, &oldzy);
-
-    // calculate pixel zoom value
-    float zx, zy;
-    zx = float(size[0]) / float(orgsize[0]);
-    zy = float(size[1]) / float(orgsize[1]);
-
-    // update GL
-    SoGLContext_glPixelZoom(sogl_glue_from_state(state), zx, zy);
-
-    // adjust glDrawPixels and glPixelStorage parameters to account for zoom
-    srcw = (int) (srcw / zx);
-    srch = (int) (srch / zy);
-    skipx = (int) (skipx / zx);
-    skipy = (int) (skipy / zy);
-
-    // in case of rounding errors
-    if (skipx + srcw > orgsize[0]) {
-      srcw = orgsize[0] - skipx;
-    }
-    if (skipy + srch > orgsize[1]) {
-      srch = orgsize[1] - skipy;
-    }
-  }
-
-
-  GLfloat rpx = xpos >= 0 ? xpos : 0.0f;
-  SbBool offvp = xpos < 0 ? TRUE : FALSE;
-  GLfloat offsetx = xpos >= 0 ? 0.0f : xpos;
-
-  GLfloat rpy = ypos >= 0 ? ypos : 0.0f;
-  offvp = (offvp || ypos < 0) ? TRUE : FALSE;  // FIXED: Operator precedence bug
-  GLfloat offsety = ypos >= 0 ? 0.0f : ypos;
-
-  SoGLContext_glRasterPos3f(sogl_glue_from_state(state), rpx, rpy, -nilpoint[2]);
-
-  if (offvp) { SoGLContext_glBitmap(sogl_glue_from_state(state), 0,0,0,0,offsetx,offsety,NULL); }
-
-  SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_ROW_LENGTH, orgsize[0]);
-  SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_SKIP_PIXELS, skipx);
-  SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_SKIP_ROWS, skipy);
-  SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_PACK_ROW_LENGTH, vpsize[0]);
-  SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_PACK_ALIGNMENT, 1);
-  SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_ALIGNMENT, 1);
-
-  SoGLContext_glDrawPixels(sogl_glue_from_state(state), srcw, srch, format, GL_UNSIGNED_BYTE,
-               (const GLvoid*) dataptr);
-
-  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_PROJECTION);
-  SoGLContext_glPopMatrix(sogl_glue_from_state(state));
-  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
-  SoGLContext_glPopMatrix(sogl_glue_from_state(state));
-
+  // When size != orgsize the caller already specified a scaled display size.
+  // Build the actual screen quad dimensions from the clipped region.
+  int quadW = srcw, quadH = srch;
   if (orgsize != size) {
-    // restore zoom
-    SoGLContext_glPixelZoom(sogl_glue_from_state(state), oldzx, oldzy);
+    float zx = float(size[0]) / float(orgsize[0]);
+    float zy = float(size[1]) / float(orgsize[1]);
+    quadW = (int)(srcw * zx + 0.5f);
+    quadH = (int)(srch * zy + 0.5f);
+    // Re-derive source crop from original (unscaled) coordinates.
+    srcw = (int)(srcw / zx);
+    srch = (int)(srch / zy);
+    skipx = (int)(skipx / zx);
+    skipy = (int)(skipy / zy);
+    if (skipx + srcw > orgsize[0]) srcw = orgsize[0] - skipx;
+    if (skipy + srch > orgsize[1]) srch = orgsize[1] - skipy;
   }
 
-  // restore to default values
-  SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_ROW_LENGTH, 0);
-  SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_SKIP_PIXELS, 0);
-  SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_SKIP_ROWS, 0);
-  SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_PACK_ROW_LENGTH, 0);
-  SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_PACK_ALIGNMENT, 4);
-  SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_ALIGNMENT, 4);
+  // Manually extract the cropped sub-image into a contiguous buffer.
+  std::vector<unsigned char> cropped(static_cast<size_t>(srcw) * srch * nc);
+  for (int row = 0; row < srch; ++row) {
+    const unsigned char * src = dataptr
+      + static_cast<ptrdiff_t>(skipy + row) * orgsize[0] * nc
+      + static_cast<ptrdiff_t>(skipx) * nc;
+    unsigned char * dst = cropped.data() + static_cast<ptrdiff_t>(row) * srcw * nc;
+    memcpy(dst, src, static_cast<size_t>(srcw) * nc);
+  }
+
+  // Upload as a GL_TEXTURE_2D.
+  GLuint img_texid = 0;
+  SoGLContext_glGenTextures(sogl_glue_from_state(state), 1, &img_texid);
+  if (img_texid) {
+    SoGLContext_glActiveTexture(sogl_glue_from_state(state), GL_TEXTURE0);
+    SoGLContext_glBindTexture(sogl_glue_from_state(state), GL_TEXTURE_2D, img_texid);
+    SoGLContext_glTexParameteri(sogl_glue_from_state(state), GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    SoGLContext_glTexParameteri(sogl_glue_from_state(state), GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    SoGLContext_glTexParameteri(sogl_glue_from_state(state), GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    SoGLContext_glTexParameteri(sogl_glue_from_state(state), GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_ALIGNMENT, 1);
+    SoGLContext_glTexImage2D(sogl_glue_from_state(state), GL_TEXTURE_2D, 0,
+                             (nc == 4) ? GL_RGBA : (nc == 3) ? GL_RGB : GL_LUMINANCE,
+                             srcw, srch, 0, format, GL_UNSIGNED_BYTE, cropped.data());
+    SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_ALIGNMENT, 4);
+
+    // Set up screen-space ortho matrices for 2D image rendering.
+    SoGLModernState * ms_img = SoGLModernState::forContext(action->getCacheContext());
+    if (ms_img && ms_img->isAvailable()) {
+      static const float ident[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+      ms_img->setModelViewMatrix(ident);
+      float W = static_cast<float>(vpsize[0]), H = static_cast<float>(vpsize[1]);
+      const float ortho[16] = {
+        2.0f/W, 0,      0,  -1.0f,
+        0,      2.0f/H, 0,  -1.0f,
+        0,      0,     -1.0f, 0,
+        0,      0,      0,   1.0f
+      };
+      ms_img->setProjectionMatrix(ortho);
+      static const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+      ms_img->setMaterial(white, white, white, white, 0.0f);
+      ms_img->activateBaseColor(false, true, true);
+    }
+
+    float qx  = static_cast<float>(xpos);
+    float qy  = static_cast<float>(ypos);
+    float qx1 = qx + static_cast<float>(quadW);
+    float qy1 = qy + static_cast<float>(quadH);
+    float qz  = -nilpoint[2];
+
+    SoGLContext_glEnable(sogl_glue_from_state(state), GL_TEXTURE_2D);
+    SoGLContext_glBegin(sogl_glue_from_state(state), GL_TRIANGLES);
+    SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 0.0f, 0.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx,  qy,  qz);
+    SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 1.0f, 0.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx1, qy,  qz);
+    SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 1.0f, 1.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx1, qy1, qz);
+    SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 0.0f, 0.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx,  qy,  qz);
+    SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 1.0f, 1.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx1, qy1, qz);
+    SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 0.0f, 1.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx,  qy1, qz);
+    SoGLContext_glEnd(sogl_glue_from_state(state));
+    SoGLContext_glDisable(sogl_glue_from_state(state), GL_TEXTURE_2D);
+
+    SoGLContext_glBindTexture(sogl_glue_from_state(state), GL_TEXTURE_2D, 0);
+    SoGLContext_glDeleteTextures(sogl_glue_from_state(state), 1, &img_texid);
+
+    // Restore SoGLModernState matrices from Coin state.
+    if (ms_img && ms_img->isAvailable()) {
+      SbMatrix mv = SoGLViewingMatrixElement::getResetMatrix(state);
+      mv.multLeft(SoModelMatrixElement::get(state));
+      ms_img->setModelViewMatrix((const float*)mv.getValue());
+      const SbMatrix &proj = SoProjectionMatrixElement::get(state);
+      ms_img->setProjectionMatrix((const float*)proj.getValue());
+    }
+  }
 
   // don't auto cache Image nodes.
   SoGLCacheContextElement::shouldAutoCache(action->getState(),

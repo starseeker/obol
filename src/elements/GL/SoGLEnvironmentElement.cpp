@@ -113,67 +113,15 @@ SoGLEnvironmentElement::updategl(SoState * const state)
   ambient[2] = ambientColor[2] * ambientIntensity;
   ambient[3] = 1.0f;
 
-  SoGLContext_glLightModelfv(glue, GL_LIGHT_MODEL_AMBIENT, ambient);
+  // GL3: glLightModelfv (GL_LIGHT_MODEL_AMBIENT) removed from core.
+  // Ambient light is handled via SoGLModernState's material system.
+  (void)ambient;
 
   if (fogType == (int)NONE) {
-    SoGLContext_glDisable(glue, GL_FOG);
+    // GL3: glDisable(GL_FOG) removed from core.
     return;
   }
 
-  float nearval = 1.0f;
-  float farval = 10.0f;
-
-  const SbViewVolume &vv = SoViewVolumeElement::get(state);
-  nearval = vv.getNearDist();
-  farval = nearval + vv.getDepth();
-
-  float dist = fogVisibility;
-  if (dist > 0.0f) farval = dist;
-
-  switch (fogType) {
-  case HAZE:
-    SoGLContext_glFogi(glue, GL_FOG_MODE, GL_LINEAR);
-    SoGLContext_glFogf(glue, GL_FOG_START, this->fogStart);
-    SoGLContext_glFogf(glue, GL_FOG_END, farval);
-    break;
-  case FOG:
-    SoGLContext_glFogi(glue, GL_FOG_MODE, GL_EXP);
-
-    // formula used for finding density:
-    //
-    // 1/256 = e ^ -(density * farval)
-    //
-    // ln (1/256) = ln (e ^ -(density * farval))
-    //
-    // -5.545 = - density * farval
-    //
-    // density = 5.545 / farval;
-
-    SoGLContext_glFogf(glue, GL_FOG_DENSITY, 5.545f / farval);
-    break;
-  case SMOKE:
-    SoGLContext_glFogi(glue, GL_FOG_MODE, GL_EXP2);
-    // formula used for finding density:
-    //
-    // 1/256 = e ^ (-(density * farval)^2)
-    //
-    // ln (1/256) = ln (e ^ (-(density * farval)^2))
-    //
-    // -5.545 = - (density * farval)^2
-    //
-    // sqrt(5.545) = density * farval
-    //
-    // density = 2.35 / farval
-    //
-
-    SoGLContext_glFogf(glue, GL_FOG_DENSITY, 2.35f / farval);
-    break;
-  default:
-    assert(0 && "unknown fog type");
-    break;
-  }
-
-  SbColor4f color(fogColor, 1.0f);
-  SoGLContext_glFogfv(glue, GL_FOG_COLOR, color.getValue());
-  SoGLContext_glEnable(glue, GL_FOG);
+  // GL3: glFog* (fixed-function fog) removed from core.
+  // Fog effects now require shader-based implementation.
 }

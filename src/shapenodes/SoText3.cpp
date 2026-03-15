@@ -736,7 +736,8 @@ SoText3P::render(SoState * state, const cc_font_specification * fontspec,
           SbVec2f v0, v1;
           int counter = 0;
 
-          SoGLContext_glBegin(sogl_glue_from_state(state), GL_QUADS);
+          // GL3: GL_QUADS removed — emit each face as two GL_TRIANGLES (V1,V2,V3 + V1,V3,V4)
+          SoGLContext_glBegin(sogl_glue_from_state(state), GL_TRIANGLES);
 
           while (ptr && *ptr >= 0) {
             v1 = coords[*ptr++];
@@ -782,6 +783,7 @@ SoText3P::render(SoState * state, const cc_font_specification * fontspec,
             }
 
             if (!flatshading) {
+              // Triangle 1: V1(v1,0), V2(v0,0), V3(v0,-1)
               if(do2Dtextures)
                  SoGLContext_glTexCoord2f(sogl_glue_from_state(state), v1[0] + xpos/fontspec->size,
                               v1[1] + ypos/fontspec->size);
@@ -800,6 +802,19 @@ SoText3P::render(SoState * state, const cc_font_specification * fontspec,
               SoGLContext_glNormal3fv(sogl_glue_from_state(state), normalb.getValue());
               SoGLContext_glVertex3f(sogl_glue_from_state(state), v0[0]*fontspec->size + xpos, v0[1]*fontspec->size + ypos, -1.0f);
 
+              // Triangle 2: V1(v1,0), V3(v0,-1), V4(v1,-1)
+              if(do2Dtextures)
+                SoGLContext_glTexCoord2f(sogl_glue_from_state(state), v1[0] + xpos/fontspec->size,
+                             v1[1] + ypos/fontspec->size);
+              SoGLContext_glNormal3fv(sogl_glue_from_state(state), normala.getValue());
+              SoGLContext_glVertex3f(sogl_glue_from_state(state), v1[0]*fontspec->size + xpos, v1[1]*fontspec->size + ypos, 0.0f);
+
+              if(do2Dtextures)
+                SoGLContext_glTexCoord2f(sogl_glue_from_state(state), v0[0] + xpos/fontspec->size,
+                             v0[1] + ypos/fontspec->size);
+              SoGLContext_glNormal3fv(sogl_glue_from_state(state), normalb.getValue());
+              SoGLContext_glVertex3f(sogl_glue_from_state(state), v0[0]*fontspec->size + xpos, v0[1]*fontspec->size + ypos, -1.0f);
+
               if(do2Dtextures)
                 SoGLContext_glTexCoord2f(sogl_glue_from_state(state), v1[0] + xpos/fontspec->size,
                              v1[1] + ypos/fontspec->size);
@@ -808,6 +823,7 @@ SoText3P::render(SoState * state, const cc_font_specification * fontspec,
 
             }
             else {
+              // Triangle 1: V1(v1,0), V2(v0,0), V3(v0,-1)
               SoGLContext_glNormal3fv(sogl_glue_from_state(state), normala.getValue());
               if(do2Dtextures)
                 SoGLContext_glTexCoord2f(sogl_glue_from_state(state), v1[0] + xpos/fontspec->size,
@@ -818,6 +834,18 @@ SoText3P::render(SoState * state, const cc_font_specification * fontspec,
                 SoGLContext_glTexCoord2f(sogl_glue_from_state(state), v0[0] + xpos/fontspec->size,
                              v0[1] + ypos/fontspec->size);
               SoGLContext_glVertex3f(sogl_glue_from_state(state), v0[0]*fontspec->size + xpos, v0[1]*fontspec->size + ypos, 0.0f);
+
+              if(do2Dtextures)
+                SoGLContext_glTexCoord2f(sogl_glue_from_state(state), v0[0] + xpos/fontspec->size,
+                             v0[1] + ypos/fontspec->size);
+              SoGLContext_glVertex3f(sogl_glue_from_state(state), v0[0]*fontspec->size + xpos, v0[1]*fontspec->size + ypos, -1.0f);
+
+              // Triangle 2: V1(v1,0), V3(v0,-1), V4(v1,-1)
+              SoGLContext_glNormal3fv(sogl_glue_from_state(state), normala.getValue());
+              if(do2Dtextures)
+                SoGLContext_glTexCoord2f(sogl_glue_from_state(state), v1[0] + xpos/fontspec->size,
+                             v1[1] + ypos/fontspec->size);
+              SoGLContext_glVertex3f(sogl_glue_from_state(state), v1[0]*fontspec->size + xpos, v1[1]*fontspec->size + ypos, 0.0f);
 
               if(do2Dtextures)
                 SoGLContext_glTexCoord2f(sogl_glue_from_state(state), v0[0] + xpos/fontspec->size,

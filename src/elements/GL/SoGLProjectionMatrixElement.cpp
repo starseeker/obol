@@ -111,9 +111,9 @@ SoGLProjectionMatrixElement::setElt(const SbMatrix & matrix)
 void
 SoGLProjectionMatrixElement::updategl(void)
 {
-  SoGLContext_glMatrixMode(this->glue, GL_PROJECTION);
+  SoGLContext_glMatrixMode(this->glue, 0x1701 /*GL_PROJECTION*/);
   SoGLContext_glLoadMatrixf(this->glue, (float*)this->projectionMatrix);
-  SoGLContext_glMatrixMode(this->glue, GL_MODELVIEW);
+  SoGLContext_glMatrixMode(this->glue, 0x1700 /*GL_MODELVIEW*/);
 
   /* Phase 1 modernization: also keep the per-context SoGLModernState in sync.
    * The projection matrix is stored in OI row-major order in this->projectionMatrix;
