@@ -123,11 +123,12 @@ static void pgl_phong_vs(float* vs_output,
                pos4.z = vertex_attribs[0].z; pos4.w = 1.0f;
     vec4 posEye = pgl_rm4_v4(u->mv, pos4);
 
-    /* Normal */
-    vec4 nrm4; nrm4.x = vertex_attribs[1].x; nrm4.y = vertex_attribs[1].y;
-               nrm4.z = vertex_attribs[1].z; nrm4.w = 0.0f;
+    /* Normal — only read attrib[1] when per-vertex normals are provided.
+     * When hasNormals==0 the normal array may not be valid; use (0,0,1). */
     vec4 normEye;
     if (u->hasNormals) {
+        vec4 nrm4; nrm4.x = vertex_attribs[1].x; nrm4.y = vertex_attribs[1].y;
+                   nrm4.z = vertex_attribs[1].z; nrm4.w = 0.0f;
         normEye = pgl_rm3_v3(u->nm, nrm4);
         pgl_normalize_xyz(&normEye);
     } else {

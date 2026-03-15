@@ -379,9 +379,9 @@ SoAsciiText::GLRender(SoGLRenderAction * action)
   mb.sendFirst();
   
   /* GL3: accumulate all glyph triangles into a CPU buffer, then upload as a
-   * single VAO/VBO draw call.  Each vertex: xyz(3) + uv(2) = 5 floats.
-   * Normals are constant (0,0,1) — supplied as a constant attrib. */
-  std::vector<float> vdata; // 5 floats per vertex: x,y,z,u,v
+   * single VAO/VBO draw call.  Each vertex: xyz(3) + normal(3) + uv(2) = 8 floats.
+   * The normal is constant (0,0,1) for all glyph triangles (they lie in the XY plane). */
+  std::vector<float> vdata; // 8 floats per vertex: x,y,z, nx,ny,nz, u,v
   vdata.reserve(1024);
 
   float ypos = 0.0f;
@@ -441,6 +441,9 @@ SoAsciiText::GLRender(SoGLRenderAction * action)
               vdata.push_back(v[vi][0] * fontspec->size + xpos);
               vdata.push_back(v[vi][1] * fontspec->size + ypos);
               vdata.push_back(0.0f);
+              vdata.push_back(0.0f); // nx
+              vdata.push_back(0.0f); // ny
+              vdata.push_back(1.0f); // nz
               vdata.push_back(do2Dtextures ? v[vi][0] + xpos/fontspec->size : 0.0f);
               vdata.push_back(do2Dtextures ? v[vi][1] + ypos/fontspec->size : 0.0f);
             }
@@ -456,21 +459,21 @@ SoAsciiText::GLRender(SoGLRenderAction * action)
   }
 
   if (!vdata.empty()) {
-    const int numverts = (int)(vdata.size() / 5);
+    const int numverts = (int)(vdata.size() / 8);
     GLuint txt_vao = 0, txt_vbo = 0;
     glGenVertexArrays(1, &txt_vao);
     glBindVertexArray(txt_vao);
     glGenBuffers(1, &txt_vbo);
     glBindBuffer(GL_ARRAY_BUFFER, txt_vbo);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(vdata.size() * sizeof(float)), vdata.data(), GL_STREAM_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (const GLvoid*)0);
+    /* attrib 0: position (xyz) */
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const GLvoid*)0);
     glEnableVertexAttribArray(0);
-    /* normal (attrib 1): constant (0,0,1) */
-    static const GLfloat normal_up[3] = {0.0f, 0.0f, 1.0f};
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, normal_up);
+    /* attrib 1: normal (xyz) — constant (0,0,1) baked into every vertex */
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const GLvoid*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
-    /* texcoord (attrib 2): last 2 components of each 5-float vertex */
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (const GLvoid*)(3 * sizeof(float)));
+    /* attrib 2: texcoord (uv) */
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const GLvoid*)(6 * sizeof(float)));
     glEnableVertexAttribArray(2);
     glDrawArrays(GL_TRIANGLES, 0, numverts);
     glBindVertexArray(0);

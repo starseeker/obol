@@ -2509,28 +2509,15 @@ w->glAreTexturesResident = (OBOL_PFNGLARETEXTURESRESIDENTPROC)PROC(w, glAreTextu
   }
 
 #ifdef OBOL_PORTABLEGL_BUILD
-  /* PortableGL implements GL 3.x core FBO but does not expose
-   * glGetFramebufferAttachmentParameteriv / glGetRenderbufferParameteriv.
-   * Load FBO function pointers directly via the context manager and
-   * force has_fbo so that offscreen rendering works. */
-  {
-    /* Always (re-)load via our direct portablegl symbol table, bypassing
-     * the cc_dl_sym path which may lag behind context creation. */
-    w->glBindRenderbuffer    = (OBOL_PFNGLBINDRENDERBUFFERPROC)   (void*)glBindRenderbuffer;
-    w->glDeleteRenderbuffers = (OBOL_PFNGLDELETERENDERBUFFERSPROC)(void*)glDeleteRenderbuffers;
-    w->glGenRenderbuffers    = (OBOL_PFNGLGENRENDERBUFFERSPROC)   (void*)glGenRenderbuffers;
-    w->glRenderbufferStorage = (OBOL_PFNGLRENDERBUFFERSTORAGEPROC)(void*)glRenderbufferStorage;
-    w->glBindFramebuffer     = (OBOL_PFNGLBINDFRAMEBUFFERPROC)    (void*)glBindFramebuffer;
-    w->glDeleteFramebuffers  = (OBOL_PFNGLDELETEFRAMEBUFFERSPROC) (void*)glDeleteFramebuffers;
-    w->glGenFramebuffers     = (OBOL_PFNGLGENFRAMEBUFFERSPROC)    (void*)glGenFramebuffers;
-    w->glCheckFramebufferStatus = (OBOL_PFNGLCHECKFRAMEBUFFERSTATUSPROC)(void*)glCheckFramebufferStatus;
-    w->glFramebufferTexture1D   = (OBOL_PFNGLFRAMEBUFFERTEXTURE1DPROC)  (void*)glFramebufferTexture1D;
-    w->glFramebufferTexture2D   = (OBOL_PFNGLFRAMEBUFFERTEXTURE2DPROC)  (void*)glFramebufferTexture2D;
-    w->glFramebufferTexture3D   = (OBOL_PFNGLFRAMEBUFFERTEXTURE3DPROC)  (void*)glFramebufferTexture3D;
-    w->glFramebufferRenderbuffer = (OBOL_PFNGLFRAMEBUFFERRENDERBUFFERPROC)(void*)glFramebufferRenderbuffer;
-    w->glGenerateMipmap      = (OBOL_PFNGLGENERATEMIPMAPPROC)     (void*)glGenerateMipmap;
-    w->has_fbo = TRUE;
-  }
+  /* PortableGL provides GL 3.x core FBO *stubs* (no-ops): glGenFramebuffers
+   * does not allocate real IDs, glCheckFramebufferStatus always returns 0,
+   * and glFramebufferTexture2D is a no-op.  Forcing has_fbo=TRUE causes
+   * SoSceneTexture2 to enter the FBO path, build an SoGLDisplayList that
+   * never gets a valid texture, and then crash when that orphaned display
+   * list is later used.  Keep has_fbo=FALSE; SoSceneTexture2 will fall back
+   * to its PBuffer path (which also gracefully degrades to a no-op on
+   * headless portablegl). */
+  w->has_fbo = FALSE;
 #endif /* OBOL_PORTABLEGL_BUILD */
 
 

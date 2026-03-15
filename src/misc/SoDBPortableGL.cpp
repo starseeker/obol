@@ -190,11 +190,11 @@ public:
         auto * d = static_cast<CoinPGLCtxData *>(context);
         if (!d || !d->isValid())
             return FALSE;
-        /* Save previous context pointer so we can restore it later.
-         * PortableGL stores the current context in a file-local static
-         * pointer; there is no public "get current context" API, so we
-         * track it ourselves per-CoinPGLCtxData. */
-        d->prev_ctx = nullptr; /* no cross-context save in single-threaded use */
+        /* Save the previous context pointer so restorePreviousContext can
+         * reinstate it.  PortableGL exposes the current context through the
+         * file-local 'c' global (defined in the PORTABLEGL_IMPLEMENTATION TU).
+         * We read it directly here because there is no public get_glContext(). */
+        d->prev_ctx = c;
         set_glContext(&d->ctx);
         return TRUE;
     }
