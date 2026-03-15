@@ -15,7 +15,7 @@ external dependencies.  Most modern toolkits provide their own means
 of integrating with system OpenGL contexts or other means of 3D display
 visualization - Obol accordingly provides an API to allow the application
 to specify how to use their display mechanisms and works within that framework.
-There are multiple worked examples in the examples/ directory.
+There are multiple worked examples in the ![examples](examples) directory.
 
 ## Requirements
 
