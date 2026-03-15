@@ -221,11 +221,11 @@ Priority order:
    emissive/shininess/twoSided into `SoGLModernState::setMaterial()` at the end of each
    lazy-element flush.**
 6. **Display list removal** — remove `SoGLDisplayList` or replace with VBO cache hits.
-   **Status: 🔲 Not yet started.**
+   **Status: ✅ Complete** — `open`/`close`/`call` are silent no-ops when `glGenLists` returns 0 (GL 3 core / PortableGL); accumulation-buffer multipass falls back to single-pass when `GL_ACCUM_RED_BITS == 0`.
 7. **Accumulation buffer** — replace with FBO-based MSAA.
-   **Status: 🔲 Not yet started.**
+   **Status: 🔲 Not yet started** (single-pass fallback in place; full FBO-MSAA replacement deferred).
 8. **Shader API** — migrate `SoGLSLShaderObject/Program` to core GL 3 entry points.
-   **Status: 🔲 Not yet started.**
+   **Status: ✅ Complete** — all four shader files (`SoGLSLShaderObject`, `SoGLSLShaderProgram`, `SoGLSLShaderParameter`, `SoGLVertexAttributeElement`) use direct GL 3 core calls.
 9. **Remaining geometry** — convert shape nodes (`SoFaceSet`, `SoTriangleStripSet`,
    `SoQuadMesh`, `SoLineSet`, `SoIndexedPointSet`) glBegin/glEnd fallbacks and the
    `SoPrimitiveVertexCache` glVertexPointer/glNormalPointer path to VAO+VBO.
@@ -360,8 +360,17 @@ PortableGL builds.
 
 | File | Change | Status |
 |------|--------|--------|
-| `src/elements/GL/SoGLDisplayList.cpp` | Disable / no-op in modern GL build | 🔲 |
-| `src/actions/SoGLRenderAction.cpp` | Remove accumulation-buffer pass | 🔲 |
+| `src/elements/GL/SoGLDisplayList.cpp` | Guard `open`/`close`/`call` against `firstindex==0` so caching is a silent no-op when `glGenLists` returns 0 (GL 3 core / PortableGL) | ✅ |
+| `src/actions/SoGLRenderAction.cpp` | Initialise `accumbits=0` before `GL_ACCUM_RED_BITS` query so the already-existing `accumbits==0` fallback is reliable in a core context | ✅ |
+
+### Phase 1f — ARB→Core Shader API
+
+| File | Change | Status |
+|------|--------|--------|
+| `src/shaders/SoGLSLShaderObject.cpp` | Replace `glCreateShaderObjectARB`/`glCompileShaderARB`/`glShaderSourceARB`/`glAttachObjectARB`/`glDetachObjectARB`/`glDeleteObjectARB` + ARB constants with `glCreateShader`/`glCompileShader`/`glShaderSource`/`glAttachShader`/`glDetachShader`/`glDeleteShader` + `GL_VERTEX_SHADER`/`GL_FRAGMENT_SHADER`/`GL_GEOMETRY_SHADER`; `printInfoLog` uses `glGetShaderiv`/`glGetShaderInfoLog` for shaders and `glGetProgramiv`/`glGetProgramInfoLog` for programs (objType < 0) | ✅ |
+| `src/shaders/SoGLSLShaderProgram.cpp` | Replace `glCreateProgramObjectARB`/`glLinkProgramARB`/`glUseProgramObjectARB`/`glGetObjectParameterivARB`/`glDeleteObjectARB` with `glCreateProgram`/`glLinkProgram`/`glUseProgram`/`glGetProgramiv`/`glDeleteProgram`; remove NULL-pointer guards now unnecessary | ✅ |
+| `src/shaders/SoGLSLShaderParameter.cpp` | Replace all `glUniform*ARB` with `glUniform*`; `glGetUniformLocationARB`→`glGetUniformLocation`; `glGetObjectParameterivARB(GL_OBJECT_ACTIVE_UNIFORMS_ARB)`→`glGetProgramiv`; `glGetActiveUniformARB`→`glGetActiveUniform` | ✅ |
+| `src/elements/GL/SoGLVertexAttributeElement.cpp` | Replace `glVertexAttrib*ARB`/`glVertexAttribPointerARB`/`glEnableVertexAttribArrayARB`/`glDisableVertexAttribArrayARB`/`glGetAttribLocationARB` with core equivalents | ✅ |
 
 ### Phase 2 — PortableGL Context
 

@@ -126,18 +126,18 @@ SoGLSLShaderProgram::enable(const SoGLContext * g)
 
   if (this->isContextExecutable(g)) {
     OBOL_GLhandle programhandle = this->getProgramHandle(g, TRUE);
-    if (programhandle && g->glUseProgramObjectARB) {
+    if (programhandle) {
       // Clear any stale GL errors accumulated from prior operations (e.g.
-      // shadow-map FBO rendering) before calling glUseProgramObjectARB so
+      // shadow-map FBO rendering) before calling glUseProgram so
       // the subsequent error check accurately reflects whether *this* call
       // failed.  On re-entrant renders (camera drag, second frame) the
       // ensureLinking() path returns early without draining the error queue
       // itself, so stale errors would otherwise be mis-attributed here.
       SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::enable::pre-use");
-      g->glUseProgramObjectARB(programhandle);
+      glUseProgram(programhandle);
 
       if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::enable")) {
-        SoGLSLShaderObject::printInfoLog(g, programhandle, 0);
+        SoGLSLShaderObject::printInfoLog(g, programhandle, -1);
       }
     }
   }
@@ -146,8 +146,8 @@ SoGLSLShaderProgram::enable(const SoGLContext * g)
 void
 SoGLSLShaderProgram::disable(const SoGLContext * g)
 {
-  if (this->isContextExecutable(g) && g->glUseProgramObjectARB) {
-    g->glUseProgramObjectARB(0);
+  if (this->isContextExecutable(g)) {
+    glUseProgram(0);
   }
 }
 
@@ -205,17 +205,13 @@ SoGLSLShaderProgram::ensureLinking(const SoGLContext * g)
       }
     }
 
-    if (g->glLinkProgramARB) {
-      g->glLinkProgramARB(programHandle);
+    glLinkProgram(programHandle);
 
-      if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::ensureLinking")) {
-        SoGLSLShaderObject::printInfoLog(g, programHandle, 0);
-      }
+    if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::ensureLinking")) {
+      SoGLSLShaderObject::printInfoLog(g, programHandle, -1);
     }
-    if (g->glGetObjectParameterivARB) {
-      g->glGetObjectParameterivARB(programHandle,
-                                   GL_OBJECT_LINK_STATUS_ARB,&didLink);
-    }
+
+    glGetProgramiv(programHandle, GL_LINK_STATUS, &didLink);
 
     this->executableHandles.put(g->contextid, (SbBool)didLink);
     this->neededlinkingHandles.put(g->contextid, TRUE);
@@ -245,12 +241,12 @@ SoGLSLShaderProgram::getProgramHandle(const SoGLContext * g, const SbBool create
 {
   OBOL_GLhandle handle = 0;
   if (!this->programHandles.get(g->contextid, handle) && create) {
-    if (!g->glCreateProgramObjectARB) {
+    handle = glCreateProgram();
+    if (!handle) {
       SoDebugError::postWarning("SoGLSLShaderProgram::getProgramHandle",
                                 "GLSL not supported in this context");
       return 0;
     }
-    handle = g->glCreateProgramObjectARB();
     this->programHandles.put(g->contextid, handle);
   }
   return handle;
@@ -280,8 +276,7 @@ SoGLSLShaderProgram::context_destruction_cb(uint32_t cachecontext, void * userda
   OBOL_GLhandle glhandle = 0;
   if (thisp->programHandles.get(cachecontext, glhandle)) {
     // just delete immediately. The context is current
-    const SoGLContext * glue = SoGLContext_instance(cachecontext);
-    glue->glDeleteObjectARB(glhandle);
+    glDeleteProgram(glhandle);
     thisp->programHandles.erase(cachecontext);
     thisp->executableHandles.erase(cachecontext);
     thisp->neededlinkingHandles.erase(cachecontext);
@@ -289,14 +284,13 @@ SoGLSLShaderProgram::context_destruction_cb(uint32_t cachecontext, void * userda
 }
 
 void
-SoGLSLShaderProgram::really_delete_object(void * closure, uint32_t contextid)
+SoGLSLShaderProgram::really_delete_object(void * closure, uint32_t OBOL_UNUSED_ARG(contextid))
 {
   uintptr_t tmp = (uintptr_t) closure;
 
   OBOL_GLhandle glhandle = (OBOL_GLhandle) tmp;
 
-  const SoGLContext * glue = SoGLContext_instance(contextid);
-  glue->glDeleteObjectARB(glhandle);
+  glDeleteProgram(glhandle);
 }
 
 void
