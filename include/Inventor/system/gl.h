@@ -2406,5 +2406,50 @@ Therefore we define the value for GL_NUM_EXTENSIONS here
 /*** WGL enums, end ***************************************************/
 /**********************************************************************/
 
+/* PortableGL compat: constants used in Obol source that portablegl does not
+ * define.  These are ARB/EXT aliases and legacy-pipeline constants; they are
+ * used as type-discriminators or guard values in code that doesn't run when
+ * the portablegl backend is active, so the exact hex values don't matter as
+ * long as they compile without clashing with portablegl's own enum members
+ * (which are small sequential integers 0..~400). */
+#ifdef OBOL_PORTABLEGL_BUILD
+/* GLSL uniform type constants (ARB aliases of GL 2.0 core values) */
+#define GL_FLOAT_VEC2_ARB                 0x8B50
+#define GL_FLOAT_VEC3_ARB                 0x8B51
+#define GL_FLOAT_VEC4_ARB                 0x8B52
+#define GL_INT_VEC2_ARB                   0x8B53
+#define GL_INT_VEC3_ARB                   0x8B54
+#define GL_INT_VEC4_ARB                   0x8B55
+#define GL_FLOAT_MAT2_ARB                 0x8B5A
+#define GL_FLOAT_MAT3_ARB                 0x8B5B
+#define GL_FLOAT_MAT4_ARB                 0x8B5C
+#define GL_SAMPLER_1D_ARB                 0x8B5D
+#define GL_SAMPLER_2D_ARB                 0x8B5E
+#define GL_SAMPLER_3D_ARB                 0x8B5F
+#define GL_SAMPLER_CUBE_ARB               0x8B60
+#define GL_SAMPLER_1D_SHADOW_ARB          0x8B61
+#define GL_SAMPLER_2D_SHADOW_ARB          0x8B62
+#define GL_SAMPLER_2D_RECT_ARB            0x8B63
+#define GL_SAMPLER_2D_RECT_SHADOW_ARB     0x8B64
+/* Legacy vertex-array enable tokens (used in guard tests only) */
+#define GL_VERTEX_ARRAY                   0x8074
+#define GL_NORMAL_ARRAY                   0x8075
+#define GL_COLOR_ARRAY                    0x8076
+#define GL_TEXTURE_COORD_ARRAY            0x8078
+/* ARB vertex/fragment program extension constants */
+#define GL_VERTEX_PROGRAM_ARB             0x8620
+#define GL_FRAGMENT_PROGRAM_ARB           0x8804
+#define GL_PROGRAM_FORMAT_ASCII_ARB       0x8875
+#define GL_PROGRAM_ERROR_POSITION_ARB     0x864B
+#define GL_PROGRAM_ERROR_STRING_ARB       0x8874
+/* EXT geometry shader constants */
+#define GL_GEOMETRY_INPUT_TYPE_EXT        0x8DDB
+#define GL_GEOMETRY_OUTPUT_TYPE_EXT       0x8DDC
+#define GL_GEOMETRY_VERTICES_OUT_EXT      0x8DDA
+/* FBO / renderbuffer (used in capability checks) */
+#define GL_MAX_RENDERBUFFER_SIZE          0x84E8
+/* HDR texture format */
+#define GL_RGBA16F_ARB                    0x881A
+#endif /* OBOL_PORTABLEGL_BUILD */
 
 #endif /* ! OBOL_GL_H */

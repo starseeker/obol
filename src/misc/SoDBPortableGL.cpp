@@ -59,20 +59,28 @@ static void pgl_glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h,
     if (!pixels || type != GL_UNSIGNED_BYTE) return;
     pix_t* backbuf = static_cast<pix_t*>(pglGetBackBuffer());
     if (!backbuf) return;
-    /* Determine stride from viewport width */
+    /* Determine framebuffer dimensions from the viewport.
+     * portablegl's draw_pixel() stores pixel at OpenGL (x,y) at backbuf row
+     * (fbh - 1 - y), i.e. row 0 of the backbuffer = OpenGL y = fbh-1 (top).
+     * Standard glReadPixels(x, y, w, h) reads starting from OpenGL y (bottom
+     * left), so we must reverse the row order when accessing the backbuffer. */
     GLint vp[4] = {0, 0, 0, 0};
     glGetIntegerv(GL_VIEWPORT, vp);
     const int fbw = vp[2] > 0 ? vp[2] : w; /* fallback: stride = requested width */
+    const int fbh = vp[3] > 0 ? vp[3] : h; /* fallback: height = requested height */
     uint8_t* dst = static_cast<uint8_t*>(pixels);
-    for (int row = y; row < y + h; ++row) {
+    for (int ogy = y; ogy < y + h; ++ogy) {
+        /* Map OpenGL y (0=bottom) → portablegl buffer row */
+        int buf_row = (fbh - 1 - ogy);
+        if (buf_row < 0 || buf_row >= fbh) continue;
         for (int col = x; col < x + w; ++col) {
-            pix_t p = backbuf[row * fbw + col];
-            /* PGL_ABGR32 in memory on LE: byte0=R, byte1=G, byte2=B, byte3=A */
+            pix_t p = backbuf[buf_row * fbw + col];
+            /* PGL_ABGR32 (default LE format): RSHIFT=0 GSHIFT=8 BSHIFT=16 ASHIFT=24 */
             uint8_t r = (uint8_t)((p >>  0) & 0xFF);
             uint8_t g = (uint8_t)((p >>  8) & 0xFF);
             uint8_t b = (uint8_t)((p >> 16) & 0xFF);
             uint8_t a = (uint8_t)((p >> 24) & 0xFF);
-            if (format == (GLenum)0x1907 /* GL_RGB */) {
+            if (format == (GLenum)GL_RGB) {
                 *dst++ = r; *dst++ = g; *dst++ = b;
             } else { /* GL_RGBA */
                 *dst++ = r; *dst++ = g; *dst++ = b; *dst++ = a;
