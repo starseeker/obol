@@ -24,7 +24,7 @@ the user is interested in - typically, you'll want a system OpenGL available
 for the best combination of features and performance.  The libosmesa backend
 provides a software-only OpenGL 2.0 + extensions stack that can support most
 of what Obol needs, but it will be slower.  Integration with other backends
-is also possible - see the examples for raytracing and Vulkan based
+is also possible - see the ![examples](examples) for raytracing and Vulkan based
 approaches.
 
 ## Why call this Obol?
