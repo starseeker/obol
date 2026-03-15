@@ -82,23 +82,6 @@ SoGLModernState::SoGLModernState(uint32_t contextId)
     }
     mat_ambient[3] = mat_diffuse[3] = mat_specular[3] = mat_emission[3] = 1.0f;
 
-    for (int i = 0; i < OBOL_MODERN_MAX_LIGHTS; ++i) {
-        for (int k = 0; k < OBOL_MODERN_MAX_LIGHTS; ++k) {
-            p_uLights_position[k]     = -1;
-            p_uLights_ambient[k]      = -1;
-            p_uLights_diffuse[k]      = -1;
-            p_uLights_specular[k]     = -1;
-            p_uLights_spotDirection[k]= -1;
-            p_uLights_spotCutoff[k]   = -1;
-            p_uLights_spotExponent[k] = -1;
-            p_uLights_constantAtten[k]= -1;
-            p_uLights_linearAtten[k]  = -1;
-            p_uLights_quadraticAtten[k]=-1;
-        }
-        break; /* only need to init once -- the outer loop variable 'i' is
-                  used to silence compiler unused-variable warning */
-    }
-    /* Re-initialise per-light locations array properly */
     for (int k = 0; k < OBOL_MODERN_MAX_LIGHTS; ++k) {
         p_uLights_position[k]      = -1;
         p_uLights_ambient[k]       = -1;

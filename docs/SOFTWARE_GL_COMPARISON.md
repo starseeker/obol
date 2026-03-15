@@ -313,61 +313,64 @@ PortableGL builds.
 
 ### Phase 1a — Matrix Uniforms (remove glMatrixMode, glPushMatrix, …)
 
-| File | Change |
-|------|--------|
-| `src/elements/GL/SoGLModelMatrixElement.cpp` | Upload `uModelView`, `uNormalMatrix` uniforms instead of `glMultMatrixf` |
-| `src/elements/GL/SoGLProjectionMatrixElement.cpp` | Upload `uProjection` uniform instead of `glLoadMatrixf` |
-| `src/elements/GL/SoGLMultiTextureMatrixElement.cpp` | Upload texture-matrix uniform instead of `glMatrixMode(GL_TEXTURE)` |
-| `src/glue/gl.cpp` | Remove / stub `SoGLContext_glMatrixMode`, `SoGLContext_glPushMatrix`, … |
+| File | Change | Status |
+|------|--------|--------|
+| `src/elements/GL/SoGLModelMatrixElement.cpp` | Upload `uModelView`, `uNormalMatrix` uniforms instead of `glMultMatrixf` | ✅ mirrors to `SoGLModernState` (legacy fixed-function calls still present) |
+| `src/elements/GL/SoGLProjectionMatrixElement.cpp` | Upload `uProjection` uniform instead of `glLoadMatrixf` | ✅ mirrors to `SoGLModernState` |
+| `src/elements/GL/SoGLMultiTextureMatrixElement.cpp` | Upload texture-matrix uniform instead of `glMatrixMode(GL_TEXTURE)` | 🔲 |
+| `src/glue/gl.cpp` | Remove / stub `SoGLContext_glMatrixMode`, `SoGLContext_glPushMatrix`, … | 🔲 (defer until all callers converted) |
 
 ### Phase 1b — Built-in Shaders
 
-| New File | Purpose |
-|----------|---------|
-| `src/rendering/obol_modern_shaders.h` | GLSL 3.30 vertex + fragment shader source strings |
+| File | Purpose | Status |
+|------|---------|--------|
+| `src/rendering/obol_modern_shaders.h` | GLSL 3.30 vertex + fragment shader source strings | ✅ exists |
+| `src/rendering/SoGLModernState.h` | Per-context shader + state manager (header) | ✅ new |
+| `src/rendering/SoGLModernState.cpp` | Shader compilation, uniform caching, state upload | ✅ new |
 
 ### Phase 1c — Geometry Streaming
 
-| File | Change |
-|------|--------|
-| `src/rendering/SoGL.cpp` | Convert cone/cyl/sphere/cube to VAO+VBO rendering |
-| `src/shapenodes/SoFaceSet.cpp` | Already has VBO path; remove glBegin/End fallback |
-| `src/shapenodes/SoTriangleStripSet.cpp` | Same |
-| `src/shapenodes/SoQuadMesh.cpp` | Same |
-| `src/shapenodes/SoLineSet.cpp` | Convert to `GL_LINES` VBO |
-| `src/shapenodes/SoIndexedPointSet.cpp` | Convert to `GL_POINTS` VBO |
+| File | Change | Status |
+|------|--------|--------|
+| `src/rendering/SoGL.cpp` | Convert cone/cyl/sphere/cube to VAO+VBO rendering | ✅ modern path dispatched first; legacy path kept as fallback |
+| `src/shapenodes/SoFaceSet.cpp` | Remove glBegin/End fallback; use `glVertexAttribPointer` | 🔲 |
+| `src/shapenodes/SoTriangleStripSet.cpp` | Same | 🔲 |
+| `src/shapenodes/SoQuadMesh.cpp` | Same | 🔲 |
+| `src/shapenodes/SoLineSet.cpp` | Convert to `GL_LINES` VBO | 🔲 |
+| `src/shapenodes/SoIndexedPointSet.cpp` | Convert to `GL_POINTS` VBO | 🔲 |
+| `src/caches/SoPrimitiveVertexCache.cpp` | Replace `glVertexPointer`/`glNormalPointer` with `glVertexAttribPointer` | 🔲 |
 
 ### Phase 1d — Lighting / Material Uniforms
 
-| File | Change |
-|------|--------|
-| `src/nodes/SoDirectionalLight.cpp` | Upload to `uLights[i]` uniform |
-| `src/nodes/SoPointLight.cpp` | Same |
-| `src/nodes/SoSpotLight.cpp` | Same |
-| `src/elements/GL/SoGLLazyElement.cpp` | Upload `uMat*` uniforms; remove `glMaterialfv`, `glShadeModel`, `glColorMaterial` |
+| File | Change | Status |
+|------|--------|--------|
+| `src/nodes/SoDirectionalLight.cpp` | Upload to `uLights[i]` uniform | ✅ populates `SoGLModernState::addLight()` |
+| `src/nodes/SoPointLight.cpp` | Same | ✅ |
+| `src/nodes/SoSpotLight.cpp` | Same | ✅ |
+| `src/elements/GL/SoGLLazyElement.cpp` | Upload `uMat*` uniforms; remove `glMaterialfv`, `glShadeModel`, `glColorMaterial` | ✅ mirrors material via `setMaterial()` at end of `send()` |
 
 ### Phase 1e — Display List Removal
 
-| File | Change |
-|------|--------|
-| `src/elements/GL/SoGLDisplayList.cpp` | Disable / no-op in modern GL build |
-| `src/actions/SoGLRenderAction.cpp` | Remove accumulation-buffer pass |
+| File | Change | Status |
+|------|--------|--------|
+| `src/elements/GL/SoGLDisplayList.cpp` | Disable / no-op in modern GL build | 🔲 |
+| `src/actions/SoGLRenderAction.cpp` | Remove accumulation-buffer pass | 🔲 |
 
 ### Phase 2 — PortableGL Context
 
-| File | Purpose |
-|------|---------|
-| `src/misc/SoDBPortableGL.cpp` | `SoDB::ContextManager` implementation using PortableGL |
-| `tests/utils/portablegl_context_manager.h` | Test/example PortableGL context manager |
-| `cmake/FindPortableGL.cmake` | CMake find module for the single header |
-| `.gitmodules` | `external/portablegl` submodule entry |
+| File | Purpose | Status |
+|------|---------|--------|
+| `src/misc/SoDBPortableGL.cpp` | `SoDB::ContextManager` implementation using PortableGL | ✅ exists (getPixels removed) |
+| `tests/utils/portablegl_context_manager.h` | Test/example PortableGL context manager | ✅ exists |
+| `cmake/FindPortableGL.cmake` | CMake find module for the single header | ✅ exists |
+| `.gitmodules` | `external/portablegl` submodule entry | ✅ exists |
 
 ### Phase 3 — Build System
 
-| File | Change |
-|------|--------|
-| `CMakeLists.txt` | Add `OBOL_USE_PORTABLEGL` option; remove OSMesa dependency paths |
-| `src/CMakeLists.txt` | Conditionally compile `SoDBPortableGL.cpp` |
+| File | Change | Status |
+|------|--------|--------|
+| `CMakeLists.txt` | Add `OBOL_USE_PORTABLEGL` option; remove OSMesa dependency paths | ✅ exists |
+| `src/CMakeLists.txt` | Conditionally compile `SoDBPortableGL.cpp` | ✅ exists |
 
 ---
 

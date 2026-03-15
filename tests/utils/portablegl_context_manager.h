@@ -134,16 +134,6 @@ public:
     void * getProcAddress(const char * /*funcName*/) override {
         return nullptr;
     }
-
-    /* Copy the rendered RGBA pixel buffer to dest.  The PortableGL back
-     * buffer stores pixels in PGL_ABGR32 format, which on little-endian
-     * (x86/ARM) is R, G, B, A in memory order — matching RGBA expectations. */
-    void getPixels(void * context, unsigned char * dest,
-                   unsigned int width, unsigned int height) override {
-        auto * d = static_cast<CoinPGLContextData *>(context);
-        if (!d || !d->isValid() || !d->backbuf || !dest) return;
-        std::memcpy(dest, d->backbuf, (size_t)width * height * 4);
-    }
 };
 
 #endif /* OBOL_PORTABLEGL_BUILD */
