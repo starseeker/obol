@@ -675,21 +675,21 @@ SoGLLazyElement::send(SoState * stateptr, uint32_t mask) const
     uint32_t ctxid = SoGLContext_get_contextid(this->glue);
     SoGLModernState * ms = SoGLModernState::forContext(ctxid);
     if (ms) {
-      float ambient[4]  = { this->glstate.ambient[0],
-                             this->glstate.ambient[1],
-                             this->glstate.ambient[2], 1.0f };
+      float ambient[4]  = { this->coinstate.ambient[0],
+                             this->coinstate.ambient[1],
+                             this->coinstate.ambient[2], 1.0f };
       float diffuse[4]  = {
         (float)((this->glstate.diffuse >> 24) & 0xff) / 255.0f,
         (float)((this->glstate.diffuse >> 16) & 0xff) / 255.0f,
         (float)((this->glstate.diffuse >>  8) & 0xff) / 255.0f,
         (float)( this->glstate.diffuse        & 0xff) / 255.0f
       };
-      float specular[4] = { this->glstate.specular[0],
-                             this->glstate.specular[1],
-                             this->glstate.specular[2], 1.0f };
-      float emission[4] = { this->glstate.emissive[0],
-                             this->glstate.emissive[1],
-                             this->glstate.emissive[2], 1.0f };
+      float specular[4] = { this->coinstate.specular[0],
+                             this->coinstate.specular[1],
+                             this->coinstate.specular[2], 1.0f };
+      float emission[4] = { this->coinstate.emissive[0],
+                             this->coinstate.emissive[1],
+                             this->coinstate.emissive[2], 1.0f };
       float shininess   = this->glstate.shininess;
       bool  twoSided    = (this->glstate.twoside != 0);
       ms->setMaterial(ambient, diffuse, specular, emission, shininess, twoSided);
