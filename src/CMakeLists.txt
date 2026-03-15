@@ -85,6 +85,15 @@ if(OBOL_USE_SWRAST AND OBOL_USE_SYSTEM_GL AND OBOL_OSMESA_INCLUDE_DIRS)
     endforeach()
 endif()
 
+# SoDBPortableGL.cpp defines PORTABLEGL_IMPLEMENTATION and must include
+# portablegl.h from external/portablegl.  Apply the include path per-file
+# so it does not accidentally affect other TUs.
+if(OBOL_USE_PORTABLEGL AND PortableGL_INCLUDE_DIR)
+    set_source_files_properties(
+        "${CMAKE_CURRENT_SOURCE_DIR}/misc/SoDBPortableGL.cpp"
+        PROPERTIES INCLUDE_DIRECTORIES "${PortableGL_INCLUDE_DIR}")
+endif()
+
 add_library(${PROJECT_NAME} ${OBOL_SOURCE} ${OBOL_ADDITIONAL_HDRS})
 if(TARGET obol_parser_gen)
   add_dependencies(${PROJECT_NAME} obol_parser_gen)

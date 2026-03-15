@@ -100,6 +100,11 @@ endmacro()
 # initialised).
 obol_init_submodule("external/osmesa")
 
+# Ensure the PortableGL submodule is present (needed for portablegl builds).
+# PortableGL is a single-header software renderer implementing the OpenGL 3.x
+# core profile.  It is the planned replacement for OSMesa.
+obol_init_submodule("external/portablegl")
+
 # Set C++ standard requirements
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -229,12 +234,25 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/external/osmesa/CMakeLists.txt")
 else()
   set(_obol_swrast_default OFF)
 endif()
+# PortableGL is an alternative software backend (OpenGL 3.x core profile).
+# When the portablegl.h header is available from the submodule, the option
+# defaults to ON; the user can set it OFF to prefer OSMesa, or set it ON
+# alongside OBOL_USE_SWRAST=OFF to use PortableGL exclusively.
+if(EXISTS "${PROJECT_SOURCE_DIR}/external/portablegl/portablegl.h")
+  set(_obol_pgl_default ON)
+else()
+  set(_obol_pgl_default OFF)
+endif()
 option(OBOL_USE_SYSTEM_GL
     "Enable system OpenGL backend"
     ${_obol_sysgl_default})
 option(OBOL_USE_SWRAST
     "Enable software rasterizer (OSMesa) backend for headless/offscreen rendering"
     ${_obol_swrast_default})
+option(OBOL_USE_PORTABLEGL
+    "Enable PortableGL software backend (OpenGL 3.x core profile; replaces OSMesa)"
+    ${_obol_pgl_default})
+unset(_obol_pgl_default)
 unset(_obol_sysgl_default)
 unset(_obol_swrast_default)
 option(OBOL_THREADSAFE "Enable thread safe render traversals" ON)
@@ -350,13 +368,36 @@ set(OBOL_TARGET_LINK_LIBRARIES_GL)
 #   OBOL_USE_SWRAST=ON,  OBOL_USE_SYSTEM_GL=ON   →  dual-GL (system primary,
 #                                                      swrast secondary)
 #
+# Additionally, OBOL_USE_PORTABLEGL adds the PortableGL software backend:
+#
+#   OBOL_USE_PORTABLEGL=ON, OBOL_USE_SYSTEM_GL=OFF, OBOL_USE_SWRAST=OFF
+#       →  PortableGL-only build (OpenGL 3.x core profile software renderer)
+#   OBOL_USE_PORTABLEGL=ON, OBOL_USE_SYSTEM_GL=ON
+#       →  Dual build: system GL primary + PortableGL secondary (no name-
+#          mangling required — PortableGL functions are file-local statics)
+#
 # NOTE: the project's own name-mangled OSMesa build (external/osmesa
 # submodule with USE_MGL_NAMESPACE) is used for OBOL_USE_SWRAST.
 # The system libosmesa6-dev package is intentionally NOT used — its symbols
 # are not name-mangled and would collide with system libGL in a dual build.
+#
+# PortableGL does NOT require name-mangling because its functions are either
+# declared static (file-local) or use unique names (init_glContext, etc.).
 # ============================================================================
 
-if(NOT OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
+# ── PortableGL detection ────────────────────────────────────────────────────
+if(OBOL_USE_PORTABLEGL)
+  find_package(PortableGL QUIET)
+  if(NOT PortableGL_FOUND)
+    message(WARNING
+        "OBOL_USE_PORTABLEGL=ON but external/portablegl/portablegl.h was not found.\n"
+        "Run: git submodule update --init external/portablegl\n"
+        "Disabling PortableGL backend.")
+    set(OBOL_USE_PORTABLEGL OFF)
+  endif()
+endif()
+
+if(NOT OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL AND NOT OBOL_USE_PORTABLEGL)
   # ── No-OpenGL build ────────────────────────────────────────────────────
   message(STATUS "No-OpenGL build: both OBOL_USE_SWRAST and OBOL_USE_SYSTEM_GL are OFF")
   set(HAVE_OPENGL 0)
@@ -364,8 +405,22 @@ if(NOT OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
   add_definitions(-DOBOL_NO_OPENGL)
   message(STATUS "Library will be named: lib${OBOL_OUTPUT_NAME}")
 
-elseif(OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
-  # ── Software-rasterizer-only build ─────────────────────────────────────
+elseif(OBOL_USE_PORTABLEGL AND NOT OBOL_USE_SYSTEM_GL AND NOT OBOL_USE_SWRAST)
+  # ── PortableGL-only build ───────────────────────────────────────────────
+  # PortableGL provides GL 3.x core profile in software; no system GL needed.
+  # No name-mangling is required because all PortableGL functions are file-
+  # local statics (PGLDEF = static) within the one TU that defines
+  # PORTABLEGL_IMPLEMENTATION (src/misc/SoDBPortableGL.cpp).
+  message(STATUS "PortableGL-only build (OpenGL 3.x core profile, software)")
+  set(HAVE_OPENGL 1)
+  set(HAVE_PORTABLEGL 1)
+  list(APPEND OBOL_TARGET_INCLUDE_DIRECTORIES "${PortableGL_INCLUDE_DIR}")
+  add_definitions(-DOBOL_PORTABLEGL_BUILD)
+  set(OBOL_OUTPUT_NAME "Obol-portablegl")
+  message(STATUS "Library will be named: lib${OBOL_OUTPUT_NAME}")
+
+elseif(OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL AND NOT OBOL_USE_PORTABLEGL)
+  # ── Software-rasterizer-only build (OSMesa) ─────────────────────────────
   message(STATUS "Software-rasterizer-only build (no system OpenGL)")
   find_package(OSMesa REQUIRED)
   if(OSMesa_FOUND)
@@ -388,7 +443,7 @@ elseif(OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
 
 else()
   # ── System-GL build (OBOL_USE_SYSTEM_GL=ON) ────────────────────────────
-  # Covers both system-only and dual (system + swrast).
+  # Covers system-only, dual system+OSMesa, and dual system+PortableGL.
   find_package(OpenGL REQUIRED)
   set(HAVE_OPENGL 1)
   if(OpenGL_OpenGL_FOUND AND TARGET OpenGL::OpenGL)
@@ -414,7 +469,17 @@ else()
     endif()
   endif()
 
-  if(OBOL_USE_SWRAST)
+  if(OBOL_USE_PORTABLEGL)
+    # ── Dual-GL build: system OpenGL primary, PortableGL secondary ─────────
+    # Unlike OSMesa, no name-mangling or separate compilation unit trick is
+    # needed.  SoDBPortableGL.cpp defines PORTABLEGL_IMPLEMENTATION in a
+    # single TU; all PortableGL gl* symbols are file-local statics.
+    set(HAVE_PORTABLEGL 1)
+    list(APPEND OBOL_TARGET_INCLUDE_DIRECTORIES "${PortableGL_INCLUDE_DIR}")
+    add_definitions(-DOBOL_PORTABLEGL_BUILD -DOBOL_DUAL_PORTABLEGL_BUILD)
+    set(OBOL_OUTPUT_NAME "Obol")
+    message(STATUS "Dual-GL build: system OpenGL + PortableGL software backend")
+  elseif(OBOL_USE_SWRAST)
     # ── Dual-GL build: system OpenGL primary, software rasterizer secondary ─
     # gl_osmesa.cpp is compiled separately with OSMesa headers so that
     # mgl*-mangled OSMesa symbols coexist with system gl* symbols.
@@ -607,13 +672,23 @@ else()
   set(SIM_INCLUDE_WINDOWS_H "/* #include <windows.h> - not needed on system */")
 endif()
 
-if(NOT OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
+if(NOT OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL AND NOT OBOL_USE_PORTABLEGL)
   # No-OpenGL build: gl-headers.h will include the bundled type/constant stubs.
   set(SIM_INCLUDE_GL_H "#include <Inventor/system/gl_stub.h>")
   set(SIM_INCLUDE_GLEXT_H "/* no-OpenGL build: no OpenGL extension headers */")
   set(SIM_GL_GLEXT_PROTOTYPES_DEFINE "/* no-OpenGL build: GL_GLEXT_PROTOTYPES not set */")
   message(STATUS "No-OpenGL build: using bundled GL type/constant stubs")
-elseif(OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
+elseif(OBOL_USE_PORTABLEGL AND NOT OBOL_USE_SYSTEM_GL AND NOT OBOL_USE_SWRAST)
+  # PortableGL-only build: GL types and constants come from portablegl.h.
+  # The PortableGL header defines all standard GL types (GLfloat, GLenum, etc.)
+  # and GL 3.x core-profile functions as file-local statics.  The generated
+  # Inventor/system/gl.h must NOT pull in any system GL headers that would
+  # duplicate or conflict with PortableGL's definitions.
+  set(SIM_INCLUDE_GL_H "#include <portablegl.h>")
+  set(SIM_INCLUDE_GLEXT_H "/* portablegl.h already provides GL 3.x core definitions */")
+  set(SIM_GL_GLEXT_PROTOTYPES_DEFINE "/* portablegl.h: GL functions are file-local statics */")
+  message(STATUS "PortableGL-only build: using portablegl.h as the GL header")
+elseif(OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL AND NOT OBOL_USE_PORTABLEGL)
   # Software-rasterizer-only: use OSMesa headers exclusively.
   # OSMesa's gl.h already includes OSMesa/glext.h, so no system glext needed.
   # Mixing system GL/glext.h with OSMesa's MGL-mangled headers causes symbol

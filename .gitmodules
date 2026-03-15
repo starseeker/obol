@@ -6,3 +6,6 @@
 	path = external/fltk
 	url = https://github.com/fltk/fltk.git
 	branch = branch-1.3
+[submodule "external/portablegl"]
+	path = external/portablegl
+	url = https://github.com/rswinkle/PortableGL.git

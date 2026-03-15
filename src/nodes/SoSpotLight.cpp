@@ -77,6 +77,7 @@
 #include <Inventor/system/gl.h>
 
 #include "nodes/SoSubNodeP.h"
+#include "rendering/SoGLModernState.h"
 
 // *************************************************************************
 
@@ -207,4 +208,34 @@ SoSpotLight::GLRender(SoGLRenderAction * action)
 
   SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_SPOT_EXPONENT, dropoff);
   SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_SPOT_CUTOFF, cutoff);
+
+  /* Phase 1 modernization: register this spot light with SoGLModernState. */
+  {
+    const SoGLContext * glue = sogl_glue_from_state(state);
+    uint32_t ctxid = SoGLContext_get_contextid(glue);
+    SoGLModernState * ms = SoGLModernState::forContext(ctxid);
+    if (ms) {
+      if (idx == 0) ms->resetLights();
+
+      SoGLModernState::Light ml;
+      ml.position[0] = posvec[0]; ml.position[1] = posvec[1];
+      ml.position[2] = posvec[2]; ml.position[3] = 1.0f;
+      ml.ambient[0] = ml.ambient[1] = ml.ambient[2] = 0.0f; ml.ambient[3] = 1.0f;
+      SbColor col = this->color.getValue() * this->intensity.getValue();
+      ml.diffuse[0]  = ml.specular[0] = col[0];
+      ml.diffuse[1]  = ml.specular[1] = col[1];
+      ml.diffuse[2]  = ml.specular[2] = col[2];
+      ml.diffuse[3]  = ml.specular[3] = 1.0f;
+      SbVec3f spotDir = this->direction.getValue();
+      ml.spotDirection[0] = spotDir[0];
+      ml.spotDirection[1] = spotDir[1];
+      ml.spotDirection[2] = spotDir[2];
+      ml.spotCutoff         = std::cos(this->cutOffAngle.getValue());
+      ml.spotExponent       = dropoff;
+      ml.constantAttenuation  = attenuation[2];
+      ml.linearAttenuation    = attenuation[1];
+      ml.quadraticAttenuation = attenuation[0];
+      ms->addLight(ml);
+    }
+  }
 }

@@ -175,22 +175,31 @@ delegate to its own resolver.  `CoinOSMesaContextManager` overrides this to call
 # Dual-GL (auto-detect: recommended for development machines)
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-# Force dual-GL explicitly
-cmake -S . -B build -DOBOL_BUILD_DUAL_GL=ON
-
 # OSMesa only (headless CI, servers)
-cmake -S . -B build -DOBOL_USE_OSMESA=ON
+cmake -S . -B build -DOBOL_USE_SWRAST=ON -DOBOL_USE_SYSTEM_GL=OFF
 
 # System GL only (GPU-only deployment, no headless fallback)
-cmake -S . -B build -DOBOL_USE_SYSTEM_ONLY=ON
+cmake -S . -B build -DOBOL_USE_SWRAST=OFF -DOBOL_USE_SYSTEM_GL=ON
 
 # No OpenGL (custom context driver, raytracing only)
-cmake -S . -B build -DOBOL_NO_OPENGL=ON
+cmake -S . -B build -DOBOL_USE_SWRAST=OFF -DOBOL_USE_SYSTEM_GL=OFF
+
+# PortableGL software backend (OpenGL 3.x core; replaces OSMesa — work in progress)
+cmake -S . -B build -DOBOL_USE_PORTABLEGL=ON -DOBOL_USE_SWRAST=OFF -DOBOL_USE_SYSTEM_GL=OFF
+
+# Dual: system GL primary + PortableGL software backend secondary
+cmake -S . -B build -DOBOL_USE_PORTABLEGL=ON -DOBOL_USE_SYSTEM_GL=ON -DOBOL_USE_SWRAST=OFF
 ```
 
-When `OBOL_BUILD_DUAL_GL` is active the library is named `libObol.so` and
-`SoDB::createOSMesaContextManager()` returns a live OSMesa manager.  When only
-system GL is available the function returns `nullptr`.
+When `OBOL_USE_SWRAST` is ON the library exports `SoDB::createOSMesaContextManager()`.
+When `OBOL_USE_PORTABLEGL` is ON the library exports `SoDB::createPortableGLContextManager()`.
+
+> **Note**: The PortableGL backend (`OBOL_USE_PORTABLEGL`) requires the Obol rendering
+> code to use the OpenGL 3.x core profile (no fixed-function pipeline).  This
+> modernisation is work-in-progress; see `docs/SOFTWARE_GL_COMPARISON.md` for the
+> migration plan and phase breakdown.  In the interim, the PortableGL-only build does
+> not compile because fixed-function GL constants (`GL_QUADS`, `GL_MODELVIEW`, etc.)
+> are absent from the GL 3 core profile.
 
 ---
 
@@ -199,7 +208,9 @@ system GL is available the function returns `nullptr`.
 - `docs/API_DIFFERENCES.md` §23 — Extended ContextManager API
 - `docs/API_DIFFERENCES.md` §24 — Dual-GL architecture summary
 - `docs/CONTEXT_MANAGEMENT_API.md` — Full ContextManager implementation guide
+- `docs/SOFTWARE_GL_COMPARISON.md` — OSMesa vs PortableGL comparison and migration plan
 - `src/glue/gl_osmesa.cpp` — The compilation-unit trick
 - `src/glue/gl.cpp` — The dispatch layer (`coingl_is_osmesa_context`)
 - `tests/utils/osmesa_context_manager.h` — Reference OSMesa implementation
+- `tests/utils/portablegl_context_manager.h` — PortableGL context manager (work in progress)
 - `tests/utils/fltk_context_manager.h` — Reference system-GL implementation

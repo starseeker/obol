@@ -80,6 +80,10 @@ private:
   SoState * state;
   SbUniqueId viewEltNodeId;
   SbBool stackoverflow;
+
+  /* Phase 1 modernization: update SoGLModernState with the current
+   * combined model-view matrix. Called from all matrix-changing overrides. */
+  void updateModernState();
 };
 
 #endif // !OBOL_SOGLMODELMATRIXELEMENT_H
