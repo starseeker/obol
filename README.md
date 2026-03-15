@@ -32,12 +32,12 @@ approaches.
 The name Obol refers to an ancient small-denomination Greek coin worth one
 sixth of a drachma — a play on the name of the upstream [Coin](https://github.com/coin3d/coin)
 project that Obol was originally derived from.  Obol has a much smaller
-scope than Coin, and it's primary OpenGL code is fixed function pipeline based,
+scope than Coin, and its primary OpenGL code is fixed function pipeline based,
 so a small, ancient coin seemed like a good fit.
 
 ## Documentation
 
-* `docs/API_DIFFERENCES.md` — comprehensive API migration guide (Obol vs. Coin)
+* ![API_DIFFERENCES](docs/API_DIFFERENCES.md) — comprehensive API migration guide (Obol vs. Coin)
 * `docs/BACKEND_SURVEY.md` — Documents which parts of the API can work without OpenGL
 * `docs/CONTEXT_MANAGEMENT_API.md` — `SoDB::ContextManager` API reference with worked examples
 * `docs/STORAGE_MIGRATION.md` — thread-local storage migration analysis and status
