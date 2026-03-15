@@ -251,10 +251,10 @@ static void pgl_phong_fs(float* fs_input,
             }
         }
 
-        fragColor.x = u->matEmission[0] + amb[0]*u->matAmbient[0] + dif[0]*u->matDiffuse[0] + spc[0]*u->matSpecular[0];
-        fragColor.y = u->matEmission[1] + amb[1]*u->matAmbient[1] + dif[1]*u->matDiffuse[1] + spc[1]*u->matSpecular[1];
-        fragColor.z = u->matEmission[2] + amb[2]*u->matAmbient[2] + dif[2]*u->matDiffuse[2] + spc[2]*u->matSpecular[2];
-        fragColor.w = u->matEmission[3] + amb[3]*u->matAmbient[3] + dif[3]*u->matDiffuse[3] + spc[3]*u->matSpecular[3];
+        fragColor.x = u->matEmission[0] + amb[0]*u->matAmbient[0] + dif[0]*(u->hasColors ? vColor.x : u->matDiffuse[0]) + spc[0]*u->matSpecular[0];
+        fragColor.y = u->matEmission[1] + amb[1]*u->matAmbient[1] + dif[1]*(u->hasColors ? vColor.y : u->matDiffuse[1]) + spc[1]*u->matSpecular[1];
+        fragColor.z = u->matEmission[2] + amb[2]*u->matAmbient[2] + dif[2]*(u->hasColors ? vColor.z : u->matDiffuse[2]) + spc[2]*u->matSpecular[2];
+        fragColor.w = u->matEmission[3] + amb[3]*u->matAmbient[3] + dif[3]*(u->hasColors ? vColor.w : u->matDiffuse[3]) + spc[3]*u->matSpecular[3];
     } else {
         /* No lights: emission + diffuse * vertex color */
         fragColor.x = u->matEmission[0] + u->matDiffuse[0] * vColor.x;

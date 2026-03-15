@@ -194,7 +194,7 @@
 "    }\n" \
 "    return uMatEmission\n" \
 "           + ambient  * uMatAmbient\n" \
-"           + diffuse  * uMatDiffuse\n" \
+"           + diffuse  * (uHasColors ? vColor : uMatDiffuse)\n" \
 "           + specular * uMatSpecular;\n" \
 "}\n" \
 "\n" \
