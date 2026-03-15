@@ -101,6 +101,7 @@
 #include <Inventor/elements/SoNormalBindingElement.h>
 #include <Inventor/elements/SoShapeHintsElement.h>
 #include <Inventor/elements/SoGLCoordinateElement.h>
+#include <Inventor/elements/SoGLCacheContextElement.h>
 #include <Inventor/elements/SoGLLazyElement.h>
 #include <Inventor/elements/SoTextureCoordinateBindingElement.h>
 #include <Inventor/errors/SoDebugError.h>
@@ -110,6 +111,7 @@
 
 #include "nodes/SoSubNodeP.h"
 #include "rendering/SoGL.h"
+#include "rendering/SoGLModernState.h"
 
 SO_NODE_SOURCE(SoIndexedTriangleStripSet);
 
@@ -308,6 +310,109 @@ SoIndexedTriangleStripSet::GLRender(SoGLRenderAction * action)
   }
 
   mb.sendFirst(); // make sure we have the correct material
+
+  // -------------------------------------------------------------------------
+  // Phase 1c: Modern VAO+VBO rendering path for indexed triangle strip sets.
+  // Handles OVERALL material with OVERALL or PER_VERTEX_INDEXED normals.
+  // Each strip (terminated by -1) is drawn with GL_TRIANGLE_STRIP.
+  // -------------------------------------------------------------------------
+  {
+    const SoGLCoordinateElement * glcoords =
+        static_cast<const SoGLCoordinateElement*>(coords);
+    const uint32_t ctxid = action->getCacheContext();
+    SoGLModernState * ms = SoGLModernState::forContext(ctxid);
+    if (ms && ms->isAvailable() && mbind == OVERALL && !dotextures
+        && glcoords && glcoords->is3D()
+        && (nbind == OVERALL || nbind == PER_VERTEX_INDEXED)) {
+      const SbVec3f * coords3d = glcoords->getArrayPtr3();
+
+      int totalVerts = 0;
+      int ci = 0;
+      while (ci < numindices) {
+        int n = 0;
+        while (ci + n < numindices && cindices[ci + n] >= 0) ++n;
+        totalVerts += n;
+        ci += n + 1;
+      }
+
+      if (totalVerts > 0) {
+        const int STRIDE = 8;
+        float * vtx = new float[totalVerts * STRIDE];
+        float * vp  = vtx;
+
+        SbVec3f dummyNorm(0.0f, 0.0f, 1.0f);
+        const SbVec3f * overallNorm = (sendnormals && normals) ? normals : &dummyNorm;
+
+        ci = 0;
+        while (ci < numindices) {
+          int n = 0;
+          while (ci + n < numindices && cindices[ci + n] >= 0) ++n;
+          for (int i = 0; i < n; ++i) {
+            int vi = cindices[ci + i];
+            const SbVec3f & p = coords3d[vi];
+            vp[0] = p[0]; vp[1] = p[1]; vp[2] = p[2];
+            if (nbind == PER_VERTEX_INDEXED && sendnormals && normals) {
+              int ni = (nindices && nindices != cindices)
+                       ? nindices[ci + i] : cindices[ci + i];
+              const SbVec3f & nm = normals[ni];
+              vp[3] = nm[0]; vp[4] = nm[1]; vp[5] = nm[2];
+            } else {
+              vp[3] = (*overallNorm)[0];
+              vp[4] = (*overallNorm)[1];
+              vp[5] = (*overallNorm)[2];
+            }
+            vp[6] = 0.0f; vp[7] = 0.0f;
+            vp += STRIDE;
+          }
+          ci += n + 1;
+        }
+
+        GLuint vao = 0, vbo = 0;
+        glGenVertexArrays(1, &vao);
+        glBindVertexArray(vao);
+        glGenBuffers(1, &vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER,
+                     (GLsizeiptr)(totalVerts * STRIDE * (int)sizeof(float)),
+                     vtx, GL_STATIC_DRAW);
+        delete[] vtx;
+
+        const GLsizei byteStride = STRIDE * (GLsizei)sizeof(float);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, byteStride, (void*)0);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, byteStride,
+                              (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, byteStride,
+                              (void*)(6 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+
+        ms->activatePhong(sendnormals, false, false, false);
+
+        int offset = 0;
+        ci = 0;
+        while (ci < numindices) {
+          int n = 0;
+          while (ci + n < numindices && cindices[ci + n] >= 0) ++n;
+          if (n >= 3) glDrawArrays(GL_TRIANGLE_STRIP, offset, n);
+          offset += n;
+          ci += n + 1;
+        }
+
+        ms->deactivate();
+        glBindVertexArray(0);
+        glDeleteVertexArrays(1, &vao);
+        glDeleteBuffers(1, &vbo);
+
+        if (normalcacheused) this->readUnlockNormalCache();
+        if (didpush) state->pop();
+        SoGLCacheContextElement::shouldAutoCache(
+            state, SoGLCacheContextElement::DONT_AUTO_CACHE);
+        sogl_autocache_update(state, this->coordIndex.getNum() / 2, FALSE);
+        return;
+      }
+    }
+  }
 
   sogl_render_tristrip(sogl_glue_from_state(state),
                        static_cast<const SoGLCoordinateElement*>(coords),

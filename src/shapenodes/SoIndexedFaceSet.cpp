@@ -227,6 +227,7 @@
 #include "rendering/SoVertexArrayIndexer.h"
 #include "rendering/SoVBO.h"
 #include "rendering/SoGL.h"
+#include "rendering/SoGLModernState.h"
 
 // *************************************************************************
 
@@ -514,6 +515,111 @@ SoIndexedFaceSet::GLRender(SoGLRenderAction * action)
 
 
   const uint32_t contextid = action->getCacheContext();
+
+  // -------------------------------------------------------------------------
+  // Phase 1c: Modern VAO+VBO rendering path for indexed face sets.
+  // Handles OVERALL material with OVERALL or PER_VERTEX_INDEXED normals.
+  // Fan-tessellates each polygon (coord-index groups terminated by -1) into
+  // GL_TRIANGLES using the existing coord/normal arrays.
+  // -------------------------------------------------------------------------
+  {
+    const SoGLCoordinateElement * glcoords =
+        static_cast<const SoGLCoordinateElement*>(coords);
+    SoGLModernState * ms = SoGLModernState::forContext(contextid);
+    if (ms && ms->isAvailable() && mbind == OVERALL && !doTextures
+        && glcoords && glcoords->is3D()
+        && (nbind == OVERALL || nbind == PER_VERTEX_INDEXED)) {
+      const SbVec3f * coords3d = glcoords->getArrayPtr3();
+
+      // Count triangles via fan tessellation
+      int numTris = 0;
+      int ci = 0;
+      while (ci < numindices) {
+        int n = 0;
+        while (ci + n < numindices && cindices[ci + n] >= 0) ++n;
+        if (n >= 3) numTris += n - 2;
+        ci += n + 1;
+      }
+
+      if (numTris > 0) {
+        const int STRIDE = 8; // pos(3)+norm(3)+uv(2)
+        float * vtx = new float[numTris * 3 * STRIDE];
+        float * vp  = vtx;
+
+        SbVec3f dummyNorm(0.0f, 0.0f, 1.0f);
+        const SbVec3f * overallNorm = (sendNormals && normals) ? normals : &dummyNorm;
+
+        ci = 0;
+        while (ci < numindices) {
+          int n = 0;
+          while (ci + n < numindices && cindices[ci + n] >= 0) ++n;
+          if (n < 3) { ci += n + 1; continue; }
+
+          // Fan tessellation
+          for (int i = 1; i < n - 1; ++i) {
+            auto writeVert = [&](int k) {
+              int vi = cindices[ci + k];
+              const SbVec3f & p = coords3d[vi];
+              vp[0] = p[0]; vp[1] = p[1]; vp[2] = p[2];
+              if (nbind == PER_VERTEX_INDEXED && sendNormals && normals) {
+                int ni = (nindices && nindices != cindices)
+                         ? nindices[ci + k] : cindices[ci + k];
+                const SbVec3f & nm = normals[ni];
+                vp[3] = nm[0]; vp[4] = nm[1]; vp[5] = nm[2];
+              } else {
+                vp[3] = (*overallNorm)[0];
+                vp[4] = (*overallNorm)[1];
+                vp[5] = (*overallNorm)[2];
+              }
+              vp[6] = 0.0f; vp[7] = 0.0f;
+              vp += STRIDE;
+            };
+            writeVert(0);
+            writeVert(i);
+            writeVert(i + 1);
+          }
+          ci += n + 1;
+        }
+
+        GLuint vao = 0, vbo = 0;
+        glGenVertexArrays(1, &vao);
+        glBindVertexArray(vao);
+        glGenBuffers(1, &vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER,
+                     (GLsizeiptr)(numTris * 3 * STRIDE * (int)sizeof(float)),
+                     vtx, GL_STATIC_DRAW);
+        delete[] vtx;
+
+        const GLsizei byteStride = STRIDE * (GLsizei)sizeof(float);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, byteStride, (void*)0);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, byteStride,
+                              (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, byteStride,
+                              (void*)(6 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+
+        ms->activatePhong(sendNormals, false, false, false);
+        glDrawArrays(GL_TRIANGLES, 0, numTris * 3);
+        ms->deactivate();
+
+        glBindVertexArray(0);
+        glDeleteVertexArrays(1, &vao);
+        glDeleteBuffers(1, &vbo);
+
+        if (normalCacheUsed) this->readUnlockNormalCache();
+        if (convexcacheused)  PRIVATE(this)->readUnlockConvexCache();
+        if (hasvp) state->pop();
+        SoGLCacheContextElement::shouldAutoCache(
+            state, SoGLCacheContextElement::DONT_AUTO_CACHE);
+        sogl_autocache_update(state, numTris, FALSE);
+        return;
+      }
+    }
+  }
+
   SoGLLazyElement * lelem = NULL;
   SbBool dova =
     SoVBO::shouldRenderAsVertexArrays(state, contextid, numindices) &&

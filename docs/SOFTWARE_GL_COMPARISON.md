@@ -333,11 +333,17 @@ PortableGL builds.
 | File | Change | Status |
 |------|--------|--------|
 | `src/rendering/SoGL.cpp` | Convert cone/cyl/sphere/cube to VAO+VBO rendering | ✅ modern path dispatched first; legacy path kept as fallback |
-| `src/shapenodes/SoFaceSet.cpp` | Remove glBegin/End fallback; use `glVertexAttribPointer` | 🔲 |
-| `src/shapenodes/SoTriangleStripSet.cpp` | Same | 🔲 |
-| `src/shapenodes/SoQuadMesh.cpp` | Same | 🔲 |
-| `src/shapenodes/SoLineSet.cpp` | Convert to `GL_LINES` VBO | 🔲 |
-| `src/shapenodes/SoIndexedPointSet.cpp` | Convert to `GL_POINTS` VBO | 🔲 |
+| `src/shapenodes/SoFaceSet.cpp` | Modern VAO+VBO path for OVERALL material (fan tessellation) | ✅ |
+| `src/shapenodes/SoTriangleStripSet.cpp` | Modern VAO+VBO path for OVERALL material, GL_TRIANGLE_STRIP | ✅ |
+| `src/shapenodes/SoLineSet.cpp` | Modern VAO+VBO path for OVERALL material, GL_LINE_STRIP | ✅ |
+| `src/shapenodes/SoPointSet.cpp` | Modern VAO+VBO path (OVERALL + PER_VERTEX colours) | ✅ |
+| `src/shapenodes/SoIndexedFaceSet.cpp` | Modern VAO+VBO path for OVERALL material (indexed fan tessellation) | ✅ |
+| `src/shapenodes/SoIndexedLineSet.cpp` | Modern VAO+VBO path for OVERALL material, GL_LINE_STRIP | ✅ |
+| `src/shapenodes/SoIndexedTriangleStripSet.cpp` | Modern VAO+VBO path for OVERALL material, GL_TRIANGLE_STRIP | ✅ |
+| `src/rendering/CoinOffscreenGLCanvas.cpp` | Fix destructContext() to unbind FBO before deregistering context | ✅ |
+| `src/rendering/obol_modern_shaders.h` | Fix no-lights Phong path to include emission term | ✅ |
+| `src/shapenodes/SoQuadMesh.cpp` | Convert to modern GL | 🔲 |
+| `src/shapenodes/SoIndexedPointSet.cpp` | Convert to modern GL | 🔲 |
 | `src/caches/SoPrimitiveVertexCache.cpp` | Replace `glVertexPointer`/`glNormalPointer` with `glVertexAttribPointer` | 🔲 |
 
 ### Phase 1d — Lighting / Material Uniforms

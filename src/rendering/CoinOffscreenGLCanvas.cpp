@@ -389,7 +389,9 @@ CoinOffscreenGLCanvas::destructContext(void)
     // The GL context is still current so these operations succeed.
     SoContextHandler::destructingContext(this->renderid);
 
-    // Restore the previously-active GL context (or make none current).
+    // Restore the context that was active before makeContextCurrent().
+    // The context object (this->context) holds the saved previous GL context
+    // pointer; restorePreviousContext() reads it to reinstate the right state.
     mgr->restorePreviousContext(this->context);
   }
   else {
