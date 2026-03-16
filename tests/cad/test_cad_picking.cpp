@@ -181,7 +181,7 @@ static int test_part_edge_bvh()
         // Ray shooting downward from above the midpoint
         SbLine ray(SbVec3f(0.5f, 0.0f, 2.0f), SbVec3f(0.5f, 0.0f, -1.0f));
         auto hit = bvh.queryClosest(ray, 0.5f);
-        runner.endTest(hit.has_value() && hit->polylineIdx == 0,
+        runner.endTest(hit.has_value() && hit->seg.polylineIdx == 0,
                        "Should find the segment near the ray");
     }
 

@@ -214,7 +214,7 @@ int main()
         runner.endTest(sv == v, "snapNorm at max level should return v unchanged");
     }
 
-    runner.startTest("SegmentPopLod::snapNorm at level 0 maps all values to same cell");
+    runner.startTest("SegmentPopLod::snapNorm at level 0 produces 2 distinct snap values");
     {
         // At level 0 there are 2^1 = 2 cells; midpoints are 0.25 and 0.75
         float s1 = SegmentPopLod::snapNorm(0.1f, 0);

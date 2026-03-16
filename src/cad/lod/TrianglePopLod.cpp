@@ -48,9 +48,13 @@ TrianglePopLod::snapNorm(float v, uint8_t level) noexcept
 {
     if (level == kMaxLevel) return v;
 
-    const uint32_t cells    = 1u << (static_cast<uint32_t>(level) % 24u + 1u);
+    // Cap the shift at 23 to stay within float mantissa precision and ensure
+    // the cell count is strictly non-decreasing with level (monotone LoD).
+    const uint32_t shift    = static_cast<uint32_t>(level) + 1u;
+    const uint32_t cells    = (shift >= 24u) ? (1u << 23u) : (1u << shift);
     const float    invCells = 1.0f / static_cast<float>(cells);
 
+    // Upper clamp ensures v=1.0 snaps to the last cell centre, not beyond.
     float vc = v < 0.0f ? 0.0f : (v >= 1.0f ? 1.0f - invCells * 0.5f : v);
     uint32_t cell = static_cast<uint32_t>(vc * static_cast<float>(cells));
     return (static_cast<float>(cell) + 0.5f) * invCells;

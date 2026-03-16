@@ -284,7 +284,8 @@ CadPartEdgeBVH::raySegDist2(const SbLine& ray,
 
 void
 CadPartEdgeBVH::queryRecursive(int nodeIdx, const SbLine& ray, float tolerance,
-                               float& bestDist2, const SegEntry** bestSeg) const
+                               float& bestDist2, const SegEntry** bestSeg,
+                               float& bestU) const
 {
     if (nodeIdx < 0 || nodeIdx >= static_cast<int>(nodes_.size())) return;
     const BvhNode& node = nodes_[nodeIdx];
@@ -294,28 +295,30 @@ CadPartEdgeBVH::queryRecursive(int nodeIdx, const SbLine& ray, float tolerance,
 
     if (node.itemIdx >= 0) {
         const SegEntry& seg = segments_[node.itemIdx];
-        float u;
+        float u = 0.0f;
         float d2 = raySegDist2(ray, seg.p0, seg.p1, u);
         if (d2 < bestDist2) {
             bestDist2 = d2;
             *bestSeg  = &seg;
+            bestU     = u;
         }
         return;
     }
-    queryRecursive(node.left,  ray, tolerance, bestDist2, bestSeg);
-    queryRecursive(node.right, ray, tolerance, bestDist2, bestSeg);
+    queryRecursive(node.left,  ray, tolerance, bestDist2, bestSeg, bestU);
+    queryRecursive(node.right, ray, tolerance, bestDist2, bestSeg, bestU);
 }
 
-std::optional<CadPartEdgeBVH::SegEntry>
+std::optional<CadPartEdgeBVH::QueryResult>
 CadPartEdgeBVH::queryClosest(const SbLine& ray, float tolerance) const
 {
     if (nodes_.empty()) return std::nullopt;
 
     float bestDist2 = tolerance * tolerance;
     const SegEntry* bestSeg = nullptr;
-    queryRecursive(0, ray, tolerance, bestDist2, &bestSeg);
+    float bestU = 0.0f;
+    queryRecursive(0, ray, tolerance, bestDist2, &bestSeg, bestU);
 
-    if (bestSeg) return *bestSeg;
+    if (bestSeg) return QueryResult{ *bestSeg, bestU };
     return std::nullopt;
 }
 
@@ -385,23 +388,23 @@ CadPickQuery::pickEdge(
         if (!hit) continue;
 
         // Compute world-space t for depth comparison
-        // Use the midpoint of the segment as an approximation
-        SbVec3f segMid = (hit->p0 + hit->p1) * 0.5f;
-        SbVec3f worldMid;
-        entry->localToWorld.multVecMatrix(segMid, worldMid);
+        // Use the closest point on the segment as an approximation
+        SbVec3f segPt = hit->seg.p0 + (hit->seg.p1 - hit->seg.p0) * hit->u;
+        SbVec3f worldPt;
+        entry->localToWorld.multVecMatrix(segPt, worldPt);
 
-        float t = (worldMid - ray.getPosition()).dot(ray.getDirection());
+        float t = (worldPt - ray.getPosition()).dot(ray.getDirection());
         if (t < 0.0f) continue;  // behind camera
 
         if (t < best.t) {
             best.t          = t;
-            best.hitPoint   = worldMid;
+            best.hitPoint   = worldPt;
             best.instanceId = entry->instanceId;
             best.partId     = entry->partId;
             best.primType   = CadPickResult::EDGE;
-            best.primIndex0 = hit->polylineIdx;
-            best.primIndex1 = hit->segmentIdx;
-            best.u          = hit->p0[0]; // placeholder; set from BVH query
+            best.primIndex0 = hit->seg.polylineIdx;
+            best.primIndex1 = hit->seg.segmentIdx;
+            best.u          = hit->u;
             best.valid      = true;
         }
     }

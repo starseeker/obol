@@ -170,14 +170,20 @@ public:
     /** Build from a flat list of segments. */
     void build(std::vector<SegEntry> segments);
 
+    /** Combined result from queryClosest. */
+    struct QueryResult {
+        SegEntry seg;
+        float    u = 0.0f;  ///< Parametric position along the hit segment [0,1]
+    };
+
     /**
      * @brief Find the closest segment within world-space tolerance to @p ray.
      *
      * @param ray        Ray in part-local coordinates.
      * @param tolerance  Maximum world-space distance to accept a hit.
-     * @return Closest hit segment, or empty if none within tolerance.
+     * @return Closest hit segment + u parameter, or empty if none within tolerance.
      */
-    std::optional<SegEntry> queryClosest(const SbLine& ray, float tolerance) const;
+    std::optional<QueryResult> queryClosest(const SbLine& ray, float tolerance) const;
 
     /** true after build() with at least one segment. */
     bool isBuilt() const noexcept { return !nodes_.empty(); }
@@ -188,7 +194,8 @@ private:
 
     int  buildRecursive(std::vector<int>& indices, int begin, int end);
     void queryRecursive(int nodeIdx, const SbLine& ray, float tolerance,
-                        float& bestDist2, const SegEntry** bestSeg) const;
+                        float& bestDist2, const SegEntry** bestSeg,
+                        float& bestU) const;
 
     /** Closest distance squared from a ray to a line segment. */
     static float raySegDist2(const SbLine& ray,
