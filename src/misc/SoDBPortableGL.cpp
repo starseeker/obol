@@ -58,32 +58,6 @@ static void pgl_glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h,
 {
     if (!pixels || type != GL_UNSIGNED_BYTE) return;
     pix_t* backbuf = static_cast<pix_t*>(pglGetBackBuffer());
-    if (backbuf) {
-        GLint vp0[4] = {0,0,0,0}; glGetIntegerv(GL_VIEWPORT, vp0);
-        int fbw0 = vp0[2] > 0 ? vp0[2] : w;
-        int fbh0 = vp0[3] > 0 ? vp0[3] : h;
-        int nonzero = 0, has_rgb = 0;
-        for (int i = 0; i < fbw0 * fbh0 && i < 1024*1024; ++i) {
-            if (backbuf[i] != 0) {
-                nonzero++;
-                uint8_t r = (uint8_t)(backbuf[i] & 0xFF);
-                uint8_t g = (uint8_t)((backbuf[i] >> 8) & 0xFF);
-                uint8_t b = (uint8_t)((backbuf[i] >> 16) & 0xFF);
-                if (r > 15 || g > 15 || b > 15) has_rgb++;
-            }
-        }
-        fprintf(stderr, "DBG pgl_glReadPixels w=%d h=%d fbw=%d fbh=%d nonzero=%d has_rgb=%d backbuf=%p\n",
-                w, h, fbw0, fbh0, nonzero, has_rgb, (void*)backbuf);
-        if (nonzero > 0 && has_rgb == 0) {
-            /* Print a few non-zero pix_t values to understand what's there */
-            int printed = 0;
-            for (int i = 0; i < fbw0*fbh0 && printed < 5; ++i) {
-                if (backbuf[i] != 0) { fprintf(stderr, "  pix_t[%d]=0x%08x\n", i, (unsigned)backbuf[i]); printed++; }
-            }
-        }
-    } else {
-        fprintf(stderr, "DBG pgl_glReadPixels: NULL backbuf!\n");
-    }
     if (!backbuf) return;
     /* Determine framebuffer dimensions from the viewport.
      * portablegl's draw_pixel() stores pixel at OpenGL (x,y) at backbuf row

@@ -147,7 +147,6 @@ void
 SoGLModelMatrixElement::setElt(const SbMatrix & matrix)
 {
   inherited::setElt(matrix);
-  fprintf(stderr, "DBG SoGLModelMatrixElement::setElt called\n");
   updateModernState();
 }
 
@@ -193,7 +192,6 @@ SoGLModelMatrixElement::updateModernState()
 {
   uint32_t ctxid = SoGLContext_get_contextid(this->glue);
   SoGLModernState * ms = SoGLModernState::forContext(ctxid);
-  fprintf(stderr, "DBG updateModernState: glue=%p ctxid=%u ms=%p\n", (void*)this->glue, ctxid, (void*)ms);
   if (!ms) return;
 
   /* The full model-view matrix is VIEW * MODEL.
