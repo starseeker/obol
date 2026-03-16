@@ -477,10 +477,9 @@ SoBase::ref(void) const
   // Atomically increment the reference count.  acq_rel ordering
   // ensures the increment is visible to any thread that subsequently
   // reads the count via acquire-ordered load.
+#if OBOL_DEBUG
   int32_t currentrefcount = this->referencecount.fetch_add(1, std::memory_order_acq_rel);
   int32_t newrefcount = currentrefcount + 1;
-
-#if OBOL_DEBUG
   if (newrefcount < currentrefcount) {
     SoDebugError::post("SoBase::ref",
                        "%p ('%s') - referencecount overflow!: %d -> %d",
@@ -491,15 +490,14 @@ SoBase::ref(void) const
     // it can hold up to 2,147,483,647 (2^31 − 1) references.
     assert(FALSE && "reference count overflow");
   }
-#endif // OBOL_DEBUG
-
-#if OBOL_DEBUG
   if (SoBase::PImpl::tracerefs) {
     SoDebugError::postInfo("SoBase::ref",
                            "%p ('%s') - referencecount: %d",
                            this, this->getTypeId().getName().getString(),
                            newrefcount);
   }
+#else
+  this->referencecount.fetch_add(1, std::memory_order_acq_rel);
 #endif // OBOL_DEBUG
 }
 
@@ -560,14 +558,16 @@ SoBase::unrefNoDelete(void) const
 
   if (OBOL_DEBUG) this->assertAlive();
 
-  int32_t newrefcount = this->referencecount.fetch_sub(1, std::memory_order_acq_rel) - 1;
 #if OBOL_DEBUG
+  int32_t newrefcount = this->referencecount.fetch_sub(1, std::memory_order_acq_rel) - 1;
   if (SoBase::PImpl::tracerefs) {
     SoDebugError::postInfo("SoBase::unrefNoDelete",
                            "%p ('%s') - referencecount: %d",
                            this, this->getTypeId().getName().getString(),
                            newrefcount);
   }
+#else
+  this->referencecount.fetch_sub(1, std::memory_order_acq_rel);
 #endif // OBOL_DEBUG
 }
 
