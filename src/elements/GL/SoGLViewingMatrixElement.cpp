@@ -57,6 +57,7 @@
 
 #include <Inventor/system/gl.h>
 #include "elements/GL/SoResetMatrixElement.h"
+#include "rendering/SoGLModernState.h"
 
 SO_ELEMENT_SOURCE(SoGLViewingMatrixElement);
 
@@ -143,8 +144,24 @@ SoGLViewingMatrixElement::setElt(const SbMatrix & matrix)
 void
 SoGLViewingMatrixElement::updategl(void)
 {
-  /* GL3: no fixed-function matrix stack. The viewing matrix is baked
-   * into SoGLModernState via SoGLModelMatrixElement::updateModernState(). */
+  /* GL3: no fixed-function matrix stack.  Upload the combined VIEW*MODEL
+   * matrix to SoGLModernState so that:
+   *   a) scenes without explicit model transforms (where
+   *      SoGLModelMatrixElement::updateModernState() is never triggered)
+   *      still receive the correct MV matrix, and
+   *   b) the MV matrix is refreshed after pop() whenever the viewing
+   *      matrix element is restored to a previous value.
+   */
+  if (!this->glue) return;
+  uint32_t ctxid = SoGLContext_get_contextid(this->glue);
+  SoGLModernState * ms = SoGLModernState::forContext(ctxid);
+  if (!ms) return;
+
+  SbMatrix mv = SoGLViewingMatrixElement::getResetMatrix(this->state);
+  SbBool mmident;
+  const SbMatrix & model = SoModelMatrixElement::get(this->state, mmident);
+  if (!mmident) mv.multLeft(model);
+  ms->setModelViewMatrix((const float *) mv.getValue());
 }
 
 /*!

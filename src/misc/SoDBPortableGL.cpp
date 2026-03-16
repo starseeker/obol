@@ -112,11 +112,25 @@ static void  pgl_glGetBufferParameteriv(GLenum target, GLenum pname, GLint* para
 static void  pgl_glGetBufferPointerv(GLenum, GLenum, GLvoid**) {}
 static GLboolean pgl_glIsBuffer(GLuint buffer) { return buffer != 0 ? GL_TRUE : GL_FALSE; }
 
-/* PortableGL's glGetString does not handle GL_EXTENSIONS (returns NULL with
- * GL_INVALID_ENUM).  Return an empty string so the extension-detection code
- * in gl.cpp gets a non-NULL result and stops looking. */
+/* PortableGL's glGetString overrides:
+ *
+ * GL_VERSION:    PortableGL reports its own library version ("0.101.0")
+ *                rather than an OpenGL API version.  Obol's feature-detection
+ *                code in gl.cpp parses this string and would see major=0,
+ *                disabling multitexture, compressed textures, VBOs, and all
+ *                other version-gated features.  We override to "3.3.0" so
+ *                that every GL 3.x feature check succeeds.
+ *
+ * GL_EXTENSIONS: PortableGL returns NULL with GL_INVALID_ENUM for this query.
+ *                Return an empty string so extension-detection in gl.cpp gets
+ *                a non-NULL result and stops looking (no ARB extensions).
+ */
 static const GLubyte* pgl_glGetString(GLenum name)
 {
+    if (name == 0x1F02 /*GL_VERSION*/) {
+        static const GLubyte ver[] = "3.3.0 PortableGL";
+        return ver;
+    }
     if (name == 0x1F03 /*GL_EXTENSIONS*/) {
         static const GLubyte empty[] = "";
         return empty;
