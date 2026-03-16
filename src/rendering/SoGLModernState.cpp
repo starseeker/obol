@@ -325,6 +325,8 @@ SoGLModernState::setModelViewMatrix(const float mat[16])
 {
     /* Store a copy of the OI row-major data */
     std::memcpy(mv_gl, mat, sizeof(mv_gl));
+    fprintf(stderr, "DBG setMV ctxId=%u [0]=[%.2f %.2f %.2f %.2f] [3]=[%.2f %.2f %.2f %.2f]\n",
+            context_id, mat[0], mat[1], mat[2], mat[3], mat[12], mat[13], mat[14], mat[15]);
 
     /* Compute the normal matrix: upper-left 3x3 of M_oi^{-1}.
      * SbMatrix stores its data as float[4][4] row-major.
@@ -347,6 +349,8 @@ void
 SoGLModernState::setProjectionMatrix(const float mat[16])
 {
     std::memcpy(proj_gl, mat, sizeof(proj_gl));
+    fprintf(stderr, "DBG setProjectionMatrix ctxId=%u [0]=[%.2f %.2f %.2f %.2f] [3]=[%.2f %.2f %.2f %.2f]\n",
+            context_id, mat[0], mat[1], mat[2], mat[3], mat[12], mat[13], mat[14], mat[15]);
 }
 
 void
@@ -356,6 +360,8 @@ SoGLModernState::setMaterial(const float ambient[4],
                               const float emission[4],
                               float shininess, bool twoSided)
 {
+    fprintf(stderr, "DBG setMaterial ctxId=%u diffuse=(%.2f %.2f %.2f %.2f)\n",
+            context_id, diffuse[0], diffuse[1], diffuse[2], diffuse[3]);
     std::memcpy(mat_ambient,  ambient,  4 * sizeof(float));
     std::memcpy(mat_diffuse,  diffuse,  4 * sizeof(float));
     std::memcpy(mat_specular, specular, 4 * sizeof(float));
@@ -384,6 +390,9 @@ SoGLModernState::addLight(const Light & light)
 {
     if (num_lights >= OBOL_MODERN_MAX_LIGHTS)
         return -1;
+    fprintf(stderr, "DBG addLight ctxId=%u diffuse=(%.2f %.2f %.2f %.2f) pos=(%.2f %.2f %.2f %.2f)\n",
+            context_id, light.diffuse[0], light.diffuse[1], light.diffuse[2], light.diffuse[3],
+            light.position[0], light.position[1], light.position[2], light.position[3]);
     lights[num_lights] = light;
     return num_lights++;
 }
