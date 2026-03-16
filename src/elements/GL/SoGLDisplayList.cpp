@@ -195,10 +195,10 @@ SoGLDisplayList::open(SoState * state, int index)
     // scene graph renders without caching but without errors.
     if (PRIVATE(this)->firstindex == 0) return;
     PRIVATE(this)->openindex = index;
-    // using GL_COMPILE here instead of GL_COMPILE_AND_EXECUTE will
+    // using 0x1300 /*GL_COMPILE*/ here instead of 0x1300 /*GL_COMPILE*/_AND_EXECUTE will
     // lead to much higher performance on nVidia cards, and doesn't
     // hurt performance for other vendors.
-    SoGLContext_glNewList(SoGLContext_instance(PRIVATE(this)->context), (GLuint) (PRIVATE(this)->firstindex+PRIVATE(this)->openindex), GL_COMPILE);
+    SoGLContext_glNewList(SoGLContext_instance(PRIVATE(this)->context), (GLuint) (PRIVATE(this)->firstindex+PRIVATE(this)->openindex), 0x1300 /*GL_COMPILE*/);
   }
   else {
     assert(PRIVATE(this)->type == TEXTURE_OBJECT);

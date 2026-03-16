@@ -109,6 +109,7 @@
 #include "nodes/SoSubNodeP.h"
 #include "rendering/SoGL.h"
 #include "glue/glp.h"
+#include "rendering/SoGLModernState.h"
 
 #include "rendering/SoVBO.h"
 
@@ -587,15 +588,16 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
         PRIVATE(this)->pvcache->getNumPointIndices()) {
       const SoNormalElement * nelem = SoNormalElement::getInstance(state);
       if (nelem->getNum() == 0) {
-        SoGLContext_glPushAttrib(sogl_glue_from_state(action->getState()), GL_LIGHTING_BIT);
-        SoGLContext_glDisable(sogl_glue_from_state(action->getState()), GL_LIGHTING);
+        { SoGLModernState * modernState = SoGLModernState::forContext(action->getCacheContext());
+          if (modernState && modernState->isAvailable()) modernState->activateBaseColor(); }
         arrays &= SoPrimitiveVertexCache::NORMAL;
       }
       PRIVATE(this)->pvcache->renderLines(state, arrays);
       PRIVATE(this)->pvcache->renderPoints(state, arrays);
 
       if (nelem->getNum() == 0) {
-        SoGLContext_glPopAttrib(sogl_glue_from_state(action->getState()));
+        SoGLModernState * modernState = SoGLModernState::forContext(action->getCacheContext());
+        if (modernState && modernState->isAvailable()) modernState->activatePhong();
       }
     }
     PRIVATE(this)->unlock();
@@ -661,9 +663,9 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
       }
       SoGLLazyElement::getInstance(state)->send(state, SoLazyElement::ALL_MASK);
 
-      SoGLContext_glPushAttrib(sogl_glue_from_state(action->getState()), GL_DEPTH_BUFFER_BIT);
       SoGLContext_glDepthFunc(sogl_glue_from_state(action->getState()), GL_LEQUAL);
-      SoGLContext_glDisable(sogl_glue_from_state(action->getState()), GL_LIGHTING);
+      { SoGLModernState * modernState = SoGLModernState::forContext(action->getCacheContext());
+        if (modernState && modernState->isAvailable()) modernState->activateBaseColor(); }
 
       SoGLContext_glColor3f(sogl_glue_from_state(action->getState()), 1.0f, 1.0f, 1.0f);
       PRIVATE(this)->setupShapeHints(this, state);
@@ -734,7 +736,9 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
 
       PRIVATE(this)->unlock();
 
-      SoGLContext_glPopAttrib(sogl_glue_from_state(action->getState()));
+      SoGLContext_glDepthFunc(sogl_glue_from_state(action->getState()), GL_LESS);
+      { SoGLModernState * modernState = SoGLModernState::forContext(action->getCacheContext());
+        if (modernState && modernState->isAvailable()) modernState->activatePhong(); }
       // we used two units in the bumpmap code
       SoGLMultiTextureImageElement::restore(state, 0);
       SoGLMultiTextureImageElement::restore(state, 1);
@@ -768,15 +772,16 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
         PRIVATE(this)->pvcache->getNumPointIndices()) {
       const SoNormalElement * nelem = SoNormalElement::getInstance(state);
       if (nelem->getNum() == 0) {
-        SoGLContext_glPushAttrib(sogl_glue_from_state(action->getState()), GL_LIGHTING_BIT);
-        SoGLContext_glDisable(sogl_glue_from_state(action->getState()), GL_LIGHTING);
+        { SoGLModernState * modernState = SoGLModernState::forContext(action->getCacheContext());
+          if (modernState && modernState->isAvailable()) modernState->activateBaseColor(); }
         arrays &= SoPrimitiveVertexCache::NORMAL;
       }
       PRIVATE(this)->pvcache->renderLines(state, arrays);
       PRIVATE(this)->pvcache->renderPoints(state, arrays);
 
       if (nelem->getNum() == 0) {
-        SoGLContext_glPopAttrib(sogl_glue_from_state(action->getState()));
+        SoGLModernState * modernState = SoGLModernState::forContext(action->getCacheContext());
+        if (modernState && modernState->isAvailable()) modernState->activatePhong();
       }
     }
     // we have rendered, return FALSE

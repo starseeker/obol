@@ -328,6 +328,7 @@
 #include <Inventor/elements/SoContextManagerElement.h>
 #include <Inventor/elements/SoModelMatrixElement.h>
 #include <Inventor/elements/SoProjectionMatrixElement.h>
+#include <Inventor/elements/SoGLViewingMatrixElement.h>
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/elements/SoCacheElement.h>
@@ -344,6 +345,7 @@
 #include "base/SbJpegImageHandler.h"
 
 #include "misc/SoEnvironment.h"
+#include "rendering/SoGLModernState.h"
 
 // boost/current_function.hpp replaced with C++11 __func__
 
@@ -753,42 +755,76 @@ pre_render_cb(void * userdata, SoGLRenderAction * action)
   // GL so that this works without any VBO/VAO infrastructure.
   SoOffscreenRendererP * thisp = static_cast<SoOffscreenRendererP *>(userdata);
   if (thisp && thisp->has_gradient) {
-    // Save enough GL state to restore afterwards.
-    // glPushAttrib/glPopAttrib are deprecated in core-profile OpenGL 3.1+ but
-    // are available in the compatibility profile used by this renderer.
-    SoGLContext_glPushAttrib(sogl_glue_from_state(action->getState()), GL_ENABLE_BIT | GL_DEPTH_BUFFER_BIT | GL_CURRENT_BIT);
-    SoGLContext_glDisable(sogl_glue_from_state(action->getState()), GL_DEPTH_TEST);
-    SoGLContext_glDisable(sogl_glue_from_state(action->getState()), GL_LIGHTING);
-    SoGLContext_glDisable(sogl_glue_from_state(action->getState()), GL_TEXTURE_2D);
-    SoGLContext_glDepthMask(sogl_glue_from_state(action->getState()), GL_FALSE);
+    const SoGLContext * glue = sogl_glue_from_state(action->getState());
+    SoGLContext_glDepthMask(glue, GL_FALSE);
+    SoGLContext_glDisable(glue, GL_DEPTH_TEST);
+    SoGLContext_glDisable(glue, GL_TEXTURE_2D);
 
-    // Switch to a simple orthographic 2-D projection
-    SoGLContext_glMatrixMode(sogl_glue_from_state(action->getState()), GL_PROJECTION);
-    SoGLContext_glPushMatrix(sogl_glue_from_state(action->getState()));
-    SoGLContext_glLoadIdentity(sogl_glue_from_state(action->getState()));
-    SoGLContext_glOrtho(sogl_glue_from_state(action->getState()), 0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
-    SoGLContext_glMatrixMode(sogl_glue_from_state(action->getState()), GL_MODELVIEW);
-    SoGLContext_glPushMatrix(sogl_glue_from_state(action->getState()));
-    SoGLContext_glLoadIdentity(sogl_glue_from_state(action->getState()));
+    // GL3: set up a normalized ortho via SoGLModernState (range [0..1] in both axes)
+    SoGLModernState * ms_grad = SoGLModernState::forContext(action->getCacheContext());
+    if (ms_grad && ms_grad->isAvailable()) {
+      static const float ident[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+      ms_grad->setModelViewMatrix(ident);
+      const float ortho[16] = {
+        2.0f, 0,     0, -1.0f,
+        0,    2.0f,  0, -1.0f,
+        0,    0,    -1.0f, 0,
+        0,    0,     0,   1.0f
+      };
+      ms_grad->setProjectionMatrix(ortho);
+      ms_grad->activateBaseColor();
+    }
 
-    // Draw a full-screen quad with per-vertex colours:
-    //   y=0 (bottom) → gradient_bottom colour
-    //   y=1 (top)    → gradient_top colour
+    // Draw gradient as two triangles (full-screen quad: y=0 → bot, y=1 → top)
     const SbColor & bot = thisp->gradient_bottom;
     const SbColor & top = thisp->gradient_top;
-    SoGLContext_glBegin(sogl_glue_from_state(action->getState()), GL_QUADS);
-      SoGLContext_glColor3f(sogl_glue_from_state(action->getState()), bot[0], bot[1], bot[2]);  SoGLContext_glVertex2f(sogl_glue_from_state(action->getState()), 0.0f, 0.0f);
-      SoGLContext_glColor3f(sogl_glue_from_state(action->getState()), bot[0], bot[1], bot[2]);  SoGLContext_glVertex2f(sogl_glue_from_state(action->getState()), 1.0f, 0.0f);
-      SoGLContext_glColor3f(sogl_glue_from_state(action->getState()), top[0], top[1], top[2]);  SoGLContext_glVertex2f(sogl_glue_from_state(action->getState()), 1.0f, 1.0f);
-      SoGLContext_glColor3f(sogl_glue_from_state(action->getState()), top[0], top[1], top[2]);  SoGLContext_glVertex2f(sogl_glue_from_state(action->getState()), 0.0f, 1.0f);
-    SoGLContext_glEnd(sogl_glue_from_state(action->getState()));
+    /* GL3: use VAO/VBO for the gradient quad (2 triangles, per-vertex color). */
+    {
+      const float verts[6][5] = {
+        {0.0f, 0.0f, 0.0f, bot[0], bot[1]},
+        {1.0f, 0.0f, 0.0f, bot[0], bot[1]},
+        {1.0f, 1.0f, 0.0f, top[0], top[1]},
+        {0.0f, 0.0f, 0.0f, bot[0], bot[1]},
+        {1.0f, 1.0f, 0.0f, top[0], top[1]},
+        {0.0f, 1.0f, 0.0f, top[0], top[1]},
+      };
+      /* Pack the missing bot[2] and top[2] values - use 7 floats per vertex. */
+      const float verts7[6][7] = {
+        {0.0f, 0.0f, 0.0f, bot[0], bot[1], bot[2], 1.0f},
+        {1.0f, 0.0f, 0.0f, bot[0], bot[1], bot[2], 1.0f},
+        {1.0f, 1.0f, 0.0f, top[0], top[1], top[2], 1.0f},
+        {0.0f, 0.0f, 0.0f, bot[0], bot[1], bot[2], 1.0f},
+        {1.0f, 1.0f, 0.0f, top[0], top[1], top[2], 1.0f},
+        {0.0f, 1.0f, 0.0f, top[0], top[1], top[2], 1.0f},
+      };
+      (void)verts; /* suppress unused warning */
+      GLuint grad_vao = 0, grad_vbo = 0;
+      glGenVertexArrays(1, &grad_vao);
+      glBindVertexArray(grad_vao);
+      glGenBuffers(1, &grad_vbo);
+      glBindBuffer(GL_ARRAY_BUFFER, grad_vbo);
+      glBufferData(GL_ARRAY_BUFFER, sizeof(verts7), verts7, GL_STREAM_DRAW);
+      /* position at attrib 0 (xyz), color at attrib 1 (rgba) */
+      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (const GLvoid*)0);
+      glEnableVertexAttribArray(0);
+      glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (const GLvoid*)(3 * sizeof(float)));
+      glEnableVertexAttribArray(1);
+      glDrawArrays(GL_TRIANGLES, 0, 6);
+      glBindVertexArray(0);
+      glDeleteBuffers(1, &grad_vbo);
+      glDeleteVertexArrays(1, &grad_vao);
+    }
 
-    // Restore matrices and GL state
-    SoGLContext_glMatrixMode(sogl_glue_from_state(action->getState()), GL_PROJECTION);
-    SoGLContext_glPopMatrix(sogl_glue_from_state(action->getState()));
-    SoGLContext_glMatrixMode(sogl_glue_from_state(action->getState()), GL_MODELVIEW);
-    SoGLContext_glPopMatrix(sogl_glue_from_state(action->getState()));
-    SoGLContext_glPopAttrib(sogl_glue_from_state(action->getState()));
+    SoGLContext_glDepthMask(glue, GL_TRUE);
+    // Restore SoGLModernState matrices from Coin state.
+    if (ms_grad && ms_grad->isAvailable()) {
+      SoState * st = action->getState();
+      SbMatrix mv = SoGLViewingMatrixElement::getResetMatrix(st);
+      mv.multLeft(SoModelMatrixElement::get(st));
+      ms_grad->setModelViewMatrix((const float*)mv.getValue());
+      const SbMatrix &proj = SoProjectionMatrixElement::get(st);
+      ms_grad->setProjectionMatrix((const float*)proj.getValue());
+    }
   }
 }
 
@@ -1002,11 +1038,8 @@ SoOffscreenRendererP::renderFromBase(SoBase * base)
                                this->instanceContextManager);
 
   if (CoinOffscreenGLCanvas::debug()) {
-    GLint colbits[4];
-    SoGLContext_glGetIntegerv(SoGLContext_instance(newcontext), GL_RED_BITS, &colbits[0]);
-    SoGLContext_glGetIntegerv(SoGLContext_instance(newcontext), GL_GREEN_BITS, &colbits[1]);
-    SoGLContext_glGetIntegerv(SoGLContext_instance(newcontext), GL_BLUE_BITS, &colbits[2]);
-    SoGLContext_glGetIntegerv(SoGLContext_instance(newcontext), GL_ALPHA_BITS, &colbits[3]);
+    // GL3: GL_RED_BITS/GL_GREEN_BITS/GL_BLUE_BITS/GL_ALPHA_BITS removed from core; assume 8 bits per channel.
+    GLint colbits[4] = {8, 8, 8, 8};
     SoDebugError::postInfo("SoOffscreenRenderer::renderFromBase",
                            "GL context GL_[RED|GREEN|BLUE|ALPHA]_BITS=="
                            "[%d, %d, %d, %d]",
@@ -2253,6 +2286,9 @@ SoOffscreenRendererP::offscreenContextsNotSupported(void)
   return FALSE;
 #elif defined(HAVE_OSMESA)
   // OSMesa provides offscreen rendering via software Mesa implementation
+  return FALSE;
+#elif defined(OBOL_PORTABLEGL_BUILD)
+  // PortableGL provides software offscreen rendering
   return FALSE;
 #endif
 

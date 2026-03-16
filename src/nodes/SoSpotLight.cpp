@@ -167,47 +167,14 @@ SoSpotLight::GLRender(SoGLRenderAction * action)
   SoLightElement::add(state, this, SoModelMatrixElement::get(state) *
                       SoViewingMatrixElement::get(state));
 
-  GLenum light = (GLenum) (idx + GL_LIGHT0);
-
   SbVec3f attenuation = SoEnvironmentElement::getLightAttenuation(state);
-
-  SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_QUADRATIC_ATTENUATION, attenuation[0]);
-  SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_LINEAR_ATTENUATION, attenuation[1]);
-  SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_CONSTANT_ATTENUATION, attenuation[2]);
-
-  SbColor4f lightcolor(0.0f, 0.0f, 0.0f, 1.0f);
-  // disable ambient contribution from this light source
-  SoGLContext_glLightfv(sogl_glue_from_state(state), light, GL_AMBIENT, lightcolor.getValue());
-  lightcolor.setRGB(this->color.getValue());
-  lightcolor *= this->intensity.getValue();
-
-  SoGLContext_glLightfv(sogl_glue_from_state(state), light, GL_DIFFUSE, lightcolor.getValue());
-  SoGLContext_glLightfv(sogl_glue_from_state(state), light, GL_SPECULAR, lightcolor.getValue());
 
   SbVec3f loc = this->location.getValue();
 
   // point (or spot) light when w = 1.0
   SbVec4f posvec(loc[0], loc[1], loc[2], 1.0f);
-  SoGLContext_glLightfv(sogl_glue_from_state(state), light, GL_POSITION, posvec.getValue());
-  SoGLContext_glLightfv(sogl_glue_from_state(state), light, GL_SPOT_DIRECTION, this->direction.getValue().getValue());
 
-  float cutoff = this->cutOffAngle.getValue() * 180.0f / float(M_PI);
   float dropoff = SbClamp(this->dropOffRate.getValue(), 0.0f, 1.0f) * 128.0f;
-  
-#ifdef OBOL_EXTRA_DEBUG // output a warning if the cutoff is invalid
-                        // since we now clamp it (someone might have
-                        // been setting it to 180.0, which would make
-                        // this a PointLight)
-  if (cutoff < 0.0f || cutoff > 90.0f) {
-    SoDebugError::postWarning("SoSpotLight::GLRender",
-                              "invalid cutOffAngle for SpotLight: %f, clamping to [0.0f, 90.0f]", cutoff);
-  }
-#endif // OBOL_EXTRA_DEBUG
-
-  cutoff = SbClamp(cutoff, 0.0f, 90.0f);
-
-  SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_SPOT_EXPONENT, dropoff);
-  SoGLContext_glLightf(sogl_glue_from_state(state), light, GL_SPOT_CUTOFF, cutoff);
 
   /* Phase 1 modernization: register this spot light with SoGLModernState. */
   {

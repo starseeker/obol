@@ -93,6 +93,13 @@ SoShapeStyleElement::init(SoState * state)
 {
   inherited::init(state);
   this->flags = LIGHTING;
+#ifdef OBOL_PORTABLEGL_BUILD
+  /* PortableGL has no fixed-function GL (no glBegin/glVertex etc.).
+   * Always enable the vertex-array path so all shapes use VAO+VBO
+   * via SoPrimitiveVertexCache rather than falling through to
+   * the legacy immediate-mode rendering helpers. */
+  this->flags |= VERTEXARRAY;
+#endif
 }
 
 //! FIXME: write doc.

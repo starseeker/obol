@@ -295,114 +295,20 @@ namespace { namespace SoGL { namespace FaceSet {
   template < int NormalBinding,
              int MaterialBinding,
              int TexturingEnabled >
-  static void GLRender(const SoGLContext * glue,
-                       const SoGLCoordinateElement * coords,
-                       const SbVec3f *normals,
-                       SoMaterialBundle * mb,
-                       const SoTextureCoordinateBundle * tb,
+  static void GLRender(const SoGLContext * OBOL_UNUSED_ARG(glue),
+                       const SoGLCoordinateElement * OBOL_UNUSED_ARG(coords),
+                       const SbVec3f * OBOL_UNUSED_ARG(normals),
+                       SoMaterialBundle * OBOL_UNUSED_ARG(mb),
+                       const SoTextureCoordinateBundle * OBOL_UNUSED_ARG(tb),
                        int OBOL_UNUSED_ARG(nbind),
                        int OBOL_UNUSED_ARG(mbind),
                        int OBOL_UNUSED_ARG(doTextures),
-                       int32_t idx,
-                       const int32_t *ptr,
-                       const int32_t *end,
-                       SbBool needNormals)
+                       int32_t OBOL_UNUSED_ARG(idx),
+                       const int32_t * OBOL_UNUSED_ARG(ptr),
+                       const int32_t * OBOL_UNUSED_ARG(end),
+                       SbBool OBOL_UNUSED_ARG(needNormals))
   {
-    // Make sure specified coordinate startindex is valid
-    assert(idx >= 0);
-
-    const SbVec3f * coords3d = NULL;
-    const SbVec4f * coords4d = NULL;
-    const SbBool is3d = coords->is3D();
-    if (is3d) {
-      coords3d = coords->getArrayPtr3();
-    }
-    else {
-      coords4d = coords->getArrayPtr4();
-    }
-    int numcoords = coords->getNum();
-
-    // This is the same code as in SoGLCoordinateElement::send().
-    // It is inlined here for speed (~15% speed increase).
-#define SEND_VERTEX(_idx_) \
-    if (is3d) SoGLContext_glVertex3fv(glue, (const GLfloat*) (coords3d + _idx_)); \
-    else SoGLContext_glVertex4fv(glue, (const GLfloat*) (coords4d + _idx_));
-
-    int matnr = 0;
-    int texnr = 0;
-    int mode = GL_POLYGON;
-    int newmode;
-    int n;
-
-    SbVec3f dummynormal(0.0f, 0.0f, 1.0f);
-    const SbVec3f * currnormal = &dummynormal;
-    if (normals) currnormal = normals;
-    if ((AttributeBinding)NormalBinding == OVERALL) {
-      if (needNormals) SoGLContext_glNormal3fv(glue, (const GLfloat *)currnormal);
-    }
-
-    while (ptr < end) {
-      n = *ptr++;
-
-      if (n < 3 || idx + n > numcoords) {
-        static uint32_t current_errors = 0;
-        if (current_errors < 1) {
-          SoDebugError::postWarning("[nonindexedfaceset]::GLRender", "Erroneous "
-                                    "number of coordinates specified: %d. Must "
-                                    "be >= 3 and less than or equal to the number of "
-                                    "coordinates available (which is: %d). Aborting "
-                                    "rendering. This message will be shown only once, "
-                                    "but more errors might be present", n, numcoords - idx);
-        }
-
-        current_errors++;
-        break;
-      }
-
-      if (n == 3) newmode = GL_TRIANGLES;
-      else if (n == 4) newmode = GL_QUADS;
-      else newmode = GL_POLYGON;
-      if (newmode != mode) {
-        if (mode != GL_POLYGON) SoGLContext_glEnd(glue);
-        mode = newmode;
-        SoGLContext_glBegin(glue, (GLenum) mode);
-      }
-      else if (mode == GL_POLYGON) SoGLContext_glBegin(glue, GL_POLYGON);
-
-      if ((AttributeBinding)NormalBinding != OVERALL) {
-        currnormal = normals++;
-        SoGLContext_glNormal3fv(glue, (const GLfloat *)currnormal);
-      }
-      if ((AttributeBinding)MaterialBinding != OVERALL) {
-        mb->send(matnr++, TRUE);
-      }
-      if (TexturingEnabled == TRUE) {
-        tb->send(texnr++, coords->get3(idx), *currnormal);
-      }
-      SEND_VERTEX(idx);
-      idx++;
-      while (--n) {
-        if ((AttributeBinding)NormalBinding == PER_VERTEX) {
-          currnormal = normals++;
-          SoGLContext_glNormal3fv(glue, (const GLfloat *)currnormal);
-        }
-        if ((AttributeBinding)MaterialBinding == PER_VERTEX) {
-          mb->send(matnr++, TRUE);
-        } else if ((AttributeBinding)MaterialBinding != OVERALL) {
-          // re-send per-face material for each vertex to ensure correct colour on all drivers
-          mb->send(matnr-1, TRUE);
-        }
-
-        if (TexturingEnabled == TRUE) {
-          tb->send(texnr++, coords->get3(idx), *currnormal);
-        }
-        SEND_VERTEX(idx);
-        idx++;
-      }
-      if (mode == GL_POLYGON) SoGLContext_glEnd(glue);
-    }
-    if (mode != GL_POLYGON) SoGLContext_glEnd(glue);
-#undef SEND_VERTEX
+    // Legacy immediate-mode path removed; modern VAO/VBO path is used instead.
   }
 
 } } } // namespace
@@ -496,7 +402,7 @@ SoFaceSet::GLRender(SoGLRenderAction * action)
       PRIVATE(this)->primitivetype = GL_TRIANGLES;
     }
     else if (numquads && !numtriangles && !numothers) {
-      PRIVATE(this)->primitivetype = GL_QUADS;
+      PRIVATE(this)->primitivetype = MIXED_TYPE;
     }
   }
 
@@ -696,8 +602,7 @@ SoFaceSet::GLRender(SoGLRenderAction * action)
     // check if we can render things using glDrawArrays
     SbBool dova =
       SoVBO::shouldRenderAsVertexArrays(state, contextid, numcoords) &&
-      ((PRIVATE(this)->primitivetype == GL_TRIANGLES) ||
-       (PRIVATE(this)->primitivetype == GL_QUADS)) &&
+      (PRIVATE(this)->primitivetype == GL_TRIANGLES) &&
       (nbind != PER_FACE) &&
       (mbind != PER_FACE) &&
       !tb.isFunction() &&

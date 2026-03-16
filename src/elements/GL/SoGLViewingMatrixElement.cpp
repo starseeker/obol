@@ -143,11 +143,8 @@ SoGLViewingMatrixElement::setElt(const SbMatrix & matrix)
 void
 SoGLViewingMatrixElement::updategl(void)
 {
-  SbMatrix mat = this->viewingMatrix;
-  if (!this->mmidentity) {
-    mat.multRight(this->modelmatrix);
-  }
-  SoGLContext_glLoadMatrixf(this->glue, (float*)mat);
+  /* GL3: no fixed-function matrix stack. The viewing matrix is baked
+   * into SoGLModernState via SoGLModelMatrixElement::updateModernState(). */
 }
 
 /*!

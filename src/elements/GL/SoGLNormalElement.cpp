@@ -94,6 +94,8 @@ SoGLNormalElement::push(SoState * state)
 void
 SoGLNormalElement::send(const int index) const
 {
-  assert(index >= 0 && index < this->numNormals);
-  SoGLContext_glNormal3fv(this->glue, this->normals[index].getValue());
+  /* GL3: normals are uploaded as VAO vertex attrib (location 1) via
+   * SoPrimitiveVertexCache, not via glNormal3fv. This path is unused
+   * in modern rendering. */
+  (void)index;
 }

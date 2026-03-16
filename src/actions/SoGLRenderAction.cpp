@@ -880,7 +880,7 @@ SoGLRenderAction::getTransparencyType(void) const
   calling
 
   \verbatim
-      SoGLContext_glEnable(sogl_glue_from_state(state), GL_POINT_SMOOTH);
+      SoGLContext_glEnable(sogl_glue_from_state(state), 0x0B10);
       SoGLContext_glEnable(sogl_glue_from_state(state), GL_LINE_SMOOTH);
   \endverbatim
 
@@ -1085,10 +1085,14 @@ SoGLRenderAction::beginTraversal(SoNode * node)
     PRIVATE(this)->needglinit = FALSE;
 
     const SoGLContext * glue = SoGLContext_instance(PRIVATE(this)->cachecontext);
-    // we are always using GL_COLOR_MATERIAL in Coin
-    SoGLContext_glColorMaterial(glue, GL_FRONT_AND_BACK, GL_DIFFUSE);
-    SoGLContext_glEnable(glue, GL_COLOR_MATERIAL);
-    SoGLContext_glEnable(glue, GL_NORMALIZE);
+#ifndef OBOL_PORTABLEGL_BUILD
+    /* Fixed-function GL state — not available in portablegl (GL3 core only).
+     * The modern VAO/VBO+shader pipeline handles lighting and normals via shaders. */
+    // we are always using 0x0B57 in Coin
+    SoGLContext_glColorMaterial(glue, GL_FRONT_AND_BACK, 0x1201);
+    SoGLContext_glEnable(glue, 0x0B57);
+    SoGLContext_glEnable(glue, 0x0BA1);
+#endif /* !OBOL_PORTABLEGL_BUILD */
 
     // initialize the depth function to the default Coin/Inventor
     // value.  SoGLDepthBufferElement doesn't check for this, it just
@@ -1099,11 +1103,15 @@ SoGLRenderAction::beginTraversal(SoNode * node)
     SoGLContext_glDepthFunc(glue, GL_LEQUAL);
 
     if (PRIVATE(this)->smoothing) {
-      SoGLContext_glEnable(glue, GL_POINT_SMOOTH);
+#ifndef OBOL_PORTABLEGL_BUILD
+      SoGLContext_glEnable(glue, 0x0B10);
+#endif
       SoGLContext_glEnable(glue, GL_LINE_SMOOTH);
     }
     else {
-      SoGLContext_glDisable(glue, GL_POINT_SMOOTH);
+#ifndef OBOL_PORTABLEGL_BUILD
+      SoGLContext_glDisable(glue, 0x0B10);
+#endif
       SoGLContext_glDisable(glue, GL_LINE_SMOOTH);
     }
   }
@@ -1730,11 +1738,11 @@ SoGLRenderActionP::render(SoNode * node)
   if (this->action->getNumPasses() > 1 && this->internal_multipass) {
     // Check if the current OpenGL context has an accumulation buffer
     // (rendering multiple passes doesn't make much sense otherwise).
-    // In a GL 3 core context GL_ACCUM_RED_BITS is not a valid pname and
+    // In a GL 3 core context 0x0D58 is not a valid pname and
     // glGetIntegerv generates GL_INVALID_ENUM; initialise to 0 so the
     // already-existing check correctly falls back to single-pass rendering.
     GLint accumbits = 0;
-    SoGLContext_glGetIntegerv(SoGLContext_instance(this->cachecontext), GL_ACCUM_RED_BITS, &accumbits);
+    SoGLContext_glGetIntegerv(SoGLContext_instance(this->cachecontext), 0x0D58, &accumbits);
 
     if (accumbits == 0) {
       static SbBool first = TRUE;
@@ -1792,11 +1800,11 @@ SoGLRenderActionP::renderMulti(SoNode * node)
   this->currentpass = 0;
   this->renderSingle(node);
   if (this->action->hasTerminated()) return;
-  SoGLContext_glAccum(SoGLContext_instance(this->cachecontext), GL_LOAD, fraction);
+  SoGLContext_glAccum(SoGLContext_instance(this->cachecontext), 0x0101, fraction);
 
   for (int i = 1; i < this->numpasses; i++) {
     if (this->passupdate) {
-      SoGLContext_glAccum(SoGLContext_instance(this->cachecontext), GL_RETURN, float(this->numpasses) / float(i));
+      SoGLContext_glAccum(SoGLContext_instance(this->cachecontext), 0x0102, float(this->numpasses) / float(i));
     }
     if (this->passcallback) this->passcallback(this->passcallbackdata);
     else SoGLContext_glClear(SoGLContext_instance(this->cachecontext), GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
@@ -1807,10 +1815,10 @@ SoGLRenderActionP::renderMulti(SoNode * node)
       this->currentpass = storedpass;
       return;
     }
-    SoGLContext_glAccum(SoGLContext_instance(this->cachecontext), GL_ACCUM, fraction);
+    SoGLContext_glAccum(SoGLContext_instance(this->cachecontext), 0x0100, fraction);
   }
   this->currentpass = storedpass;
-  SoGLContext_glAccum(SoGLContext_instance(this->cachecontext), GL_RETURN, 1.0f);
+  SoGLContext_glAccum(SoGLContext_instance(this->cachecontext), 0x0102, 1.0f);
 }
 
 //
@@ -1838,8 +1846,8 @@ SoGLRenderActionP::renderSingle(SoNode * node)
   // Do order independent transparency rendering
   if (this->transparencytype == SoGLRenderAction::SORTED_LAYERS_BLEND) {
     GLint depthbits, alphabits;
-    SoGLContext_glGetIntegerv(SoGLContext_instance(this->cachecontext), GL_DEPTH_BITS, &depthbits);
-    SoGLContext_glGetIntegerv(SoGLContext_instance(this->cachecontext), GL_ALPHA_BITS, &alphabits);
+    SoGLContext_glGetIntegerv(SoGLContext_instance(this->cachecontext), 0x0D56, &depthbits);
+    SoGLContext_glGetIntegerv(SoGLContext_instance(this->cachecontext), 0x0D55, &alphabits);
 
     const SoGLContext * w = sogl_glue_instance(state);
     // FIXME: What should we do when >8bits per channel becomes normal? (20031125 handegar)
@@ -2087,16 +2095,16 @@ void
 SoGLRenderActionP::texgenEnable(SbBool enable)
 {
     if (enable) {
-        SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), GL_TEXTURE_GEN_S);
-        SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), GL_TEXTURE_GEN_T);
-        SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), GL_TEXTURE_GEN_R);
-        SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), GL_TEXTURE_GEN_Q);
+        SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), 0x0C60);
+        SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), 0x0C61);
+        SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), 0x0C62);
+        SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), 0x0C63);
     }
     else {
-        SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_TEXTURE_GEN_S);
-        SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_TEXTURE_GEN_T);
-        SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_TEXTURE_GEN_R);
-        SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_TEXTURE_GEN_Q);
+        SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), 0x0C60);
+        SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), 0x0C61);
+        SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), 0x0C62);
+        SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), 0x0C63);
     }
 }
 
@@ -2110,15 +2118,15 @@ SoGLRenderActionP::eyeLinearTexgen()
   const float col3[] = { 0, 0, 1, 0 };
   const float col4[] = { 0, 0, 0, 1 };
 
-  SoGLContext_glTexGenfv(SoGLContext_instance(this->cachecontext), GL_S,GL_EYE_PLANE, col1);
-  SoGLContext_glTexGenfv(SoGLContext_instance(this->cachecontext), GL_T,GL_EYE_PLANE, col2);
-  SoGLContext_glTexGenfv(SoGLContext_instance(this->cachecontext), GL_R,GL_EYE_PLANE, col3);
-  SoGLContext_glTexGenfv(SoGLContext_instance(this->cachecontext), GL_Q,GL_EYE_PLANE, col4);
+  SoGLContext_glTexGenfv(SoGLContext_instance(this->cachecontext), 0x2000 /*GL_S*/,0x2502, col1);
+  SoGLContext_glTexGenfv(SoGLContext_instance(this->cachecontext), 0x2001 /*GL_T*/,0x2502, col2);
+  SoGLContext_glTexGenfv(SoGLContext_instance(this->cachecontext), 0x2002 /*GL_R*/,0x2502, col3);
+  SoGLContext_glTexGenfv(SoGLContext_instance(this->cachecontext), 0x2003 /*GL_Q*/,0x2502, col4);
 
-  SoGLContext_glTexGeni(SoGLContext_instance(this->cachecontext), GL_S, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-  SoGLContext_glTexGeni(SoGLContext_instance(this->cachecontext), GL_T, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-  SoGLContext_glTexGeni(SoGLContext_instance(this->cachecontext), GL_R, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-  SoGLContext_glTexGeni(SoGLContext_instance(this->cachecontext), GL_Q, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+  SoGLContext_glTexGeni(SoGLContext_instance(this->cachecontext), 0x2000 /*GL_S*/, 0x2500, 0x2400);
+  SoGLContext_glTexGeni(SoGLContext_instance(this->cachecontext), 0x2001 /*GL_T*/, 0x2500, 0x2400);
+  SoGLContext_glTexGeni(SoGLContext_instance(this->cachecontext), 0x2002 /*GL_R*/, 0x2500, 0x2400);
+  SoGLContext_glTexGeni(SoGLContext_instance(this->cachecontext), 0x2003 /*GL_Q*/, 0x2500, 0x2400);
 
 }
 
@@ -2133,7 +2141,7 @@ SoGLRenderActionP::renderOneBlendLayer(const SoState * state,
   // extensions. Must do this every time to make sure the alpha-value
   // stays correct.
   GLfloat clearcolor[4];
-  SoGLContext_glGetFloatv(SoGLContext_instance(this->cachecontext), GL_COLOR_CLEAR_VALUE, clearcolor);
+  SoGLContext_glGetFloatv(SoGLContext_instance(this->cachecontext), 0x0C22, clearcolor);
   if (glue->has_arb_fragment_program && !this->usenvidiaregistercombiners)
     SoGLContext_glClearColor(SoGLContext_instance(this->cachecontext), clearcolor[0], clearcolor[1], clearcolor[2], 0.0f);
   else
@@ -2157,18 +2165,18 @@ SoGLRenderActionP::renderOneBlendLayer(const SoState * state,
       // Fragment program cleanup
       SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_FRAGMENT_PROGRAM_ARB);
       SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_EXT);
-      SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_ALPHA_TEST);
+      SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), 0x0BC0);
 
       SoGLContext_glActiveTexture(glue, GL_TEXTURE3);
       SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_EXT);
       this->texgenEnable(FALSE);
 
-      SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_TEXTURE);
+      SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1702 /*GL_TEXTURE*/);
       SoGLContext_glLoadIdentity(SoGLContext_instance(this->cachecontext));
-      SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_MODELVIEW);
+      SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1700);
       SoGLContext_glActiveTexture(glue, GL_TEXTURE0);
       SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_EXT);
-      SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_ALPHA_TEST);
+      SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), 0x0BC0);
 
     }
     else {
@@ -2177,12 +2185,12 @@ SoGLRenderActionP::renderOneBlendLayer(const SoState * state,
       SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_EXT);
       this->texgenEnable(FALSE);
 
-      SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_TEXTURE);
+      SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1702 /*GL_TEXTURE*/);
       SoGLContext_glLoadIdentity(SoGLContext_instance(this->cachecontext));
-      SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_MODELVIEW);
+      SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1700);
       SoGLContext_glActiveTexture(glue, GL_TEXTURE0);
       SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_REGISTER_COMBINERS_NV);
-      SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_ALPHA_TEST);
+      SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), 0x0BC0);
 
     }
   }
@@ -2275,7 +2283,7 @@ SoGLRenderActionP::setupFragmentProgram()
   glue->glBindProgramARB(GL_FRAGMENT_PROGRAM_ARB, this->sortedlayersblendprogramid);
 
   // UNIT #3
-  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_MODELVIEW);
+  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1700);
   SoGLContext_glActiveTexture(glue, GL_TEXTURE3);
 
   SoGLContext_glBindTexture(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_NV, this->depthtextureid);
@@ -2287,16 +2295,16 @@ SoGLRenderActionP::setupFragmentProgram()
   SoGLContext_glPopMatrix(SoGLContext_instance(this->cachecontext));
   this->texgenEnable(TRUE);
 
-  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_TEXTURE);
+  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1702 /*GL_TEXTURE*/);
   SoGLContext_glLoadIdentity(SoGLContext_instance(this->cachecontext));
   SoGLContext_glScalef(SoGLContext_instance(this->cachecontext), this->viewportwidth, this->viewportheight, 1);
   SoGLContext_glTranslatef(SoGLContext_instance(this->cachecontext), 0.5, 0.5, 0.5);
   SoGLContext_glScalef(SoGLContext_instance(this->cachecontext), 0.5, 0.5, 0.5);
   SoGLContext_glMultMatrixf(SoGLContext_instance(this->cachecontext), static_cast<float *>(this->sortedlayersblendprojectionmatrix));
-  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_MODELVIEW);
+  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1700);
 
   SoGLContext_glAlphaFunc(SoGLContext_instance(this->cachecontext), GL_GREATER, 0);
-  SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), GL_ALPHA_TEST);
+  SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), 0x0BC0);
 
   // UNIT #0
   SoGLContext_glActiveTexture(glue, GL_TEXTURE0);
@@ -2323,27 +2331,27 @@ SoGLRenderActionP::setupRegisterCombinersNV()
   SoGLContext_glActiveTexture(glue, GL_TEXTURE1);
   SoGLContext_glTexEnvi(SoGLContext_instance(this->cachecontext), GL_TEXTURE_SHADER_NV, GL_SHADER_OPERATION_NV, GL_DOT_PRODUCT_NV);
   SoGLContext_glTexEnvi(SoGLContext_instance(this->cachecontext), GL_TEXTURE_SHADER_NV, GL_PREVIOUS_TEXTURE_INPUT_NV, GL_TEXTURE0);
-  SoGLContext_glTexEnvi(SoGLContext_instance(this->cachecontext), GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_NONE);
+  SoGLContext_glTexEnvi(SoGLContext_instance(this->cachecontext), 0x2300, 0x2200, 0);
 
-  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_MODELVIEW);
+  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1700);
   SoGLContext_glPushMatrix(SoGLContext_instance(this->cachecontext));
   SoGLContext_glLoadIdentity(SoGLContext_instance(this->cachecontext));
   this->eyeLinearTexgen();
   this->texgenEnable(TRUE);
   SoGLContext_glPopMatrix(SoGLContext_instance(this->cachecontext));
 
-  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_TEXTURE);
+  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1702 /*GL_TEXTURE*/);
   SoGLContext_glLoadIdentity(SoGLContext_instance(this->cachecontext));
   SoGLContext_glTranslatef(SoGLContext_instance(this->cachecontext), 0.0f, 0.0f, 0.5f);
   SoGLContext_glScalef(SoGLContext_instance(this->cachecontext), 0.0f, 0.0f, 0.5f);
   SoGLContext_glMultMatrixf(SoGLContext_instance(this->cachecontext), static_cast<float *>(this->sortedlayersblendprojectionmatrix));
-  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_MODELVIEW);
+  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1700);
 
   // UNIT #2
   SoGLContext_glActiveTexture(glue, GL_TEXTURE2);
   SoGLContext_glTexEnvi(SoGLContext_instance(this->cachecontext), GL_TEXTURE_SHADER_NV, GL_SHADER_OPERATION_NV, GL_DOT_PRODUCT_DEPTH_REPLACE_NV);
   SoGLContext_glTexEnvi(SoGLContext_instance(this->cachecontext), GL_TEXTURE_SHADER_NV, GL_PREVIOUS_TEXTURE_INPUT_NV, GL_TEXTURE0);
-  SoGLContext_glTexEnvi(SoGLContext_instance(this->cachecontext), GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_NONE);
+  SoGLContext_glTexEnvi(SoGLContext_instance(this->cachecontext), 0x2300, 0x2200, 0);
 
   SoGLContext_glPushMatrix(SoGLContext_instance(this->cachecontext));
   SoGLContext_glLoadIdentity(SoGLContext_instance(this->cachecontext));
@@ -2351,7 +2359,7 @@ SoGLRenderActionP::setupRegisterCombinersNV()
   this->texgenEnable(TRUE);
   SoGLContext_glPopMatrix(SoGLContext_instance(this->cachecontext));
 
-  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_TEXTURE);
+  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1702 /*GL_TEXTURE*/);
   GLdouble m[16];
   m[0   + 0] = 0; m[0   + 1] = 0; m[0   + 2] = 0; m[0   + 3] = 0;
   m[1*4 + 0] = 0; m[1*4 + 1] = 0; m[1*4 + 2] = 0; m[1*4 + 3] = 0;
@@ -2359,7 +2367,7 @@ SoGLRenderActionP::setupRegisterCombinersNV()
   m[3*4 + 0] = 0; m[3*4 + 1] = 0; m[3*4 + 2] = 1; m[3*4 + 3] = 0;
   SoGLContext_glLoadMatrixd(SoGLContext_instance(this->cachecontext), m);
   SoGLContext_glMultMatrixf(SoGLContext_instance(this->cachecontext), static_cast<float *>(this->sortedlayersblendprojectionmatrix));
-  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_MODELVIEW);
+  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1700);
 
   // UNIT #0
   SoGLContext_glActiveTexture(glue, GL_TEXTURE0);
@@ -2368,7 +2376,7 @@ SoGLRenderActionP::setupRegisterCombinersNV()
 
     SoGLContext_glActiveTexture(glue, GL_TEXTURE3);
     SoGLContext_glTexEnvi(SoGLContext_instance(this->cachecontext), GL_TEXTURE_SHADER_NV, GL_SHADER_OPERATION_NV, GL_TEXTURE_RECTANGLE_NV);
-    SoGLContext_glTexEnvi(SoGLContext_instance(this->cachecontext), GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_NONE);
+    SoGLContext_glTexEnvi(SoGLContext_instance(this->cachecontext), 0x2300, 0x2200, 0);
 
     SoGLContext_glPushMatrix(SoGLContext_instance(this->cachecontext));
     SoGLContext_glLoadIdentity(SoGLContext_instance(this->cachecontext));
@@ -2376,13 +2384,13 @@ SoGLRenderActionP::setupRegisterCombinersNV()
     SoGLContext_glPopMatrix(SoGLContext_instance(this->cachecontext));
     this->texgenEnable(TRUE);
 
-    SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_TEXTURE);
+    SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1702 /*GL_TEXTURE*/);
     SoGLContext_glLoadIdentity(SoGLContext_instance(this->cachecontext));
     SoGLContext_glScalef(SoGLContext_instance(this->cachecontext), this->viewportwidth, this->viewportheight, 1);
     SoGLContext_glTranslatef(SoGLContext_instance(this->cachecontext), .5,.5,.5);
     SoGLContext_glScalef(SoGLContext_instance(this->cachecontext), .5,.5,.5);
     SoGLContext_glMultMatrixf(SoGLContext_instance(this->cachecontext), static_cast<float *>(this->sortedlayersblendprojectionmatrix));
-    SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_MODELVIEW);
+    SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1700);
 
     SoGLContext_glBindTexture(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_NV, this->depthtextureid);
     SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_NV);
@@ -2411,13 +2419,13 @@ SoGLRenderActionP::setupRegisterCombinersNV()
     glue->glCombinerOutputNV(GL_COMBINER0_NV, GL_RGB, GL_SPARE0_NV, GL_DISCARD_NV,
                              GL_DISCARD_NV, GL_ZERO, GL_ZERO, GL_FALSE, GL_FALSE, GL_FALSE);
     glue->glCombinerInputNV(GL_COMBINER0_NV, GL_ALPHA, GL_VARIABLE_A_NV, GL_ZERO,
-                            GL_UNSIGNED_IDENTITY_NV, GL_BLUE);
+                            GL_UNSIGNED_IDENTITY_NV, 0x1905);
     glue->glCombinerInputNV(GL_COMBINER0_NV, GL_ALPHA, GL_VARIABLE_B_NV, GL_ZERO,
-                            GL_UNSIGNED_IDENTITY_NV, GL_BLUE);
+                            GL_UNSIGNED_IDENTITY_NV, 0x1905);
     glue->glCombinerInputNV(GL_COMBINER0_NV, GL_ALPHA, GL_VARIABLE_C_NV, GL_ZERO,
-                            GL_UNSIGNED_IDENTITY_NV, GL_BLUE);
+                            GL_UNSIGNED_IDENTITY_NV, 0x1905);
     glue->glCombinerInputNV(GL_COMBINER0_NV, GL_ALPHA, GL_VARIABLE_D_NV, GL_ZERO,
-                            GL_UNSIGNED_IDENTITY_NV, GL_BLUE);
+                            GL_UNSIGNED_IDENTITY_NV, 0x1905);
     glue->glCombinerOutputNV(GL_COMBINER0_NV, GL_ALPHA, GL_DISCARD_NV, GL_DISCARD_NV,
                              GL_DISCARD_NV, GL_ZERO, GL_ZERO, GL_FALSE, GL_FALSE, GL_FALSE);
 
@@ -2435,16 +2443,16 @@ SoGLRenderActionP::setupRegisterCombinersNV()
     glue->glFinalCombinerInputNV(GL_VARIABLE_F_NV, GL_ZERO,
                                  GL_UNSIGNED_IDENTITY_NV, GL_RGB);
     glue->glFinalCombinerInputNV(GL_VARIABLE_G_NV, GL_SPARE0_NV,
-                                 GL_UNSIGNED_IDENTITY_NV, GL_BLUE);
+                                 GL_UNSIGNED_IDENTITY_NV, 0x1905);
 
     SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), GL_REGISTER_COMBINERS_NV);
 
     SoGLContext_glAlphaFunc(SoGLContext_instance(this->cachecontext), GL_GREATER, 0);
-    SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), GL_ALPHA_TEST);
+    SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), 0x0BC0);
 
   }
 
-  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_MODELVIEW);
+  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1700);
 }
 
 void
@@ -2469,14 +2477,14 @@ SoGLRenderActionP::setupSortedLayersBlendTextures(const SoState * state)
     }
 
     // Depth texture setup
-    SoGLContext_glTexEnvi(SoGLContext_instance(this->cachecontext), GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    SoGLContext_glTexEnvi(SoGLContext_instance(this->cachecontext), 0x2300, 0x2200, GL_REPLACE);
 
     // FIXME: the texture id must be bound to the current rendering
     // context, and deallocated when it is destructed. 20040718 mortene.
     SoGLContext_glGenTextures(SoGLContext_instance(this->cachecontext), 1, &this->depthtextureid);
     SoGLContext_glBindTexture(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_EXT, this->depthtextureid);
     SoGLContext_glTexImage2D(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_EXT, 0, GL_DEPTH_COMPONENT24, canvassize[0], canvassize[1],
-                 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
+                 0, 0x1902, GL_UNSIGNED_INT, NULL);
     SoGLContext_glTexParameteri(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     SoGLContext_glTexParameteri(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     SoGLContext_glTexParameteri(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -2484,7 +2492,7 @@ SoGLRenderActionP::setupSortedLayersBlendTextures(const SoState * state)
 
     if (glue->has_arb_fragment_program && !this->usenvidiaregistercombiners) {
       // Not disabled as default by NVIDIA when using fragment programs (according to spec.)
-      SoGLContext_glTexParameteri(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+      SoGLContext_glTexParameteri(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_COMPARE_MODE, 0);
     }
     else {
       SoGLContext_glTexParameteri(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_R_TO_TEXTURE);
@@ -2536,34 +2544,34 @@ SoGLRenderActionP::renderSortedLayersFP(const SoState * state)
 
   const SoGLContext * glue = sogl_glue_instance(state);
 
-  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_PROJECTION);
+  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1701);
   SoGLContext_glLoadIdentity(SoGLContext_instance(this->cachecontext));
   SoGLContext_glOrtho(SoGLContext_instance(this->cachecontext), 0, this->viewportwidth, 0, this->viewportheight, -1, 1);
-  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_MODELVIEW);
+  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1700);
   SoGLContext_glLoadIdentity(SoGLContext_instance(this->cachecontext));
 
   SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_DEPTH_TEST);
   SoGLContext_glClear(SoGLContext_instance(this->cachecontext), GL_COLOR_BUFFER_BIT);
 
   SbBool cullface = glIsEnabled(GL_CULL_FACE);
-  SbBool lighting = glIsEnabled(GL_LIGHTING);
+  SbBool lighting = glIsEnabled(0x0B50);
 
   SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_CULL_FACE);
   SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_FRAGMENT_PROGRAM_ARB);
-  SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_ALPHA_TEST);
+  SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), 0x0BC0);
 
   SoGLContext_glActiveTexture(glue, GL_TEXTURE0);
 
   SoGLContext_glBlendFunc(SoGLContext_instance(this->cachecontext), GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), GL_BLEND);
-  SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_LIGHTING);
+  SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), 0x0B50);
   SoGLContext_glColor3f(SoGLContext_instance(this->cachecontext), 1.0f,1.0f,1.0f);
   SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_EXT);
 
   for(int i=this->sortedlayersblendpasses-1;i>=0;--i) {
     SoGLContext_glBindTexture(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_EXT, this->rgbatextureids[i]);
-    SoGLContext_glBegin(SoGLContext_instance(this->cachecontext), GL_QUADS);
+    SoGLContext_glBegin(SoGLContext_instance(this->cachecontext), 0x0007);
     SoGLContext_glTexCoord2f(SoGLContext_instance(this->cachecontext), 0, 0);
     SoGLContext_glVertex2f(SoGLContext_instance(this->cachecontext), 0, 0);
     SoGLContext_glTexCoord2f(SoGLContext_instance(this->cachecontext), 0, this->viewportheight);
@@ -2584,7 +2592,7 @@ SoGLRenderActionP::renderSortedLayersFP(const SoState * state)
     SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), GL_CULL_FACE);
 
   if (lighting)
-    SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), GL_LIGHTING);
+    SoGLContext_glEnable(SoGLContext_instance(this->cachecontext), 0x0B50);
 
 }
 
@@ -2594,10 +2602,10 @@ SoGLRenderActionP::renderSortedLayersNV(const SoState * state)
 
   const SoGLContext * glue = sogl_glue_instance(state);
 
-  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_PROJECTION);
+  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1701);
   SoGLContext_glLoadIdentity(SoGLContext_instance(this->cachecontext));
   SoGLContext_glOrtho(SoGLContext_instance(this->cachecontext), 0, this->viewportwidth, 0, this->viewportheight, -1, 1);
-  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), GL_MODELVIEW);
+  SoGLContext_glMatrixMode(SoGLContext_instance(this->cachecontext), 0x1700);
   SoGLContext_glLoadIdentity(SoGLContext_instance(this->cachecontext));
 
   SoGLContext_glDisable(SoGLContext_instance(this->cachecontext), GL_DEPTH_TEST);
@@ -2663,7 +2671,7 @@ SoGLRenderActionP::renderSortedLayersNV(const SoState * state)
 
   for(int i=this->sortedlayersblendpasses-1;i>=0;--i) {
     SoGLContext_glBindTexture(SoGLContext_instance(this->cachecontext), GL_TEXTURE_RECTANGLE_EXT, this->rgbatextureids[i]);
-    SoGLContext_glBegin(SoGLContext_instance(this->cachecontext), GL_QUADS);
+    SoGLContext_glBegin(SoGLContext_instance(this->cachecontext), 0x0007);
     SoGLContext_glTexCoord2f(SoGLContext_instance(this->cachecontext), 0, 0);
     SoGLContext_glVertex2f(SoGLContext_instance(this->cachecontext), 0, 0);
     SoGLContext_glTexCoord2f(SoGLContext_instance(this->cachecontext), 0, this->viewportheight);

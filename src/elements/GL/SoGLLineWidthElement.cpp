@@ -145,7 +145,7 @@ SoGLLineWidthElement::updategl(void)
 {
   if (SoGLLineWidthElement::sizerange[0] == RANGE_NOT_CHECKED) {
     GLfloat vals[2];
-    SoGLContext_glGetFloatv(this->glue, GL_LINE_WIDTH_RANGE, vals);
+    SoGLContext_glGetFloatv(this->glue, 0x0B22 /*GL_LINE_WIDTH_RANGE*/, vals);
 
     // Matthias Koenig reported on coin-discuss that the OpenGL
     // implementation on SGI Onyx 2 InfiniteReality returns 0 for the

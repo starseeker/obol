@@ -165,6 +165,8 @@
 
 #include <Inventor/SbFont.h>
 #include "../misc/SoEnvironment.h"
+#include "rendering/SoGLModernState.h"
+#include <Inventor/elements/SoGLViewingMatrixElement.h>
 
 /*!
   \enum SoText2::Justification
@@ -405,14 +407,25 @@ SoText2::GLRender(SoGLRenderAction * action)
       break;
     }
 
-    // Set new state.
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
-    SoGLContext_glPushMatrix(sogl_glue_from_state(state));
-    SoGLContext_glLoadIdentity(sogl_glue_from_state(state));
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_PROJECTION);
-    SoGLContext_glPushMatrix(sogl_glue_from_state(state));
-    SoGLContext_glLoadIdentity(sogl_glue_from_state(state));
-    SoGLContext_glOrtho(sogl_glue_from_state(state), 0, vpsize[0], 0, vpsize[1], -1.0f, 1.0f);
+    // GL3: Set up screen-space ortho matrices in SoGLModernState for 2D text rendering.
+    // Identity modelview + ortho projection mapping screen pixels to clip space.
+    SoGLModernState * ms_text = SoGLModernState::forContext(action->getCacheContext());
+    if (ms_text && ms_text->isAvailable()) {
+      static const float ident[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+      ms_text->setModelViewMatrix(ident);
+      float W = static_cast<float>(vpsize[0]), H = static_cast<float>(vpsize[1]);
+      const float ortho[16] = {
+        2.0f/W, 0,      0,  -1.0f,
+        0,      2.0f/H, 0,  -1.0f,
+        0,      0,     -1.0f, 0,
+        0,      0,      0,   1.0f
+      };
+      ms_text->setProjectionMatrix(ortho);
+      // White base colour so the pre-baked glyph RGBA passes through unchanged.
+      static const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+      ms_text->setMaterial(white, white, white, white, 0.0f);
+      ms_text->activateBaseColor(false, true, true);
+    }
     SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_ALIGNMENT,1);
 
     float fontsize = SoFontSizeElement::get(state);
@@ -439,11 +452,10 @@ SoText2::GLRender(SoGLRenderAction * action)
     // disable textures for all units
     SoGLMultiTextureEnabledElement::disableAll(state);
 
-    SoGLContext_glPushAttrib(sogl_glue_from_state(state), GL_ENABLE_BIT | GL_PIXEL_MODE_BIT | GL_COLOR_BUFFER_BIT | GL_TEXTURE_BIT);
-    SoGLContext_glPushClientAttrib(sogl_glue_from_state(state), GL_CLIENT_PIXEL_STORE_BIT);
+    SoGLContext_glPushAttrib(sogl_glue_from_state(state), 0); // no-op placeholder, removed GL_ENABLE_BIT etc.
+    SoGLContext_glPushClientAttrib(sogl_glue_from_state(state), 0);
 
     // Optionally draw on top of all geometry, regardless of depth.
-    // SoGLContext_glPushAttrib(sogl_glue_from_state(state), GL_ENABLE_BIT) above will restore GL_DEPTH_TEST on pop.
     if (!this->depthTest.getValue()) SoGLContext_glDisable(sogl_glue_from_state(state), GL_DEPTH_TEST);
 
     SbBool drawPixelBuffer = FALSE;
@@ -627,18 +639,34 @@ SoText2::GLRender(SoGLRenderAction * action)
                      bbsize[0], bbsize[1], 0,
                      GL_RGBA, GL_UNSIGNED_BYTE, PRIVATE(this)->pixel_buffer);
 
-        // GL_REPLACE: use the texture RGBA as-is so the pre-baked material
-        // colour in the RGB channels and the struetype coverage in the alpha
-        // channel pass straight through to the blending stage.
+        // GL3: glTexEnvf removed — modern shader handles texture mode via uHasTexture uniform.
         SoGLContext_glEnable(sogl_glue_from_state(state), GL_TEXTURE_2D);
-        SoGLContext_glTexEnvf(sogl_glue_from_state(state), GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 
-        SoGLContext_glBegin(sogl_glue_from_state(state), GL_QUADS);
-        SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 0.0f, 0.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx,  qy,  qz); /* bottom-left  */
-        SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 1.0f, 0.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx1, qy,  qz); /* bottom-right */
-        SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 1.0f, 1.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx1, qy1, qz); /* top-right    */
-        SoGLContext_glTexCoord2f(sogl_glue_from_state(state), 0.0f, 1.0f); SoGLContext_glVertex3f(sogl_glue_from_state(state), qx,  qy1, qz); /* top-left     */
-        SoGLContext_glEnd(sogl_glue_from_state(state));
+        /* GL3: VAO/VBO for the textured quad (2 triangles). */
+        {
+          const float qt[6][5] = {
+            {qx,  qy,  qz, 0.0f, 0.0f},
+            {qx1, qy,  qz, 1.0f, 0.0f},
+            {qx1, qy1, qz, 1.0f, 1.0f},
+            {qx,  qy,  qz, 0.0f, 0.0f},
+            {qx1, qy1, qz, 1.0f, 1.0f},
+            {qx,  qy1, qz, 0.0f, 1.0f},
+          };
+          GLuint t2_vao = 0, t2_vbo = 0;
+          glGenVertexArrays(1, &t2_vao);
+          glBindVertexArray(t2_vao);
+          glGenBuffers(1, &t2_vbo);
+          glBindBuffer(GL_ARRAY_BUFFER, t2_vbo);
+          glBufferData(GL_ARRAY_BUFFER, sizeof(qt), qt, GL_STREAM_DRAW);
+          glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (const GLvoid*)0);
+          glEnableVertexAttribArray(0);
+          glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (const GLvoid*)(3 * sizeof(float)));
+          glEnableVertexAttribArray(2);
+          glDrawArrays(GL_TRIANGLES, 0, 6);
+          glBindVertexArray(0);
+          glDeleteBuffers(1, &t2_vbo);
+          glDeleteVertexArrays(1, &t2_vao);
+        }
 
         SoGLContext_glDisable(sogl_glue_from_state(state), GL_TEXTURE_2D);
         SoGLContext_glBindTexture(sogl_glue_from_state(state), GL_TEXTURE_2D, 0);
@@ -646,22 +674,28 @@ SoText2::GLRender(SoGLRenderAction * action)
       }
     }
 
-    // pop old state
-    SoGLContext_glPopClientAttrib(sogl_glue_from_state(state));
-    SoGLContext_glPopAttrib(sogl_glue_from_state(state));
+    // pop old state (GL3: glPopAttrib/glPopClientAttrib removed — no push/pop attrib stack)
     state->pop();
 
     SoGLContext_glPixelStorei(sogl_glue_from_state(state), GL_UNPACK_ALIGNMENT,4);
-    // Pop old GL matrix state.
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_PROJECTION);
-    SoGLContext_glPopMatrix(sogl_glue_from_state(state));
-    SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
-    SoGLContext_glPopMatrix(sogl_glue_from_state(state));
+    // GL3: matrix pop removed — matrices are restored via explicit SoGLModernState re-sync below.
   }
 
   PRIVATE(this)->unlock();
 
   state->pop();
+
+  // GL3: re-sync SoGLModernState matrices from Coin state after the outer pop.
+  {
+    SoGLModernState * ms_restore = SoGLModernState::forContext(action->getCacheContext());
+    if (ms_restore && ms_restore->isAvailable()) {
+      SbMatrix mv = SoGLViewingMatrixElement::getResetMatrix(action->getState());
+      mv.multLeft(SoModelMatrixElement::get(action->getState()));
+      ms_restore->setModelViewMatrix((const float*)mv.getValue());
+      const SbMatrix &proj = SoProjectionMatrixElement::get(action->getState());
+      ms_restore->setProjectionMatrix((const float*)proj.getValue());
+    }
+  }
 
   // don't auto cache SoText2 nodes.
   SoGLCacheContextElement::shouldAutoCache(action->getState(),
@@ -1392,8 +1426,8 @@ SoText2P::setRasterPos3f(const SoGLContext * glue, GLfloat x, GLfloat y, GLfloat
   offvp = (offvp || y < 0) ? 1 : 0;  // FIXED: Operator precedence bug
   float offsety = y >= 0 ? 0 : y;
 
-  SoGLContext_glRasterPos3f(glue, rpx,rpy,z);
-  if (offvp) { SoGLContext_glBitmap(glue, 0, 0, 0, 0,offsetx,offsety, NULL); }
+  /* GL3: glRasterPos/glBitmap not available in core profile; text uses textured-quad path. */
+  (void)rpx; (void)rpy; (void)z; (void)offvp; (void)offsetx; (void)offsety;
 }
 
 // Update SbFont with current font state elements

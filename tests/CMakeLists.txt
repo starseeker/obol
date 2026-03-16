@@ -49,7 +49,9 @@ target_include_directories(simple_test_utils PUBLIC
     ${PROJECT_BINARY_DIR}/include
     ${OBOL_TARGET_INCLUDE_DIRECTORIES}
 )
-# headless_utils.h needs the OSMesa submodule headers for pure osmesa builds
+# headless_utils.h needs the OSMesa submodule headers for pure osmesa builds.
+# For PortableGL builds the portablegl.h include dir comes from
+# OBOL_TARGET_INCLUDE_DIRECTORIES (already in the list above); no extra path needed.
 if(OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
     target_include_directories(simple_test_utils PUBLIC
         "${PROJECT_SOURCE_DIR}/external/osmesa/include")
@@ -226,7 +228,11 @@ if(UNIX AND NOT APPLE)
         target_link_libraries(obol_render PRIVATE ${OPENGL_gl_LIBRARY})
     endif()
 endif()
-if(OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
+if(OBOL_USE_PORTABLEGL AND NOT OBOL_USE_SYSTEM_GL)
+    # PortableGL-only build: OBOL_PORTABLEGL_BUILD already defined globally.
+    # headless_utils.h uses SoDB::createPortableGLContextManager() from the library.
+    # No extra compile definitions or include paths required here.
+elseif(OBOL_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
     target_compile_definitions(obol_render PRIVATE OBOL_SWRAST_BUILD)
     target_include_directories(obol_render PRIVATE
         "${PROJECT_SOURCE_DIR}/external/osmesa/include")

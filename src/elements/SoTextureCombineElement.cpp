@@ -269,32 +269,9 @@ SoTextureCombineElement::apply(SoState * state, const int unit)
 
   const SoGLContext * glue = sogl_glue_from_state(state);
   assert(unit < PRIVATE(elem)->unitdata.getLength());
-  const UnitData & ud = PRIVATE(elem)->unitdata[unit];
-  
-  SoGLContext_glTexEnvi(glue, GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-  SoGLContext_glTexEnvi(glue, GL_TEXTURE_ENV, GL_COMBINE_RGB, static_cast<GLenum>(ud.rgboperation));
-  SoGLContext_glTexEnvi(glue, GL_TEXTURE_ENV, GL_COMBINE_ALPHA, static_cast<GLenum>(ud.alphaoperation));
-
-  SoGLContext_glTexEnvi(glue, GL_TEXTURE_ENV, GL_SOURCE0_RGB, static_cast<GLenum>(ud.rgbsource[0]));
-  SoGLContext_glTexEnvi(glue, GL_TEXTURE_ENV, GL_SOURCE1_RGB, static_cast<GLenum>(ud.rgbsource[1]));
-  SoGLContext_glTexEnvi(glue, GL_TEXTURE_ENV, GL_SOURCE2_RGB, static_cast<GLenum>(ud.rgbsource[2]));
-
-  SoGLContext_glTexEnvi(glue, GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, static_cast<GLenum>(ud.alphasource[0]));
-  SoGLContext_glTexEnvi(glue, GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, static_cast<GLenum>(ud.alphasource[1]));
-  SoGLContext_glTexEnvi(glue, GL_TEXTURE_ENV, GL_SOURCE2_ALPHA, static_cast<GLenum>(ud.alphasource[2]));
-
-  SoGLContext_glTexEnvi(glue, GL_TEXTURE_ENV, GL_OPERAND0_RGB, static_cast<GLenum>(ud.rgboperand[0]));
-  SoGLContext_glTexEnvi(glue, GL_TEXTURE_ENV, GL_OPERAND1_RGB, static_cast<GLenum>(ud.rgboperand[1]));
-  SoGLContext_glTexEnvi(glue, GL_TEXTURE_ENV, GL_OPERAND2_RGB, static_cast<GLenum>(ud.rgboperand[2]));
-
-  SoGLContext_glTexEnvi(glue, GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, static_cast<GLenum>(ud.alphaoperand[0]));
-  SoGLContext_glTexEnvi(glue, GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, static_cast<GLenum>(ud.alphaoperand[1]));
-  SoGLContext_glTexEnvi(glue, GL_TEXTURE_ENV, GL_OPERAND2_ALPHA, static_cast<GLenum>(ud.alphaoperand[2]));
-
-  SoGLContext_glTexEnvfv(glue, GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR,
-             ud.constantcolor.getValue());
-  SoGLContext_glTexEnvf(glue, GL_TEXTURE_ENV, GL_RGB_SCALE, ud.rgbscale);
-  SoGLContext_glTexEnvf(glue, GL_TEXTURE_ENV, GL_ALPHA_SCALE, ud.alphascale);
+  // GL3: glTexEnv* (fixed-function texture combiner) removed from GL3 core.
+  // Texture combining now requires shader-based implementation.
+  (void)glue;
 }
 
 SoTextureCombineElement::UnitData::UnitData()

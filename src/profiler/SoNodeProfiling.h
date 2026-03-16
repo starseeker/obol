@@ -91,8 +91,10 @@ public:
     if (!SoNodeProfiling::isActive(action)) return;
 
     if (action->isOfType(SoGLRenderAction::getClassTypeId()) &&
-        SoProfilerP::shouldSyncGL())
-      glFinish();
+        SoProfilerP::shouldSyncGL()) {
+      // glFinish() removed: not available in all GL3/PortableGL environments.
+      // Profiling timing may be less precise without GPU sync.
+    }
 
     const SbTime duration(SbTime::getTimeOfDay() - this->pretime);
 

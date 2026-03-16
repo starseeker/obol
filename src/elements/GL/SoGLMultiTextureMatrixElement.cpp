@@ -150,20 +150,10 @@ SoGLMultiTextureMatrixElement::setElt(const int unit, const SbMatrix & matrix)
 void
 SoGLMultiTextureMatrixElement::updategl(const int unit) const
 {
-  const SoGLContext * ctx = SoGLContext_instance(this->cachecontext);
-  if (unit != 0) {
-    SoGLContext_glActiveTexture(ctx, (GLenum) (int(GL_TEXTURE0) + unit));
-  }
-  SoGLContext_glMatrixMode(this->glue, GL_TEXTURE);
-  if (unit < this->getNumUnits()) {
-    SoGLContext_glLoadMatrixf(this->glue, this->getUnitData(unit).textureMatrix[0]);
-  }
-  else {
-    SoGLContext_glLoadIdentity(this->glue);
-  }
-  SoGLContext_glMatrixMode(this->glue, GL_MODELVIEW);
-  if (unit != 0) {
-    SoGLContext_glActiveTexture(ctx, (GLenum) GL_TEXTURE0);
-  }
+  /* GL3: texture matrix is not a fixed-function matrix stack slot.
+   * Texture transforms must be applied in the fragment shader.
+   * The matrix data is available in this->getUnitData(unit).textureMatrix
+   * for use by shader-based texture coordinate transforms. */
+  (void)unit;
 }
 

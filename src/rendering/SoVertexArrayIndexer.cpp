@@ -139,10 +139,15 @@ SoVertexArrayIndexer::addQuad(const int32_t v0,
                               const int32_t v2,
                               const int32_t v3)
 {
-  if (this->target == 0) this->target = GL_QUADS;
-  if (this->target == GL_QUADS) {
+  // GL3: GL_QUADS removed from core. Convert each quad to two triangles.
+  if (this->target == 0) this->target = GL_TRIANGLES;
+  if (this->target == GL_TRIANGLES) {
+    // Triangle 1: v0,v1,v2
     this->addIndex(v0);
     this->addIndex(v1);
+    this->addIndex(v2);
+    // Triangle 2: v0,v2,v3
+    this->addIndex(v0);
     this->addIndex(v2);
     this->addIndex(v3);
   }
@@ -220,7 +225,7 @@ SoVertexArrayIndexer::close(void)
   this->countarray.fit();
   this->ciarray.truncate(0);
 
-  if (this->target != GL_TRIANGLES && this->target != GL_QUADS && this->target != GL_LINES && this->target != GL_POINTS) {
+  if (this->target != GL_TRIANGLES && this->target != GL_LINES && this->target != GL_POINTS) {
     const GLint * ptr = this->indexarray.getArrayPtr();
     for (int i = 0; i < this->countarray.getLength(); i++) {
       this->ciarray.append(ptr);
@@ -245,7 +250,6 @@ SoVertexArrayIndexer::render(const SoGLContext * glue, const SbBool renderasvbo,
 {
   switch (this->target) {
   case GL_TRIANGLES:
-  case GL_QUADS:
   case GL_LINES:
   case GL_POINTS:
     // common case

@@ -294,30 +294,14 @@ SoGLSLShaderParameter::isValid(const SoGLShaderObject * shader,
 #endif // OBOL_DEBUG
     return FALSE;
   }
-  GLint activeUniforms = 0;
-  glGetProgramiv(pHandle, GL_OBJECT_ACTIVE_UNIFORMS_ARB, &activeUniforms);
-
-  GLint i;
-  GLint tmpSize = 0;
-  GLenum tmpType;
-  GLsizei length;
-  GLchar myName[256];
 
   this->cacheName = name;
-  this->isActive = FALSE; // set uniform to inactive while searching
-
-  // this will only happen once after the variable has been added so
-  // it's not a performance issue that we have to search for it here.
-  for (i = 0; i < activeUniforms; i++) {
-    glGetActiveUniform(pHandle, i, 128, &length, &tmpSize,
-                       &tmpType, myName);
-    if (this->cacheName == myName) {
-      this->cacheSize = tmpSize;
-      this->cacheType = tmpType;
-      this->isActive = TRUE;
-      break;
-    }
-  }
+  // glGetUniformLocation succeeded; treat this uniform as active.
+  // Skip glGetActiveUniform introspection — not available in all GL3
+  // environments (e.g. PortableGL's C-function-pointer shader model).
+  this->cacheSize = (num ? (*num > 0 ? *num : 1) : 1);
+  this->cacheType = type;
+  this->isActive = TRUE;
   if (!this->isActive) {
     // not critical, but warn user so they can remove the unused parameter
 #if OBOL_DEBUG

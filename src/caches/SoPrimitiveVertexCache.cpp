@@ -1219,8 +1219,11 @@ SoPrimitiveVertexCacheP::enableModernAttribs(uint32_t contextid,
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, (const GLvoid*)0);
     glEnableVertexAttribArray(1);
   } else {
-    // Supply a default normal (0,0,1) via a constant attrib
-    glVertexAttrib3f(1, 0.0f, 0.0f, 1.0f);
+    /* No per-vertex normals: disable attrib 1 so the shader falls through
+     * to its built-in (0,0,1) default.  Do NOT call glVertexAttribPointer
+     * with a raw CPU pointer — that is illegal in GL3 core when a non-zero
+     * VAO is bound without a corresponding VBO. */
+    glDisableVertexAttribArray(1);
   }
 
   // Texcoords (location 2) – use first two components of SbVec4f
@@ -1234,7 +1237,9 @@ SoPrimitiveVertexCacheP::enableModernAttribs(uint32_t contextid,
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (const GLvoid*)0);
     glEnableVertexAttribArray(2);
   } else {
-    glVertexAttrib2f(2, 0.0f, 0.0f);
+    /* No texcoords: disable attrib 2.  The shader guards its access with
+     * hasTexCoords so it won't read the array. */
+    glDisableVertexAttribArray(2);
   }
 
   // Colors (location 3) – RGBA unsigned bytes, normalised to [0,1]

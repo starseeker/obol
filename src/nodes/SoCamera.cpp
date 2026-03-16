@@ -149,6 +149,7 @@
 
 #include "elements/GL/SoResetMatrixElement.h"
 #include "nodes/SoSubNodeP.h"
+#include "rendering/SoGLModernState.h"
 
 /*!
   \enum SoCamera::ViewportMapping
@@ -958,28 +959,28 @@ SoCamera::drawCroppedFrame(SoGLRenderAction *action,
 
   SbVec2s oldorigin = oldvp.getViewportOriginPixels();
   SbVec2s oldsize = oldvp.getViewportSizePixels();
-  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_PROJECTION);
-  // projection matrix will be set later, so don't push
-  SoGLContext_glOrtho(sogl_glue_from_state(state), oldorigin[0], oldorigin[0]+oldsize[0]-1,
-          oldorigin[1], oldorigin[1]+oldsize[1]-1,
-          -1, 1);
 
-  SoGLMultiTextureEnabledElement::disableAll(state);
-
-  SoGLContext_glPushAttrib(sogl_glue_from_state(state), GL_LIGHTING_BIT|
-               GL_FOG_BIT|
-               GL_DEPTH_BUFFER_BIT|
-               GL_TEXTURE_BIT|
-               GL_CURRENT_BIT);
-
-  SoGLContext_glMatrixMode(sogl_glue_from_state(state), GL_MODELVIEW);
-  SoGLContext_glPushMatrix(sogl_glue_from_state(state));
-  SoGLContext_glLoadIdentity(sogl_glue_from_state(state));
-  SoGLContext_glDisable(sogl_glue_from_state(state), GL_LIGHTING);
-  SoGLContext_glDisable(sogl_glue_from_state(state), GL_FOG);
+  // GL3: set up screen-space ortho matrices via SoGLModernState.
+  // Map pixel coords [oldorigin, oldorigin+oldsize] into clip space.
+  SoGLModernState * ms_cam = SoGLModernState::forContext(action->getCacheContext());
+  if (ms_cam && ms_cam->isAvailable()) {
+    static const float ident[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    ms_cam->setModelViewMatrix(ident);
+    float l = static_cast<float>(oldorigin[0]);
+    float r = static_cast<float>(oldorigin[0] + oldsize[0] - 1);
+    float b = static_cast<float>(oldorigin[1]);
+    float t = static_cast<float>(oldorigin[1] + oldsize[1] - 1);
+    const float ortho[16] = {
+      2.0f/(r-l),      0,          0,  -(r+l)/(r-l),
+      0,          2.0f/(t-b),      0,  -(t+b)/(t-b),
+      0,               0,         -1.0f, 0,
+      0,               0,          0,   1.0f
+    };
+    ms_cam->setProjectionMatrix(ortho);
+    ms_cam->setDiffuseColor(0.8f, 0.8f, 0.8f, 1.0f);
+    ms_cam->activateBaseColor();
+  }
   SoGLContext_glDisable(sogl_glue_from_state(state), GL_DEPTH_TEST);
-
-  SoGLContext_glColor3f(sogl_glue_from_state(state), 0.8f, 0.8f, 0.8f);
 
   SbVec2s origin = newvp.getViewportOriginPixels();
   SbVec2s size = newvp.getViewportSizePixels();
@@ -997,14 +998,20 @@ SoCamera::drawCroppedFrame(SoGLRenderAction *action,
       SoGLContext_glEnd(sogl_glue_from_state(state));
     }
     else {
-      SoGLContext_glBegin(sogl_glue_from_state(state), GL_QUADS);
+      // GL3: GL_QUADS → two GL_TRIANGLES per quad
+      SoGLContext_glBegin(sogl_glue_from_state(state), GL_TRIANGLES);
+      // Left border quad: v0=(ox,oy), v1=(ox,oy+oh-1), v2=(minpos,oy+oh), v3=(minpos,oy)
       SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0], oldorigin[1]);
       SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0], oldorigin[1]+oldsize[1]-1);
       SoGLContext_glVertex2s(sogl_glue_from_state(state), minpos, oldorigin[1]+oldsize[1]);
+      SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0], oldorigin[1]);
+      SoGLContext_glVertex2s(sogl_glue_from_state(state), minpos, oldorigin[1]+oldsize[1]);
       SoGLContext_glVertex2s(sogl_glue_from_state(state), minpos, oldorigin[1]);
-
+      // Right border quad: v0=(maxpos,oy), v1=(maxpos,oy+oh-1), v2=(ox+ow-1,oy+oh-1), v3=(ox+ow-1,oy)
       SoGLContext_glVertex2s(sogl_glue_from_state(state), maxpos, oldorigin[1]);
       SoGLContext_glVertex2s(sogl_glue_from_state(state), maxpos, oldorigin[1]+oldsize[1]-1);
+      SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0]+oldsize[0]-1, oldorigin[1]+oldsize[1]-1);
+      SoGLContext_glVertex2s(sogl_glue_from_state(state), maxpos, oldorigin[1]);
       SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0]+oldsize[0]-1, oldorigin[1]+oldsize[1]-1);
       SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0]+oldsize[0]-1, oldorigin[1]);
       SoGLContext_glEnd(sogl_glue_from_state(state));
@@ -1022,22 +1029,35 @@ SoCamera::drawCroppedFrame(SoGLRenderAction *action,
       SoGLContext_glEnd(sogl_glue_from_state(state));
     }
     else {
-      SoGLContext_glBegin(sogl_glue_from_state(state), GL_QUADS);
+      // GL3: GL_QUADS → two GL_TRIANGLES per quad
+      SoGLContext_glBegin(sogl_glue_from_state(state), GL_TRIANGLES);
+      // Bottom border quad: v0=(ox,minpos), v1=(ox+ow-1,minpos), v2=(ox+ow-1,oy), v3=(ox,oy)
       SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0], minpos);
       SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0]+oldsize[0]-1, minpos);
       SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0]+oldsize[0]-1, oldorigin[1]);
+      SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0], minpos);
+      SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0]+oldsize[0]-1, oldorigin[1]);
       SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0], oldorigin[1]);
-
+      // Top border quad: v0=(ox,maxpos), v1=(ox,oy+oh-1), v2=(ox+ow-1,oy+oh-1), v3=(ox+ow-1,maxpos)
       SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0], maxpos);
       SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0], oldorigin[1]+oldsize[1]-1);
+      SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0]+oldsize[0]-1, oldorigin[1]+oldsize[1]-1);
+      SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0], maxpos);
       SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[0]+oldsize[0]-1, oldorigin[1]+oldsize[1]-1);
       SoGLContext_glVertex2s(sogl_glue_from_state(state), oldorigin[1]+oldsize[0]-1, maxpos);
       SoGLContext_glEnd(sogl_glue_from_state(state));
     }
   }
 
-  SoGLContext_glPopMatrix(sogl_glue_from_state(state));
-  SoGLContext_glPopAttrib(sogl_glue_from_state(state));
+  // GL3: matrix pop/attrib pop removed — restore SoGLModernState matrices from state.
+  if (ms_cam && ms_cam->isAvailable()) {
+    SoGLModernState * ms_r = ms_cam;
+    SbMatrix mv = SoGLViewingMatrixElement::getResetMatrix(state);
+    mv.multLeft(SoModelMatrixElement::get(state));
+    ms_r->setModelViewMatrix((const float*)mv.getValue());
+    const SbMatrix &proj = SoProjectionMatrixElement::get(state);
+    ms_r->setProjectionMatrix((const float*)proj.getValue());
+  }
 
   state->pop();
 }

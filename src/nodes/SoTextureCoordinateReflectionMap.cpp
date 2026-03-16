@@ -190,8 +190,7 @@ SoTextureCoordinateReflectionMap::pick(SoPickAction * action)
 void
 SoTextureCoordinateReflectionMap::handleTexgen(void * data)
 {
-  SoTextureCoordinateReflectionMap * thisp = (SoTextureCoordinateReflectionMap*)data;
-  SoGLContext_glTexGeni(thisp->cachedGlue, GL_S, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP);
-  SoGLContext_glTexGeni(thisp->cachedGlue, GL_T, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP);  
-  SoGLContext_glTexGeni(thisp->cachedGlue, GL_R, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP);
+  // GL3: glTexGen* (fixed-function texture coordinate generation) removed.
+  // Reflection-map texcoord generation now requires a vertex shader implementation.
+  (void)data;
 }

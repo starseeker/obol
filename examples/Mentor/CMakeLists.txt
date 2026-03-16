@@ -2,14 +2,22 @@ cmake_minimum_required(VERSION 3.16)
 
 project(MentorHeadlessExamples)
 
-# Detect how parent Obol was built (OSMesa or system OpenGL)
+# Detect how parent Obol was built (PortableGL, OSMesa, or system OpenGL).
+# PortableGL takes priority over OSMesa when both are configured.
+if(DEFINED OBOL_USE_PORTABLEGL)
+    set(EXAMPLES_USE_PORTABLEGL ${OBOL_USE_PORTABLEGL})
+else()
+    set(EXAMPLES_USE_PORTABLEGL OFF CACHE BOOL "Build examples for PortableGL software backend (ON) or other backend (OFF)")
+endif()
 if(DEFINED OBOL_USE_SWRAST)
     set(EXAMPLES_USE_SWRAST ${OBOL_USE_SWRAST})
 else()
     set(EXAMPLES_USE_SWRAST OFF CACHE BOOL "Build examples for software rasterizer (OSMesa) (ON) or system OpenGL (OFF)")
 endif()
 
-if(EXAMPLES_USE_SWRAST)
+if(EXAMPLES_USE_PORTABLEGL AND NOT OBOL_USE_SYSTEM_GL)
+    message(STATUS "Mentor examples: Building with PortableGL headless backend")
+elseif(EXAMPLES_USE_SWRAST)
     if(TARGET Obol)
         set(OSMESA_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../external/osmesa/include")
         # When building as a subdirectory of the main Obol project, the osmesa target
@@ -69,7 +77,11 @@ if(TARGET Obol)
             ${OBOL_TARGET_INCLUDE_DIRECTORIES}
         )
         target_link_libraries(${name} ${_OBOL_LINK_TARGET} ${OBOL_TARGET_LINK_LIBRARIES})
-        if(EXAMPLES_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
+        if(EXAMPLES_USE_PORTABLEGL AND NOT OBOL_USE_SYSTEM_GL)
+            # PortableGL-only: OBOL_PORTABLEGL_BUILD is already globally defined.
+            # headless_utils.h uses SoDB::createPortableGLContextManager() — no extra
+            # includes, link libraries, or compile definitions required here.
+        elseif(EXAMPLES_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
             target_compile_definitions(${name} PRIVATE OBOL_SWRAST_BUILD)
             if(OSMESA_INCLUDE_DIR)
                 target_include_directories(${name} PRIVATE ${OSMESA_INCLUDE_DIR})
@@ -113,7 +125,10 @@ else()
                 ${_MENTOR_UTILS_DIR}
             )
             target_link_libraries(${name} Obol::Obol)
-            if(EXAMPLES_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
+            if(EXAMPLES_USE_PORTABLEGL AND NOT OBOL_USE_SYSTEM_GL)
+                # PortableGL-only: OBOL_PORTABLEGL_BUILD is already globally defined.
+                # No extra includes, link libraries, or compile definitions required.
+            elseif(EXAMPLES_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
                 target_compile_definitions(${name} PRIVATE OBOL_SWRAST_BUILD)
                 if(OSMESA_INCLUDE_DIR)
                     target_include_directories(${name} PRIVATE ${OSMESA_INCLUDE_DIR})
@@ -154,7 +169,10 @@ else()
                 ${CMAKE_CURRENT_SOURCE_DIR}
                 ${_MENTOR_UTILS_DIR})
             target_link_libraries(${name} Obol ${OPENGL_LIBRARIES})
-            if(EXAMPLES_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
+            if(EXAMPLES_USE_PORTABLEGL AND NOT OBOL_USE_SYSTEM_GL)
+                # PortableGL-only: OBOL_PORTABLEGL_BUILD is already globally defined.
+                # No extra includes, link libraries, or compile definitions required.
+            elseif(EXAMPLES_USE_SWRAST AND NOT OBOL_USE_SYSTEM_GL)
                 target_compile_definitions(${name} PRIVATE OBOL_SWRAST_BUILD)
                 if(OSMESA_INCLUDE_DIR)
                     target_include_directories(${name} PRIVATE ${OSMESA_INCLUDE_DIR})

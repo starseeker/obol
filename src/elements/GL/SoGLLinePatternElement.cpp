@@ -129,15 +129,9 @@ SoGLLinePatternElement::setElt(int32_t pattern)
 void
 SoGLLinePatternElement::updategl()
 {
-  //
-  // FIXME: store flag to keep enable/disable state, pederb 990624
-  //
-  if ((this->data & 0xffff) == (int32_t) CONTINUOUS) {
-    SoGLContext_glDisable(this->glue, GL_LINE_STIPPLE);
-  }
-  else {
-    // Enable line stipple before setting the pattern (required by OpenGL spec).
-    SoGLContext_glEnable(this->glue, GL_LINE_STIPPLE);
-    SoGLContext_glLineStipple(this->glue, (GLint) (this->data >> 16), (GLushort) (this->data & 0xffff));
-  }
+  /* GL3: GL_LINE_STIPPLE removed from core profile.
+   * Line patterns must be implemented in a fragment shader (e.g. via
+   * gl_FragCoord distance-based discard). State is tracked but no GL
+   * call is made here. */
+  (void)this->data;
 }

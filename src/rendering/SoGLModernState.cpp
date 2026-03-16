@@ -6,6 +6,9 @@
 
 #include "rendering/SoGLModernState.h"
 #include "rendering/obol_modern_shaders.h"
+#ifdef OBOL_PORTABLEGL_BUILD
+#  include "rendering/obol_portablegl_shaders.h"
+#endif
 
 #include <Inventor/misc/SoContextHandler.h>
 #include <Inventor/SbMatrix.h>
@@ -197,6 +200,19 @@ sogl_compile_shader_program_local(const char * vert_src, const char * frag_src)
 void
 SoGLModernState::initShaders()
 {
+#ifdef OBOL_PORTABLEGL_BUILD
+    /* PortableGL does not support GLSL; use C-function-based shaders instead. */
+    phong_prog     = pgl_create_phong_program();
+    basecolor_prog = pgl_create_basecolor_program();
+
+    if (!phong_prog || !basecolor_prog) {
+        if (phong_prog)     { glDeleteProgram(phong_prog);     phong_prog = 0; }
+        if (basecolor_prog) { glDeleteProgram(basecolor_prog); basecolor_prog = 0; }
+        return;
+    }
+    /* Uniform locations are unused in portablegl (pglSetUniform is used instead).
+     * Leave all location fields at their default -1. */
+#else
     phong_prog     = sogl_compile_shader_program_local(
                          OBOL_SHADER_PHONG_VERT,
                          OBOL_SHADER_PHONG_FRAG);
@@ -213,6 +229,7 @@ SoGLModernState::initShaders()
 
     cachePhongLocations();
     cacheBaseColorLocations();
+#endif
 }
 
 /* =========================================================================
@@ -442,6 +459,48 @@ SoGLModernState::activatePhong(bool hasNormals, bool hasColors,
                                 bool hasTexCoords, bool hasTexture)
 {
     glUseProgram(phong_prog);
+#ifdef OBOL_PORTABLEGL_BUILD
+    /* Build the uniform struct and upload it via pglSetUniform.
+     *
+     * Coin/OI uses row-vector convention: points transform as p' = p * M,
+     * so translation lives in the last ROW (M[3][0..2]).  pgl_rm4_v4 expects
+     * the OpenGL column-vector convention: p' = M * p, translation in last
+     * COLUMN.  These two conventions are related by transposition:
+     *   M_OpenGL = M_Coin^T
+     * Transpose mv_gl and proj_gl before copying so the shader math is correct.
+     * The normal matrix (nm_gl) is already M_Coin^{-1}_{3x3} which equals
+     * N_OpenGL, so it does NOT need transposing. */
+    static PGLPhongUniforms pu;
+    for (int i = 0; i < 4; ++i) for (int j = 0; j < 4; ++j) {
+        pu.mv  [i*4+j] = mv_gl  [j*4+i];
+        pu.proj[i*4+j] = proj_gl[j*4+i];
+    }
+    std::memcpy(pu.nm,   nm_gl,   sizeof(pu.nm));
+    pu.numLights   = num_lights;
+    pu.hasNormals  = hasNormals   ? 1 : 0;
+    pu.hasColors   = hasColors    ? 1 : 0;
+    pu.hasTexCoords= hasTexCoords ? 1 : 0;
+    std::memcpy(pu.matAmbient,  mat_ambient,  4 * sizeof(float));
+    std::memcpy(pu.matDiffuse,  mat_diffuse,  4 * sizeof(float));
+    std::memcpy(pu.matSpecular, mat_specular, 4 * sizeof(float));
+    std::memcpy(pu.matEmission, mat_emission, 4 * sizeof(float));
+    pu.matShininess = mat_shininess * 128.0f;
+    pu.twoSided     = mat_twoSided ? 1 : 0;
+    for (int i = 0; i < num_lights && i < OBOL_MODERN_MAX_LIGHTS; ++i) {
+        const Light& L = lights[i];
+        std::memcpy(pu.lights[i].position,      L.position,      4 * sizeof(float));
+        std::memcpy(pu.lights[i].ambient,        L.ambient,       4 * sizeof(float));
+        std::memcpy(pu.lights[i].diffuse,        L.diffuse,       4 * sizeof(float));
+        std::memcpy(pu.lights[i].specular,       L.specular,      4 * sizeof(float));
+        std::memcpy(pu.lights[i].spotDirection,  L.spotDirection, 3 * sizeof(float));
+        pu.lights[i].spotCutoff            = L.spotCutoff;
+        pu.lights[i].spotExponent          = L.spotExponent;
+        pu.lights[i].constantAttenuation   = L.constantAttenuation;
+        pu.lights[i].linearAttenuation     = L.linearAttenuation;
+        pu.lights[i].quadraticAttenuation  = L.quadraticAttenuation;
+    }
+    pglSetUniform(&pu);
+#else
     uploadMatricesToPhong();
     uploadMaterialToPhong();
     uploadLightsToPhong();
@@ -450,6 +509,8 @@ SoGLModernState::activatePhong(bool hasNormals, bool hasColors,
     if (p_uHasTexCoords >= 0) glUniform1i(p_uHasTexCoords, hasTexCoords ? 1 : 0);
     if (p_uHasTexture   >= 0) glUniform1i(p_uHasTexture,   hasTexture   ? 1 : 0);
     if (p_uTexture      >= 0) glUniform1i(p_uTexture, 0);
+#endif
+    (void)hasTexture;
 }
 
 void
@@ -457,6 +518,19 @@ SoGLModernState::activateBaseColor(bool hasColors, bool hasTexCoords,
                                     bool hasTexture)
 {
     glUseProgram(basecolor_prog);
+#ifdef OBOL_PORTABLEGL_BUILD
+    /* Transpose Coin row-major matrices to OpenGL column-vector convention;
+     * see activatePhong for detailed rationale. */
+    static PGLBaseColorUniforms bu;
+    for (int i = 0; i < 4; ++i) for (int j = 0; j < 4; ++j) {
+        bu.mv  [i*4+j] = mv_gl  [j*4+i];
+        bu.proj[i*4+j] = proj_gl[j*4+i];
+    }
+    bu.hasColors    = hasColors    ? 1 : 0;
+    bu.hasTexCoords = hasTexCoords ? 1 : 0;
+    std::memcpy(bu.baseColor, mat_diffuse, 4 * sizeof(float));
+    pglSetUniform(&bu);
+#else
     uploadMatricesToBaseColor();
     if (bc_uHasColors    >= 0) glUniform1i(bc_uHasColors,    hasColors    ? 1 : 0);
     if (bc_uHasTexCoords >= 0) glUniform1i(bc_uHasTexCoords, hasTexCoords ? 1 : 0);
@@ -464,6 +538,8 @@ SoGLModernState::activateBaseColor(bool hasColors, bool hasTexCoords,
     if (bc_uTexture      >= 0) glUniform1i(bc_uTexture, 0);
     if (bc_uBaseColor    >= 0)
         glUniform4fv(bc_uBaseColor, 1, mat_diffuse);
+#endif
+    (void)hasTexture;
 }
 
 void

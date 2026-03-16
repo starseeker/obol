@@ -181,16 +181,16 @@ SoGLMultiTextureCoordinateElement::pop(SoState * state,
       SoGLContext_glActiveTexture(ctx, (GLenum) (int(GL_TEXTURE0) + i));
     }
     if (enablegen) {
-      SoGLContext_glEnable(this->glue, GL_TEXTURE_GEN_S);
-      SoGLContext_glEnable(this->glue, GL_TEXTURE_GEN_T);
-      SoGLContext_glEnable(this->glue, GL_TEXTURE_GEN_R);
-      SoGLContext_glEnable(this->glue, GL_TEXTURE_GEN_Q);
+      SoGLContext_glEnable(this->glue, 0x0C60 /*GL_TEXTURE_GEN_S*/);
+      SoGLContext_glEnable(this->glue, 0x0C61 /*GL_TEXTURE_GEN_T*/);
+      SoGLContext_glEnable(this->glue, 0x0C62 /*GL_TEXTURE_GEN_R*/);
+      SoGLContext_glEnable(this->glue, 0x0C63 /*GL_TEXTURE_GEN_Q*/);
     }
     if (disablegen) {
-      SoGLContext_glDisable(this->glue, GL_TEXTURE_GEN_S);
-      SoGLContext_glDisable(this->glue, GL_TEXTURE_GEN_T);
-      SoGLContext_glDisable(this->glue, GL_TEXTURE_GEN_R);
-      SoGLContext_glDisable(this->glue, GL_TEXTURE_GEN_Q);
+      SoGLContext_glDisable(this->glue, 0x0C60 /*GL_TEXTURE_GEN_S*/);
+      SoGLContext_glDisable(this->glue, 0x0C61 /*GL_TEXTURE_GEN_T*/);
+      SoGLContext_glDisable(this->glue, 0x0C62 /*GL_TEXTURE_GEN_R*/);
+      SoGLContext_glDisable(this->glue, 0x0C63 /*GL_TEXTURE_GEN_Q*/);
     }
     if (docallback) {
       this->doCallback(i);
@@ -356,16 +356,16 @@ SoGLMultiTextureCoordinateElement::setElt(const int unit,
   }
 
   if (enablegen) {
-    SoGLContext_glEnable(this->glue, GL_TEXTURE_GEN_S);
-    SoGLContext_glEnable(this->glue, GL_TEXTURE_GEN_T);
-    SoGLContext_glEnable(this->glue, GL_TEXTURE_GEN_R);
-    SoGLContext_glEnable(this->glue, GL_TEXTURE_GEN_Q);
+    SoGLContext_glEnable(this->glue, 0x0C60 /*GL_TEXTURE_GEN_S*/);
+    SoGLContext_glEnable(this->glue, 0x0C61 /*GL_TEXTURE_GEN_T*/);
+    SoGLContext_glEnable(this->glue, 0x0C62 /*GL_TEXTURE_GEN_R*/);
+    SoGLContext_glEnable(this->glue, 0x0C63 /*GL_TEXTURE_GEN_Q*/);
   }
   if (disablegen) {
-    SoGLContext_glDisable(this->glue, GL_TEXTURE_GEN_S);
-    SoGLContext_glDisable(this->glue, GL_TEXTURE_GEN_T);
-    SoGLContext_glDisable(this->glue, GL_TEXTURE_GEN_R);
-    SoGLContext_glDisable(this->glue, GL_TEXTURE_GEN_Q);
+    SoGLContext_glDisable(this->glue, 0x0C60 /*GL_TEXTURE_GEN_S*/);
+    SoGLContext_glDisable(this->glue, 0x0C61 /*GL_TEXTURE_GEN_T*/);
+    SoGLContext_glDisable(this->glue, 0x0C62 /*GL_TEXTURE_GEN_R*/);
+    SoGLContext_glDisable(this->glue, 0x0C63 /*GL_TEXTURE_GEN_Q*/);
   }
   if (docallback) this->doCallback(unit);
 

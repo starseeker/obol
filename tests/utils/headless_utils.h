@@ -38,10 +38,13 @@
  * produce reference images for validation.
  *
  * Backend selection (compile-time):
- *   OBOL_SWRAST_BUILD: use OSMesa for truly headless operation
+ *   OBOL_PORTABLEGL_BUILD (without OBOL_DUAL_PORTABLEGL_BUILD):
+ *       use PortableGL for truly headless operation (no display server required)
+ *   OBOL_SWRAST_BUILD (without OBOL_DUAL_GL_BUILD):
+ *       use OSMesa for headless operation (legacy software rasterizer)
  *   default:             use system OpenGL (GLX on Linux) with Xvfb
  *
- * Both paths require a SoDB::ContextManager since this Coin fork's
+ * All paths require a SoDB::ContextManager since this Coin fork's
  * SoDB::init() always requires one.
  */
 
@@ -431,6 +434,94 @@ inline bool renderToFile(
     }
 
     printf("Successfully rendered to %s (%dx%d)\n", filename, width, height);
+    return true;
+}
+
+#elif defined(OBOL_PORTABLEGL_BUILD) && !defined(OBOL_DUAL_PORTABLEGL_BUILD)
+// ============================================================================
+// PortableGL backend: for offscreen/headless rendering without a display
+// server.  Delegates to SoDB::createPortableGLContextManager() which is
+// provided by src/misc/SoDBPortableGL.cpp compiled into the Obol library.
+// No PortableGL headers need to be included here — all PortableGL internals
+// are encapsulated in the library context manager implementation.
+// ============================================================================
+
+namespace {
+    /* Meyer's singleton for the PortableGL context manager.  The manager is
+     * heap-allocated by SoDB::createPortableGLContextManager() and kept alive
+     * for the process lifetime.  Using a local-static ensures thread-safe
+     * construction (C++11 and later) and that the manager outlives every
+     * caller that holds a pointer to it. */
+    inline SoDB::ContextManager * portablegl_context_manager_singleton() {
+        static SoDB::ContextManager * instance =
+            SoDB::createPortableGLContextManager();
+        return instance;
+    }
+} // anonymous namespace
+
+/**
+ * Initialize Coin database for headless operation (PortableGL backend).
+ */
+inline void initCoinHeadless() {
+    SoDB::init(portablegl_context_manager_singleton());
+    SoNodeKit::init();
+    SoInteraction::init();
+}
+
+/**
+ * Return the context manager installed by initCoinHeadless().
+ * Must be called after initCoinHeadless().
+ */
+inline SoDB::ContextManager * getCoinHeadlessContextManager() {
+    return portablegl_context_manager_singleton();
+}
+
+/**
+ * Get a shared persistent SoOffscreenRenderer for the PortableGL backend.
+ */
+inline SoOffscreenRenderer * getSharedRenderer() {
+    static SoOffscreenRenderer *s_renderer = nullptr;
+    if (!s_renderer) {
+        SbViewportRegion vp(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        s_renderer = new SoOffscreenRenderer(
+            portablegl_context_manager_singleton(), vp);
+    }
+    return s_renderer;
+}
+
+/**
+ * Render a scene to an image file (PortableGL backend).
+ */
+inline bool renderToFile(
+    SoNode *root,
+    const char *filename,
+    int width = DEFAULT_WIDTH,
+    int height = DEFAULT_HEIGHT,
+    const SbColor &backgroundColor = SbColor(0.0f, 0.0f, 0.0f))
+{
+    if (!root || !filename) {
+        fprintf(stderr, "Error: Invalid parameters to renderToFile\n");
+        return false;
+    }
+
+    SoOffscreenRenderer *renderer = getSharedRenderer();
+    SbViewportRegion viewport(width, height);
+    renderer->setViewportRegion(viewport);
+    renderer->setComponents(SoOffscreenRenderer::RGB);
+    renderer->setBackgroundColor(backgroundColor);
+
+    if (!renderer->render(root)) {
+        fprintf(stderr, "Error: Failed to render scene\n");
+        return false;
+    }
+
+    if (!renderer->writeToRGB(filename)) {
+        fprintf(stderr, "Error: Failed to write to RGB file %s\n", filename);
+        return false;
+    }
+
+    printf("Successfully rendered to %s (%dx%d) [PortableGL]\n",
+           filename, width, height);
     return true;
 }
 
