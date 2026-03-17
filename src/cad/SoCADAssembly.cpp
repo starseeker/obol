@@ -336,17 +336,12 @@ SoCADAssembly::GLRender(SoGLRenderAction* action)
         if (isSelected) { r = 1.0f; g = 1.0f; b = 0.0f; }
 
         // Push instance transform
+        // SbMatrix is row-major (OI convention); glMultMatrixf expects the raw
+        // OI float[16] data directly – GL interprets it as column-major, which
+        // gives the transpose of the OI matrix and is the correct conversion
+        // (OI uses post-multiply row vectors; GL uses pre-multiply column vectors).
         glPushMatrix();
-        {
-            SbMat m;
-            idata.localToRoot.getValue(m);
-            // SbMatrix is row-major (m[row][col]); glMultMatrixf expects column-major
-            float cm[16];
-            for (int row = 0; row < 4; ++row)
-                for (int col = 0; col < 4; ++col)
-                    cm[col*4+row] = m[row][col];
-            glMultMatrixf(cm);
-        }
+        glMultMatrixf(idata.localToRoot[0]);
 
         glColor4f(r, g, b, a);
 
