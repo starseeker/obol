@@ -313,3 +313,63 @@ if(OBOL_BUILD_CAD_SIM_VIEWER AND FLTK_FOUND)
     install(TARGETS cad_simulation_viewer RUNTIME DESTINATION bin)
     message(STATUS "cad_simulation_viewer: enabled (slider-crank CAD simulation)")
 endif() # OBOL_BUILD_CAD_SIM_VIEWER
+
+# -----------------------------------------------------------------------
+# cad_large_assembly_viewer: interactive large-scale CAD assembly demo
+# -----------------------------------------------------------------------
+option(OBOL_BUILD_CAD_LARGE_VIEWER
+    "Build cad_large_assembly_viewer (SoCADAssembly LoD stress demo)"
+    OFF)
+
+if(OBOL_BUILD_CAD_LARGE_VIEWER AND FLTK_FOUND)
+
+    add_executable(cad_large_assembly_viewer cad_large_assembly_viewer.cpp)
+
+    target_include_directories(cad_large_assembly_viewer PRIVATE
+        ${PROJECT_SOURCE_DIR}/tests/utils     # fltk_context_manager.h
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/include/Inventor/annex
+        ${PROJECT_SOURCE_DIR}/include/obol
+        ${PROJECT_BINARY_DIR}/include
+        ${OBOL_TARGET_INCLUDE_DIRECTORIES}
+        ${FLTK_INCLUDE_DIRS}
+    )
+
+    # BasicFLTKContextManager always uses the FLTK GL path.
+    target_compile_definitions(cad_large_assembly_viewer PRIVATE OBOL_VIEWER_FLTK_GL)
+
+    if(OBOL_USE_SWRAST AND OBOL_USE_SYSTEM_GL)
+        target_compile_definitions(cad_large_assembly_viewer PRIVATE
+            OBOL_SWRAST_BUILD OBOL_DUAL_GL_BUILD)
+        target_include_directories(cad_large_assembly_viewer PRIVATE
+            "${PROJECT_SOURCE_DIR}/external/osmesa/include")
+    elseif(OBOL_USE_SWRAST)
+        target_compile_definitions(cad_large_assembly_viewer PRIVATE OBOL_SWRAST_BUILD)
+        target_include_directories(cad_large_assembly_viewer PRIVATE
+            "${PROJECT_SOURCE_DIR}/external/osmesa/include")
+    endif()
+
+    target_link_libraries(cad_large_assembly_viewer
+        PRIVATE
+            ${PROJECT_NAME}
+            ${OBOL_TARGET_LINK_LIBRARIES}
+            ${FLTK_LIBRARIES}
+    )
+
+    if(UNIX AND NOT APPLE)
+        if(X11_FOUND)
+            target_link_libraries(cad_large_assembly_viewer PRIVATE ${X11_X11_LIB})
+        endif()
+        if(TARGET OpenGL::GL)
+            target_link_libraries(cad_large_assembly_viewer PRIVATE OpenGL::GL)
+        elseif(OPENGL_gl_LIBRARY)
+            target_link_libraries(cad_large_assembly_viewer PRIVATE ${OPENGL_gl_LIBRARY})
+        endif()
+    endif()
+
+    find_package(Threads REQUIRED)
+    target_link_libraries(cad_large_assembly_viewer PRIVATE Threads::Threads)
+
+    install(TARGETS cad_large_assembly_viewer RUNTIME DESTINATION bin)
+    message(STATUS "cad_large_assembly_viewer: enabled (large-scale CAD assembly LoD demo)")
+endif() # OBOL_BUILD_CAD_LARGE_VIEWER
