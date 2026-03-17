@@ -64,6 +64,7 @@
 
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
+#include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
 #include <Inventor/nodes/SoBaseColor.h>
 #include <Inventor/nodes/SoCoordinate3.h>
@@ -443,6 +444,37 @@ static bool validateLodDirect(const IcoMesh& mesh)
 }
 
 // ---------------------------------------------------------------------------
+// Orthographic camera helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Replace the first SoPerspectiveCamera found in root with a
+ * SoOrthographicCamera sized to cover the same view volume.
+ */
+static void swapToOrthoCamera(SoSeparator *root)
+{
+    SoPerspectiveCamera *pcam = nullptr;
+    for (int i = 0; i < root->getNumChildren(); ++i) {
+        pcam = dynamic_cast<SoPerspectiveCamera*>(root->getChild(i));
+        if (pcam) break;
+    }
+    if (!pcam) return;
+
+    SoOrthographicCamera *ocam = new SoOrthographicCamera;
+    ocam->position.setValue(pcam->position.getValue());
+    ocam->orientation.setValue(pcam->orientation.getValue());
+    ocam->focalDistance.setValue(pcam->focalDistance.getValue());
+    ocam->nearDistance.setValue(pcam->nearDistance.getValue());
+    ocam->farDistance.setValue(pcam->farDistance.getValue());
+
+    float ha    = pcam->heightAngle.getValue();
+    float focal = pcam->focalDistance.getValue();
+    ocam->height.setValue(2.0f * focal * std::tan(ha * 0.5f));
+
+    root->replaceChild(pcam, ocam);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -556,6 +588,68 @@ int main(int argc, char **argv)
 
         sgRoot->unref();
         cadRoot->unref();
+    }
+
+    // -----------------------------------------------------------------------
+    // SMALL SCALE ORTHOGRAPHIC: same 4^3 grid rendered with ortho camera
+    // -----------------------------------------------------------------------
+    {
+        const int SMALL = 4;
+        printf("=== SMALL scale orthographic: %d instances ===\n",
+               SMALL * SMALL * SMALL);
+
+        SoSeparator *sgOrthoRoot  = buildSceneGraph(mesh, SMALL);
+        SoSeparator *cadOrthoRoot = buildCADScene(mesh, SMALL, /*lod=*/false);
+        swapToOrthoCamera(sgOrthoRoot);
+        swapToOrthoCamera(cadOrthoRoot);
+
+        SbViewportRegion vp(W, H);
+        SoOffscreenRenderer sgRend(vp), cadRend(vp);
+        sgRend.setComponents(SoOffscreenRenderer::RGB);
+        cadRend.setComponents(SoOffscreenRenderer::RGB);
+        sgRend.setBackgroundColor(SbColor(0,0,0));
+        cadRend.setBackgroundColor(SbColor(0,0,0));
+
+        bool sgOk  = (sgRend.render(sgOrthoRoot)   == TRUE);
+        bool cadOk = (cadRend.render(cadOrthoRoot)  == TRUE);
+
+        const unsigned char *sgBuf  = sgOk  ? sgRend.getBuffer()  : nullptr;
+        const unsigned char *cadBuf = cadOk ? cadRend.getBuffer() : nullptr;
+        int sgNB  = sgBuf  ? countNonBlack(sgBuf,  W, H) : 0;
+        int cadNB = cadBuf ? countNonBlack(cadBuf, W, H) : 0;
+
+        printf("  SG  ortho: render ok=%d  nonBlack=%d (%.1f%%)\n",
+               (int)sgOk,  sgNB,  100.0 * sgNB  / (W*H));
+        printf("  CAD ortho: render ok=%d  nonBlack=%d (%.1f%%)\n",
+               (int)cadOk, cadNB, 100.0 * cadNB / (W*H));
+
+        char sgPath[1024], cadPath[1024];
+        snprintf(sgPath,  sizeof(sgPath),  "%s_small_sg_ortho.rgb",  outprefix);
+        snprintf(cadPath, sizeof(cadPath), "%s_small_cad_ortho.rgb", outprefix);
+        if (sgOk  && sgBuf)  sgRend.writeToRGB(sgPath);
+        if (cadOk && cadBuf) cadRend.writeToRGB(cadPath);
+
+        const int minNB = (W * H) / 100;
+        if (!sgOk) {
+            fprintf(stderr, "FAIL [small-ortho]: SG render failed\n");
+            allOk = false;
+        }
+        if (!cadOk) {
+            fprintf(stderr, "FAIL [small-ortho]: CAD render failed\n");
+            allOk = false;
+        }
+        if (sgNB < minNB) {
+            fprintf(stderr, "FAIL [small-ortho]: SG too few lit pixels (%d)\n", sgNB);
+            allOk = false;
+        }
+        if (cadNB < minNB) {
+            fprintf(stderr, "FAIL [small-ortho]: CAD too few lit pixels (%d)\n", cadNB);
+            allOk = false;
+        }
+        printf("\n");
+
+        sgOrthoRoot->unref();
+        cadOrthoRoot->unref();
     }
 
     // -----------------------------------------------------------------------
