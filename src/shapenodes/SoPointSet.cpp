@@ -262,14 +262,8 @@ SoPointSet::GLRender(SoGLRenderAction * action)
   // -------------------------------------------------------------------------
   {
     SoGLModernState * ms = SoGLModernState::forContext(contextid);
-    fprintf(stderr, "DEBUG SoPointSet: ms=%p avail=%d doTex=%d numpts=%d is3D=%d mbind=%d\n",
-      (void*)ms, ms ? ms->isAvailable() : -1, doTextures, numpts,
-      (coords && coords->is3D()) ? 1 : 0, (int)mbind);
     if (ms && ms->isAvailable() && !doTextures && numpts > 0
         && coords && coords->is3D()) {
-      const float* mvp = ms->getModelViewGL(); const float* pj = ms->getProjectionGL();
-      fprintf(stderr, "DEBUG MV[0..3]: %.4f %.4f %.4f %.4f\n", mvp[0],mvp[1],mvp[2],mvp[3]);
-      fprintf(stderr, "DEBUG Proj[0..3]: %.4f %.4f %.4f %.4f\n", pj[0],pj[1],pj[2],pj[3]);
       const SbVec3f * coords3d = coords->getArrayPtr3();
       const int STRIDE = 8; // pos(3)+norm(3)+uv(2)
       float * vtx = new float[numpts * STRIDE];
