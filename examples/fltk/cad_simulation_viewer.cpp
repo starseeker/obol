@@ -32,6 +32,7 @@
  *   Scroll      → zoom
  *   [Play/Pause]→ start / stop animation
  *   Speed slider→ animation speed  (0.1× – 5.0×)
+ *   [Proj]      → toggle projection (Perspective ↔ Orthographic)
  *   [Reset View]→ restore default camera
  *
  * Building
@@ -51,6 +52,7 @@
 #include <Inventor/SbTime.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
+#include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoTransform.h>
@@ -120,8 +122,8 @@ static bool  s_running     = true;
  * ========================================================================= */
 
 struct MechanismNodes {
-    SoSeparator*         root         = nullptr;
-    SoPerspectiveCamera* camera       = nullptr;
+    SoSeparator* root         = nullptr;
+    SoCamera*    camera       = nullptr;
     SoTransform*         crankXf      = nullptr;  ///< crank arm rotation (Z-axis)
     SoTransform*         connRodXf    = nullptr;  ///< rod position + tilt
     SoTransform*         pistonXf     = nullptr;  ///< piston X translation
@@ -680,6 +682,45 @@ private:
 
 static RenderPanel* s_panel  = nullptr;
 static StatusBar*   s_status = nullptr;
+static bool s_perspectiveCamera = true;  // true=perspective, false=orthographic
+
+/** Switch the scene camera between perspective and orthographic projection.
+ *  Preserves position, orientation, focal distance, and near/far planes. */
+static void switchCameraType(bool toPerspective)
+{
+    if (!s_nodes.root || !s_nodes.camera) return;
+
+    SbVec3f    pos   = s_nodes.camera->position.getValue();
+    SbRotation ori   = s_nodes.camera->orientation.getValue();
+    float      focal = s_nodes.camera->focalDistance.getValue();
+    float      nearD = s_nodes.camera->nearDistance.getValue();
+    float      farD  = s_nodes.camera->farDistance.getValue();
+
+    SoCamera* newCam = nullptr;
+    if (toPerspective) {
+        SoPerspectiveCamera* pcam = new SoPerspectiveCamera;
+        float orthoH = static_cast<SoOrthographicCamera*>(s_nodes.camera)
+                           ->height.getValue();
+        if (focal > 1e-6f)
+            pcam->heightAngle.setValue(2.0f * std::atan(orthoH / (2.0f * focal)));
+        newCam = pcam;
+    } else {
+        SoOrthographicCamera* ocam = new SoOrthographicCamera;
+        float ha = static_cast<SoPerspectiveCamera*>(s_nodes.camera)
+                       ->heightAngle.getValue();
+        ocam->height.setValue(2.0f * focal * std::tan(ha * 0.5f));
+        newCam = ocam;
+    }
+
+    newCam->position.setValue(pos);
+    newCam->orientation.setValue(ori);
+    newCam->focalDistance.setValue(focal);
+    newCam->nearDistance.setValue(nearD);
+    newCam->farDistance.setValue(farD);
+
+    s_nodes.root->replaceChild(s_nodes.camera, newCam);
+    s_nodes.camera = newCam;
+}
 
 /* =========================================================================
  * Animation timer callback – fires at FRAME_INTERVAL seconds
@@ -707,13 +748,13 @@ static void animTimerCB(void* /*data*/)
  * CadSimWindow  –  main application window
  *
  * Layout:
- *  ┌──────────────────────────────────────────────┐
- *  │             RenderPanel (3-D view)           │
- *  ├──────────────────────────────────────────────┤
- *  │ [▶/⏸]  Speed: [slider]  [Reset View] [Save] │
- *  ├──────────────────────────────────────────────┤
- *  │ Crank angle: NNN°  |  Piston X: ±N.NNN       │
- *  └──────────────────────────────────────────────┘
+ *  ┌──────────────────────────────────────────────────────┐
+ *  │                RenderPanel (3-D view)                │
+ *  ├──────────────────────────────────────────────────────┤
+ *  │ [▶/⏸]  Speed: [slider]  [Proj] [Reset View] [Save] │
+ *  ├──────────────────────────────────────────────────────┤
+ *  │ Crank angle: NNN°  |  Piston X: ±N.NNN              │
+ *  └──────────────────────────────────────────────────────┘
  * ========================================================================= */
 
 class CadSimWindow : public Fl_Double_Window {
@@ -754,6 +795,12 @@ public:
             speed_slider_->color(fl_rgb_color(55, 58, 78));
             speed_slider_->selection_color(fl_rgb_color(90, 130, 200));
 
+            proj_btn_ = new Fl_Button(360, panel_h + 5, 110, 28, "Proj: Persp");
+            proj_btn_->callback(projCB, this);
+            proj_btn_->labelsize(11);
+            proj_btn_->color(fl_rgb_color(50, 110, 120));
+            proj_btn_->labelcolor(FL_WHITE);
+
             Fl_Button* reset = new Fl_Button(W - 190, panel_h + 5, 88, 28, "Reset View");
             reset->callback(resetCB, this);
             reset->labelsize(11);
@@ -781,6 +828,9 @@ public:
         const int pw = std::max(s_panel->w(), 1);
         const int ph = std::max(s_panel->h(), 1);
         s_nodes = buildScene(pw, ph);
+        // Restore chosen projection type after rebuild
+        if (!s_perspectiveCamera)
+            switchCameraType(false);
         s_panel->updateSceneCenter();
         float pistonX = updateKinematics(s_crank_angle);
         s_panel->refreshRender();
@@ -791,6 +841,7 @@ public:
 private:
     Fl_Button*       play_btn_     = nullptr;
     Fl_Value_Slider* speed_slider_ = nullptr;
+    Fl_Button*       proj_btn_     = nullptr;
 
     /* ---- callbacks ---- */
 
@@ -816,6 +867,21 @@ private:
             s_speed = (float)self->speed_slider_->value();
     }
 
+    static void projCB(Fl_Widget*, void* data)
+    {
+        auto* self = static_cast<CadSimWindow*>(data);
+        s_perspectiveCamera = !s_perspectiveCamera;
+        switchCameraType(s_perspectiveCamera);
+        if (self->proj_btn_) {
+            self->proj_btn_->label(s_perspectiveCamera ? "Proj: Persp" : "Proj: Ortho");
+            self->proj_btn_->color(s_perspectiveCamera
+                ? fl_rgb_color(50, 110, 120)
+                : fl_rgb_color(120, 90, 40));
+            self->proj_btn_->redraw();
+        }
+        if (!s_running && s_panel) s_panel->refreshRender();
+    }
+
     static void resetCB(Fl_Widget*, void* /*data*/)
     {
         if (!s_nodes.root || !s_nodes.camera) return;
@@ -828,6 +894,9 @@ private:
 
         s_nodes.root->unref();
         s_nodes = buildScene(pw, ph);
+        // Restore chosen projection type after rebuild
+        if (!s_perspectiveCamera)
+            switchCameraType(false);
         s_crank_angle = savedAngle;
         s_panel->updateSceneCenter();
         float pistonX = updateKinematics(s_crank_angle);

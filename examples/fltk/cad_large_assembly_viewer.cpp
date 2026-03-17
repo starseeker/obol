@@ -41,6 +41,7 @@
  *   Scroll      → zoom
  *   [LoD]       → toggle POP Level-of-Detail on/off
  *   [Mode]      → cycle draw mode (Wireframe → Shaded → Shaded+Edges)
+ *   [Proj]      → toggle projection (Perspective ↔ Orthographic)
  *   [Scale]     → rebuild the assembly at a different instance count
  *                 (500 / 2 000 / 5 000 / 10 000)
  *   [Reset View]→ restore default camera
@@ -64,6 +65,7 @@
 
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
+#include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
 #include <Inventor/nodes/SoLightModel.h>
 #include <Inventor/nodes/SoBaseColor.h>
@@ -270,8 +272,8 @@ static obol::WireRep buildBoxWire(float hw)
  * ========================================================================= */
 
 struct AssemblyState {
-    SoSeparator*         root         = nullptr;
-    SoPerspectiveCamera* camera       = nullptr;
+    SoSeparator* root         = nullptr;
+    SoCamera*    camera       = nullptr;
     SoCADAssembly*       assembly     = nullptr;
     int                  numInstances = 0;
     int                  numParts     = 0;
@@ -841,6 +843,7 @@ static StatusBar*   s_status  = nullptr;
 /* Current draw mode (cycling through modes). */
 static int  s_drawModeIdx = 1;   // 0=WIREFRAME, 1=SHADED, 2=SHADED_WITH_EDGES
 static bool s_lodEnabled  = true;
+static bool s_perspectiveCamera = true;  // true=perspective, false=orthographic
 
 static const char* const DRAW_MODE_NAMES[] = {
     "Wireframe", "Shaded", "Shaded+Edges"
@@ -866,6 +869,47 @@ static std::string formatScaleLabel(int count)
     return buf;
 }
 
+/** Switch the scene camera between perspective and orthographic projection.
+ *  Preserves position, orientation, focal distance, and near/far planes.
+ *  For the size parameter: converts heightAngle↔height via the focal distance. */
+static void switchCameraType(bool toPerspective)
+{
+    if (!s_asm.root || !s_asm.camera) return;
+
+    SbVec3f    pos   = s_asm.camera->position.getValue();
+    SbRotation ori   = s_asm.camera->orientation.getValue();
+    float      focal = s_asm.camera->focalDistance.getValue();
+    float      nearD = s_asm.camera->nearDistance.getValue();
+    float      farD  = s_asm.camera->farDistance.getValue();
+
+    SoCamera* newCam = nullptr;
+    if (toPerspective) {
+        SoPerspectiveCamera* pcam = new SoPerspectiveCamera;
+        // Recover vertical FOV from the orthographic height
+        float orthoH = static_cast<SoOrthographicCamera*>(s_asm.camera)
+                           ->height.getValue();
+        if (focal > 1e-6f)
+            pcam->heightAngle.setValue(2.0f * std::atan(orthoH / (2.0f * focal)));
+        newCam = pcam;
+    } else {
+        SoOrthographicCamera* ocam = new SoOrthographicCamera;
+        // Derive orthographic height from the perspective vertical FOV
+        float ha = static_cast<SoPerspectiveCamera*>(s_asm.camera)
+                       ->heightAngle.getValue();
+        ocam->height.setValue(2.0f * focal * std::tan(ha * 0.5f));
+        newCam = ocam;
+    }
+
+    newCam->position.setValue(pos);
+    newCam->orientation.setValue(ori);
+    newCam->focalDistance.setValue(focal);
+    newCam->nearDistance.setValue(nearD);
+    newCam->farDistance.setValue(farD);
+
+    s_asm.root->replaceChild(s_asm.camera, newCam);
+    s_asm.camera = newCam;
+}
+
 /* =========================================================================
  * LargeAssemblyWindow  –  main application window
  *
@@ -873,7 +917,7 @@ static std::string formatScaleLabel(int count)
  *  ┌─────────────────────────────────────────────────────────────────┐
  *  │                    RenderPanel (3-D view)                       │
  *  ├─────────────────────────────────────────────────────────────────┤
- *  │ [LoD: ON] [Mode: Shaded] [Scale: 2000] [Reset View] [Save RGB…]│
+ *  │ [LoD] [Mode] [Proj] [Scale] [Reset View] [Save RGB…]           │
  *  ├─────────────────────────────────────────────────────────────────┤
  *  │ Instances: N  |  Full-detail tris: ~NM  |  Frame: N ms (N FPS) │
  *  └─────────────────────────────────────────────────────────────────┘
@@ -912,6 +956,13 @@ public:
         mode_btn_->labelcolor(FL_WHITE);
         bx += 126;
 
+        proj_btn_ = new Fl_Button(bx, by, 120, bh, "Proj: Persp");
+        proj_btn_->callback(projCB, this);
+        proj_btn_->labelsize(11);
+        proj_btn_->color(fl_rgb_color(50, 110, 120));
+        proj_btn_->labelcolor(FL_WHITE);
+        bx += 126;
+
         scale_btn_ = new Fl_Button(bx, by, 120, bh, "Scale: 2 K");
         scale_btn_->copy_label(formatScaleLabel(SCALE_LEVELS[s_scaleLevelIdx]).c_str());
         scale_btn_->callback(scaleCB, this);
@@ -948,6 +999,9 @@ public:
 
         if (s_asm.root) s_asm.root->unref();
         s_asm = buildLargeScene(SCALE_LEVELS[s_scaleLevelIdx], pw, ph);
+        // Restore chosen projection type after rebuild
+        if (!s_perspectiveCamera)
+            switchCameraType(false);
         s_panel->updateSceneCenter();
         s_panel->refreshRender();
         updateStatus();
@@ -956,6 +1010,7 @@ public:
 private:
     Fl_Button* lod_btn_   = nullptr;
     Fl_Button* mode_btn_  = nullptr;
+    Fl_Button* proj_btn_  = nullptr;
     Fl_Button* scale_btn_ = nullptr;
 
     void updateStatus()
@@ -1002,6 +1057,21 @@ private:
         }
         if (s_panel) s_panel->refreshRender();
         self->updateStatus();
+    }
+
+    static void projCB(Fl_Widget*, void* data)
+    {
+        auto* self = static_cast<LargeAssemblyWindow*>(data);
+        s_perspectiveCamera = !s_perspectiveCamera;
+        switchCameraType(s_perspectiveCamera);
+        if (self->proj_btn_) {
+            self->proj_btn_->label(s_perspectiveCamera ? "Proj: Persp" : "Proj: Ortho");
+            self->proj_btn_->color(s_perspectiveCamera
+                ? fl_rgb_color(50, 110, 120)
+                : fl_rgb_color(120, 90, 40));
+            self->proj_btn_->redraw();
+        }
+        if (s_panel) s_panel->refreshRender();
     }
 
     static void scaleCB(Fl_Widget*, void* data)

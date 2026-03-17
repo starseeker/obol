@@ -270,6 +270,39 @@ static double pixelMAD(const unsigned char *a, const unsigned char *b, int w, in
 }
 
 // ============================================================================
+// Orthographic camera helper
+// ============================================================================
+
+/**
+ * Replace the first SoPerspectiveCamera found in root with a
+ * SoOrthographicCamera that covers the same view volume.
+ * The orthographic height is derived from the perspective heightAngle and
+ * focal distance so that object apparent sizes remain unchanged.
+ */
+static void swapToOrthoCamera(SoSeparator *root)
+{
+    SoPerspectiveCamera *pcam = nullptr;
+    for (int i = 0; i < root->getNumChildren(); ++i) {
+        pcam = dynamic_cast<SoPerspectiveCamera*>(root->getChild(i));
+        if (pcam) break;
+    }
+    if (!pcam) return;
+
+    SoOrthographicCamera *ocam = new SoOrthographicCamera;
+    ocam->position.setValue(pcam->position.getValue());
+    ocam->orientation.setValue(pcam->orientation.getValue());
+    ocam->focalDistance.setValue(pcam->focalDistance.getValue());
+    ocam->nearDistance.setValue(pcam->nearDistance.getValue());
+    ocam->farDistance.setValue(pcam->farDistance.getValue());
+
+    float ha    = pcam->heightAngle.getValue();
+    float focal = pcam->focalDistance.getValue();
+    ocam->height.setValue(2.0f * focal * std::tan(ha * 0.5f));
+
+    root->replaceChild(pcam, ocam);
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
