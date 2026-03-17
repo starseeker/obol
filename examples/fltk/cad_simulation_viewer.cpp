@@ -659,7 +659,7 @@ public:
     void update(float alpha, float pistonX)
     {
         float deg = alpha * (float)(180.0 / M_PI);
-        /* Normalise to 0–360 */
+        /* Normalize to 0–360 */
         deg = std::fmod(deg, 360.0f);
         if (deg < 0.0f) deg += 360.0f;
         snprintf(buf_, sizeof(buf_),

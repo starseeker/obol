@@ -61,7 +61,7 @@ option(OBOL_BUILD_MINIMALIST_VIEWER
 
 option(OBOL_BUILD_CAD_SIM_VIEWER
     "Build cad_simulation_viewer (interactive slider-crank CAD simulation demo)"
-    ${FLTK_FOUND})
+    OFF)
 
 # -----------------------------------------------------------------------
 # obol_viewer: full-featured FLTK scene viewer
