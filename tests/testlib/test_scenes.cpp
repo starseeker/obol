@@ -762,11 +762,11 @@ static SoSeparator* buildGradientScene(int width, int height)
     bg->addChild(coords);
 
     SoPackedColor* colors = new SoPackedColor;
-    // SoPackedColor uses 0xAARRGGBB
-    // dark blue: RGB(0.05, 0.05, 0.20) = (13, 13, 51) = 0x0d0d33
-    // lighter blue: RGB(0.20, 0.35, 0.60) = (51, 89, 153) = 0x335999
-    const uint32_t bottomBlue = 0xff0d0d33u;
-    const uint32_t topBlue    = 0xff335999u;
+    // SoPackedColor uses 0xRRGGBBAA (alpha last — see SoPackedColor.h)
+    // dark blue: RGB(0.05, 0.05, 0.20) = (13, 13, 51) = 0x0d0d33, A=255
+    // lighter blue: RGB(0.20, 0.35, 0.60) = (51, 89, 153) = 0x335999, A=255
+    const uint32_t bottomBlue = 0x0d0d33ffu;
+    const uint32_t topBlue    = 0x335999ffu;
     colors->orderedRGBA.set1Value(0, bottomBlue); // BL
     colors->orderedRGBA.set1Value(1, bottomBlue); // BR
     colors->orderedRGBA.set1Value(2, topBlue);    // TR

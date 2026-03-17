@@ -772,7 +772,7 @@ pre_render_cb(void * userdata, SoGLRenderAction * action)
         0,    0,     0,   1.0f
       };
       ms_grad->setProjectionMatrix(ortho);
-      ms_grad->activateBaseColor();
+      ms_grad->activateBaseColor(true, false, false);
     }
 
     // Draw gradient as two triangles (full-screen quad: y=0 → bot, y=1 → top)
@@ -804,11 +804,13 @@ pre_render_cb(void * userdata, SoGLRenderAction * action)
       glGenBuffers(1, &grad_vbo);
       glBindBuffer(GL_ARRAY_BUFFER, grad_vbo);
       glBufferData(GL_ARRAY_BUFFER, sizeof(verts7), verts7, GL_STREAM_DRAW);
-      /* position at attrib 0 (xyz), color at attrib 1 (rgba) */
+      /* position at attrib 0 (xyz), color at attrib 3 (rgba) — must match BaseColor shader layout */
       glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (const GLvoid*)0);
       glEnableVertexAttribArray(0);
-      glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (const GLvoid*)(3 * sizeof(float)));
-      glEnableVertexAttribArray(1);
+      glDisableVertexAttribArray(1); /* no normals */
+      glDisableVertexAttribArray(2); /* no texcoords */
+      glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (const GLvoid*)(3 * sizeof(float)));
+      glEnableVertexAttribArray(3);
       glDrawArrays(GL_TRIANGLES, 0, 6);
       glBindVertexArray(0);
       glDeleteBuffers(1, &grad_vbo);
