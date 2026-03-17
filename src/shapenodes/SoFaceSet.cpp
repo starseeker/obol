@@ -488,13 +488,14 @@ SoFaceSet::GLRender(SoGLRenderAction * action)
     // -----------------------------------------------------------------------
     // Phase 1c: Modern VAO+VBO rendering path.
     // Activated when SoGLModernState is available and material binding is
-    // OVERALL (no per-vertex colour attribute needed).  Fan-triangulates
-    // every face and draws with the built-in Phong shader.
+    // OVERALL or PER_VERTEX (per-vertex colours passed as attrib 3).
+    // Fan-triangulates every face and draws with the built-in Phong shader.
     // -----------------------------------------------------------------------
     {
       SoGLModernState * ms = SoGLModernState::forContext(contextid);
-      if (ms && ms->isAvailable() && mbind == OVERALL && !doTextures
-          && coords && coords->is3D()) {
+      const bool perVertexColor = (mbind == PER_VERTEX);
+      if (ms && ms->isAvailable() && (mbind == OVERALL || perVertexColor)
+          && !doTextures && coords && coords->is3D()) {
         const SbVec3f * coords3d = coords->getArrayPtr3();
         // Count total triangles (fan tessellation: n-gon → n-2 tris)
         int numTris = 0;
@@ -508,6 +509,19 @@ SoFaceSet::GLRender(SoGLRenderAction * action)
           float * vtx = new float[numTris * 3 * STRIDE];
           float * vp = vtx;
 
+          // Per-vertex color buffer (R,G,B,A uint8) — filled only when perVertexColor
+          uint8_t * clrbuf = perVertexColor ? new uint8_t[numTris * 3 * 4] : nullptr;
+          uint8_t * cp = clrbuf;
+
+          // Packed colors from the lazy element (format 0xRRGGBBAA)
+          const uint32_t * packedColors  = nullptr;
+          int               numPacked     = 0;
+          if (perVertexColor) {
+            SoLazyElement * lazy = SoLazyElement::getInstance(state);
+            packedColors = SoLazyElement::getPackedColors(state);
+            numPacked    = lazy->getNumDiffuse();
+          }
+
           SbVec3f dummyNorm(0.0f, 0.0f, 1.0f);
           // OVERALL: first normal (or dummy)
           const SbVec3f * overallNorm = (needNormals && normals) ? normals : &dummyNorm;
@@ -515,12 +529,14 @@ SoFaceSet::GLRender(SoGLRenderAction * action)
           int normBase  = 0;   // leading normal index for the current face
           int faceCount = 0;   // face counter (for PER_FACE indexing)
           int currVidx  = idx; // current vertex coordinate index
+          int colorBase = 0;   // leading color index (for PER_VERTEX)
 
           fptr = ptr;
           while (fptr < end) {
             int n = *fptr++;
             if (n < 3) {
-              currVidx += n;
+              currVidx  += n;
+              colorBase += n;
               if (nbind == PER_VERTEX && needNormals) normBase += n;
               if (nbind == PER_FACE   && needNormals) faceCount++;
               continue;
@@ -535,12 +551,22 @@ SoFaceSet::GLRender(SoGLRenderAction * action)
             // Fan tessellation: tris (v0,v1,v2), (v0,v2,v3), …
             for (int i = 1; i < n - 1; ++i) {
               // Helper lambda to write one vertex
-              auto writeVert = [&](int vi, const SbVec3f * nm) {
+              auto writeVert = [&](int vi, int ci, const SbVec3f * nm) {
                 const SbVec3f & p = coords3d[vi];
                 vp[0] = p[0]; vp[1] = p[1]; vp[2] = p[2];
                 vp[3] = (*nm)[0]; vp[4] = (*nm)[1]; vp[5] = (*nm)[2];
                 vp[6] = 0.0f; vp[7] = 0.0f;
                 vp += STRIDE;
+                if (cp) {
+                  int idx2 = (ci < numPacked) ? ci : (numPacked > 0 ? numPacked - 1 : 0);
+                  uint32_t packed = (packedColors && numPacked > 0)
+                                    ? packedColors[idx2] : 0xFFFFFFFFu;
+                  cp[0] = static_cast<uint8_t>((packed >> 24) & 0xff); // R
+                  cp[1] = static_cast<uint8_t>((packed >> 16) & 0xff); // G
+                  cp[2] = static_cast<uint8_t>((packed >>  8) & 0xff); // B
+                  cp[3] = static_cast<uint8_t>( packed        & 0xff); // A
+                  cp += 4;
+                }
               };
 
               const SbVec3f * nm0 = (nbind == PER_VERTEX && needNormals && normals)
@@ -550,18 +576,19 @@ SoFaceSet::GLRender(SoGLRenderAction * action)
               const SbVec3f * nm1 = (nbind == PER_VERTEX && needNormals && normals)
                                     ? &normals[normBase + i + 1] : faceNorm;
 
-              writeVert(currVidx,         nm0);
-              writeVert(currVidx + i,     nmi);
-              writeVert(currVidx + i + 1, nm1);
+              writeVert(currVidx,         colorBase,     nm0);
+              writeVert(currVidx + i,     colorBase + i, nmi);
+              writeVert(currVidx + i + 1, colorBase + i + 1, nm1);
             }
 
-            currVidx += n;
+            currVidx  += n;
+            colorBase += n;
             if (nbind == PER_VERTEX && needNormals) normBase  += n;
             if (nbind == PER_FACE   && needNormals) faceCount++;
           }
 
-          // Upload to temporary VAO+VBO
-          GLuint vao = 0, vbo = 0;
+          // Upload geometry VBO
+          GLuint vao = 0, vbo = 0, cvbo = 0;
           glGenVertexArrays(1, &vao);
           glBindVertexArray(vao);
           glGenBuffers(1, &vbo);
@@ -581,7 +608,21 @@ SoFaceSet::GLRender(SoGLRenderAction * action)
                                 (void*)(6 * sizeof(float)));
           glEnableVertexAttribArray(2);
 
-          ms->activatePhong(needNormals, /*hasColors=*/false,
+          // Upload per-vertex color VBO (attrib 3)
+          if (perVertexColor && clrbuf) {
+            glGenBuffers(1, &cvbo);
+            glBindBuffer(GL_ARRAY_BUFFER, cvbo);
+            glBufferData(GL_ARRAY_BUFFER,
+                         (GLsizeiptr)(numTris * 3 * 4 * (int)sizeof(uint8_t)),
+                         clrbuf, GL_STATIC_DRAW);
+            delete[] clrbuf; clrbuf = nullptr;
+            glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, (void*)0);
+            glEnableVertexAttribArray(3);
+          } else {
+            glDisableVertexAttribArray(3);
+          }
+
+          ms->activatePhong(needNormals, perVertexColor,
                             /*hasTexCoords=*/false, /*hasTexture=*/false);
           glDrawArrays(GL_TRIANGLES, 0, numTris * 3);
           ms->deactivate();
@@ -589,6 +630,8 @@ SoFaceSet::GLRender(SoGLRenderAction * action)
           glBindVertexArray(0);
           glDeleteVertexArrays(1, &vao);
           glDeleteBuffers(1, &vbo);
+          if (cvbo) glDeleteBuffers(1, &cvbo);
+          delete[] clrbuf;
 
           if (nc) this->readUnlockNormalCache();
           SoGLCacheContextElement::shouldAutoCache(

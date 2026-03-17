@@ -57,6 +57,7 @@
 
 #include <Inventor/system/gl.h>
 #include "elements/GL/SoResetMatrixElement.h"
+#include "rendering/SoGLModernState.h"
 
 SO_ELEMENT_SOURCE(SoGLViewingMatrixElement);
 
@@ -143,8 +144,27 @@ SoGLViewingMatrixElement::setElt(const SbMatrix & matrix)
 void
 SoGLViewingMatrixElement::updategl(void)
 {
-  /* GL3: no fixed-function matrix stack. The viewing matrix is baked
-   * into SoGLModernState via SoGLModelMatrixElement::updateModernState(). */
+  /* GL3: the viewing matrix is baked into SoGLModernState via the combined
+   * VIEW*MODEL matrix.  SoGLModelMatrixElement::updateModernState() does this
+   * whenever a transform node modifies the model matrix, but scenes that
+   * contain no explicit SoTransform nodes never trigger that path.  We
+   * therefore also update SoGLModernState here so that shapes rendered with
+   * an identity model matrix still receive the correct MV matrix. */
+  uint32_t ctxid = SoGLContext_get_contextid(this->glue);
+  SoGLModernState * ms = SoGLModernState::forContext(ctxid);
+  if (!ms) return;
+
+  /* Compute VIEW * MODEL for the current model-matrix state.
+   * getResetMatrix() returns the view matrix adjusted for any model-matrix
+   * transformations that were active when the camera was traversed.
+   * Multiplying on the left by the current model matrix gives VIEW*MODEL. */
+  SbMatrix mv = SoGLViewingMatrixElement::getResetMatrix(this->state);
+  SbBool mmid;
+  SbMatrix model = SoModelMatrixElement::get(this->state, mmid);
+  if (!mmid) {
+    mv.multLeft(model);
+  }
+  ms->setModelViewMatrix((const float *)mv.getValue());
 }
 
 /*!

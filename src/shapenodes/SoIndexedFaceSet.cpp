@@ -518,15 +518,18 @@ SoIndexedFaceSet::GLRender(SoGLRenderAction * action)
 
   // -------------------------------------------------------------------------
   // Phase 1c: Modern VAO+VBO rendering path for indexed face sets.
-  // Handles OVERALL material with OVERALL or PER_VERTEX_INDEXED normals.
-  // Fan-tessellates each polygon (coord-index groups terminated by -1) into
-  // GL_TRIANGLES using the existing coord/normal arrays.
+  // Handles OVERALL or PER_VERTEX_INDEXED material with OVERALL or
+  // PER_VERTEX_INDEXED normals.  Fan-tessellates each polygon (coord-index
+  // groups terminated by -1) into GL_TRIANGLES using the existing coord/
+  // normal/material-index arrays.
   // -------------------------------------------------------------------------
   {
     const SoGLCoordinateElement * glcoords =
         static_cast<const SoGLCoordinateElement*>(coords);
     SoGLModernState * ms = SoGLModernState::forContext(contextid);
-    if (ms && ms->isAvailable() && mbind == OVERALL && !doTextures
+    const bool perVertexColor = (mbind == PER_VERTEX_INDEXED);
+    if (ms && ms->isAvailable()
+        && (mbind == OVERALL || perVertexColor) && !doTextures
         && glcoords && glcoords->is3D()
         && (nbind == OVERALL || nbind == PER_VERTEX_INDEXED)) {
       const SbVec3f * coords3d = glcoords->getArrayPtr3();
@@ -545,6 +548,19 @@ SoIndexedFaceSet::GLRender(SoGLRenderAction * action)
         const int STRIDE = 8; // pos(3)+norm(3)+uv(2)
         float * vtx = new float[numTris * 3 * STRIDE];
         float * vp  = vtx;
+
+        // Per-vertex color buffer — filled only for PER_VERTEX_INDEXED
+        uint8_t * clrbuf = perVertexColor ? new uint8_t[numTris * 3 * 4] : nullptr;
+        uint8_t * cp = clrbuf;
+
+        // Packed colors (format 0xRRGGBBAA)
+        const uint32_t * packedColors = nullptr;
+        int               numPacked    = 0;
+        if (perVertexColor) {
+          SoLazyElement * lazy = SoLazyElement::getInstance(state);
+          packedColors = SoLazyElement::getPackedColors(state);
+          numPacked    = lazy->getNumDiffuse();
+        }
 
         SbVec3f dummyNorm(0.0f, 0.0f, 1.0f);
         const SbVec3f * overallNorm = (sendNormals && normals) ? normals : &dummyNorm;
@@ -573,6 +589,20 @@ SoIndexedFaceSet::GLRender(SoGLRenderAction * action)
               }
               vp[6] = 0.0f; vp[7] = 0.0f;
               vp += STRIDE;
+              if (cp) {
+                // material index: use mindices if provided, else cindices
+                int midx = (mindices && mindices != cindices)
+                           ? mindices[ci + k] : cindices[ci + k];
+                if (midx < 0) midx = 0;
+                int cidx2 = (midx < numPacked) ? midx : (numPacked > 0 ? numPacked - 1 : 0);
+                uint32_t packed = (packedColors && numPacked > 0)
+                                  ? packedColors[cidx2] : 0xFFFFFFFFu;
+                cp[0] = static_cast<uint8_t>((packed >> 24) & 0xff); // R
+                cp[1] = static_cast<uint8_t>((packed >> 16) & 0xff); // G
+                cp[2] = static_cast<uint8_t>((packed >>  8) & 0xff); // B
+                cp[3] = static_cast<uint8_t>( packed        & 0xff); // A
+                cp += 4;
+              }
             };
             writeVert(0);
             writeVert(i);
@@ -581,7 +611,7 @@ SoIndexedFaceSet::GLRender(SoGLRenderAction * action)
           ci += n + 1;
         }
 
-        GLuint vao = 0, vbo = 0;
+        GLuint vao = 0, vbo = 0, cvbo = 0;
         glGenVertexArrays(1, &vao);
         glBindVertexArray(vao);
         glGenBuffers(1, &vbo);
@@ -601,13 +631,28 @@ SoIndexedFaceSet::GLRender(SoGLRenderAction * action)
                               (void*)(6 * sizeof(float)));
         glEnableVertexAttribArray(2);
 
-        ms->activatePhong(sendNormals, false, false, false);
+        if (perVertexColor && clrbuf) {
+          glGenBuffers(1, &cvbo);
+          glBindBuffer(GL_ARRAY_BUFFER, cvbo);
+          glBufferData(GL_ARRAY_BUFFER,
+                       (GLsizeiptr)(numTris * 3 * 4 * (int)sizeof(uint8_t)),
+                       clrbuf, GL_STATIC_DRAW);
+          delete[] clrbuf; clrbuf = nullptr;
+          glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, (void*)0);
+          glEnableVertexAttribArray(3);
+        } else {
+          glDisableVertexAttribArray(3);
+        }
+
+        ms->activatePhong(sendNormals, perVertexColor, false, false);
         glDrawArrays(GL_TRIANGLES, 0, numTris * 3);
         ms->deactivate();
 
         glBindVertexArray(0);
         glDeleteVertexArrays(1, &vao);
         glDeleteBuffers(1, &vbo);
+        if (cvbo) glDeleteBuffers(1, &cvbo);
+        delete[] clrbuf;
 
         if (normalCacheUsed) this->readUnlockNormalCache();
         if (convexcacheused)  PRIVATE(this)->readUnlockConvexCache();
