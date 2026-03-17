@@ -699,16 +699,15 @@ static void switchCameraType(bool toPerspective)
     SoCamera* newCam = nullptr;
     if (toPerspective) {
         SoPerspectiveCamera* pcam = new SoPerspectiveCamera;
-        float orthoH = static_cast<SoOrthographicCamera*>(s_nodes.camera)
-                           ->height.getValue();
-        if (focal > 1e-6f)
-            pcam->heightAngle.setValue(2.0f * std::atan(orthoH / (2.0f * focal)));
+        SoOrthographicCamera* ocam = dynamic_cast<SoOrthographicCamera*>(s_nodes.camera);
+        if (ocam && focal > 1e-6f)
+            pcam->heightAngle.setValue(2.0f * std::atan(ocam->height.getValue() / (2.0f * focal)));
         newCam = pcam;
     } else {
         SoOrthographicCamera* ocam = new SoOrthographicCamera;
-        float ha = static_cast<SoPerspectiveCamera*>(s_nodes.camera)
-                       ->heightAngle.getValue();
-        ocam->height.setValue(2.0f * focal * std::tan(ha * 0.5f));
+        SoPerspectiveCamera* pcam = dynamic_cast<SoPerspectiveCamera*>(s_nodes.camera);
+        if (pcam)
+            ocam->height.setValue(2.0f * focal * std::tan(pcam->heightAngle.getValue() * 0.5f));
         newCam = ocam;
     }
 

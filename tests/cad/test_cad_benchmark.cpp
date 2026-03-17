@@ -462,10 +462,93 @@ int main(int argc, char **argv)
     }
 
     // -----------------------------------------------------------------------
+    // 5. Orthographic camera – scene-graph approach
+    // -----------------------------------------------------------------------
+    printf("\n--- Orthographic: scene-graph approach ---\n");
+
+    SoSeparator *sgOrthoRoot = buildSceneGraph(INSTANCES_PER_AXIS);
+    swapToOrthoCamera(sgOrthoRoot);
+
+    SbViewportRegion vpSGO(W, H);
+    SoOffscreenRenderer sgOrthoRenderer(vpSGO);
+    sgOrthoRenderer.setComponents(SoOffscreenRenderer::RGB);
+    sgOrthoRenderer.setBackgroundColor(SbColor(0.0f, 0.0f, 0.0f));
+
+    bool sgOrthoOk = (sgOrthoRenderer.render(sgOrthoRoot) == TRUE);
+    printf("  render: ok=%d\n", (int)sgOrthoOk);
+
+    const unsigned char *sgOrthoBuf = sgOrthoOk ? sgOrthoRenderer.getBuffer() : nullptr;
+    int sgOrthoNonBlack = sgOrthoBuf ? countNonBlack(sgOrthoBuf, W, H) : 0;
+    printf("  non-black pixels: %d / %d  (%.1f%%)\n",
+           sgOrthoNonBlack, W*H, 100.0 * sgOrthoNonBlack / (W*H));
+
+    if (sgOrthoOk && sgOrthoBuf) {
+        char path[1024];
+        snprintf(path, sizeof(path), "%s_sg_ortho.rgb", outprefix);
+        sgOrthoRenderer.writeToRGB(path);
+        printf("  wrote: %s\n", path);
+    }
+
+    // -----------------------------------------------------------------------
+    // 6. Orthographic camera – CAD assembly approach
+    // -----------------------------------------------------------------------
+    printf("\n--- Orthographic: CAD assembly approach ---\n");
+
+    SoSeparator *cadOrthoRoot = buildCADScene(INSTANCES_PER_AXIS);
+    swapToOrthoCamera(cadOrthoRoot);
+
+    SbViewportRegion vpCADO(W, H);
+    SoOffscreenRenderer cadOrthoRenderer(vpCADO);
+    cadOrthoRenderer.setComponents(SoOffscreenRenderer::RGB);
+    cadOrthoRenderer.setBackgroundColor(SbColor(0.0f, 0.0f, 0.0f));
+
+    bool cadOrthoOk = (cadOrthoRenderer.render(cadOrthoRoot) == TRUE);
+    printf("  render: ok=%d\n", (int)cadOrthoOk);
+
+    const unsigned char *cadOrthoBuf = cadOrthoOk ? cadOrthoRenderer.getBuffer() : nullptr;
+    int cadOrthoNonBlack = cadOrthoBuf ? countNonBlack(cadOrthoBuf, W, H) : 0;
+    printf("  non-black pixels: %d / %d  (%.1f%%)\n",
+           cadOrthoNonBlack, W*H, 100.0 * cadOrthoNonBlack / (W*H));
+
+    if (cadOrthoOk && cadOrthoBuf) {
+        char path[1024];
+        snprintf(path, sizeof(path), "%s_cad_ortho.rgb", outprefix);
+        cadOrthoRenderer.writeToRGB(path);
+        printf("  wrote: %s\n", path);
+    }
+
+    // -----------------------------------------------------------------------
+    // 7. Orthographic correctness checks
+    // -----------------------------------------------------------------------
+    printf("\n--- Orthographic checks ---\n");
+
+    if (!sgOrthoOk) {
+        fprintf(stderr, "FAIL: orthographic SG render() returned false\n");
+        allOk = false;
+    }
+    if (!cadOrthoOk) {
+        fprintf(stderr, "FAIL: orthographic CAD render() returned false\n");
+        allOk = false;
+    }
+    if (sgOrthoNonBlack < minNonBlack) {
+        fprintf(stderr, "FAIL: orthographic SG too few non-black pixels "
+                "(%d < %d)\n", sgOrthoNonBlack, minNonBlack);
+        allOk = false;
+    }
+    if (cadOrthoNonBlack < minNonBlack) {
+        fprintf(stderr, "FAIL: orthographic CAD too few non-black pixels "
+                "(%d < %d)\n", cadOrthoNonBlack, minNonBlack);
+        allOk = false;
+    }
+    printf("  orthographic checks: %s\n", allOk ? "ok" : "FAILED");
+
+    // -----------------------------------------------------------------------
     // Cleanup
     // -----------------------------------------------------------------------
     sgRoot->unref();
     cadRoot->unref();
+    sgOrthoRoot->unref();
+    cadOrthoRoot->unref();
 
     printf("\ntest_cad_benchmark: %s\n", allOk ? "PASS" : "FAIL");
     return allOk ? 0 : 1;
