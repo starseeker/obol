@@ -590,7 +590,7 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
       if (nelem->getNum() == 0) {
         { SoGLModernState * modernState = SoGLModernState::forContext(action->getCacheContext());
           if (modernState && modernState->isAvailable()) modernState->activateBaseColor(); }
-        arrays &= SoPrimitiveVertexCache::NORMAL;
+        arrays &= ~SoPrimitiveVertexCache::NORMAL;
       }
       PRIVATE(this)->pvcache->renderLines(state, arrays);
       PRIVATE(this)->pvcache->renderPoints(state, arrays);
@@ -774,7 +774,7 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
       if (nelem->getNum() == 0) {
         { SoGLModernState * modernState = SoGLModernState::forContext(action->getCacheContext());
           if (modernState && modernState->isAvailable()) modernState->activateBaseColor(); }
-        arrays &= SoPrimitiveVertexCache::NORMAL;
+        arrays &= ~SoPrimitiveVertexCache::NORMAL;
       }
       PRIVATE(this)->pvcache->renderLines(state, arrays);
       PRIVATE(this)->pvcache->renderPoints(state, arrays);
