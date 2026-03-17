@@ -232,6 +232,7 @@ public:
     SoSFEnum  pickMode;             ///< Default: PICK_AUTO
     SoSFFloat edgePickTolerancePx;  ///< Screen-space edge pick tolerance (pixels)
     SoSFBool  wireframeOcclusion;   ///< Run depth-only triangle pass in wireframe mode
+    SoSFBool  lodEnabled;           ///< Apply POP LoD to triangle meshes (default: FALSE)
 
     // -----------------------------------------------------------------------
     // Class registration

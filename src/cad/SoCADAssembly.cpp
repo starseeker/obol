@@ -47,6 +47,7 @@
 #include <obol/cad/SoCADDetail.h>
 #include "CadFramePlan.h"
 #include "picking/CadPicking.h"
+#include "lod/TrianglePopLod.h"
 
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoRayPickAction.h>
@@ -103,6 +104,10 @@ struct SoCADAssemblyImpl {
     // Per-part edge BVH cache (lazily built during picking)
     std::unordered_map<obol::PartId, obol::picking::CadPartEdgeBVH,
                        std::hash<obol::PartId>> partEdgeBvhCache_;
+
+    // Per-part LoD structures (built when shaded geometry is supplied via upsertPart)
+    std::unordered_map<obol::PartId, obol::TrianglePopLod,
+                       std::hash<obol::PartId>> partLods_;
 
     // Rebuild instance BVH if dirty
     void rebuildBvhIfNeeded() {
@@ -185,6 +190,7 @@ SoCADAssembly::SoCADAssembly()
 
     SO_NODE_ADD_FIELD(edgePickTolerancePx, (5.0f));
     SO_NODE_ADD_FIELD(wireframeOcclusion,  (FALSE));
+    SO_NODE_ADD_FIELD(lodEnabled,          (FALSE));
 }
 
 SoCADAssembly::~SoCADAssembly() = default;
@@ -208,6 +214,15 @@ SoCADAssembly::upsertPart(obol::PartId pid, const obol::PartGeometry& geom)
     impl_->parts_[pid] = geom;
     // Invalidate edge BVH for this part
     impl_->partEdgeBvhCache_.erase(pid);
+    // Build or replace LoD structure for shaded geometry
+    if (geom.shaded.has_value()) {
+        const auto& mesh = *geom.shaded;
+        obol::TrianglePopLod lod;
+        lod.build(mesh.positions, mesh.indices, mesh.bounds);
+        impl_->partLods_[pid] = std::move(lod);
+    } else {
+        impl_->partLods_.erase(pid);
+    }
     // Recompute world bounds for any instances using this part
     for (auto& [iid, idata] : impl_->instances_) {
         if (idata.partId == pid) {
@@ -223,6 +238,7 @@ SoCADAssembly::removePart(obol::PartId pid)
 {
     impl_->parts_.erase(pid);
     impl_->partEdgeBvhCache_.erase(pid);
+    impl_->partLods_.erase(pid);
     impl_->bvhDirty_ = true;
     if (!impl_->inUpdate_) touch();
 }
@@ -312,13 +328,20 @@ SoCADAssembly::GLRender(SoGLRenderAction* action)
     if (impl_->instances_.empty()) return;
 
     SoState* state = action->getState();
-    (void)state;  // used for future matrix push via modern state
-
     const int dm = drawMode.getValue();
+    const bool useLod = (lodEnabled.getValue() == TRUE);
+
+    // Gather camera/viewport info once if LoD is active
+    SbVec3f camPos(0.0f, 0.0f, 0.0f);
+    float   vpHeight = 1.0f;
+    if (useLod) {
+        SbViewVolume   vv = SoViewVolumeElement::get(state);
+        SbViewportRegion vp = SoViewportRegionElement::get(state);
+        vpHeight = static_cast<float>(vp.getViewportSizePixels()[1]);
+        camPos   = vv.getProjectionPoint();
+    }
 
     // For each instance: draw its part geometry in the current draw mode.
-    // This is a simple per-instance loop (no GPU instancing in this initial
-    // implementation; instancing is noted as a future optimisation).
     for (const auto& [iid, idata] : impl_->instances_) {
         auto geomIt = impl_->parts_.find(idata.partId);
         if (geomIt == impl_->parts_.end()) continue;
@@ -365,27 +388,62 @@ SoCADAssembly::GLRender(SoGLRenderAction* action)
         if (dm == SHADED || dm == SHADED_WITH_EDGES) {
             if (geom.shaded.has_value()) {
                 const auto& mesh = *geom.shaded;
-                const size_t numTris = mesh.indices.size() / 3;
-                glBegin(GL_TRIANGLES);
-                for (size_t t = 0; t < numTris; ++t) {
-                    uint32_t i0 = mesh.indices[3*t];
-                    uint32_t i1 = mesh.indices[3*t+1];
-                    uint32_t i2 = mesh.indices[3*t+2];
-                    if (i0 < mesh.positions.size() &&
-                        i1 < mesh.positions.size() &&
-                        i2 < mesh.positions.size()) {
-                        if (!mesh.normals.empty()) {
-                            if (i0 < mesh.normals.size()) {
-                                const auto& n = mesh.normals[i0];
-                                glNormal3f(n[0], n[1], n[2]);
-                            }
+
+                // Determine which triangles to render (LoD selection)
+                const obol::TrianglePopLod* lodPtr = nullptr;
+                uint8_t lodLevel = obol::TrianglePopLod::kMaxLevel;
+                if (useLod) {
+                    auto lodIt = impl_->partLods_.find(idata.partId);
+                    if (lodIt != impl_->partLods_.end() && lodIt->second.isBuilt()) {
+                        lodPtr = &lodIt->second;
+                        // Compute screen-space projected size of bounding sphere
+                        if (!idata.worldBounds.isEmpty()) {
+                            SbVec3f center = idata.worldBounds.getCenter();
+                            SbVec3f mn, mx;
+                            idata.worldBounds.getBounds(mn, mx);
+                            float radius = ((mx - mn) * 0.5f).length();
+                            float dist = std::max(1e-4f, (camPos - center).length());
+                            // screen pixels covered by the bounding sphere radius
+                            float screenPixels = (radius / dist) * vpHeight;
+                            lodLevel = static_cast<uint8_t>(
+                                std::min(255.0f, std::max(0.0f, screenPixels)));
                         }
-                        const auto& p0 = mesh.positions[i0];
-                        const auto& p1 = mesh.positions[i1];
-                        const auto& p2 = mesh.positions[i2];
-                        glVertex3f(p0[0], p0[1], p0[2]);
-                        glVertex3f(p1[0], p1[1], p1[2]);
-                        glVertex3f(p2[0], p2[1], p2[2]);
+                    }
+                }
+
+                // Render triangles, filtered by LoD when active
+                auto renderTri = [&](uint32_t i0, uint32_t i1, uint32_t i2) {
+                    if (i0 >= mesh.positions.size() ||
+                        i1 >= mesh.positions.size() ||
+                        i2 >= mesh.positions.size()) return;
+                    if (!mesh.normals.empty() && i0 < mesh.normals.size()) {
+                        const auto& n = mesh.normals[i0];
+                        glNormal3f(n[0], n[1], n[2]);
+                    }
+                    const auto& p0 = mesh.positions[i0];
+                    const auto& p1 = mesh.positions[i1];
+                    const auto& p2 = mesh.positions[i2];
+                    glVertex3f(p0[0], p0[1], p0[2]);
+                    glVertex3f(p1[0], p1[1], p1[2]);
+                    glVertex3f(p2[0], p2[1], p2[2]);
+                };
+
+                glBegin(GL_TRIANGLES);
+                if (lodPtr && lodLevel < obol::TrianglePopLod::kMaxLevel) {
+                    // LoD path: render only triangles non-degenerate at this level
+                    std::vector<uint32_t> tris = lodPtr->trianglesAtLevel(lodLevel);
+                    for (uint32_t triIdx : tris) {
+                        renderTri(mesh.indices[3*triIdx],
+                                  mesh.indices[3*triIdx+1],
+                                  mesh.indices[3*triIdx+2]);
+                    }
+                } else {
+                    // Full-detail path
+                    const size_t numTris = mesh.indices.size() / 3;
+                    for (size_t t = 0; t < numTris; ++t) {
+                        renderTri(mesh.indices[3*t],
+                                  mesh.indices[3*t+1],
+                                  mesh.indices[3*t+2]);
                     }
                 }
                 glEnd();
