@@ -28,10 +28,14 @@
  *
  * Test scales (INSTANCES_PER_AXIS^3)
  * -----------------------------------
- * Small  (4^3  =  64 instances):  correctness + similarity check (SG≈CAD)
- * Medium (6^3  = 216 instances):  performance comparison all three approaches
- * Large  (8^3  = 512 instances):  CAD-only; SG is not attempted to stay within
- *                                 CI time budget
+ * Small   (4^3   =      64 instances):  correctness + similarity check (SG≈CAD)
+ * Medium  (6^3   =     216 instances):  performance comparison all three approaches
+ * Large   (8^3   =     512 instances):  CAD-only; SG is not attempted to stay within
+ *                                       CI time budget
+ * XLarge  (10^3  =   1,000 instances):  CAD+LoD rendered, no-LoD rendered, SG omitted
+ * Huge    (22^3  =  10,648 instances):  CAD+LoD rendered, no-LoD build only
+ * Giant   (46^3  =  97,336 instances):  CAD+LoD rendered, no-LoD build only
+ * Million (100^3 = 1,000,000 instances): build time only, no render
  *
  * Pass/fail criteria
  * ------------------
@@ -45,6 +49,7 @@
  * Usage: test_cad_mesh_lod_benchmark [outprefix]
  *   Writes <outprefix>_small_sg.rgb, <outprefix>_small_cad.rgb,
  *          <outprefix>_medium_cad_lod.rgb
+ *   (Giant and Million scales are build-time only; no image output.)
  * Returns 0 on pass, non-zero on failure.
  */
 
@@ -782,6 +787,169 @@ int main(int argc, char **argv)
                    "rasterisation difference acceptable\n",
                    cadLodRes.nonBlack, cadRes.nonBlack);
         }
+
+        cadRoot->unref();
+        cadLodRoot->unref();
+    }
+
+    // -----------------------------------------------------------------------
+    // XLARGE SCALE: 10^3 = 1,000 instances — CAD only, LoD render included
+    // -----------------------------------------------------------------------
+    {
+        const int XLARGE = 10;
+        const int nInst  = XLARGE * XLARGE * XLARGE;
+        printf("=== XLARGE scale: %d instances (grid %dx%dx%d, %zu tris each) ===\n",
+               nInst, XLARGE, XLARGE, XLARGE, trisPerPart);
+        printf("    total triangles (full detail): %zu\n",
+               (size_t)nInst * trisPerPart);
+        printf("    (SG not attempted)\n\n");
+
+        // CAD no LoD
+        auto t0 = Clock::now();
+        SoSeparator *cadRoot = buildCADScene(mesh, XLARGE, /*lod=*/false);
+        double cadBuildMs = Ms(Clock::now() - t0).count();
+        printf("--- CAD (no LoD) ---\n");
+        printf("  build: %.1f ms\n", cadBuildMs);
+        BenchResult cadRes = runBench(cadRoot, "render", nullptr);
+
+        // CAD with LoD
+        t0 = Clock::now();
+        SoSeparator *cadLodRoot = buildCADScene(mesh, XLARGE, /*lod=*/true);
+        double cadLodBuildMs = Ms(Clock::now() - t0).count();
+        printf("--- CAD (with LoD) ---\n");
+        printf("  build: %.1f ms\n", cadLodBuildMs);
+        BenchResult cadLodRes = runBench(cadLodRoot, "render", nullptr);
+
+        printf("\n--- XLarge summary ---\n");
+        printf("  CAD      total: %.1f ms  (build=%.1f  render=%.1f)\n",
+               cadBuildMs + cadRes.renderMs, cadBuildMs, cadRes.renderMs);
+        printf("  CAD+LoD  total: %.1f ms  (build=%.1f  render=%.1f)\n\n",
+               cadLodBuildMs + cadLodRes.renderMs, cadLodBuildMs, cadLodRes.renderMs);
+
+        if (!cadRes.renderOk) {
+            fprintf(stderr, "FAIL [xlarge]: CAD render failed\n");
+            allOk = false;
+        }
+        if (!cadLodRes.renderOk) {
+            fprintf(stderr, "FAIL [xlarge]: CAD+LoD render failed\n");
+            allOk = false;
+        }
+
+        cadRoot->unref();
+        cadLodRoot->unref();
+    }
+
+    // -----------------------------------------------------------------------
+    // HUGE SCALE: 22^3 = 10,648 instances — CAD+LoD render, no-LoD build only
+    // -----------------------------------------------------------------------
+    {
+        const int HUGE  = 22;
+        const int nInst = HUGE * HUGE * HUGE;
+        printf("=== HUGE scale: %d instances (grid %dx%dx%d, %zu tris each) ===\n",
+               nInst, HUGE, HUGE, HUGE, trisPerPart);
+        printf("    total triangles (full detail): %zu\n",
+               (size_t)nInst * trisPerPart);
+        printf("    (SG not attempted; no-LoD render skipped at this scale)\n\n");
+
+        // CAD no LoD — build only, skip render to stay within CI time budget
+        auto t0 = Clock::now();
+        SoSeparator *cadRoot = buildCADScene(mesh, HUGE, /*lod=*/false);
+        double cadBuildMs = Ms(Clock::now() - t0).count();
+        printf("--- CAD (no LoD, build only) ---\n");
+        printf("  build: %.1f ms\n\n", cadBuildMs);
+
+        // CAD with LoD — render to exercise LoD path
+        t0 = Clock::now();
+        SoSeparator *cadLodRoot = buildCADScene(mesh, HUGE, /*lod=*/true);
+        double cadLodBuildMs = Ms(Clock::now() - t0).count();
+        printf("--- CAD (with LoD) ---\n");
+        printf("  build: %.1f ms\n", cadLodBuildMs);
+        BenchResult cadLodRes = runBench(cadLodRoot, "render", nullptr);
+
+        printf("\n--- Huge summary ---\n");
+        printf("  CAD      build: %.1f ms\n", cadBuildMs);
+        printf("  CAD+LoD  total: %.1f ms  (build=%.1f  render=%.1f)\n\n",
+               cadLodBuildMs + cadLodRes.renderMs, cadLodBuildMs, cadLodRes.renderMs);
+
+        if (!cadLodRes.renderOk) {
+            fprintf(stderr, "FAIL [huge]: CAD+LoD render failed\n");
+            allOk = false;
+        }
+
+        cadRoot->unref();
+        cadLodRoot->unref();
+    }
+
+    // -----------------------------------------------------------------------
+    // GIANT SCALE: 46^3 = 97,336 instances — CAD+LoD render, no-LoD build only
+    // -----------------------------------------------------------------------
+    {
+        const int GIANT = 46;
+        const int nInst = GIANT * GIANT * GIANT;
+        printf("=== GIANT scale: %d instances (grid %dx%dx%d, %zu tris each) ===\n",
+               nInst, GIANT, GIANT, GIANT, trisPerPart);
+        printf("    total triangles (full detail): %zu\n",
+               (size_t)nInst * trisPerPart);
+        printf("    (SG not attempted; no-LoD render skipped)\n\n");
+
+        // CAD no LoD — build only
+        auto t0 = Clock::now();
+        SoSeparator *cadRoot = buildCADScene(mesh, GIANT, /*lod=*/false);
+        double cadBuildMs = Ms(Clock::now() - t0).count();
+        printf("--- CAD (no LoD, build only) ---\n");
+        printf("  build: %.1f ms\n\n", cadBuildMs);
+
+        // CAD with LoD — render to exercise LoD path at scale
+        t0 = Clock::now();
+        SoSeparator *cadLodRoot = buildCADScene(mesh, GIANT, /*lod=*/true);
+        double cadLodBuildMs = Ms(Clock::now() - t0).count();
+        printf("--- CAD (with LoD) ---\n");
+        printf("  build: %.1f ms\n", cadLodBuildMs);
+        BenchResult cadLodRes = runBench(cadLodRoot, "render", nullptr);
+
+        printf("\n--- Giant summary ---\n");
+        printf("  CAD      build: %.1f ms\n", cadBuildMs);
+        printf("  CAD+LoD  total: %.1f ms  (build=%.1f  render=%.1f)\n\n",
+               cadLodBuildMs + cadLodRes.renderMs, cadLodBuildMs, cadLodRes.renderMs);
+
+        if (!cadLodRes.renderOk) {
+            fprintf(stderr, "FAIL [giant]: CAD+LoD render failed\n");
+            allOk = false;
+        }
+
+        cadRoot->unref();
+        cadLodRoot->unref();
+    }
+
+    // -----------------------------------------------------------------------
+    // MILLION SCALE: 100^3 = 1,000,000 instances — build time only (no render)
+    // -----------------------------------------------------------------------
+    {
+        const int MILLION = 100;
+        const int nInst   = MILLION * MILLION * MILLION;
+        printf("=== MILLION scale: %d instances (grid %dx%dx%d, %zu tris each) ===\n",
+               nInst, MILLION, MILLION, MILLION, trisPerPart);
+        printf("    total triangles (full detail): %zu\n",
+               (size_t)nInst * trisPerPart);
+        printf("    (build time only — render skipped at this scale)\n\n");
+
+        // CAD no LoD — build only
+        auto t0 = Clock::now();
+        SoSeparator *cadRoot = buildCADScene(mesh, MILLION, /*lod=*/false);
+        double cadBuildMs = Ms(Clock::now() - t0).count();
+        printf("--- CAD (no LoD, build only) ---\n");
+        printf("  build: %.1f ms\n\n", cadBuildMs);
+
+        // CAD with LoD — build only
+        t0 = Clock::now();
+        SoSeparator *cadLodRoot = buildCADScene(mesh, MILLION, /*lod=*/true);
+        double cadLodBuildMs = Ms(Clock::now() - t0).count();
+        printf("--- CAD (with LoD, build only) ---\n");
+        printf("  build: %.1f ms\n\n", cadLodBuildMs);
+
+        printf("--- Million summary ---\n");
+        printf("  CAD      build: %.1f ms\n", cadBuildMs);
+        printf("  CAD+LoD  build: %.1f ms\n\n", cadLodBuildMs);
 
         cadRoot->unref();
         cadLodRoot->unref();
