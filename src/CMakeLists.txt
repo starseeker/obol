@@ -323,6 +323,12 @@ else()
           COMPONENT development 
           FILES_MATCHING PATTERN "*.h")
 
+  # Install obol-specific public headers (e.g. SoCAD* interfaces)
+  install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/obol/
+          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/obol
+          COMPONENT development
+          FILES_MATCHING PATTERN "*.h")
+
 
 # ############################################################################
 # Install target
