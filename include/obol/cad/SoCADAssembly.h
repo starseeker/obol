@@ -310,6 +310,12 @@ public:
     /** Number of parts currently in the part library. */
     size_t partCount() const;
 
+    /**
+     * Return the geometry for @p pid, or nullptr if not in the part library.
+     * Used by the GPU renderer to upload per-part VBOs.
+     */
+    const obol::PartGeometry* partGeometry(obol::PartId pid) const;
+
 protected:
     ~SoCADAssembly() override;
 
