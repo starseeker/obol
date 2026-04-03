@@ -332,36 +332,21 @@ void CadRendererGL::deleteShaders(const SoGLContext* glue)
 
 bool CadRendererGL::ensureReady(const SoGLContext* glue)
 {
-    if (!glue) {
-        std::fprintf(stderr, "CadRendererGL: glue is null\n");
-        return false;
-    }
+    if (!glue) return false;
 
     if (!capsDetected_) {
         caps_ = CadGLCaps::detect(glue);
         capsDetected_ = true;
-        std::fprintf(stderr,
-            "CadRendererGL: caps detected: hasVBO=%d hasShaders=%d hasVAO=%d\n",
-            (int)caps_.hasVBO, (int)caps_.hasShaderObjects, (int)caps_.hasVAO);
     }
-    if (!caps_.canUseVbo()) {
-        std::fprintf(stderr, "CadRendererGL: canUseVbo() false – cannot render\n");
-        return false;
-    }
-
-    // (Re-)compile shaders if context changed
-    if (shaders_.wire == 0 || shadersContextId_ != glue->contextid) {
+    // Always compile shaders when shader objects are available; they are used
+    // by renderVboLoop / renderInstanced.  If hasGLSLDraw is false the render()
+    // dispatch falls through to renderImmediateMode instead.
+    if (caps_.hasShaderObjects &&
+            (shaders_.wire == 0 || shadersContextId_ != glue->contextid)) {
         deleteShaders(glue);
         shadersContextId_ = glue->contextid;
-        if (!compileAllShaders(glue)) {
-            std::fprintf(stderr, "CadRendererGL: shader compilation failed\n");
-            return false;
-        }
-        std::fprintf(stderr,
-            "CadRendererGL: shaders compiled OK (wire=%u shaded=%u wireInst=%u shadedInst=%u)\n",
-            shaders_.wire, shaders_.shaded, shaders_.wireInst, shaders_.shadedInst);
+        compileAllShaders(glue);
     }
-
     return true;
 }
 
@@ -456,14 +441,12 @@ void CadRendererGL::render(
         ensurePartUploaded(repKey.part, assembly, gen, glue);
     }
 
-    std::fprintf(stderr,
-        "CadRendererGL::render: vis=%zu wire=%zu shaded=%zu\n",
-        plan.visibleInstances.size(), plan.wireItems.size(), plan.shadedItems.size());
-
     if (caps_.canUseInstanced() && shaders_.wireInst && shaders_.shadedInst) {
         renderInstanced(plan, assembly, glue, viewProj, partGenMap);
-    } else {
+    } else if (caps_.canUseVbo() && shaders_.wire) {
         renderVboLoop(plan, assembly, glue, viewProj, partGenMap);
+    } else {
+        renderImmediateMode(plan, assembly, glue, viewProj, partGenMap);
     }
 }
 
@@ -476,11 +459,7 @@ void CadRendererGL::render(
 static void bindAndDrawWire(const CadWireGpu* w, const SoGLContext* glue,
                              GLint locPos)
 {
-    if (!w || w->segCount == 0) {
-        std::fprintf(stderr, "bindAndDrawWire: skip (w=%p segCount=%d)\n",
-                     (void*)w, w ? (int)w->segCount : -1);
-        return;
-    }
+    if (!w || w->segCount == 0) return;
 
     if (w->vao && glue->glBindVertexArray) {
         glue->glBindVertexArray(w->vao);
@@ -567,116 +546,10 @@ void CadRendererGL::renderVboLoop(
     // exactly the GL column-vector convention.  (Same as SoGLSLShaderParameter.)
     const float* vpData = viewProj[0];
 
-    // Debug: full viewProj matrix and GL state
-    {
-        std::fprintf(stderr,
-            "CadRendererGL: viewProj=\n"
-            "  [%.3f %.3f %.3f %.3f]\n  [%.3f %.3f %.3f %.3f]\n"
-            "  [%.3f %.3f %.3f %.3f]\n  [%.3f %.3f %.3f %.3f]\n",
-            vpData[0],vpData[1],vpData[2],vpData[3],
-            vpData[4],vpData[5],vpData[6],vpData[7],
-            vpData[8],vpData[9],vpData[10],vpData[11],
-            vpData[12],vpData[13],vpData[14],vpData[15]);
-        GLint viewport[4] = {};
-        glGetIntegerv(GL_VIEWPORT, viewport);
-        GLboolean dtest   = glIsEnabled(GL_DEPTH_TEST);
-        GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
-        std::fprintf(stderr,
-            "CadRendererGL: viewport=[%d,%d,%d,%d] depthTest=%d scissor=%d\n",
-            viewport[0],viewport[1],viewport[2],viewport[3],
-            (int)dtest, (int)scissor);
-    }
-
     // a_pos=0, a_norm=1 are pinned via glBindAttribLocationARB before linking
     const GLint locPos  = 0;
     const GLint locNorm = 1;
 
-    // ---- DIAGNOSTIC: draw a full-screen NDC triangle to verify GL path ----
-    {
-        // First: test raw clear
-        glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        unsigned char pxClear[4] = {};
-        glReadPixels(256, 256, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pxClear);
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        std::fprintf(stderr,
-            "CadRendererGL: clear-to-red readPixels=[%u,%u,%u,%u]\n",
-            pxClear[0], pxClear[1], pxClear[2], pxClear[3]);
-        // Print function pointer state
-        std::fprintf(stderr,
-            "CadRendererGL: fn ptrs: useProg=%p vaptr=%p envatr=%p drawElem=%p genBuf=%p bindAttr=%p\n",
-            (void*)(uintptr_t)glue->glUseProgramObjectARB,
-            (void*)(uintptr_t)glue->glVertexAttribPointerARB,
-            (void*)(uintptr_t)glue->glEnableVertexAttribArrayARB,
-            (void*)(uintptr_t)glue->glDrawElements,
-            (void*)(uintptr_t)glue->glGenBuffers,
-            (void*)(uintptr_t)glue->glBindAttribLocationARB);
-
-        static const float ndcTri[9] = {
-            -0.9f, -0.9f, 0.0f,
-             0.9f, -0.9f, 0.0f,
-             0.0f,  0.9f, 0.0f,
-        };
-        static const GLuint ndcIdx[3] = { 0, 1, 2 };
-        static const float identity16[16] = {
-            1,0,0,0,  0,1,0,0,  0,0,1,0,  0,0,0,1
-        };
-        static const float red[4] = { 1.0f, 0.0f, 0.0f, 1.0f };
-
-        // Upload temporary VBOs
-        GLuint tmpVBuf = 0, tmpIBuf = 0;
-        glue->glGenBuffers(1, &tmpVBuf);
-        glue->glBindBuffer(GL_ARRAY_BUFFER, tmpVBuf);
-        glue->glBufferData(GL_ARRAY_BUFFER, sizeof(ndcTri), ndcTri, GL_STATIC_DRAW);
-        glue->glGenBuffers(1, &tmpIBuf);
-        glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, tmpIBuf);
-        glue->glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(ndcIdx), ndcIdx, GL_STATIC_DRAW);
-
-        glue->glUseProgramObjectARB(shaders_.wire);
-        GLint dlocVP    = glue->glGetUniformLocationARB(shaders_.wire, "u_viewProj");
-        GLint dlocModel = glue->glGetUniformLocationARB(shaders_.wire, "u_model");
-        GLint dlocColor = glue->glGetUniformLocationARB(shaders_.wire, "u_color");
-        GLint dlocAPos  = glue->glGetAttribLocationARB(shaders_.wire, "a_pos");
-        std::fprintf(stderr,
-            "CadRendererGL: NDC-tri prog=%u locs: VP=%d model=%d color=%d a_pos=%d\n",
-            shaders_.wire, dlocVP, dlocModel, dlocColor, dlocAPos);
-        glue->glUniformMatrix4fvARB(dlocVP,    1, GL_FALSE, identity16);
-        glue->glUniformMatrix4fvARB(dlocModel, 1, GL_FALSE, identity16);
-        glue->glUniform4fvARB(dlocColor, 1, red);
-
-        glue->glVertexAttribPointerARB(static_cast<GLuint>(dlocAPos < 0 ? 0 : dlocAPos),
-                                       3, GL_FLOAT, GL_FALSE, 3*sizeof(float), nullptr);
-        glue->glEnableVertexAttribArrayARB(static_cast<GLuint>(dlocAPos < 0 ? 0 : dlocAPos));
-        glue->glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, nullptr);
-        GLenum err = glGetError();
-        glue->glDisableVertexAttribArrayARB(static_cast<GLuint>(dlocAPos < 0 ? 0 : dlocAPos));
-        glue->glBindBuffer(GL_ARRAY_BUFFER, 0);
-        glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-        glue->glUseProgramObjectARB(0);
-
-        // Also try immediate-mode to confirm framebuffer writes work at all
-        glMatrixMode(GL_PROJECTION); glLoadIdentity();
-        glMatrixMode(GL_MODELVIEW);  glLoadIdentity();
-        glDisable(GL_DEPTH_TEST);
-        glBegin(GL_TRIANGLES);
-        glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
-        glVertex3f(-0.5f, -0.5f, 0.0f);
-        glVertex3f( 0.5f, -0.5f, 0.0f);
-        glVertex3f( 0.0f,  0.5f, 0.0f);
-        glEnd();
-        glEnable(GL_DEPTH_TEST);
-
-        glue->glDeleteBuffers(1, &tmpVBuf);
-        glue->glDeleteBuffers(1, &tmpIBuf);
-
-        unsigned char px[4] = {};
-        glReadPixels(256, 256, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
-        std::fprintf(stderr,
-            "CadRendererGL: NDC-triangle test: drawErr=0x%x center=[%u,%u,%u,%u]\n",
-            err, px[0], px[1], px[2], px[3]);
-    }
-    // ---- END DIAGNOSTIC ----
 
     // --- Wire pass ---
     if (!plan.wireItems.empty()) {
@@ -694,12 +567,6 @@ void CadRendererGL::renderVboLoop(
 
             for (uint32_t i = 0; i < item.instanceCount; ++i) {
                 const auto& inst = plan.visibleInstances[item.baseInstance + i];
-                if (i == 0) {
-                    const float* t = inst.transform.data();
-                    std::fprintf(stderr,
-                        "CadRendererGL: wire inst[0] model=[%.2f %.2f %.2f %.2f | %.2f %.2f %.2f %.2f | ...]\n",
-                        t[0],t[1],t[2],t[3], t[4],t[5],t[6],t[7]);
-                }
                 glue->glUniformMatrix4fvARB(locModel, 1, GL_FALSE,
                                             inst.transform.data());
                 float rgba[4] = {
@@ -712,16 +579,6 @@ void CadRendererGL::renderVboLoop(
         }
 
         glue->glUseProgramObjectARB(0);
-    }
-
-    // Debug readback after wire pass
-    {
-        unsigned char pixel[4] = {};
-        glReadPixels(256, 256, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
-        GLenum rderr = glGetError();
-        std::fprintf(stderr,
-            "CadRendererGL: post-wire readPixels(256,256)=[%u,%u,%u,%u] err=0x%x\n",
-            pixel[0], pixel[1], pixel[2], pixel[3], rderr);
     }
 
     // --- Shaded pass ---
@@ -741,7 +598,7 @@ void CadRendererGL::renderVboLoop(
             const CadTriGpu* t = gpuRes_.triFor(item.rep.part);
             if (!t) continue;
 
-            const bool hasNorm = (t->normBuf != 0);
+            bool hasNorm = (t->normBuf != 0);
             glue->glUniform1iARB(locHasNorm, hasNorm ? 1 : 0);
 
             for (uint32_t i = 0; i < item.instanceCount; ++i) {
@@ -754,13 +611,117 @@ void CadRendererGL::renderVboLoop(
                 };
                 glue->glUniform4fvARB(locColor, 1, rgba);
 
-                bool unused = hasNorm;
-                bindAndDrawTri(t, glue, locPos, locNorm, unused);
+                bindAndDrawTri(t, glue, locPos, locNorm, hasNorm);
             }
         }
 
         glue->glUseProgramObjectARB(0);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Tier-0: immediate-mode fallback (GL 1.1, Mesa 7.x swrast)
+// ---------------------------------------------------------------------------
+
+void CadRendererGL::renderImmediateMode(
+        const CadFramePlan& plan,
+        const SoCADAssembly& assembly,
+        const SoGLContext*   /*glue*/,
+        const SbMatrix&      viewProj,
+        const std::unordered_map<PartId, uint64_t,
+                                 std::hash<PartId>>& /*partGenMap*/)
+{
+    // Push GL matrix state, set up the view-projection matrix in MODELVIEW
+    // (the fixed-function pipeline applies MODELVIEW * PROJECTION to each vertex).
+    // We fold the per-instance transform into MODELVIEW = viewProj * model.
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();  // Identity projection – we bake VP into MODELVIEW
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+
+    // Disable lighting so glColor4f controls the final colour
+    GLboolean wasLighting = glIsEnabled(GL_LIGHTING);
+    glDisable(GL_LIGHTING);
+
+    // --- Wire pass ---
+    for (const auto& item : plan.wireItems) {
+        const obol::PartGeometry* geom = assembly.partGeometry(item.rep.part);
+        if (!geom || !geom->wire.has_value()) continue;
+        const obol::WireRep& wire = *geom->wire;
+
+        for (uint32_t ii = 0; ii < item.instanceCount; ++ii) {
+            const auto& inst = plan.visibleInstances[item.baseInstance + ii];
+
+            // Build the combined VP * M matrix in OI convention,
+            // then load it as the GL MODELVIEW.
+            // OI row-major → glLoadMatrixf reads as column-major → gives transpose
+            // which is exactly what the fixed-function pipeline needs.
+            SbMatrix model;
+            // inst.transform is a flat float[16] copy of OI localToRoot
+            model.setValue(inst.transform.data());
+            SbMatrix mvp = model;
+            mvp.multRight(viewProj);
+            glLoadMatrixf(mvp[0]); // OI[0] = start of float[4][4]; GL reads column-major
+
+            glColor4ub(inst.rgba[0], inst.rgba[1], inst.rgba[2], inst.rgba[3]);
+
+            for (const auto& poly : wire.polylines) {
+                if (poly.points.size() < 2) continue;
+                glBegin(GL_LINE_STRIP);
+                for (const auto& pt : poly.points) {
+                    glVertex3f(pt[0], pt[1], pt[2]);
+                }
+                glEnd();
+            }
+        }
+    }
+
+    // --- Shaded pass ---
+    if (wasLighting) glEnable(GL_LIGHTING);
+    // Simple Phong-like: enable lighting for shaded items if lighting was on,
+    // else just draw with flat colour.
+    for (const auto& item : plan.shadedItems) {
+        const obol::PartGeometry* geom = assembly.partGeometry(item.rep.part);
+        if (!geom || !geom->shaded.has_value()) continue;
+        const obol::TriMesh& mesh = *geom->shaded;
+
+        const bool hasNorm = !mesh.normals.empty();
+
+        for (uint32_t ii = 0; ii < item.instanceCount; ++ii) {
+            const auto& inst = plan.visibleInstances[item.baseInstance + ii];
+
+            SbMatrix model;
+            model.setValue(inst.transform.data());
+            SbMatrix mvp = model;
+            mvp.multRight(viewProj);
+            glLoadMatrixf(mvp[0]);
+
+            glColor4ub(inst.rgba[0], inst.rgba[1], inst.rgba[2], inst.rgba[3]);
+
+            glBegin(GL_TRIANGLES);
+            for (size_t t = 0; t + 2 < mesh.indices.size(); t += 3) {
+                for (int k = 0; k < 3; ++k) {
+                    uint32_t idx = mesh.indices[t + k];
+                    if (hasNorm && idx < mesh.normals.size()) {
+                        const auto& n = mesh.normals[idx];
+                        glNormal3f(n[0], n[1], n[2]);
+                    }
+                    const auto& p = mesh.positions[idx];
+                    glVertex3f(p[0], p[1], p[2]);
+                }
+            }
+            glEnd();
+        }
+    }
+
+    // Restore matrix state
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
 }
 
 // ---------------------------------------------------------------------------
@@ -801,11 +762,10 @@ void CadRendererGL::renderInstanced(
     auto bindInstAttribs = [&](GLuint prog) {
         glue->glBindBuffer(GL_ARRAY_BUFFER, instVbo);
 
-        // a_instTransform occupies 4 consecutive attribute locations
+        // a_instTransform occupies 4 consecutive attribute locations.
+        // We use fixed layout (kInstTransformLoc..kInstTransformLoc+3) and
+        // verify via glGetAttribLocationARB only for the first column.
         for (GLuint col = 0; col < 4; ++col) {
-            GLint loc = glue->glGetAttribLocationARB(prog,
-                col == 0 ? "a_instTransform" : nullptr);
-            // If the name lookup works only for column 0, use fixed layout
             GLuint aloc = kInstTransformLoc + col;
             const GLvoid* off = reinterpret_cast<const GLvoid*>(
                 offsetof(InstVertex, transform) + col * 4 * sizeof(float));
@@ -813,7 +773,6 @@ void CadRendererGL::renderInstanced(
                                            instStride, off);
             glue->glEnableVertexAttribArrayARB(aloc);
             glue->glVertexAttribDivisor(aloc, 1);
-            (void)loc;
         }
 
         // a_instColor

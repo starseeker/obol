@@ -33,6 +33,8 @@
 #include "CadGLCaps.h"
 #include "glue/glp.h"
 
+#include <Inventor/system/gl.h>
+
 namespace obol {
 namespace internal {
 
@@ -71,6 +73,96 @@ CadGLCaps CadGLCaps::detect(const SoGLContext * glue)
     caps.hasInstancing = (glue->glDrawElementsInstanced != nullptr);
 
     caps.hasAttribDivisor = (glue->glVertexAttribDivisor != nullptr);
+
+    // Probe whether GLSL vertex shaders actually execute during glDrawElements.
+    // Some software renderers (Mesa 7.x swrast) report ARB_shader_objects but
+    // silently produce no output when drawing with a GLSL program + VBO.
+    // We compile a minimal GLSL 1.10 program, draw a full-screen triangle,
+    // read back the center pixel, and check if it changed.
+    if (caps.hasVBO && caps.hasShaderObjects) {
+        static const char * kProbeVS =
+            "attribute vec3 a_pos;\n"
+            "void main() { gl_Position = vec4(a_pos, 1.0); }\n";
+        static const char * kProbeFS =
+            "void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }\n";
+
+        // Compile probe shaders
+        GLhandleARB vs = glue->glCreateShaderObjectARB(GL_VERTEX_SHADER_ARB);
+        GLhandleARB fs = glue->glCreateShaderObjectARB(GL_FRAGMENT_SHADER_ARB);
+        GLhandleARB prog = 0;
+        bool probeOk = false;
+
+        auto compOk = [&](GLhandleARB sh, const char* src) -> bool {
+            glue->glShaderSourceARB(sh, 1, (const OBOL_GLchar**)&src, nullptr);
+            glue->glCompileShaderARB(sh);
+            GLint ok = 0;
+            glue->glGetObjectParameterivARB(sh, GL_OBJECT_COMPILE_STATUS_ARB, &ok);
+            return ok != 0;
+        };
+
+        if (vs && fs && compOk(vs, kProbeVS) && compOk(fs, kProbeFS)) {
+            prog = glue->glCreateProgramObjectARB();
+            if (prog) {
+                glue->glAttachObjectARB(prog, vs);
+                glue->glAttachObjectARB(prog, fs);
+                if (glue->glBindAttribLocationARB) {
+                    glue->glBindAttribLocationARB(prog, 0,
+                        reinterpret_cast<OBOL_GLchar*>(const_cast<char*>("a_pos")));
+                }
+                glue->glLinkProgramARB(prog);
+                GLint linked = 0;
+                glue->glGetObjectParameterivARB(prog, GL_OBJECT_LINK_STATUS_ARB, &linked);
+
+                if (linked) {
+                    // Upload triangle in NDC space
+                    static const float kTri[9] = {
+                        -0.9f, -0.9f, 0.0f,
+                         0.9f, -0.9f, 0.0f,
+                         0.0f,  0.9f, 0.0f
+                    };
+                    static const GLuint kIdx[3] = { 0, 1, 2 };
+
+                    GLuint vbo = 0, ibo = 0;
+                    glue->glGenBuffers(1, &vbo);
+                    glue->glGenBuffers(1, &ibo);
+                    glue->glBindBuffer(GL_ARRAY_BUFFER, vbo);
+                    glue->glBufferData(GL_ARRAY_BUFFER, sizeof(kTri), kTri, GL_STATIC_DRAW);
+                    glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
+                    glue->glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(kIdx), kIdx, GL_STATIC_DRAW);
+
+                    // Save pixel at center, draw, read back
+                    unsigned char before[4] = {}, after[4] = {};
+                    glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, before);
+
+                    glue->glUseProgramObjectARB(prog);
+                    glue->glVertexAttribPointerARB(0, 3, GL_FLOAT, GL_FALSE,
+                                                   3 * sizeof(float), nullptr);
+                    glue->glEnableVertexAttribArrayARB(0);
+                    glue->glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, nullptr);
+                    glue->glDisableVertexAttribArrayARB(0);
+                    glue->glUseProgramObjectARB(0);
+
+                    glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, after);
+
+                    // Restore pixel by clearing (caller owns the framebuffer state)
+                    glue->glBindBuffer(GL_ARRAY_BUFFER, 0);
+                    glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+                    glue->glDeleteBuffers(1, &vbo);
+                    glue->glDeleteBuffers(1, &ibo);
+
+                    // The red channel of the probe triangle is 1.0.  If the pixel
+                    // changed to non-zero red, GLSL+VBO rendering works.
+                    probeOk = (after[0] > 0);
+                }
+            }
+        }
+
+        if (vs)   glue->glDeleteObjectARB(vs);
+        if (fs)   glue->glDeleteObjectARB(fs);
+        if (prog) glue->glDeleteObjectARB(prog);
+
+        caps.hasGLSLDraw = probeOk;
+    }
 
     return caps;
 }

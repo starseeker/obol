@@ -156,6 +156,20 @@ private:
                        const std::unordered_map<PartId, uint64_t,
                                                 std::hash<PartId>>& partGenMap);
 
+    /**
+     * Tier-0 fallback: fixed-function immediate-mode rendering via
+     * glBegin/glEnd/glVertex3f.  Used when the GLSL+VBO path isn't
+     * functional (e.g. Mesa 7.x swrast where GLSL doesn't execute during
+     * glDrawElements).  Supports wire (GL_LINES) and shaded (GL_TRIANGLES)
+     * geometry.
+     */
+    void renderImmediateMode(const CadFramePlan& plan,
+                             const SoCADAssembly& assembly,
+                             const SoGLContext*   glue,
+                             const SbMatrix&      viewProj,
+                             const std::unordered_map<PartId, uint64_t,
+                                                       std::hash<PartId>>& partGenMap);
+
     void drawWireVboLoop(const CadFramePlan& plan,
                          const SoGLContext* glue,
                          GLint locMVP, GLint locColor);

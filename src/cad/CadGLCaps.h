@@ -66,15 +66,25 @@ struct CadGLCaps {
     bool hasInstancing    = false;
     /** glVertexAttribDivisor available (GL 3.3 / ARB_instanced_arrays). */
     bool hasAttribDivisor = false;
+    /**
+     * True when GLSL vertex shaders actually execute during glDrawElements.
+     * Some older software renderers (e.g. Mesa 7.x swrast) report
+     * ARB_shader_objects as available but silently produce no output when
+     * glDrawElements is called with a GLSL program active.  detect() draws
+     * a test triangle into a tiny scratch framebuffer and reads back a pixel
+     * to confirm the path works end-to-end.
+     */
+    bool hasGLSLDraw      = false;
 
     /** True if the minimum requirements for Tier-2 instanced rendering are met. */
     bool canUseInstanced() const {
-        return hasVBO && hasShaderObjects && hasVAO && hasInstancing && hasAttribDivisor;
+        return hasVBO && hasShaderObjects && hasGLSLDraw
+            && hasVAO && hasInstancing && hasAttribDivisor;
     }
 
     /** True if the minimum requirements for Tier-1 VBO-loop rendering are met. */
     bool canUseVbo() const {
-        return hasVBO && hasShaderObjects;
+        return hasVBO && hasShaderObjects && hasGLSLDraw;
     }
 
     /** Detect capabilities from the given GL context. */
