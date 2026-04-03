@@ -386,3 +386,41 @@ geometry and light extraction, then issues Vulkan draw calls for rasterization.
 | Hardware acceleration | ✗ | ✓ (GPU Vulkan) | ✗ | ✓ |
 
 Legend: ✓ = supported, ✗ = not supported, ~ = partial / planned
+
+---
+
+## OSMesa Upstream Bug Fixes
+
+The following Mesa 7.0.4 bugs are fixed in `external/osmesa` and should be
+sent upstream to the [starseeker/osmesa](https://github.com/starseeker/osmesa)
+repository:
+
+### 1. GLSL draw calls silently rejected (`src/main/api_validate.c`)
+
+`_mesa_validate_DrawElements` and `_mesa_validate_DrawRangeElements` checked
+`ctx->VertexProgram._Enabled`, which is only `true` when the application
+explicitly calls `glEnable(GL_VERTEX_PROGRAM_ARB)`.  GLSL programs activated
+via `glUseProgramObjectARB` set `ctx->VertexProgram._Current` but do *not* set
+`_Enabled`.  As a result, every GLSL + VBO draw call was silently rejected
+(returned `GL_FALSE` with no GL error).
+
+**Fix:** test `ctx->VertexProgram._Current != NULL`, which is set for both ARB
+vertex programs and GLSL shader programs.
+
+### 2. Perspective-incorrect GLSL varyings over GL_LINES (`src/swrast/s_linetemp.h`)
+
+The line rasteriser template hardcoded `span.attrStart[FRAG_ATTRIB_WPOS][3] =
+1.0F`.  `interpolate_varying()` and `interpolate_texcoords()` in `s_span.c`
+use this field as the per-scanline `1/W_clip` starting value: attributes are
+pre-multiplied by `1/W_clip` in `attrStart`, and the per-pixel divide-back
+recovers the perspective-correct value.  With `WPOS.w = 1.0` the divide was a
+no-op, leaving varyings as `value/W_clip` instead of `value`.
+
+Triangle rasterisation (`s_tritemp.h`) already set this field correctly from
+`vLower->win[3]`.
+
+**Fix:** under `#if defined(INTERP_ATTRIBS)`, set
+```
+span.attrStart[FRAG_ATTRIB_WPOS][3] = vert0->win[3];
+span.attrStepX[FRAG_ATTRIB_WPOS][3] = (vert1->win[3] - vert0->win[3]) / numPixels;
+```
