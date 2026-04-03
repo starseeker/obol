@@ -85,7 +85,7 @@ struct CadTriGpu {
 
 /** All GPU representations for one part in one GL context. */
 struct CadPartGpuRep {
-    uint64_t generation = 0; ///< matches SoCADAssembly part generation at upload
+    uint64_t generation = UINT64_MAX; ///< UINT64_MAX = not yet uploaded; otherwise matches part generation
     CadWireGpu wire;
     CadTriGpu  tri;
 };

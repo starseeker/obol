@@ -316,6 +316,15 @@ public:
      */
     const obol::PartGeometry* partGeometry(obol::PartId pid) const;
 
+    /**
+     * Returns the rendering tier selected during the last GLRender() call:
+     *   -1 = not yet rendered
+     *    0 = immediate-mode fallback (GL 1.1 fixed-function, no working GLSL+VBO)
+     *    1 = VBO-loop (GL 2.0, GLSL 1.10)
+     *    2 = instanced (GL 3.1+, one draw call per unique part)
+     */
+    int lastRenderTier() const;
+
 protected:
     ~SoCADAssembly() override;
 

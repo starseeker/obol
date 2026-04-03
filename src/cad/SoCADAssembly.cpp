@@ -601,3 +601,14 @@ SoCADAssembly::getPrimitiveCount(SoGetPrimitiveCountAction* action)
     action->addNumLines(totalLines);
     action->addNumTriangles(totalTris);
 }
+
+// ---------------------------------------------------------------------------
+// lastRenderTier
+// ---------------------------------------------------------------------------
+
+int
+SoCADAssembly::lastRenderTier() const
+{
+    if (!impl_->renderer_) return -1;
+    return impl_->renderer_->lastRenderTier();
+}

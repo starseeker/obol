@@ -120,10 +120,20 @@ public:
      */
     void releaseGpuResources(const SoGLContext * glue);
 
+    /**
+     * Returns the rendering tier used during the last render() call:
+     *   0 = immediate-mode fallback (GL 1.1, no working GLSL+VBO)
+     *   1 = VBO-loop (GL 2.0, GLSL 1.10)
+     *   2 = instanced (GL 3.1+)
+     *  -1 = render() not yet called
+     */
+    int lastRenderTier() const { return lastRenderTier_; }
+
 private:
     // Capability flags (populated on first render call)
     bool      capsDetected_ = false;
     CadGLCaps caps_;
+    int       lastRenderTier_ = -1; ///< last tier used: -1=none, 0=imm, 1=vbo, 2=inst
 
     // Per-context GPU resource cache
     CadGpuResources gpuRes_;

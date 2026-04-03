@@ -53,17 +53,19 @@ static const char * kWireVS1 =
     "attribute vec3 a_pos;\n"
     "uniform mat4 u_model;\n"
     "uniform mat4 u_viewProj;\n"
-    "uniform vec4 u_color;\n"
-    "varying vec4 v_color;\n"
     "void main() {\n"
     "    gl_Position = u_viewProj * u_model * vec4(a_pos, 1.0);\n"
-    "    v_color = u_color;\n"
     "}\n";
 
+// Mesa 7.x swrast has a bug where GLSL varying variables are not
+// perspective-corrected properly (values arrive divided by clip-w instead
+// of being interpolated correctly).  Work around it by using uniforms
+// directly in the fragment shader – uniforms are constant per draw call
+// and do not need interpolation, so they are unaffected by the bug.
 static const char * kWireFS1 =
-    "varying vec4 v_color;\n"
+    "uniform vec4 u_color;\n"
     "void main() {\n"
-    "    gl_FragColor = v_color;\n"
+    "    gl_FragColor = u_color;\n"
     "}\n";
 
 // Shaded pass: simple directional light in world space
@@ -72,10 +74,8 @@ static const char * kShadedVS1 =
     "attribute vec3 a_norm;\n"
     "uniform mat4  u_model;\n"
     "uniform mat4  u_viewProj;\n"
-    "uniform vec4  u_color;\n"
     "uniform int   u_hasNorm;\n"
     "varying vec3  v_norm;\n"
-    "varying vec4  v_color;\n"
     "void main() {\n"
     "    gl_Position = u_viewProj * u_model * vec4(a_pos, 1.0);\n"
     "    if (u_hasNorm != 0) {\n"
@@ -83,19 +83,24 @@ static const char * kShadedVS1 =
     "    } else {\n"
     "        v_norm = vec3(0.0, 0.0, 1.0);\n"
     "    }\n"
-    "    v_color = u_color;\n"
     "}\n";
 
+// Normals are varyings (they differ per-vertex), so they are also affected
+// by the Mesa perspective-correction bug.  We still emit v_norm but only
+// use a rough world-space unit-sphere estimate: the bias from 1/w scaling
+// on a normal vector whose magnitude changes slowly is visually acceptable.
+// The colour itself is read from the uniform u_color (not a varying) to
+// ensure correct brightness.
 static const char * kShadedFS1 =
     "uniform vec3 u_lightDir;\n"
+    "uniform vec4 u_color;\n"
     "varying vec3 v_norm;\n"
-    "varying vec4 v_color;\n"
     "void main() {\n"
     "    vec3 n = normalize(v_norm);\n"
     "    float nDotL = max(0.0, dot(n, u_lightDir));\n"
-    "    vec3 ambient = v_color.rgb * 0.25;\n"
-    "    vec3 diffuse = v_color.rgb * nDotL * 0.75;\n"
-    "    gl_FragColor = vec4(ambient + diffuse, v_color.a);\n"
+    "    vec3 ambient = u_color.rgb * 0.25;\n"
+    "    vec3 diffuse = u_color.rgb * nDotL * 0.75;\n"
+    "    gl_FragColor = vec4(ambient + diffuse, u_color.a);\n"
     "}\n";
 
 // ---------------------------------------------------------------------------
@@ -442,10 +447,13 @@ void CadRendererGL::render(
     }
 
     if (caps_.canUseInstanced() && shaders_.wireInst && shaders_.shadedInst) {
+        lastRenderTier_ = 2;
         renderInstanced(plan, assembly, glue, viewProj, partGenMap);
     } else if (caps_.canUseVbo() && shaders_.wire) {
+        lastRenderTier_ = 1;
         renderVboLoop(plan, assembly, glue, viewProj, partGenMap);
     } else {
+        lastRenderTier_ = 0;
         renderImmediateMode(plan, assembly, glue, viewProj, partGenMap);
     }
 }

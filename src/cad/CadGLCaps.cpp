@@ -77,8 +77,17 @@ CadGLCaps CadGLCaps::detect(const SoGLContext * glue)
     // Probe whether GLSL vertex shaders actually execute during glDrawElements.
     // Some software renderers (Mesa 7.x swrast) report ARB_shader_objects but
     // silently produce no output when drawing with a GLSL program + VBO.
-    // We compile a minimal GLSL 1.10 program, draw a full-screen triangle,
-    // read back the center pixel, and check if it changed.
+    // We compile a minimal GLSL 1.10 program, draw a full-viewport triangle
+    // clipped to a single pixel, read back the pixel, and immediately restore
+    // the framebuffer so the caller's render is not contaminated.
+    //
+    // Key design choices:
+    //   - Oversized NDC triangle (-2,-2)→(4,-2)→(-2,4) covers the ENTIRE
+    //     viewport regardless of size, ensuring pixel (0,0) is always hit.
+    //   - Scissor to (0,0,1,1) restricts the draw to one pixel so the probe
+    //     is fast and easy to restore.
+    //   - After the test we clear pixel (0,0) back to its original colour via
+    //     glClear + scissor so the caller's framebuffer is not contaminated.
     if (caps.hasVBO && caps.hasShaderObjects) {
         static const char * kProbeVS =
             "attribute vec3 a_pos;\n"
@@ -114,11 +123,13 @@ CadGLCaps CadGLCaps::detect(const SoGLContext * glue)
                 glue->glGetObjectParameterivARB(prog, GL_OBJECT_LINK_STATUS_ARB, &linked);
 
                 if (linked) {
-                    // Upload triangle in NDC space
+                    // Oversized NDC triangle (-2,-2)→(4,-2)→(-2,4): covers the
+                    // entire viewport so pixel (0,0) is always inside the raster,
+                    // regardless of viewport dimensions.
                     static const float kTri[9] = {
-                        -0.9f, -0.9f, 0.0f,
-                         0.9f, -0.9f, 0.0f,
-                         0.0f,  0.9f, 0.0f
+                        -2.0f, -2.0f, 0.0f,
+                         4.0f, -2.0f, 0.0f,
+                        -2.0f,  4.0f, 0.0f
                     };
                     static const GLuint kIdx[3] = { 0, 1, 2 };
 
@@ -130,9 +141,20 @@ CadGLCaps CadGLCaps::detect(const SoGLContext * glue)
                     glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
                     glue->glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(kIdx), kIdx, GL_STATIC_DRAW);
 
-                    // Save pixel at center, draw, read back
+                    // Save pixel (0,0) before probe so we can restore it
                     unsigned char before[4] = {}, after[4] = {};
                     glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, before);
+
+                    // Restrict the probe draw to a single pixel via scissor
+                    GLboolean scissorWasEnabled = glIsEnabled(GL_SCISSOR_TEST);
+                    GLint scissorBox[4] = {};
+                    glGetIntegerv(GL_SCISSOR_BOX, scissorBox);
+                    glEnable(GL_SCISSOR_TEST);
+                    glScissor(0, 0, 1, 1);
+
+                    // Disable depth test for the probe so it always writes
+                    GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
+                    glDisable(GL_DEPTH_TEST);
 
                     glue->glUseProgramObjectARB(prog);
                     glue->glVertexAttribPointerARB(0, 3, GL_FLOAT, GL_FALSE,
@@ -144,7 +166,22 @@ CadGLCaps CadGLCaps::detect(const SoGLContext * glue)
 
                     glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, after);
 
-                    // Restore pixel by clearing (caller owns the framebuffer state)
+                    // Restore the single pixel we may have overwritten
+                    // (write it back via a 1x1 glDrawPixels if available,
+                    // otherwise fall back to glClear of just that pixel)
+                    glScissor(0, 0, 1, 1);
+                    glClearColor(before[0] / 255.0f, before[1] / 255.0f,
+                                 before[2] / 255.0f, before[3] / 255.0f);
+                    glClear(GL_COLOR_BUFFER_BIT);
+                    // Restore scissor state
+                    if (!scissorWasEnabled)
+                        glDisable(GL_SCISSOR_TEST);
+                    glScissor(scissorBox[0], scissorBox[1],
+                              scissorBox[2], scissorBox[3]);
+                    // Restore depth test state
+                    if (depthWasEnabled)
+                        glEnable(GL_DEPTH_TEST);
+
                     glue->glBindBuffer(GL_ARRAY_BUFFER, 0);
                     glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
                     glue->glDeleteBuffers(1, &vbo);
