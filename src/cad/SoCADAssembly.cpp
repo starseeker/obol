@@ -46,6 +46,7 @@
 #include <obol/cad/SoCADAssembly.h>
 #include <obol/cad/SoCADDetail.h>
 #include "CadFramePlan.h"
+#include "CadRendererGL.h"
 #include "picking/CadPicking.h"
 #include "lod/TrianglePopLod.h"
 
@@ -62,8 +63,11 @@
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
+#include <Inventor/elements/SoViewingMatrixElement.h>
+#include <Inventor/elements/SoProjectionMatrixElement.h>
 
 #include <Inventor/system/gl.h>
+#include "rendering/SoGL.h"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -109,6 +113,15 @@ struct SoCADAssemblyImpl {
     std::unordered_map<obol::PartId, obol::TrianglePopLod,
                        std::hash<obol::PartId>> partLods_;
 
+    // Per-part generation counter – incremented when geometry changes so the
+    // renderer knows to re-upload VBOs.
+    std::unordered_map<obol::PartId, uint64_t,
+                       std::hash<obol::PartId>> partGeneration_;
+    uint64_t nextGeneration_ = 1;
+
+    // VBO + shader renderer (lazy-created on first GLRender call)
+    std::unique_ptr<obol::internal::CadRendererGL> renderer_;
+
     // Rebuild instance BVH if dirty
     void rebuildBvhIfNeeded() {
         if (!bvhDirty_) return;
@@ -153,6 +166,111 @@ struct SoCADAssemblyImpl {
             world.extendBy(wc);
         }
         return world;
+    }
+
+    /**
+     * Build a CadFramePlan from the current instance and part databases.
+     *
+     * Groups instances by part to maximise batching in the renderer.
+     * The instance list is sorted by part so each CadDrawItem covers a
+     * contiguous run of visibleInstances.
+     *
+     * @param dm       Draw mode (WIREFRAME / SHADED / SHADED_WITH_EDGES).
+     * @param selected Set of selected instance IDs (for colour override).
+     */
+    obol::internal::CadFramePlan buildFramePlan(
+            int dm,
+            const std::unordered_set<obol::InstanceId,
+                                     std::hash<obol::InstanceId>>& selected) const
+    {
+        using namespace obol::internal;
+
+        CadFramePlan plan;
+        if (instances_.empty()) return plan;
+
+        // Collect (partId → list of CadVisibleInstance) grouped by part.
+        // We use a stable insertion-order map so every run is contiguous.
+        std::unordered_map<obol::PartId,
+                           std::vector<CadVisibleInstance>,
+                           std::hash<obol::PartId>> byPart;
+
+        for (const auto& [iid, idata] : instances_) {
+            CadVisibleInstance vi;
+            vi.instanceId = iid;
+            vi.partIndex  = 0; // filled in below
+
+            // Copy transform: raw OI float[16] (row-major).
+            // The renderer uploads with GL_FALSE so GL sees it as column-major
+            // (= transpose of OI matrix), which is the correct GL convention.
+            std::memcpy(vi.transform.data(), idata.localToRoot[0],
+                        16 * sizeof(float));
+
+            // Colour with selection override
+            float r = 0.8f, g = 0.8f, b = 0.8f, a = 1.0f;
+            if (idata.style.hasColorOverride) {
+                r = idata.style.color[0];
+                g = idata.style.color[1];
+                b = idata.style.color[2];
+                a = idata.style.color[3];
+            }
+            if (selected.count(iid)) { r = 1.0f; g = 1.0f; b = 0.0f; }
+
+            vi.rgba[0] = static_cast<uint8_t>(std::min(255.0f, r * 255.0f));
+            vi.rgba[1] = static_cast<uint8_t>(std::min(255.0f, g * 255.0f));
+            vi.rgba[2] = static_cast<uint8_t>(std::min(255.0f, b * 255.0f));
+            vi.rgba[3] = static_cast<uint8_t>(std::min(255.0f, a * 255.0f));
+            vi.flags   = selected.count(iid) ? 1u : 0u;
+
+            byPart[idata.partId].push_back(vi);
+        }
+
+        const bool needWire   = (dm == SoCADAssembly::WIREFRAME ||
+                                 dm == SoCADAssembly::SHADED_WITH_EDGES);
+        const bool needShaded = (dm == SoCADAssembly::SHADED ||
+                                 dm == SoCADAssembly::SHADED_WITH_EDGES);
+
+        uint32_t baseInst = 0;
+        for (auto& [pid, vis] : byPart) {
+            auto partIt = parts_.find(pid);
+            if (partIt == parts_.end()) continue;
+            const auto& geom = partIt->second;
+
+            const uint32_t count = static_cast<uint32_t>(vis.size());
+
+            // Fill partIndex (index into the upcoming visibleInstances block)
+            for (auto& vi : vis) vi.partIndex = baseInst;
+
+            // Append instances to flat list
+            for (const auto& vi : vis) plan.visibleInstances.push_back(vi);
+
+            // Wire draw item
+            if (needWire && geom.wire.has_value()) {
+                CadDrawItem item;
+                item.rep.part  = pid;
+                item.rep.type  = CadRepType::WireSegments;
+                item.rep.level = 255;
+                item.baseInstance  = baseInst;
+                item.instanceCount = count;
+                plan.wireItems.push_back(item);
+                plan.requiredReps.push_back(item.rep);
+            }
+
+            // Shaded draw item
+            if (needShaded && geom.shaded.has_value()) {
+                CadDrawItem item;
+                item.rep.part  = pid;
+                item.rep.type  = CadRepType::Triangles;
+                item.rep.level = 255;
+                item.baseInstance  = baseInst;
+                item.instanceCount = count;
+                plan.shadedItems.push_back(item);
+                plan.requiredReps.push_back(item.rep);
+            }
+
+            baseInst += count;
+        }
+
+        return plan;
     }
 };
 
@@ -212,6 +330,8 @@ void
 SoCADAssembly::upsertPart(obol::PartId pid, const obol::PartGeometry& geom)
 {
     impl_->parts_[pid] = geom;
+    // Bump generation counter so the renderer re-uploads VBOs
+    impl_->partGeneration_[pid] = impl_->nextGeneration_++;
     // Invalidate edge BVH for this part
     impl_->partEdgeBvhCache_.erase(pid);
     // Build or replace LoD structure for shaded geometry
@@ -318,6 +438,14 @@ SoCADAssembly::setSelectedInstances(const std::vector<obol::InstanceId>& ids)
 size_t SoCADAssembly::instanceCount() const { return impl_->instances_.size(); }
 size_t SoCADAssembly::partCount()     const { return impl_->parts_.size();     }
 
+const obol::PartGeometry*
+SoCADAssembly::partGeometry(obol::PartId pid) const
+{
+    auto it = impl_->parts_.find(pid);
+    if (it == impl_->parts_.end()) return nullptr;
+    return &it->second;
+}
+
 // ---------------------------------------------------------------------------
 // GLRender
 // ---------------------------------------------------------------------------
@@ -328,130 +456,33 @@ SoCADAssembly::GLRender(SoGLRenderAction* action)
     if (impl_->instances_.empty()) return;
 
     SoState* state = action->getState();
-    const int dm = drawMode.getValue();
-    const bool useLod = (lodEnabled.getValue() == TRUE);
 
-    // Gather camera/viewport info once if LoD is active
-    SbVec3f camPos(0.0f, 0.0f, 0.0f);
-    float   vpHeight = 1.0f;
-    if (useLod) {
-        SbViewVolume   vv = SoViewVolumeElement::get(state);
-        SbViewportRegion vp = SoViewportRegionElement::get(state);
-        vpHeight = static_cast<float>(vp.getViewportSizePixels()[1]);
-        camPos   = vv.getProjectionPoint();
+    // Obtain the GL dispatch context for the active rendering backend.
+    // This routes calls correctly to either the system OpenGL or OSMesa.
+    const SoGLContext* glue = sogl_glue_from_state(state);
+    if (!glue) return;
+
+    // Lazy-create the renderer the first time we have a GL context.
+    if (!impl_->renderer_) {
+        impl_->renderer_ = std::make_unique<obol::internal::CadRendererGL>();
     }
 
-    // For each instance: draw its part geometry in the current draw mode.
-    for (const auto& [iid, idata] : impl_->instances_) {
-        auto geomIt = impl_->parts_.find(idata.partId);
-        if (geomIt == impl_->parts_.end()) continue;
-        const auto& geom = geomIt->second;
+    // Build the combined view-projection matrix from the state stack.
+    // Both matrices are OI row-major SbMatrix values.
+    const SbMatrix viewMat = SoViewingMatrixElement::get(state);
+    const SbMatrix projMat = SoProjectionMatrixElement::get(state);
+    // OI post-multiply convention: VP = view * proj
+    SbMatrix viewProj = viewMat;
+    viewProj.multRight(projMat);
 
-        // Set per-instance color
-        float r = 0.8f, g = 0.8f, b = 0.8f, a = 1.0f;
-        if (idata.style.hasColorOverride) {
-            r = idata.style.color[0];
-            g = idata.style.color[1];
-            b = idata.style.color[2];
-            a = idata.style.color[3];
-        }
-        bool isSelected = impl_->selected_.count(iid) > 0;
-        if (isSelected) { r = 1.0f; g = 1.0f; b = 0.0f; }
+    // Build per-frame plan (groups instances by part for draw-call batching)
+    obol::internal::CadFramePlan plan =
+        impl_->buildFramePlan(drawMode.getValue(), impl_->selected_);
 
-        // Push instance transform
-        // SbMatrix is row-major (OI convention); glMultMatrixf expects the raw
-        // OI float[16] data directly – GL interprets it as column-major, which
-        // gives the transpose of the OI matrix and is the correct conversion
-        // (OI uses post-multiply row vectors; GL uses pre-multiply column vectors).
-        glPushMatrix();
-        glMultMatrixf(idata.localToRoot[0]);
-
-        glColor4f(r, g, b, a);
-
-        // --- Wireframe pass ---
-        if (dm == WIREFRAME || dm == SHADED_WITH_EDGES) {
-            if (geom.wire.has_value()) {
-                glLineWidth(idata.style.lineWidth);
-                for (const auto& poly : geom.wire->polylines) {
-                    if (poly.points.size() < 2) continue;
-                    glBegin(GL_LINE_STRIP);
-                    for (const auto& pt : poly.points) {
-                        glVertex3f(pt[0], pt[1], pt[2]);
-                    }
-                    glEnd();
-                }
-                glLineWidth(1.0f);
-            }
-        }
-
-        // --- Shaded pass ---
-        if (dm == SHADED || dm == SHADED_WITH_EDGES) {
-            if (geom.shaded.has_value()) {
-                const auto& mesh = *geom.shaded;
-
-                // Determine which triangles to render (LoD selection)
-                const obol::TrianglePopLod* lodPtr = nullptr;
-                uint8_t lodLevel = obol::TrianglePopLod::kMaxLevel;
-                if (useLod) {
-                    auto lodIt = impl_->partLods_.find(idata.partId);
-                    if (lodIt != impl_->partLods_.end() && lodIt->second.isBuilt()) {
-                        lodPtr = &lodIt->second;
-                        // Compute screen-space projected size of bounding sphere
-                        if (!idata.worldBounds.isEmpty()) {
-                            SbVec3f center = idata.worldBounds.getCenter();
-                            SbVec3f mn, mx;
-                            idata.worldBounds.getBounds(mn, mx);
-                            float radius = ((mx - mn) * 0.5f).length();
-                            float dist = std::max(1e-4f, (camPos - center).length());
-                            // screen pixels covered by the bounding sphere radius
-                            float screenPixels = (radius / dist) * vpHeight;
-                            lodLevel = static_cast<uint8_t>(
-                                std::min(255.0f, std::max(0.0f, screenPixels)));
-                        }
-                    }
-                }
-
-                // Render triangles, filtered by LoD when active
-                auto renderTri = [&](uint32_t i0, uint32_t i1, uint32_t i2) {
-                    if (i0 >= mesh.positions.size() ||
-                        i1 >= mesh.positions.size() ||
-                        i2 >= mesh.positions.size()) return;
-                    if (!mesh.normals.empty() && i0 < mesh.normals.size()) {
-                        const auto& n = mesh.normals[i0];
-                        glNormal3f(n[0], n[1], n[2]);
-                    }
-                    const auto& p0 = mesh.positions[i0];
-                    const auto& p1 = mesh.positions[i1];
-                    const auto& p2 = mesh.positions[i2];
-                    glVertex3f(p0[0], p0[1], p0[2]);
-                    glVertex3f(p1[0], p1[1], p1[2]);
-                    glVertex3f(p2[0], p2[1], p2[2]);
-                };
-
-                glBegin(GL_TRIANGLES);
-                if (lodPtr && lodLevel < obol::TrianglePopLod::kMaxLevel) {
-                    // LoD path: render only triangles non-degenerate at this level
-                    std::vector<uint32_t> tris = lodPtr->trianglesAtLevel(lodLevel);
-                    for (uint32_t triIdx : tris) {
-                        renderTri(mesh.indices[3*triIdx],
-                                  mesh.indices[3*triIdx+1],
-                                  mesh.indices[3*triIdx+2]);
-                    }
-                } else {
-                    // Full-detail path
-                    const size_t numTris = mesh.indices.size() / 3;
-                    for (size_t t = 0; t < numTris; ++t) {
-                        renderTri(mesh.indices[3*t],
-                                  mesh.indices[3*t+1],
-                                  mesh.indices[3*t+2]);
-                    }
-                }
-                glEnd();
-            }
-        }
-
-        glPopMatrix();
-    }
+    // Delegate to the VBO + shader renderer (GL 2.0 minimum; optional GL 3.1+
+    // instanced path selected automatically when available)
+    impl_->renderer_->render(plan, *this, glue, viewProj,
+                             impl_->partGeneration_);
 }
 
 // ---------------------------------------------------------------------------
@@ -569,4 +600,15 @@ SoCADAssembly::getPrimitiveCount(SoGetPrimitiveCountAction* action)
     }
     action->addNumLines(totalLines);
     action->addNumTriangles(totalTris);
+}
+
+// ---------------------------------------------------------------------------
+// lastRenderTier
+// ---------------------------------------------------------------------------
+
+int
+SoCADAssembly::lastRenderTier() const
+{
+    if (!impl_->renderer_) return -1;
+    return impl_->renderer_->lastRenderTier();
 }
