@@ -43,6 +43,7 @@
  */
 
 #include <obol/cad/CadIds.h>
+#include <Inventor/SbBox3f.h>
 #include <Inventor/SbMatrix.h>
 #include <Inventor/SbColor4f.h>
 
