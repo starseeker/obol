@@ -221,6 +221,11 @@ GLuint CadRendererGL::linkProgram(const SoGLContext* glue, GLuint vs, GLuint fs)
 
     // Bind attribute locations before linking so they are always predictable,
     // regardless of what the GLSL compiler assigns implicitly.
+    // Tier-1 uses a_pos (0) and a_norm (1).
+    // Tier-2 additionally uses a_instTransform (kInstTransformLoc) and
+    // a_instColor (kInstColorLoc).  For a mat4 attribute, binding the base
+    // location pins all 4 consecutive slots automatically.  Bindings for
+    // attributes absent from the shader are silently ignored.
     if (glue->glBindAttribLocationARB) {
         glue->glBindAttribLocationARB(prog, 0,
                                       reinterpret_cast<OBOL_GLchar*>(
@@ -228,6 +233,12 @@ GLuint CadRendererGL::linkProgram(const SoGLContext* glue, GLuint vs, GLuint fs)
         glue->glBindAttribLocationARB(prog, 1,
                                       reinterpret_cast<OBOL_GLchar*>(
                                           const_cast<char*>("a_norm")));
+        glue->glBindAttribLocationARB(prog, kInstTransformLoc,
+                                      reinterpret_cast<OBOL_GLchar*>(
+                                          const_cast<char*>("a_instTransform")));
+        glue->glBindAttribLocationARB(prog, kInstColorLoc,
+                                      reinterpret_cast<OBOL_GLchar*>(
+                                          const_cast<char*>("a_instColor")));
     }
 
     glue->glLinkProgramARB(prog);
@@ -762,16 +773,26 @@ void CadRendererGL::renderInstanced(
     const GLsizei instStride = static_cast<GLsizei>(sizeof(InstVertex));
 
     // --- Helper to bind per-instance attributes ---
-    auto bindInstAttribs = [&](GLuint prog) {
+    //
+    // Must be called with the correct VAO already bound (if any).  The
+    // baseInstance parameter is the index of the first instance for this draw
+    // item in the per-frame instance VBO; it is used as a byte offset so each
+    // part reads its own slice of the buffer without needing GL 4.2
+    // glDrawElementsInstancedBaseInstance.
+    auto bindInstAttribs = [&](uint32_t baseInstance) {
         glue->glBindBuffer(GL_ARRAY_BUFFER, instVbo);
 
+        const GLsizeiptr baseOff =
+            static_cast<GLsizeiptr>(baseInstance) * instStride;
+
         // a_instTransform occupies 4 consecutive attribute locations.
-        // We use fixed layout (kInstTransformLoc..kInstTransformLoc+3) and
-        // verify via glGetAttribLocationARB only for the first column.
+        // We use the fixed layout (kInstTransformLoc..kInstTransformLoc+3).
         for (GLuint col = 0; col < 4; ++col) {
             GLuint aloc = kInstTransformLoc + col;
             const GLvoid* off = reinterpret_cast<const GLvoid*>(
-                offsetof(InstVertex, transform) + col * 4 * sizeof(float));
+                baseOff +
+                static_cast<GLsizeiptr>(offsetof(InstVertex, transform)) +
+                static_cast<GLsizeiptr>(col) * 4 * static_cast<GLsizeiptr>(sizeof(float)));
             glue->glVertexAttribPointerARB(aloc, 4, GL_FLOAT, GL_FALSE,
                                            instStride, off);
             glue->glEnableVertexAttribArrayARB(aloc);
@@ -782,7 +803,8 @@ void CadRendererGL::renderInstanced(
         {
             GLuint aloc = kInstColorLoc;
             const GLvoid* off = reinterpret_cast<const GLvoid*>(
-                offsetof(InstVertex, color));
+                baseOff +
+                static_cast<GLsizeiptr>(offsetof(InstVertex, color)));
             glue->glVertexAttribPointerARB(aloc, 4, GL_FLOAT, GL_FALSE,
                                            instStride, off);
             glue->glEnableVertexAttribArrayARB(aloc);
@@ -791,6 +813,8 @@ void CadRendererGL::renderInstanced(
         glue->glBindBuffer(GL_ARRAY_BUFFER, 0);
     };
 
+    // Must also be called with the same VAO still bound so the cleanup state
+    // is recorded there (resets divisors to 0, disables the attribs).
     auto unbindInstAttribs = [&]() {
         for (GLuint col = 0; col < 4; ++col) {
             glue->glVertexAttribDivisor(kInstTransformLoc + col, 0);
@@ -809,14 +833,16 @@ void CadRendererGL::renderInstanced(
         if (locPos < 0) locPos = 0;
 
         glue->glUniformMatrix4fvARB(locVP, 1, GL_FALSE, vp);
-        bindInstAttribs(shaders_.wireInst);
 
         for (const auto& item : plan.wireItems) {
             const CadWireGpu* w = gpuRes_.wireFor(item.rep.part);
             if (!w || w->segCount == 0) continue;
 
             if (w->vao && glue->glBindVertexArray) {
+                // Bind the part VAO first, then set up the instanced attribs
+                // inside that VAO so they are active for the draw call.
                 glue->glBindVertexArray(w->vao);
+                bindInstAttribs(item.baseInstance);
             } else {
                 glue->glBindBuffer(GL_ARRAY_BUFFER, w->posBuf);
                 glue->glVertexAttribPointerARB(static_cast<GLuint>(locPos), 3,
@@ -824,6 +850,7 @@ void CadRendererGL::renderInstanced(
                                                3 * sizeof(float), nullptr);
                 glue->glEnableVertexAttribArrayARB(static_cast<GLuint>(locPos));
                 glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, w->segIdxBuf);
+                bindInstAttribs(item.baseInstance);
             }
 
             glue->glDrawElementsInstanced(GL_LINES,
@@ -833,15 +860,16 @@ void CadRendererGL::renderInstanced(
                                           static_cast<GLsizei>(item.instanceCount));
 
             if (w->vao && glue->glBindVertexArray) {
+                unbindInstAttribs();
                 glue->glBindVertexArray(0);
             } else {
+                unbindInstAttribs();
                 glue->glDisableVertexAttribArrayARB(static_cast<GLuint>(locPos));
                 glue->glBindBuffer(GL_ARRAY_BUFFER, 0);
                 glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
             }
         }
 
-        unbindInstAttribs();
         glue->glUseProgramObjectARB(0);
     }
 
@@ -858,7 +886,6 @@ void CadRendererGL::renderInstanced(
 
         glue->glUniformMatrix4fvARB(locVP, 1, GL_FALSE, vp);
         glue->glUniform3fvARB(locLight, 1, kLightDir);
-        bindInstAttribs(shaders_.shadedInst);
 
         for (const auto& item : plan.shadedItems) {
             const CadTriGpu* t = gpuRes_.triFor(item.rep.part);
@@ -868,6 +895,7 @@ void CadRendererGL::renderInstanced(
 
             if (t->vao && glue->glBindVertexArray) {
                 glue->glBindVertexArray(t->vao);
+                bindInstAttribs(item.baseInstance);
             } else {
                 glue->glBindBuffer(GL_ARRAY_BUFFER, t->posBuf);
                 glue->glVertexAttribPointerARB(static_cast<GLuint>(locPos), 3,
@@ -882,6 +910,7 @@ void CadRendererGL::renderInstanced(
                     glue->glEnableVertexAttribArrayARB(static_cast<GLuint>(locNorm));
                 }
                 glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, t->idxBuf);
+                bindInstAttribs(item.baseInstance);
             }
 
             glue->glDrawElementsInstanced(GL_TRIANGLES,
@@ -891,8 +920,10 @@ void CadRendererGL::renderInstanced(
                                           static_cast<GLsizei>(item.instanceCount));
 
             if (t->vao && glue->glBindVertexArray) {
+                unbindInstAttribs();
                 glue->glBindVertexArray(0);
             } else {
+                unbindInstAttribs();
                 if (t->normBuf && locNorm >= 0) {
                     glue->glDisableVertexAttribArrayARB(static_cast<GLuint>(locNorm));
                 }
@@ -902,7 +933,6 @@ void CadRendererGL::renderInstanced(
             }
         }
 
-        unbindInstAttribs();
         glue->glUseProgramObjectARB(0);
     }
 }
