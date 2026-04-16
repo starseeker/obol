@@ -132,6 +132,15 @@ public:
                 const SoGLContext * glue,
                 const CadGLCaps& caps);
 
+    /**
+     * Check whether the GPU data for @p pid is already current.
+     *
+     * Returns true when the cached generation for @p pid matches @p gen.
+     * This allows callers to skip the expensive CPU-side array-building step
+     * before calling upload() when the geometry has not changed.
+     */
+    bool isUpToDate(PartId pid, uint64_t gen) const;
+
     /** Return the wire GPU rep for @p pid, or nullptr if not uploaded. */
     const CadWireGpu* wireFor(PartId pid) const;
 

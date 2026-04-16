@@ -100,6 +100,10 @@ struct SoCADAssemblyImpl {
     std::unordered_set<obol::InstanceId,
                        std::hash<obol::InstanceId>> selected_;
 
+    // Hidden-instance set (excluded from rendering and frame plan)
+    std::unordered_set<obol::InstanceId,
+                       std::hash<obol::InstanceId>> hidden_;
+
     // Picking acceleration structures
     obol::picking::CadInstanceBVH instanceBvh_;
     bool bvhDirty_   = true;
@@ -108,6 +112,10 @@ struct SoCADAssemblyImpl {
     // Per-part edge BVH cache (lazily built during picking)
     std::unordered_map<obol::PartId, obol::picking::CadPartEdgeBVH,
                        std::hash<obol::PartId>> partEdgeBvhCache_;
+
+    // Per-part triangle BVH cache (lazily built during picking)
+    std::unordered_map<obol::PartId, obol::picking::CadPartTriBVH,
+                       std::hash<obol::PartId>> partTriBvhCache_;
 
     // Per-part LoD structures (built when shaded geometry is supplied via upsertPart)
     std::unordered_map<obol::PartId, obol::TrianglePopLod,
@@ -118,6 +126,20 @@ struct SoCADAssemblyImpl {
     std::unordered_map<obol::PartId, uint64_t,
                        std::hash<obol::PartId>> partGeneration_;
     uint64_t nextGeneration_ = 1;
+
+    // LoD index cache: per-(PartId, level) filtered triangle index lists.
+    // Cleared when a part's generation counter changes.
+    struct LodCacheEntry {
+        uint64_t generation = UINT64_MAX;
+        std::unordered_map<uint8_t, std::vector<uint32_t>> byLevel;
+    };
+    mutable std::unordered_map<obol::PartId, LodCacheEntry,
+                               std::hash<obol::PartId>> lodIndexCache_;
+
+    // Frame plan cache.  Rebuilt lazily when planDirty_ is true.
+    obol::internal::CadFramePlan cachedPlan_;
+    bool planDirty_    = true;   ///< Plan must be rebuilt before next render
+    int  cachedDM_     = -1;     ///< Draw mode used for the cached plan
 
     // VBO + shader renderer (lazy-created on first GLRender call)
     std::unique_ptr<obol::internal::CadRendererGL> renderer_;
@@ -177,11 +199,14 @@ struct SoCADAssemblyImpl {
      *
      * @param dm       Draw mode (WIREFRAME / SHADED / SHADED_WITH_EDGES).
      * @param selected Set of selected instance IDs (for colour override).
+     * @param hidden   Set of hidden instance IDs (excluded from the plan).
      */
     obol::internal::CadFramePlan buildFramePlan(
             int dm,
             const std::unordered_set<obol::InstanceId,
-                                     std::hash<obol::InstanceId>>& selected) const
+                                     std::hash<obol::InstanceId>>& selected,
+            const std::unordered_set<obol::InstanceId,
+                                     std::hash<obol::InstanceId>>& hidden) const
     {
         using namespace obol::internal;
 
@@ -195,6 +220,9 @@ struct SoCADAssemblyImpl {
                            std::hash<obol::PartId>> byPart;
 
         for (const auto& [iid, idata] : instances_) {
+            // Skip hidden instances
+            if (hidden.count(iid)) continue;
+
             CadVisibleInstance vi;
             vi.instanceId = iid;
             vi.partIndex  = 0; // filled in below
@@ -205,7 +233,8 @@ struct SoCADAssemblyImpl {
             std::memcpy(vi.transform.data(), idata.localToRoot[0],
                         16 * sizeof(float));
 
-            // Colour with selection override
+            // Colour with selection override – evaluate selected once only.
+            const bool isSel = selected.count(iid) != 0;
             float r = 0.8f, g = 0.8f, b = 0.8f, a = 1.0f;
             if (idata.style.hasColorOverride) {
                 r = idata.style.color[0];
@@ -213,13 +242,19 @@ struct SoCADAssemblyImpl {
                 b = idata.style.color[2];
                 a = idata.style.color[3];
             }
-            if (selected.count(iid)) { r = 1.0f; g = 1.0f; b = 0.0f; }
+            if (isSel) { r = 1.0f; g = 1.0f; b = 0.0f; }
 
             vi.rgba[0] = static_cast<uint8_t>(std::min(255.0f, r * 255.0f));
             vi.rgba[1] = static_cast<uint8_t>(std::min(255.0f, g * 255.0f));
             vi.rgba[2] = static_cast<uint8_t>(std::min(255.0f, b * 255.0f));
             vi.rgba[3] = static_cast<uint8_t>(std::min(255.0f, a * 255.0f));
-            vi.flags   = selected.count(iid) ? 1u : 0u;
+            vi.flags   = isSel ? 1u : 0u;
+
+            // Store world bounding box for per-instance frustum culling.
+            SbVec3f wbMn, wbMx;
+            idata.worldBounds.getBounds(wbMn, wbMx);
+            vi.wbMin[0] = wbMn[0]; vi.wbMin[1] = wbMn[1]; vi.wbMin[2] = wbMn[2];
+            vi.wbMax[0] = wbMx[0]; vi.wbMax[1] = wbMx[1]; vi.wbMax[2] = wbMx[2];
 
             byPart[idata.partId].push_back(vi);
         }
@@ -228,6 +263,10 @@ struct SoCADAssemblyImpl {
                                  dm == SoCADAssembly::SHADED_WITH_EDGES);
         const bool needShaded = (dm == SoCADAssembly::SHADED ||
                                  dm == SoCADAssembly::SHADED_WITH_EDGES);
+
+        // Track which (part, type) pairs have already been added to requiredReps
+        // to avoid duplicates (a part with both wire and shaded gets one entry each).
+        std::unordered_set<obol::PartId, std::hash<obol::PartId>> reqWire, reqShaded;
 
         uint32_t baseInst = 0;
         for (auto& [pid, vis] : byPart) {
@@ -252,7 +291,10 @@ struct SoCADAssemblyImpl {
                 item.baseInstance  = baseInst;
                 item.instanceCount = count;
                 plan.wireItems.push_back(item);
-                plan.requiredReps.push_back(item.rep);
+                if (!reqWire.count(pid)) {
+                    plan.requiredReps.push_back(item.rep);
+                    reqWire.insert(pid);
+                }
             }
 
             // Shaded draw item
@@ -264,7 +306,10 @@ struct SoCADAssemblyImpl {
                 item.baseInstance  = baseInst;
                 item.instanceCount = count;
                 plan.shadedItems.push_back(item);
-                plan.requiredReps.push_back(item.rep);
+                if (!reqShaded.count(pid)) {
+                    plan.requiredReps.push_back(item.rep);
+                    reqShaded.insert(pid);
+                }
             }
 
             baseInst += count;
@@ -321,6 +366,7 @@ void SoCADAssembly::endUpdate()
 {
     impl_->inUpdate_ = false;
     impl_->bvhDirty_ = true;
+    impl_->planDirty_ = true;
     touch();
 }
 
@@ -332,8 +378,11 @@ SoCADAssembly::upsertPart(obol::PartId pid, const obol::PartGeometry& geom)
     impl_->parts_[pid] = geom;
     // Bump generation counter so the renderer re-uploads VBOs
     impl_->partGeneration_[pid] = impl_->nextGeneration_++;
-    // Invalidate edge BVH for this part
+    // Invalidate edge and triangle BVH caches for this part
     impl_->partEdgeBvhCache_.erase(pid);
+    impl_->partTriBvhCache_.erase(pid);
+    // Invalidate LoD index cache for this part
+    impl_->lodIndexCache_.erase(pid);
     // Build or replace LoD structure for shaded geometry
     if (geom.shaded.has_value()) {
         const auto& mesh = *geom.shaded;
@@ -349,7 +398,8 @@ SoCADAssembly::upsertPart(obol::PartId pid, const obol::PartGeometry& geom)
             idata.worldBounds = impl_->computeWorldBounds(geom, idata.localToRoot);
         }
     }
-    impl_->bvhDirty_ = true;
+    impl_->bvhDirty_  = true;
+    impl_->planDirty_ = true;
     if (!impl_->inUpdate_) touch();
 }
 
@@ -358,8 +408,11 @@ SoCADAssembly::removePart(obol::PartId pid)
 {
     impl_->parts_.erase(pid);
     impl_->partEdgeBvhCache_.erase(pid);
+    impl_->partTriBvhCache_.erase(pid);
     impl_->partLods_.erase(pid);
-    impl_->bvhDirty_ = true;
+    impl_->lodIndexCache_.erase(pid);
+    impl_->bvhDirty_  = true;
+    impl_->planDirty_ = true;
     if (!impl_->inUpdate_) touch();
 }
 
@@ -389,7 +442,8 @@ SoCADAssembly::upsertInstance(obol::InstanceId iid, const obol::InstanceRecord& 
         idata.worldBounds = SbBox3f();
     }
 
-    impl_->bvhDirty_ = true;
+    impl_->bvhDirty_  = true;
+    impl_->planDirty_ = true;
     if (!impl_->inUpdate_) touch();
 }
 
@@ -398,7 +452,9 @@ SoCADAssembly::removeInstance(obol::InstanceId iid)
 {
     impl_->instances_.erase(iid);
     impl_->selected_.erase(iid);
-    impl_->bvhDirty_ = true;
+    impl_->hidden_.erase(iid);
+    impl_->bvhDirty_  = true;
+    impl_->planDirty_ = true;
     if (!impl_->inUpdate_) touch();
 }
 
@@ -412,7 +468,8 @@ SoCADAssembly::updateInstanceTransform(obol::InstanceId iid, const SbMatrix& m)
     if (geomIt != impl_->parts_.end()) {
         it->second.worldBounds = impl_->computeWorldBounds(geomIt->second, m);
     }
-    impl_->bvhDirty_ = true;
+    impl_->bvhDirty_  = true;
+    impl_->planDirty_ = true;
     if (!impl_->inUpdate_) touch();
 }
 
@@ -422,6 +479,7 @@ SoCADAssembly::updateInstanceStyle(obol::InstanceId iid, const obol::InstanceSty
     auto it = impl_->instances_.find(iid);
     if (it == impl_->instances_.end()) return;
     it->second.style = style;
+    impl_->planDirty_ = true;
     if (!impl_->inUpdate_) touch();
 }
 
@@ -430,6 +488,7 @@ SoCADAssembly::setSelectedInstances(const std::vector<obol::InstanceId>& ids)
 {
     impl_->selected_.clear();
     impl_->selected_.insert(ids.begin(), ids.end());
+    impl_->planDirty_ = true;
     if (!impl_->inUpdate_) touch();
 }
 
@@ -444,6 +503,52 @@ SoCADAssembly::partGeometry(obol::PartId pid) const
     auto it = impl_->parts_.find(pid);
     if (it == impl_->parts_.end()) return nullptr;
     return &it->second;
+}
+
+std::optional<obol::InstanceRecord>
+SoCADAssembly::getInstanceRecord(obol::InstanceId iid) const
+{
+    auto it = impl_->instances_.find(iid);
+    if (it == impl_->instances_.end()) return std::nullopt;
+    const InstanceData& d = it->second;
+    obol::InstanceRecord rec;
+    rec.part        = d.partId;
+    rec.localToRoot = d.localToRoot;
+    rec.style       = d.style;
+    // parent/childName/occurrenceIndex/boolOp are derivation inputs and are
+    // not stored after insert; the caller must track them externally if needed.
+    return rec;
+}
+
+const std::vector<uint32_t>*
+SoCADAssembly::getLodFilteredIndices(obol::PartId pid, uint8_t level) const
+{
+    auto lodIt = impl_->partLods_.find(pid);
+    if (lodIt == impl_->partLods_.end() || !lodIt->second.isBuilt()) return nullptr;
+
+    auto genIt = impl_->partGeneration_.find(pid);
+    uint64_t gen = (genIt != impl_->partGeneration_.end()) ? genIt->second : 0;
+
+    auto& cacheEntry = impl_->lodIndexCache_[pid];
+    if (cacheEntry.generation != gen) {
+        cacheEntry.generation = gen;
+        cacheEntry.byLevel.clear();
+    }
+    auto it = cacheEntry.byLevel.find(level);
+    if (it == cacheEntry.byLevel.end()) {
+        cacheEntry.byLevel[level] = lodIt->second.trianglesAtLevel(level);
+        return &cacheEntry.byLevel[level];
+    }
+    return &it->second;
+}
+
+void
+SoCADAssembly::setHiddenInstances(const std::vector<obol::InstanceId>& ids)
+{
+    impl_->hidden_.clear();
+    impl_->hidden_.insert(ids.begin(), ids.end());
+    impl_->planDirty_ = true;
+    if (!impl_->inUpdate_) touch();
 }
 
 // ---------------------------------------------------------------------------
@@ -475,14 +580,30 @@ SoCADAssembly::GLRender(SoGLRenderAction* action)
     SbMatrix viewProj = viewMat;
     viewProj.multRight(projMat);
 
-    // Build per-frame plan (groups instances by part for draw-call batching)
-    obol::internal::CadFramePlan plan =
-        impl_->buildFramePlan(drawMode.getValue(), impl_->selected_);
+    // Derive camera (eye) position in world space from the inverse view matrix.
+    // In OI convention: p_view = p_world * view, so p_world = p_view * view^-1.
+    // The view-space origin (0,0,0) maps to the translation row of the inverse.
+    SbMatrix invView = viewMat.inverse();
+    SbVec3f cameraPos(invView[3][0], invView[3][1], invView[3][2]);
+
+    const int dm = drawMode.getValue();
+
+    // Rebuild the frame plan only when geometry, instances, styles, selection,
+    // hidden set, or draw mode have changed.  Camera moves do NOT invalidate
+    // the plan, so it is reused every frame during interactive orbit.
+    if (impl_->planDirty_ || impl_->cachedDM_ != dm) {
+        impl_->cachedPlan_  = impl_->buildFramePlan(dm, impl_->selected_,
+                                                     impl_->hidden_);
+        impl_->planDirty_   = false;
+        impl_->cachedDM_    = dm;
+    }
+
+    const bool lod = (lodEnabled.getValue() == TRUE);
 
     // Delegate to the VBO + shader renderer (GL 2.0 minimum; optional GL 3.1+
     // instanced path selected automatically when available)
-    impl_->renderer_->render(plan, *this, glue, viewProj,
-                             impl_->partGeneration_);
+    impl_->renderer_->render(impl_->cachedPlan_, *this, glue, viewProj,
+                             cameraPos, lod, impl_->partGeneration_);
 }
 
 // ---------------------------------------------------------------------------
@@ -505,10 +626,39 @@ SoCADAssembly::rayPick(SoRayPickAction* action)
         pm = (drawMode.getValue() == WIREFRAME) ? PICK_EDGE : PICK_TRIANGLE;
     }
 
-    // World-space tolerance (approximate from screen-space tolerance)
-    // We use a fixed world-space fallback here; screen-space computation
-    // requires the viewport/projection which varies per viewer.
-    const float toleranceWS = edgePickTolerancePx.getValue() * 0.01f;
+    // Derive a world-space edge-pick tolerance from the screen-space field.
+    // Approximate: use the view volume to find how large one pixel is in world
+    // space at the assembly centre, then scale by the user-specified tolerance.
+    float toleranceWS = edgePickTolerancePx.getValue() * 0.01f;
+    {
+        SoState* state = action->getState();
+        if (state) {
+            const SbViewportRegion& vpr =
+                SoViewportRegionElement::get(state);
+            const SbViewVolume vv = SoViewVolumeElement::get(state);
+            const float vpH = static_cast<float>(
+                vpr.getViewportSizePixels()[1]);
+            if (vpH > 0.0f && vv.getNearDist() > 0.0f) {
+                // Pick ray distance to assembly centre (or fallback to near*10)
+                SbBox3f bbox;
+                for (const auto& [iid, idata] : impl_->instances_) {
+                    if (!idata.worldBounds.isEmpty())
+                        bbox.extendBy(idata.worldBounds);
+                }
+                float dist = vv.getNearDist() * 10.0f;
+                if (!bbox.isEmpty()) {
+                    dist = (bbox.getCenter() - worldRay.getPosition())
+                               .dot(worldRay.getDirection());
+                    dist = std::max(vv.getNearDist(), dist);
+                }
+                // Height of the view volume at that distance (perspective or ortho)
+                float nearH  = vv.getHeight();          // at nearDist for persp
+                float nearD  = vv.getNearDist();
+                float pixelH = (nearH / vpH) * (dist / nearD);
+                toleranceWS  = edgePickTolerancePx.getValue() * pixelH;
+            }
+        }
+    }
 
     obol::picking::CadPickResult result;
 
@@ -521,7 +671,22 @@ SoCADAssembly::rayPick(SoRayPickAction* action)
             toleranceWS);
     }
 
-    if (!result.valid && (pm == PICK_TRIANGLE || pm == PICK_HYBRID || pm == PICK_BOUNDS)) {
+    if (!result.valid && (pm == PICK_TRIANGLE || pm == PICK_HYBRID)) {
+        result = obol::picking::CadPickQuery::pickTriangle(
+            worldRay,
+            impl_->instanceBvh_,
+            impl_->parts_,
+            impl_->partTriBvhCache_);
+    }
+
+    if (!result.valid && pm == PICK_BOUNDS) {
+        result = obol::picking::CadPickQuery::pickBounds(
+            worldRay,
+            impl_->instanceBvh_);
+    }
+
+    // For PICK_HYBRID: also try bounds if triangle picking returned nothing.
+    if (!result.valid && pm == PICK_HYBRID) {
         result = obol::picking::CadPickQuery::pickBounds(
             worldRay,
             impl_->instanceBvh_);
