@@ -478,19 +478,19 @@ CadRendererGL::getLodCachedIndices(PartId pid, uint8_t level, uint64_t gen,
 //
 // Returns planes as float[6][4] where p[i] = {a,b,c,d}:
 //   inside if a*x + b*y + c*z + d >= 0
-struct FrustumPlanes { float p[6][4]; };
+struct FrustumPlanes { float planes[6][4]; };
 
 static FrustumPlanes extractFrustumPlanes(const SbMatrix& vp) noexcept
 {
     FrustumPlanes fp;
     for (int col = 0; col < 3; ++col) {
         for (int sg = 0; sg < 2; ++sg) {
-            int   pi = col * 2 + sg;
-            float s  = (sg == 0) ? 1.0f : -1.0f;
-            fp.p[pi][0] = s * vp[0][col] + vp[0][3];
-            fp.p[pi][1] = s * vp[1][col] + vp[1][3];
-            fp.p[pi][2] = s * vp[2][col] + vp[2][3];
-            fp.p[pi][3] = s * vp[3][col] + vp[3][3];
+            int   planeIndex = col * 2 + sg;
+            float sign       = (sg == 0) ? 1.0f : -1.0f;
+            fp.planes[planeIndex][0] = sign * vp[0][col] + vp[0][3];
+            fp.planes[planeIndex][1] = sign * vp[1][col] + vp[1][3];
+            fp.planes[planeIndex][2] = sign * vp[2][col] + vp[2][3];
+            fp.planes[planeIndex][3] = sign * vp[3][col] + vp[3][3];
         }
     }
     return fp;
@@ -503,10 +503,10 @@ static bool isBoxOutsideFrustum(const float wbMin[3], const float wbMax[3],
 {
     for (int i = 0; i < 6; ++i) {
         // Negative vertex: corner most opposed to the plane normal.
-        float nx = (fp.p[i][0] < 0.0f) ? wbMax[0] : wbMin[0];
-        float ny = (fp.p[i][1] < 0.0f) ? wbMax[1] : wbMin[1];
-        float nz = (fp.p[i][2] < 0.0f) ? wbMax[2] : wbMin[2];
-        if (fp.p[i][0]*nx + fp.p[i][1]*ny + fp.p[i][2]*nz + fp.p[i][3] < 0.0f)
+        float nx = (fp.planes[i][0] < 0.0f) ? wbMax[0] : wbMin[0];
+        float ny = (fp.planes[i][1] < 0.0f) ? wbMax[1] : wbMin[1];
+        float nz = (fp.planes[i][2] < 0.0f) ? wbMax[2] : wbMin[2];
+        if (fp.planes[i][0]*nx + fp.planes[i][1]*ny + fp.planes[i][2]*nz + fp.planes[i][3] < 0.0f)
             return true; // Completely outside this plane.
     }
     return false;

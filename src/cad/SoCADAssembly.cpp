@@ -266,7 +266,7 @@ struct SoCADAssemblyImpl {
 
         // Track which (part, type) pairs have already been added to requiredReps
         // to avoid duplicates (a part with both wire and shaded gets one entry each).
-        std::unordered_set<obol::PartId, std::hash<obol::PartId>> reqWire, reqShaded;
+        std::unordered_set<obol::PartId, std::hash<obol::PartId>> requiredWireParts, requiredShadedParts;
 
         uint32_t baseInst = 0;
         for (auto& [pid, vis] : byPart) {
@@ -291,9 +291,9 @@ struct SoCADAssemblyImpl {
                 item.baseInstance  = baseInst;
                 item.instanceCount = count;
                 plan.wireItems.push_back(item);
-                if (!reqWire.count(pid)) {
+                if (!requiredWireParts.count(pid)) {
                     plan.requiredReps.push_back(item.rep);
-                    reqWire.insert(pid);
+                    requiredWireParts.insert(pid);
                 }
             }
 
@@ -306,9 +306,9 @@ struct SoCADAssemblyImpl {
                 item.baseInstance  = baseInst;
                 item.instanceCount = count;
                 plan.shadedItems.push_back(item);
-                if (!reqShaded.count(pid)) {
+                if (!requiredShadedParts.count(pid)) {
                     plan.requiredReps.push_back(item.rep);
-                    reqShaded.insert(pid);
+                    requiredShadedParts.insert(pid);
                 }
             }
 

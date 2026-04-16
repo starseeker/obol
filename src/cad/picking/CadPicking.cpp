@@ -449,11 +449,11 @@ CadPartTriBVH::triBounds(const TriEntry& t) noexcept
     b.extendBy(t.p0);
     b.extendBy(t.p1);
     b.extendBy(t.p2);
-    const float kPad = 1e-6f;
+    const float kBoundsPadding = 1e-6f;
     SbVec3f bmin, bmax;
     b.getBounds(bmin, bmax);
-    b.setBounds(bmin - SbVec3f(kPad, kPad, kPad),
-                bmax + SbVec3f(kPad, kPad, kPad));
+    b.setBounds(bmin - SbVec3f(kBoundsPadding, kBoundsPadding, kBoundsPadding),
+                bmax + SbVec3f(kBoundsPadding, kBoundsPadding, kBoundsPadding));
     return b;
 }
 

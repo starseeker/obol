@@ -396,9 +396,9 @@ static int test_part_tri_bvh()
     // -----------------------------------------------------------------------
     runner.startTest("CadPartTriBVH: pyramid mesh – closest triangle hit");
     {
-        obol::TriMesh pyr = makePyramid();
+        obol::TriMesh pyramid = makePyramid();
         CadPartTriBVH bvh;
-        bvh.build(pyr.positions, pyr.indices);
+        bvh.build(pyramid.positions, pyramid.indices);
         // Ray from above shooting through base (z~=0)
         SbLine ray(SbVec3f(0.4f, 0.4f, 2.0f), SbVec3f(0.4f, 0.4f, -1.0f));
         auto hit = bvh.queryClosest(ray);
