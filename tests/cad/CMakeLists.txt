@@ -191,6 +191,60 @@ if(_bench_has_gl)
 
     add_test(NAME test_cad_mesh_lod_benchmark COMMAND test_cad_mesh_lod_benchmark)
     message(STATUS "CAD mesh LoD benchmark: enabled (swrast=${_bench_use_swrast})")
+
+    # ---------------------------------------------------------------------------
+    # test_cad_hier_benchmark  (unique-part hierarchy scalability; requires GL)
+    #
+    # Exercises:
+    #   • N distinct part geometries (not one shared mesh)
+    #   • 2-level hierarchical instance IDs via CadIdBuilder
+    #   • Three draw modes: WIREFRAME, SHADED, SHADED_WITH_EDGES
+    #   • API paths: setHiddenInstances, updateInstanceTransform/Style, pick
+    #   • Linux memory tracking (RSS) at build and render phases
+    #   • CSV output for trend tracking
+    #   • Flat SoSeparator SG baseline comparison at smoke scale
+    # ---------------------------------------------------------------------------
+    add_executable(test_cad_hier_benchmark test_cad_hier_benchmark.cpp)
+
+    target_include_directories(test_cad_hier_benchmark PRIVATE
+        ${CAD_TEST_INCLUDES}
+        ${CMAKE_SOURCE_DIR}/tests/utils    # headless_utils.h
+        ${CMAKE_SOURCE_DIR}/tests          # test_utils.h
+        ${CMAKE_SOURCE_DIR}/tests/cad      # cad_test_generator.h
+    )
+
+    target_link_libraries(test_cad_hier_benchmark PRIVATE
+        ${PROJECT_NAME}
+        ${OBOL_TARGET_LINK_LIBRARIES}
+        simple_test_utils
+    )
+
+    if(_bench_use_swrast)
+        target_compile_definitions(test_cad_hier_benchmark PRIVATE OBOL_SWRAST_BUILD)
+        if(_bench_osmesa_inc)
+            target_include_directories(test_cad_hier_benchmark PRIVATE ${_bench_osmesa_inc})
+        endif()
+        if(_bench_osmesa_link)
+            target_link_libraries(test_cad_hier_benchmark PRIVATE ${_bench_osmesa_link})
+        endif()
+    else()
+        if(X11_FOUND)
+            target_link_libraries(test_cad_hier_benchmark PRIVATE ${X11_X11_LIB})
+            target_include_directories(test_cad_hier_benchmark PRIVATE ${X11_INCLUDE_DIR})
+        endif()
+        if(OpenGL_FOUND AND TARGET OpenGL::GL)
+            target_link_libraries(test_cad_hier_benchmark PRIVATE OpenGL::GL)
+        elseif(OPENGL_gl_LIBRARY)
+            target_link_libraries(test_cad_hier_benchmark PRIVATE ${OPENGL_gl_LIBRARY})
+        endif()
+    endif()
+
+    if(Threads_FOUND)
+        target_link_libraries(test_cad_hier_benchmark PRIVATE Threads::Threads)
+    endif()
+
+    add_test(NAME test_cad_hier_benchmark COMMAND test_cad_hier_benchmark)
+    message(STATUS "CAD hier benchmark: enabled (swrast=${_bench_use_swrast})")
 else()
     message(STATUS "CAD benchmark test: skipped (no GL backend available)")
 endif()
