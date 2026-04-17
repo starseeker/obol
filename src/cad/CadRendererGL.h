@@ -78,10 +78,13 @@
 #include <obol/cad/SoCADAssembly.h>
 
 #include <Inventor/SbMatrix.h>
+#include <Inventor/SbVec3f.h>
 #include <Inventor/system/gl.h>
 
 #include <memory>
 #include <cstdint>
+#include <unordered_map>
+#include <vector>
 
 struct SoGLContext;
 class SoGLRenderAction;
@@ -104,12 +107,16 @@ public:
      * @param assembly   The owning node (for geometry access).
      * @param glue       Active GL dispatch context (from sogl_current_render_glue()).
      * @param viewProj   Combined view-projection matrix (OI row-major, GL_FALSE upload).
+     * @param cameraPos  Camera (eye) position in world space (for LoD distance).
+     * @param lodEnabled Apply POP LoD level selection when drawing triangles.
      * @param partGenMap Map from PartId → generation counter (to detect stale VBOs).
      */
     void render(const CadFramePlan& plan,
                 const SoCADAssembly& assembly,
                 const SoGLContext*   glue,
                 const SbMatrix&      viewProj,
+                const SbVec3f&       cameraPos,
+                bool                 lodEnabled,
                 const std::unordered_map<PartId, uint64_t,
                                          std::hash<PartId>>& partGenMap);
 
@@ -138,6 +145,14 @@ private:
     // Per-context GPU resource cache
     CadGpuResources gpuRes_;
 
+    // CPU-side LoD index cache.  Keyed by (PartId, level); invalidated when
+    // the part's generation counter changes.
+    struct LodCacheEntry {
+        uint64_t generation = UINT64_MAX;
+        std::unordered_map<uint8_t, std::vector<uint32_t>> byLevel;
+    };
+    std::unordered_map<PartId, LodCacheEntry, std::hash<PartId>> lodCache_;
+
     // Compiled shader programs (keyed by context id, lazily compiled)
     struct ShaderPrograms {
         GLuint wire    = 0; ///< Wire-pass shader (no lighting)
@@ -155,6 +170,13 @@ private:
     void ensurePartUploaded(PartId pid, const SoCADAssembly& assembly,
                             uint64_t gen, const SoGLContext * glue);
 
+    // Return cached LoD-filtered triangle indices for (pid, level, gen).
+    // Builds the filtered list on first access and reuses it thereafter.
+    // Returns nullptr if the assembly has no LoD structure for this part.
+    const std::vector<uint32_t>* getLodCachedIndices(
+        PartId pid, uint8_t level, uint64_t gen,
+        const SoCADAssembly& assembly);
+
     // -----------------------------------------------------------------------
     // Tier-1: VBO-loop path (GL 2.0+)
     // -----------------------------------------------------------------------
@@ -163,6 +185,8 @@ private:
                        const SoCADAssembly& assembly,
                        const SoGLContext*   glue,
                        const SbMatrix&      viewProj,
+                       const SbVec3f&       cameraPos,
+                       bool                 lodEnabled,
                        const std::unordered_map<PartId, uint64_t,
                                                 std::hash<PartId>>& partGenMap);
 
@@ -177,6 +201,8 @@ private:
                              const SoCADAssembly& assembly,
                              const SoGLContext*   glue,
                              const SbMatrix&      viewProj,
+                             const SbVec3f&       cameraPos,
+                             bool                 lodEnabled,
                              const std::unordered_map<PartId, uint64_t,
                                                        std::hash<PartId>>& partGenMap);
 

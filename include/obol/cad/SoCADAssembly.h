@@ -317,6 +317,39 @@ public:
     const obol::PartGeometry* partGeometry(obol::PartId pid) const;
 
     /**
+     * Return the full instance record for @p iid, or empty if not found.
+     *
+     * Useful for "materialising" a picked instance into a normal scene-graph
+     * node: retrieve part, transform and style, then build an explicit shape.
+     */
+    std::optional<obol::InstanceRecord> getInstanceRecord(obol::InstanceId iid) const;
+
+    /**
+     * Return LoD-filtered triangle indices for @p pid at the given @p level.
+     *
+     * Returns nullptr when no LoD structure is available for the part.
+     * The returned pointer is stable until the next geometry change for
+     * that part (i.e., until the next upsertPart/removePart call).
+     *
+     * Used internally by the renderer when @c lodEnabled is TRUE.
+     */
+    const std::vector<uint32_t>* getLodFilteredIndices(obol::PartId pid,
+                                                        uint8_t level) const;
+
+    /**
+     * Exclude a set of instances from rendering.
+     *
+     * Hidden instances are completely skipped during GLRender() and are not
+     * included in the frame plan.  They remain in the instance database and
+     * can be shown again by passing an updated (smaller) set.
+     *
+     * Typical use: after promoting selected/edited instances to explicit
+     * scene-graph nodes, hide the corresponding aggregate entries so they
+     * don't double-render.
+     */
+    void setHiddenInstances(const std::vector<obol::InstanceId>& ids);
+
+    /**
      * Returns the rendering tier selected during the last GLRender() call:
      *   -1 = not yet rendered
      *    0 = immediate-mode fallback (GL 1.1 fixed-function, no working GLSL+VBO)

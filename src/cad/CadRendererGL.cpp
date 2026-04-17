@@ -40,6 +40,7 @@
 
 #include <cstring>
 #include <cstdio>
+#include <cmath>
 #include <vector>
 #include <algorithm>
 #include <cassert>
@@ -368,6 +369,9 @@ bool CadRendererGL::ensureReady(const SoGLContext* glue)
 void CadRendererGL::ensurePartUploaded(PartId pid, const SoCADAssembly& assembly,
                                        uint64_t gen, const SoGLContext* glue)
 {
+    // Fast path: GPU data is already current — skip expensive array building.
+    if (gpuRes_.isUpToDate(pid, gen)) return;
+
     // Retrieve part geometry from the assembly
     const obol::PartGeometry* geom = assembly.partGeometry(pid);
     if (!geom) return;
@@ -431,14 +435,101 @@ void CadRendererGL::ensurePartUploaded(PartId pid, const SoCADAssembly& assembly
 }
 
 // ---------------------------------------------------------------------------
+// getLodCachedIndices() – CPU LoD index cache
+// ---------------------------------------------------------------------------
+
+const std::vector<uint32_t>*
+CadRendererGL::getLodCachedIndices(PartId pid, uint8_t level, uint64_t gen,
+                                   const SoCADAssembly& assembly)
+{
+    auto& entry = lodCache_[pid];
+    if (entry.generation != gen) {
+        entry.generation = gen;
+        entry.byLevel.clear();
+    }
+    auto it = entry.byLevel.find(level);
+    if (it != entry.byLevel.end()) return &it->second;
+
+    // Delegate to the assembly's LoD-index cache (which holds the filtered
+    // index list for the given (pid, level) pair).
+    const std::vector<uint32_t>* src = assembly.getLodFilteredIndices(pid, level);
+    if (!src) return nullptr;
+
+    entry.byLevel[level] = *src;
+    return &entry.byLevel[level];
+}
+
+// ---------------------------------------------------------------------------
 // render() – top-level entry point
 // ---------------------------------------------------------------------------
+
+// Extract six frustum half-space planes from the OI viewProj matrix.
+//
+// OI convention: p_clip = p_world * VP  (row vector, row-major matrix)
+// where VP[r][c] = row r, col c.
+//
+// The six clip-space half-spaces (inside when ≥ 0):
+//   Left:   x + w ≥ 0  →  col0 + col3
+//   Right: -x + w ≥ 0  → -col0 + col3
+//   Bottom: y + w ≥ 0  →  col1 + col3
+//   Top:   -y + w ≥ 0  → -col1 + col3
+//   Near:   z + w ≥ 0  →  col2 + col3
+//   Far:   -z + w ≥ 0  → -col2 + col3
+//
+// Returns planes as float[6][4] where p[i] = {a,b,c,d}:
+//   inside if a*x + b*y + c*z + d >= 0
+struct FrustumPlanes { float planes[6][4]; };
+
+static FrustumPlanes extractFrustumPlanes(const SbMatrix& vp) noexcept
+{
+    FrustumPlanes fp;
+    for (int col = 0; col < 3; ++col) {
+        for (int sg = 0; sg < 2; ++sg) {
+            int   planeIndex = col * 2 + sg;
+            float sign       = (sg == 0) ? 1.0f : -1.0f;
+            fp.planes[planeIndex][0] = sign * vp[0][col] + vp[0][3];
+            fp.planes[planeIndex][1] = sign * vp[1][col] + vp[1][3];
+            fp.planes[planeIndex][2] = sign * vp[2][col] + vp[2][3];
+            fp.planes[planeIndex][3] = sign * vp[3][col] + vp[3][3];
+        }
+    }
+    return fp;
+}
+
+// Returns true when the AABB [wbMin,wbMax] is completely outside at least one
+// frustum half-space and can therefore be safely skipped.
+static bool isBoxOutsideFrustum(const float wbMin[3], const float wbMax[3],
+                                 const FrustumPlanes& fp) noexcept
+{
+    for (int i = 0; i < 6; ++i) {
+        // Negative vertex: corner most opposed to the plane normal.
+        float nx = (fp.planes[i][0] < 0.0f) ? wbMax[0] : wbMin[0];
+        float ny = (fp.planes[i][1] < 0.0f) ? wbMax[1] : wbMin[1];
+        float nz = (fp.planes[i][2] < 0.0f) ? wbMax[2] : wbMin[2];
+        if (fp.planes[i][0]*nx + fp.planes[i][1]*ny + fp.planes[i][2]*nz + fp.planes[i][3] < 0.0f)
+            return true; // Completely outside this plane.
+    }
+    return false;
+}
+
+// Compute a POP LoD level based on camera-to-object distance and object radius.
+// Returns 255 (full detail) when very close; decreases as the object shrinks.
+static uint8_t computeLodLevel(float dist, float radius) noexcept
+{
+    if (radius < 1e-6f) return 255;
+    float ratio = dist / radius; // 0 = touching; large = tiny/far
+    // Mapping: ratio ≈ 0 → 255; ratio = 2 → ~170; ratio = 50 → ~10
+    float level = 255.0f / (1.0f + ratio * 0.5f);
+    return static_cast<uint8_t>(std::min(255.0f, std::max(0.0f, level)));
+}
 
 void CadRendererGL::render(
         const CadFramePlan& plan,
         const SoCADAssembly& assembly,
         const SoGLContext*   glue,
         const SbMatrix&      viewProj,
+        const SbVec3f&       cameraPos,
+        bool                 lodEnabled,
         const std::unordered_map<PartId, uint64_t,
                                  std::hash<PartId>>& partGenMap)
 {
@@ -457,10 +548,10 @@ void CadRendererGL::render(
         renderInstanced(plan, assembly, glue, viewProj, partGenMap);
     } else if (caps_.canUseVbo() && shaders_.wire) {
         lastRenderTier_ = 1;
-        renderVboLoop(plan, assembly, glue, viewProj, partGenMap);
+        renderVboLoop(plan, assembly, glue, viewProj, cameraPos, lodEnabled, partGenMap);
     } else {
         lastRenderTier_ = 0;
-        renderImmediateMode(plan, assembly, glue, viewProj, partGenMap);
+        renderImmediateMode(plan, assembly, glue, viewProj, cameraPos, lodEnabled, partGenMap);
     }
 }
 
@@ -551,6 +642,8 @@ void CadRendererGL::renderVboLoop(
         const SoCADAssembly& /*assembly*/,
         const SoGLContext*   glue,
         const SbMatrix&      viewProj,
+        const SbVec3f&       /*cameraPos*/,
+        bool                 /*lodEnabled*/,
         const std::unordered_map<PartId, uint64_t,
                                  std::hash<PartId>>& /*partGenMap*/)
 {
@@ -564,6 +657,8 @@ void CadRendererGL::renderVboLoop(
     const GLint locPos  = 0;
     const GLint locNorm = 1;
 
+    // Extract frustum planes for per-instance culling.
+    const FrustumPlanes fp = extractFrustumPlanes(viewProj);
 
     // --- Wire pass ---
     if (!plan.wireItems.empty()) {
@@ -581,6 +676,8 @@ void CadRendererGL::renderVboLoop(
 
             for (uint32_t i = 0; i < item.instanceCount; ++i) {
                 const auto& inst = plan.visibleInstances[item.baseInstance + i];
+                if (isBoxOutsideFrustum(inst.wbMin, inst.wbMax, fp)) continue;
+
                 glue->glUniformMatrix4fvARB(locModel, 1, GL_FALSE,
                                             inst.transform.data());
                 float rgba[4] = {
@@ -617,6 +714,8 @@ void CadRendererGL::renderVboLoop(
 
             for (uint32_t i = 0; i < item.instanceCount; ++i) {
                 const auto& inst = plan.visibleInstances[item.baseInstance + i];
+                if (isBoxOutsideFrustum(inst.wbMin, inst.wbMax, fp)) continue;
+
                 glue->glUniformMatrix4fvARB(locModel, 1, GL_FALSE,
                                             inst.transform.data());
                 float rgba[4] = {
@@ -642,8 +741,10 @@ void CadRendererGL::renderImmediateMode(
         const SoCADAssembly& assembly,
         const SoGLContext*   /*glue*/,
         const SbMatrix&      viewProj,
+        const SbVec3f&       cameraPos,
+        bool                 lodEnabled,
         const std::unordered_map<PartId, uint64_t,
-                                 std::hash<PartId>>& /*partGenMap*/)
+                                 std::hash<PartId>>& partGenMap)
 {
     // Push GL matrix state, set up the view-projection matrix in MODELVIEW
     // (the fixed-function pipeline applies MODELVIEW * PROJECTION to each vertex).
@@ -659,6 +760,9 @@ void CadRendererGL::renderImmediateMode(
     GLboolean wasLighting = glIsEnabled(GL_LIGHTING);
     glDisable(GL_LIGHTING);
 
+    // Extract frustum planes for per-instance culling.
+    const FrustumPlanes fp = extractFrustumPlanes(viewProj);
+
     // --- Wire pass ---
     for (const auto& item : plan.wireItems) {
         const obol::PartGeometry* geom = assembly.partGeometry(item.rep.part);
@@ -667,6 +771,7 @@ void CadRendererGL::renderImmediateMode(
 
         for (uint32_t ii = 0; ii < item.instanceCount; ++ii) {
             const auto& inst = plan.visibleInstances[item.baseInstance + ii];
+            if (isBoxOutsideFrustum(inst.wbMin, inst.wbMax, fp)) continue;
 
             // Build the combined VP * M matrix in OI convention,
             // then load it as the GL MODELVIEW.
@@ -703,8 +808,36 @@ void CadRendererGL::renderImmediateMode(
 
         const bool hasNorm = !mesh.normals.empty();
 
+        // Compute LoD-filtered indices for this part if enabled.
+        // All instances share the same part, so determine a representative
+        // LoD level by using the first visible instance's world-bounds centre.
+        const std::vector<uint32_t>* lodIdx = nullptr;
+        if (lodEnabled && item.instanceCount > 0) {
+            const auto& rep = plan.visibleInstances[item.baseInstance];
+            float cx = (rep.wbMin[0] + rep.wbMax[0]) * 0.5f;
+            float cy = (rep.wbMin[1] + rep.wbMax[1]) * 0.5f;
+            float cz = (rep.wbMin[2] + rep.wbMax[2]) * 0.5f;
+            float dx = rep.wbMax[0] - rep.wbMin[0];
+            float dy = rep.wbMax[1] - rep.wbMin[1];
+            float dz = rep.wbMax[2] - rep.wbMin[2];
+            float radius = std::sqrt(dx*dx + dy*dy + dz*dz) * 0.5f;
+            float distX = cx - cameraPos[0];
+            float distY = cy - cameraPos[1];
+            float distZ = cz - cameraPos[2];
+            float dist  = std::sqrt(distX*distX + distY*distY + distZ*distZ);
+            uint8_t level = computeLodLevel(dist, radius);
+            if (level < 255) {
+                auto genIt = partGenMap.find(item.rep.part);
+                uint64_t gen = (genIt != partGenMap.end()) ? genIt->second : 0;
+                lodIdx = getLodCachedIndices(item.rep.part, level, gen, assembly);
+            }
+        }
+
+        const std::vector<uint32_t>& drawIdx = lodIdx ? *lodIdx : mesh.indices;
+
         for (uint32_t ii = 0; ii < item.instanceCount; ++ii) {
             const auto& inst = plan.visibleInstances[item.baseInstance + ii];
+            if (isBoxOutsideFrustum(inst.wbMin, inst.wbMax, fp)) continue;
 
             SbMatrix model;
             model.setValue(inst.transform.data());
@@ -715,9 +848,9 @@ void CadRendererGL::renderImmediateMode(
             glColor4ub(inst.rgba[0], inst.rgba[1], inst.rgba[2], inst.rgba[3]);
 
             glBegin(GL_TRIANGLES);
-            for (size_t t = 0; t + 2 < mesh.indices.size(); t += 3) {
+            for (size_t t = 0; t + 2 < drawIdx.size(); t += 3) {
                 for (int k = 0; k < 3; ++k) {
-                    uint32_t idx = mesh.indices[t + k];
+                    uint32_t idx = drawIdx[t + k];
                     if (hasNorm && idx < mesh.normals.size()) {
                         const auto& n = mesh.normals[idx];
                         glNormal3f(n[0], n[1], n[2]);
