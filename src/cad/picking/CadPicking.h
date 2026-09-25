@@ -434,6 +434,7 @@ public:
      * @param instanceBvh    Pre-built instance BVH.
      * @param partGeometries Map from PartId to PartGeometry.
      * @param partTriBvhCache Lazily built per-part triangle BVH cache.
+     * @param fillsOnly      Restrict automatic wire-mode picks to visible fills.
      * @return Best hit or invalid result.
      */
     static CadPickResult pickTriangle(
@@ -445,7 +446,8 @@ public:
                            std::hash<Obol::PartId>>&        partTriBvhCache,
         float                                               toleranceWS = 0.0f,
         uint8_t                                             lodCeiling = 255,
-        CadProgressiveTriBvhCache *progressiveBvhCache = nullptr);
+        CadProgressiveTriBvhCache *progressiveBvhCache = nullptr,
+        bool fillsOnly = false);
 };
 
 } // namespace picking

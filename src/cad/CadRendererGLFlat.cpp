@@ -553,29 +553,52 @@ bool CadRendererGL::renderFlatWire(
         const Occurrence& occurrence = orderedOccurrence(i);
         if (!occurrence.rangeValid)
             return false;
-        const FlatWireStyleKey& key = occurrence.style;
-        if (!haveGroup || !(key == activeKey)) {
-            CadFlatWireGroup group;
-            group.lineWidth = occurrence.instance->lineWidth;
-            group.linePattern = occurrence.instance->linePattern;
-            group.linePatternFactor =
-                occurrence.instance->linePatternFactor;
-            std::copy(occurrence.instance->rgba.begin(),
-                      occurrence.instance->rgba.end(), group.rgba);
-            groups.push_back(group);
-            activeKey = key;
-            haveGroup = true;
-        }
-        CadFlatWireGroup& group = groups.back();
-        const GLint first = occurrence.range.first;
-        const GLsizei count = occurrence.range.count;
-        if (!group.firsts.empty() &&
-                group.firsts.back() + group.counts.back() == first) {
-            group.counts.back() += count;
-        } else {
-            group.firsts.push_back(first);
-            group.counts.push_back(count);
-        }
+        const bool complete = occurrence.wire->forEachStyleRange(
+            occurrence.flatSegmentFirst,
+            static_cast<size_t>(occurrence.range.count) / 2u,
+            [&](size_t segmentFirst, size_t segmentCount,
+                const WireStyle& authored) {
+                if (!occurrence.wire->styleRuns.empty() &&
+                        renderInterruptedAfter(deadlineWork, segmentCount))
+                    return false;
+                const CadResolvedWireStyle resolved =
+                    cadResolveWireStyle(*occurrence.instance, authored);
+                FlatWireStyleKey key = occurrence.style;
+                std::memcpy(
+                    &key.widthBits, &resolved.lineWidth,
+                    sizeof(key.widthBits));
+                key.rgba = static_cast<uint32_t>(resolved.rgba[0]) |
+                    (static_cast<uint32_t>(resolved.rgba[1]) << 8) |
+                    (static_cast<uint32_t>(resolved.rgba[2]) << 16) |
+                    (static_cast<uint32_t>(resolved.rgba[3]) << 24);
+                key.pattern = resolved.linePattern;
+                key.factor = resolved.linePatternFactor;
+                if (!haveGroup || !(key == activeKey)) {
+                    CadFlatWireGroup group;
+                    group.lineWidth = resolved.lineWidth;
+                    group.linePattern = resolved.linePattern;
+                    group.linePatternFactor = resolved.linePatternFactor;
+                    std::copy(
+                        resolved.rgba.begin(), resolved.rgba.end(),
+                        group.rgba);
+                    groups.push_back(group);
+                    activeKey = key;
+                    haveGroup = true;
+                }
+                CadFlatWireGroup& group = groups.back();
+                const GLint first = occurrence.range.first + static_cast<GLint>(
+                    (segmentFirst - occurrence.flatSegmentFirst) * 2u);
+                const GLsizei count = static_cast<GLsizei>(segmentCount * 2u);
+                if (!group.firsts.empty() && group.firsts.back() + group.counts.back() == first) {
+                    group.counts.back() += count;
+                } else {
+                    group.firsts.push_back(first);
+                    group.counts.push_back(count);
+                }
+                return true;
+            });
+        if (!complete)
+            return false;
     }
     for (CadFlatWireGroup& group : groups) {
         if (group.firsts.empty()) continue;
@@ -1625,6 +1648,24 @@ bool CadRendererGL::renderFlatShaded(
         GLint wasTwoSidedLighting = GL_FALSE;
         glue->glGetIntegerv(
             GL_LIGHT_MODEL_TWO_SIDE, &wasTwoSidedLighting);
+        GLint wasShadeModel = GL_SMOOTH;
+        glue->glGetIntegerv(GL_SHADE_MODEL, &wasShadeModel);
+        /* One face normal and constant material yield one lit color per
+         * triangle under directional lights and an infinite viewer.  Avoid
+         * fragment color interpolation only for that exact case.  Authored
+         * normals, positional lights and local-viewer specular lighting may
+         * vary within a triangle and must retain the caller's shading model. */
+        const bool constantTriangleLighting = !depthOnly &&
+            fixedLightingIsPositionIndependent(glue) &&
+            std::all_of(occurrences.begin(), occurrences.end(),
+                [&plan](const FlatShadedOccurrence& occurrence) {
+                    const auto& geometry =
+                        plan.partBindings[occurrence.partIndex].geometry;
+                    return geometry && geometry->shaded &&
+                        geometry->shaded->normals.empty();
+                });
+        if (constantTriangleLighting)
+            glue->glShadeModel(GL_FLAT);
         if (depthOnly) glue->glDisable(GL_LIGHTING);
         else {
             glue->glEnable(GL_LIGHTING);
@@ -1658,6 +1699,7 @@ bool CadRendererGL::renderFlatShaded(
         else glue->glDisable(GL_COLOR_MATERIAL);
         glue->glLightModeli(
             GL_LIGHT_MODEL_TWO_SIDE, wasTwoSidedLighting);
+        glue->glShadeModel(wasShadeModel);
         if (wasLighting) glue->glEnable(GL_LIGHTING);
         else glue->glDisable(GL_LIGHTING);
         glue->glMatrixMode(GL_MODELVIEW);

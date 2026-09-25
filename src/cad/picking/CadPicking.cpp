@@ -1040,7 +1040,8 @@ CadPickQuery::pickTriangle(
                        std::hash<Obol::PartId>>&        partTriBvhCache,
     float                                               toleranceWS,
     uint8_t                                             lodCeiling,
-    CadProgressiveTriBvhCache                          *progressiveBvhCache)
+    CadProgressiveTriBvhCache                          *progressiveBvhCache,
+    bool                                                fillsOnly)
 {
     CadPickResult best;
     best.t = std::numeric_limits<float>::infinity();
@@ -1055,7 +1056,7 @@ CadPickQuery::pickTriangle(
         auto geomIt = partGeometries.find(pid);
         if (geomIt == partGeometries.end() || !geomIt->second) continue;
         const auto& geom = *geomIt->second;
-        if (!geom.shaded.has_value()) continue;
+        if (!geom.shaded.has_value() || (fillsOnly && !geom.shadedIsFill)) continue;
 
         const Obol::TriMesh& mesh = *geom.shaded;
         const CadPartTriBVH *triBvh = nullptr;

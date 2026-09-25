@@ -340,6 +340,7 @@ private:
      * used by GLSL.  The caller must have loaded the world-to-eye model-view
      * matrix before calling this method. */
     void uploadFixedLights(const SoGLContext* glue);
+    bool fixedLightingIsPositionIndependent(const SoGLContext* glue) const;
     /// Upload camera-facing data used only when a mesh has no normal stream.
     void uploadViewFacing(const SoGLContext* glue, GLuint program,
                           const SbViewVolume& viewVolume);
@@ -455,12 +456,13 @@ private:
                             uint64_t gen, uint8_t requestedCut,
                             const SoGLContext * glue);
 
-    void renderPoints(const CadFramePlan& plan,
+    void renderUnlit(const CadFramePlan& plan,
                       const SoCADAssembly& assembly,
                       const SoGLContext* glue,
                       const SbMatrix& viewProj,
                       const std::unordered_map<PartId, uint64_t,
-                                               std::hash<PartId>>& partGenMap);
+                                               std::hash<PartId>>& partGenMap,
+                      bool forceFixedFunction);
 
     void renderAggregateProxies(const CadFramePlan& plan,
                                 const SoGLContext* glue,
@@ -806,6 +808,10 @@ private:
         const SoGLContext *glue,
         const SbMatrix& viewProj,
         const SbViewVolume& viewVolume);
+    const CadTriangleAtlasPart *prepareIndirectAtlasPrefix(
+        const CadPartBinding& binding,
+        uint32_t vertexCount, uint32_t indexCount,
+        const SoGLContext *glue);
     bool patchIndirectPreparedCuts(
         const CadFramePlan& plan,
         const SoGLContext *glue);

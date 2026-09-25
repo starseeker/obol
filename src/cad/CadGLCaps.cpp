@@ -247,6 +247,23 @@ CadGLCaps CadGLCaps::detect(const SoGLContext * glue)
         caps.hasGLSLDraw = probeOk;
     }
 
+    /* Keep the GL 1.1 compatibility executor testable on contexts that also
+     * advertise retained buffers. This diagnostic override changes only the
+     * selected executor; geometry and frame-plan policy remain unchanged. */
+    const char *forceImmediate = std::getenv("OBOL_CAD_FORCE_IMMEDIATE");
+    if (forceImmediate && forceImmediate[0] != '\0' &&
+            forceImmediate[0] != '0' &&
+            caps.compatibilityProfile) {
+        caps.hasVBO = false;
+        caps.hasShaderObjects = false;
+        caps.hasGLSLDraw = false;
+        caps.hasVAO = false;
+        caps.hasInstancing = false;
+        caps.hasAttribDivisor = false;
+        caps.hasMultiDrawIndirect = false;
+        caps.hasCopyBuffer = false;
+    }
+
     if (std::getenv("OBOL_CAD_DEBUG") ||
             std::getenv("OBOL_CAD_CAPS_DEBUG")) {
         const char *vendorString = reinterpret_cast<const char *>(

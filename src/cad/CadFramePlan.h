@@ -81,7 +81,8 @@ enum CadInstanceFlag : uint32_t {
     /* This occurrence currently presents an unresolved LoD structural
      * fallback.  The role cannot live on shared geometry because identical
      * box arrays may also be authored geometry or a whole-scene extent. */
-    CadInstanceLodStructuralProxy = 1u << 5
+    CadInstanceLodStructuralProxy = 1u << 5,
+    CadInstanceSuppressGeometryColor = 1u << 6
 };
 
 // ---------------------------------------------------------------------------
@@ -459,7 +460,8 @@ struct CadFramePlan {
     std::vector<CadDrawItem> wireItems;
 
     /** Draw items for point primitives. */
-    std::vector<CadDrawItem> pointItems;
+    /* Authored points and unlit triangle fills, present in every draw mode. */
+    std::vector<CadDrawItem> unlitItems;
 
     /**
      * Camera-dependent replacements for wire proxy instances.  The mask is

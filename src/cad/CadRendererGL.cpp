@@ -31,6 +31,7 @@
 \**************************************************************************/
 
 #include "CadRendererGL.h"
+#include "CadRendererGLExecutorUtils.h"
 #include "CadIdentityCounter.h"
 #include "CadWireSource.h"
 #include "CadRendererConfiguration.h"
@@ -90,12 +91,6 @@ appendPackedPoint(std::vector<float>& packed, const SbVec3f& point)
     packed.push_back(point[0]);
     packed.push_back(point[1]);
     packed.push_back(point[2]);
-}
-
-static uint64_t
-cadSaturatingWorkAdd(uint64_t left, uint64_t right)
-{
-    return right > UINT64_MAX - left ? UINT64_MAX : left + right;
 }
 
 class CadCullRasterGuard {
@@ -731,6 +726,18 @@ CadRendererGL::uploadLights(const SoGLContext* glue, GLuint program)
                 n > 0 ? color[2] : 0.0f);
         }
     }
+}
+
+bool
+CadRendererGL::fixedLightingIsPositionIndependent(const SoGLContext* glue) const
+{
+    if (!caps_.isSoftwareRenderer)
+        return false;
+    GLint localViewer = GL_FALSE;
+    glue->glGetIntegerv(GL_LIGHT_MODEL_LOCAL_VIEWER, &localViewer);
+    return !localViewer && (!lightsSupplied_ || std::all_of(
+        lights_.begin(), lights_.end(),
+        [](const GlLight& light) { return light.type == 0; }));
 }
 
 void
@@ -1579,120 +1586,273 @@ static uint8_t maximumRequestedCut(
         Obol::ProgressiveCutUnspecified;
 }
 
-void CadRendererGL::renderPoints(
+void CadRendererGL::renderUnlit(
         const CadFramePlan& plan,
         const SoCADAssembly& assembly,
         const SoGLContext* glue,
         const SbMatrix& viewProj,
         const std::unordered_map<PartId, uint64_t,
-                                 std::hash<PartId>>& partGenMap)
+                                 std::hash<PartId>>& partGenMap,
+        bool forceFixedFunction)
 {
-    if (plan.pointItems.empty()) return;
-    size_t deadlineWork = 256u;
-
-    for (const CadDrawItem& item : plan.pointItems) {
-        if (renderInterruptedAfter(deadlineWork))
-            return;
-        auto generation = partGenMap.find(item.rep.part);
+    if (plan.unlitItems.empty()) return;
+    size_t deadlineWork = 0;
+    if (renderInterrupted()) return;
+    for (const CadDrawItem& item : plan.unlitItems) {
+        if (renderInterruptedAfter(deadlineWork)) return;
+        const auto generation = partGenMap.find(item.rep.part);
         ensurePartUploaded(item.rep.part, assembly,
             generation != partGenMap.end() ? generation->second : 0,
-            15, glue);
+            Obol::ProgressiveCutUnspecified, glue);
     }
 
-    GLfloat savedPointSize = 1.0f;
-    glue->glGetFloatv(GL_POINT_SIZE, &savedPointSize);
-    const FrustumPlanes fp = extractFrustumPlanes(viewProj);
-    const bool fixedFunction =
+    const bool fixedFunction = forceFixedFunction ||
         (caps_.isSoftwareRenderer && !softwareGlslRequested()) ||
-        !shaders_.wire;
-    bool interrupted = false;
+        !caps_.canUseVbo() || !shaders_.wire;
+    const bool fixedVbo = fixedFunction && caps_.canUseFixedVbo();
+    GLfloat savedPointSize = 1.0f;
+    GLint savedPolygonMode[2] = {GL_FILL, GL_FILL};
+    GLfloat savedOffsetFactor = 0.0f, savedOffsetUnits = 0.0f;
+    glue->glGetFloatv(GL_POINT_SIZE, &savedPointSize);
+    glue->glGetIntegerv(GL_POLYGON_MODE, savedPolygonMode);
+    glue->glGetFloatv(GL_POLYGON_OFFSET_FACTOR, &savedOffsetFactor);
+    glue->glGetFloatv(GL_POLYGON_OFFSET_UNITS, &savedOffsetUnits);
+    const GLboolean wasOffset = glue->glIsEnabled(GL_POLYGON_OFFSET_FILL);
+    const GLboolean wasCulling = glue->glIsEnabled(GL_CULL_FACE);
+    const GLboolean wasLighting = fixedFunction ?
+        glue->glIsEnabled(GL_LIGHTING) : GL_FALSE;
+    SbColor backgroundBottom;
+    SbColor backgroundTop;
+    if (!activeRenderAction_ ||
+            !activeRenderAction_->getBackgroundColors(
+                backgroundBottom, backgroundTop)) {
+        GLfloat clearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        glue->glGetFloatv(GL_COLOR_CLEAR_VALUE, clearColor);
+        backgroundBottom.setValue(clearColor[0], clearColor[1], clearColor[2]);
+        backgroundTop = backgroundBottom;
+    }
+    GLint backgroundViewport[4] = {0, 0, 1, 1};
+    glue->glGetIntegerv(GL_VIEWPORT, backgroundViewport);
+    const float backgroundViewportUniform[2] = {
+        static_cast<float>(backgroundViewport[1]),
+        static_cast<float>((std::max)(1, backgroundViewport[3]))
+    };
+    glue->glDisable(GL_CULL_FACE);
+    glue->glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    // Keep coplanar strokes in front of their backgrounds without changing
+    // the authored geometry used by picking and export.
+    const GLfloat fillDepthOffset = 1.0f;
+    glue->glPolygonOffset(fillDepthOffset, fillDepthOffset);
+    glue->glEnable(GL_POLYGON_OFFSET_FILL);
 
+    GLint locModel = -1, locColor = -1, locPos = 0;
+    GLint locBackgroundMask = -1, locBackgroundBottom = -1;
+    GLint locBackgroundTop = -1, locBackgroundViewport = -1;
     if (fixedFunction) {
         glue->glMatrixMode(GL_PROJECTION);
         glue->glPushMatrix();
         glue->glLoadIdentity();
         glue->glMatrixMode(GL_MODELVIEW);
         glue->glPushMatrix();
-        const GLboolean wasLighting = glue->glIsEnabled(GL_LIGHTING);
         glue->glDisable(GL_LIGHTING);
-        configureFixedClientArrays(glue, false, false);
+        if (fixedVbo) configureFixedClientArrays(glue, false, false);
+    } else {
+        glue->glUseProgramObjectARB(shaders_.wire);
+        const GLint locVP = glue->glGetUniformLocationARB(shaders_.wire, "u_viewProj");
+        locModel = glue->glGetUniformLocationARB(shaders_.wire, "u_model");
+        locColor = glue->glGetUniformLocationARB(shaders_.wire, "u_color");
+        locBackgroundMask = glue->glGetUniformLocationARB(
+            shaders_.wire, "u_backgroundMask");
+        locBackgroundBottom = glue->glGetUniformLocationARB(
+            shaders_.wire, "u_backgroundBottom");
+        locBackgroundTop = glue->glGetUniformLocationARB(
+            shaders_.wire, "u_backgroundTop");
+        locBackgroundViewport = glue->glGetUniformLocationARB(
+            shaders_.wire, "u_backgroundViewport");
+        locPos = std::max(0, glue->glGetAttribLocationARB(shaders_.wire, "a_pos"));
+        glue->glUniformMatrix4fvARB(locVP, 1, GL_FALSE, viewProj[0]);
+        glue->glUniform1iARB(locBackgroundMask, 0);
+    }
 
-        for (const CadDrawItem& item : plan.pointItems) {
-            if (renderInterruptedAfter(deadlineWork)) {
-                interrupted = true;
-                break;
-            }
-            const PartGeometry* geometry = assembly.partGeometry(item.rep.part);
-            const CadPointGpu* gpu = gpuRes_->pointFor(item.rep.part);
-            if (!geometry || !geometry->points) continue;
-            const PointRep& points = *geometry->points;
-            const GLsizei pointCount = static_cast<GLsizei>(
-                points.positions.size());
-            if (pointCount <= 0) continue;
-            const bool pointColors = points.colors.size() == points.positions.size() &&
-                points.colorValid.size() == points.positions.size();
-            if (gpu) {
-                glue->glBindBuffer(GL_ARRAY_BUFFER, gpu->posBuf);
-                glue->glVertexPointer(3, GL_FLOAT, 3 * sizeof(float), nullptr);
-            }
-
-            for (uint32_t i = 0; i < item.instanceCount; ++i) {
-                if (renderInterruptedAfter(deadlineWork)) {
-                    interrupted = true;
-                    break;
-                }
-                const size_t instanceIndex = item.baseInstance + i;
-                if (!cadInstanceDrawable(
-                        plan, item, instanceIndex, CadDrawChannel::Points))
-                    continue;
-                const CadVisibleInstance& inst =
-                    plan.visibleInstances[instanceIndex];
-                if (isBoxOutsideFrustum(inst.wbMin, inst.wbMax, fp)) continue;
-                SbMatrix model;
-                model.setValue(inst.transform.data());
-                SbMatrix mvp = model;
-                mvp.multRight(viewProj);
-                glue->glLoadMatrixf(mvp[0]);
-                const bool usePointColors = pointColors && !(inst.flags & 5u);
-                if (gpu && !usePointColors) {
-                    glue->glColor4ub(inst.rgba[0], inst.rgba[1],
-                                     inst.rgba[2], inst.rgba[3]);
-                    glue->glPointSize(std::max(1.0f, inst.lineWidth));
-                    glue->glDrawArrays(GL_POINTS, 0, pointCount);
-                    continue;
-                }
-                glue->glPointSize(std::max(1.0f, inst.lineWidth));
-                if (!gpu) glue->glBegin(GL_POINTS);
-                for (GLsizei p = 0; p < pointCount; ++p) {
-                    if (gpu && renderInterruptedAfter(deadlineWork)) {
-                        interrupted = true;
-                        break;
-                    }
-                    if (usePointColors && points.colorValid[p]) {
-                        const SbColor& color = points.colors[p];
-                        glue->glColor4f(color[0], color[1], color[2],
-                                        inst.rgba[3] / 255.0f);
-                    } else {
-                        glue->glColor4ub(inst.rgba[0], inst.rgba[1],
-                                         inst.rgba[2], inst.rgba[3]);
-                    }
-                    if (gpu)
-                        glue->glDrawArrays(GL_POINTS, p, 1);
-                    else {
-                        const SbVec3f& point = points.positions[p];
-                        glue->glVertex3f(point[0], point[1], point[2]);
-                    }
-                }
-                if (!gpu) glue->glEnd();
-                if (interrupted)
-                    break;
-            }
-            if (interrupted)
-                break;
+    const FrustumPlanes frustum = extractFrustumPlanes(viewProj);
+    for (const CadDrawItem& item : plan.unlitItems) {
+        if (renderInterruptedAfter(deadlineWork)) break;
+        const PartGeometry *geometry = assembly.partGeometry(item.rep.part);
+        const bool fill = item.rep.type == CadRepType::Triangles;
+        if (!geometry || (fill ? !geometry->shadedIsFill : !geometry->points)) continue;
+        const TriMesh *mesh = fill ? &*geometry->shaded : nullptr;
+        const PointRep *points = fill ? nullptr : &*geometry->points;
+        const auto& positions = fill ? mesh->positions : points->positions;
+        const size_t count = fill ? mesh->indices.size() : positions.size();
+        if (!count) continue;
+        const CadTriGpu *triGpu = fill ? gpuRes_->triFor(item.rep.part) : nullptr;
+        const CadPointGpu *pointGpu = fill ? nullptr : gpuRes_->pointFor(item.rep.part);
+        const GLuint positionBuffer = fill ? (triGpu ? triGpu->posBuf : 0) :
+            (pointGpu ? pointGpu->posBuf : 0);
+        const GLuint indexBuffer = triGpu ? triGpu->idxBuf : 0;
+        const bool useGpu = positionBuffer && (!fill || indexBuffer) &&
+            (!fixedFunction || fixedVbo);
+        if (!fixedFunction && !useGpu) {
+            activeRenderInterrupted_ = true;
+            break;
         }
-
-        glue->glDisableClientState(GL_VERTEX_ARRAY);
-        glue->glBindBuffer(GL_ARRAY_BUFFER, 0);
+        const GLuint vao = fill ? (triGpu ? triGpu->vao : 0) :
+            (pointGpu ? pointGpu->vao : 0);
+        const bool useVao = useGpu && !fixedFunction && vao && glue->glBindVertexArray;
+        if (useGpu) {
+            if (useVao) glue->glBindVertexArray(vao);
+            glue->glBindBuffer(GL_ARRAY_BUFFER, positionBuffer);
+            if (fixedFunction)
+                glue->glVertexPointer(3, GL_FLOAT, 3 * sizeof(float), nullptr);
+            else if (!useVao) {
+                glue->glVertexAttribPointerARB(static_cast<GLuint>(locPos), 3,
+                    GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+                glue->glEnableVertexAttribArrayARB(static_cast<GLuint>(locPos));
+            }
+            if (fill) glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
+        }
+        const bool pointColors = points && points->colors.size() == count &&
+            points->colorValid.size() == count;
+        for (uint32_t offset = 0; offset < item.instanceCount; ++offset) {
+            if (renderInterruptedAfter(deadlineWork)) break;
+            size_t instanceIndex = 0;
+            if (!cadDrawItemInstanceIndex(item, offset, instanceIndex) ||
+                    !cadInstanceDrawable(plan, item, instanceIndex, CadDrawChannel::Unlit))
+                continue;
+            const CadVisibleInstance& instance = plan.visibleInstances[instanceIndex];
+            if (isBoxOutsideFrustum(instance.wbMin, instance.wbMax, frustum)) continue;
+            SbMatrix instanceMvp;
+            instanceMvp.setValue(instance.transform.data());
+            instanceMvp.multRight(viewProj);
+            if (fixedFunction) {
+                glue->glLoadMatrixf(instanceMvp[0]);
+            } else {
+                glue->glUniformMatrix4fvARB(locModel, 1, GL_FALSE, instance.transform.data());
+            }
+            const bool useGeometryColor = !(instance.flags &
+                CadInstanceSuppressGeometryColor);
+            const bool usePointColors = pointColors && useGeometryColor;
+            glue->glPointSize(std::max(1.0f, instance.lineWidth));
+            const GLenum primitive = fill ? GL_TRIANGLES : GL_POINTS;
+            // Bound immediate work while preserving bulk GPU draws for
+            // uniform point clouds and contiguous fill-style ranges.
+            const size_t primitivesPerChunk = 256u;
+            uint64_t triangles = 0;
+            const auto drawRange = [&](size_t rangeFirst, size_t rangeCount,
+                    const FillStyle *fillStyle) {
+                size_t chunkSize = primitivesPerChunk * (fill ? 3u : 1u);
+                if (usePointColors)
+                    chunkSize = 1u;
+                else if (!fill && useGpu)
+                    chunkSize = rangeCount;
+                const size_t rangeEnd = rangeFirst + rangeCount;
+                for (size_t first = rangeFirst; first < rangeEnd;
+                        first += chunkSize) {
+                    const size_t n = (std::min)(chunkSize, rangeEnd - first);
+                    if (renderInterruptedAfter(deadlineWork, n))
+                        return false;
+                    float color[4] = {instance.rgba[0] / 255.0f,
+                        instance.rgba[1] / 255.0f,
+                        instance.rgba[2] / 255.0f,
+                        instance.rgba[3] / 255.0f};
+                    const bool backgroundMask = fillStyle &&
+                        fillStyle->backgroundMask;
+                    if (!backgroundMask && fillStyle && fillStyle->colorValid &&
+                            useGeometryColor) {
+                        for (int axis = 0; axis < 3; ++axis)
+                            color[axis] = fillStyle->color[axis];
+                        color[3] *= fillStyle->color[3];
+                    } else if (usePointColors &&
+                            points->colorValid[first]) {
+                        for (int axis = 0; axis < 3; ++axis)
+                            color[axis] = points->colors[first][axis];
+                    }
+                    if (fixedFunction && !backgroundMask)
+                        glue->glColor4fv(color);
+                    else if (!fixedFunction) {
+                        glue->glUniform1iARB(
+                            locBackgroundMask, backgroundMask ? 1 : 0);
+                        if (backgroundMask) {
+                            glue->glUniform3fvARB(locBackgroundBottom, 1,
+                                backgroundBottom.getValue());
+                            glue->glUniform3fvARB(locBackgroundTop, 1,
+                                backgroundTop.getValue());
+                            glue->glUniform2fvARB(locBackgroundViewport, 1,
+                                backgroundViewportUniform);
+                        }
+                        glue->glUniform4fvARB(locColor, 1, color);
+                    }
+                    const bool fixedGradientMask = fixedFunction &&
+                        backgroundMask && backgroundBottom != backgroundTop;
+                    if (useGpu && !fixedGradientMask) {
+                        if (fixedFunction && backgroundMask) {
+                            const float solidBackground[4] = {
+                                backgroundBottom[0], backgroundBottom[1],
+                                backgroundBottom[2], 1.0f
+                            };
+                            glue->glColor4fv(solidBackground);
+                        }
+                        if (fill)
+                            glue->glDrawElements(primitive,
+                                static_cast<GLsizei>(n), GL_UNSIGNED_INT,
+                                reinterpret_cast<const GLvoid *>(
+                                    first * sizeof(uint32_t)));
+                        else
+                            glue->glDrawArrays(primitive,
+                                static_cast<GLint>(first),
+                                static_cast<GLsizei>(n));
+                    } else {
+                        glue->glBegin(primitive);
+                        for (size_t i = first; i < first + n; ++i) {
+                            const SbVec3f& point =
+                                positions[fill ? mesh->indices[i] : i];
+                            if (fixedGradientMask) {
+                                SbVec3f normalized;
+                                instanceMvp.multVecMatrix(point, normalized);
+                                const float t = (std::max)(0.0f,
+                                    (std::min)(1.0f,
+                                        normalized[1] * 0.5f + 0.5f));
+                                const SbColor background =
+                                    backgroundBottom * (1.0f - t) +
+                                    backgroundTop * t;
+                                glue->glColor4f(background[0], background[1],
+                                    background[2], 1.0f);
+                            }
+                            glue->glVertex3f(point[0], point[1], point[2]);
+                        }
+                        glue->glEnd();
+                    }
+                    if (fill)
+                        triangles += n / 3u;
+                }
+                return true;
+            };
+            if (fill) {
+                mesh->forEachStyleRange(0, mesh->triangleCount(),
+                    [&](size_t first, size_t rangeCount,
+                            const FillStyle& style) {
+                        return drawRange(first * 3u, rangeCount * 3u, &style);
+                    });
+            } else {
+                drawRange(0, count, nullptr);
+            }
+            if (fill) {
+                lastRenderedTriangleCount_ = cadSaturatingWorkAdd(lastRenderedTriangleCount_, triangles);
+                cadAccumulateRenderedShadedWork(lastRenderedWork_, *mesh,
+                    Obol::ProgressiveCutUnspecified, triangles, 1u);
+            }
+            if (activeRenderInterrupted_) break;
+        }
+        if (useGpu) {
+            if (useVao) glue->glBindVertexArray(0);
+            else if (!fixedFunction) glue->glDisableVertexAttribArrayARB(static_cast<GLuint>(locPos));
+            glue->glBindBuffer(GL_ARRAY_BUFFER, 0);
+            if (fill) glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+        }
+        if (activeRenderInterrupted_) break;
+    }
+    if (fixedFunction) {
+        if (fixedVbo) glue->glDisableClientState(GL_VERTEX_ARRAY);
         if (wasLighting) glue->glEnable(GL_LIGHTING);
         glue->glMatrixMode(GL_MODELVIEW);
         glue->glPopMatrix();
@@ -1700,91 +1860,17 @@ void CadRendererGL::renderPoints(
         glue->glPopMatrix();
         glue->glMatrixMode(GL_MODELVIEW);
     } else {
-        glue->glUseProgramObjectARB(shaders_.wire);
-        const GLint locVP = glue->glGetUniformLocationARB(shaders_.wire,
-                                                           "u_viewProj");
-        const GLint locModel = glue->glGetUniformLocationARB(shaders_.wire,
-                                                              "u_model");
-        const GLint locColor = glue->glGetUniformLocationARB(shaders_.wire,
-                                                              "u_color");
-        GLint locPos = glue->glGetAttribLocationARB(shaders_.wire, "a_pos");
-        if (locPos < 0) locPos = 0;
-        glue->glUniformMatrix4fvARB(locVP, 1, GL_FALSE, viewProj[0]);
-
-        for (const CadDrawItem& item : plan.pointItems) {
-            if (renderInterruptedAfter(deadlineWork)) {
-                interrupted = true;
-                break;
-            }
-            const PartGeometry* geometry = assembly.partGeometry(item.rep.part);
-            const CadPointGpu* gpu = gpuRes_->pointFor(item.rep.part);
-            if (!geometry || !geometry->points || !gpu) continue;
-            const PointRep& points = *geometry->points;
-            const bool pointColors = points.colors.size() == points.positions.size() &&
-                points.colorValid.size() == points.positions.size();
-            if (gpu->vao && glue->glBindVertexArray) {
-                glue->glBindVertexArray(gpu->vao);
-            } else {
-                glue->glBindBuffer(GL_ARRAY_BUFFER, gpu->posBuf);
-                glue->glVertexAttribPointerARB(static_cast<GLuint>(locPos), 3,
-                    GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
-                glue->glEnableVertexAttribArrayARB(static_cast<GLuint>(locPos));
-            }
-
-            for (uint32_t i = 0; i < item.instanceCount; ++i) {
-                if (renderInterruptedAfter(deadlineWork)) {
-                    interrupted = true;
-                    break;
-                }
-                const size_t instanceIndex = item.baseInstance + i;
-                if (!cadInstanceDrawable(
-                        plan, item, instanceIndex, CadDrawChannel::Points))
-                    continue;
-                const CadVisibleInstance& inst =
-                    plan.visibleInstances[instanceIndex];
-                if (isBoxOutsideFrustum(inst.wbMin, inst.wbMax, fp)) continue;
-                glue->glUniformMatrix4fvARB(locModel, 1, GL_FALSE,
-                                            inst.transform.data());
-                const bool usePointColors = pointColors && !(inst.flags & 5u);
-                if (!usePointColors) {
-                    const float color[4] = {
-                        inst.rgba[0] / 255.0f, inst.rgba[1] / 255.0f,
-                        inst.rgba[2] / 255.0f, inst.rgba[3] / 255.0f};
-                    glue->glUniform4fvARB(locColor, 1, color);
-                    glue->glPointSize(std::max(1.0f, inst.lineWidth));
-                    glue->glDrawArrays(GL_POINTS, 0, gpu->count);
-                    continue;
-                }
-                for (GLsizei p = 0; p < gpu->count; ++p) {
-                    if (renderInterruptedAfter(deadlineWork)) {
-                        interrupted = true;
-                        break;
-                    }
-                    float color[4] = {
-                        inst.rgba[0] / 255.0f, inst.rgba[1] / 255.0f,
-                        inst.rgba[2] / 255.0f, inst.rgba[3] / 255.0f};
-                    if (usePointColors && points.colorValid[p]) {
-                        color[0] = points.colors[p][0];
-                        color[1] = points.colors[p][1];
-                        color[2] = points.colors[p][2];
-                    }
-                    glue->glUniform4fvARB(locColor, 1, color);
-                    glue->glPointSize(std::max(1.0f, inst.lineWidth));
-                    glue->glDrawArrays(GL_POINTS, p, 1);
-                }
-                if (interrupted)
-                    break;
-            }
-            if (gpu->vao && glue->glBindVertexArray)
-                glue->glBindVertexArray(0);
-            else {
-                glue->glDisableVertexAttribArrayARB(static_cast<GLuint>(locPos));
-                glue->glBindBuffer(GL_ARRAY_BUFFER, 0);
-            }
-            if (interrupted)
-                break;
-        }
+        glue->glUniform1iARB(locBackgroundMask, 0);
         glue->glUseProgramObjectARB(0);
+    }
+    if (wasCulling) glue->glEnable(GL_CULL_FACE);
+    if (!wasOffset) glue->glDisable(GL_POLYGON_OFFSET_FILL);
+    glue->glPolygonOffset(savedOffsetFactor, savedOffsetUnits);
+    if (savedPolygonMode[0] == savedPolygonMode[1])
+        glue->glPolygonMode(GL_FRONT_AND_BACK, savedPolygonMode[0]);
+    else {
+        glue->glPolygonMode(GL_FRONT, savedPolygonMode[0]);
+        glue->glPolygonMode(GL_BACK, savedPolygonMode[1]);
     }
     glue->glPointSize(savedPointSize);
 }
@@ -2690,11 +2776,11 @@ void CadRendererGL::render(
           (hiddenLine || plan.shadedItems.size() >= 128)));
 
     try {
-    renderPoints(plan, assembly, glue, viewProj, partGenMap);
+    renderUnlit(plan, assembly, glue, viewProj, partGenMap, forceFixedClipPlanes);
     if (finishInterruptedFrame()) {
         return;
     }
-    const auto pointsCompleted = renderTimingEnabled ?
+    const auto unlitCompleted = renderTimingEnabled ?
         RenderClock::now() : RenderClock::time_point();
 
     bool indexedTriangleWire = false;
@@ -2959,8 +3045,8 @@ void CadRendererGL::render(
                     "source_instances=%zu wire_items=%zu "
                     "proxies=%zu\n",
                     total,
-                    milliseconds(renderStarted, pointsCompleted),
-                    milliseconds(pointsCompleted, shadedCompleted),
+                    milliseconds(renderStarted, unlitCompleted),
+                    milliseconds(unlitCompleted, shadedCompleted),
                     milliseconds(shadedCompleted, wireCompleted),
                     milliseconds(wireCompleted, completed),
                     plan.visibleInstances.size(),

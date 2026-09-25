@@ -67,7 +67,11 @@ enum class CadGeometryError {
     InvalidClusterRange,
     NonConservativeBounds,
     InvalidSubpixelProxy,
-    InvalidAggregateProxy
+    InvalidAggregateProxy,
+    InvalidWireWidth,
+    InvalidWireStyle,
+    InvalidTriangleStyle,
+    InvalidFill
 };
 
 /** Complete, allocation-free result from validating one geometry update. */

@@ -211,9 +211,16 @@ void SoCADAssemblyImpl::rebuildBvhIfNeeded() {
         if (!bvhDirty_) return;
         std::vector<Obol::picking::CadInstanceBVH::Entry> entries;
         entries.reserve(instances_.size());
+        displayPlanePickInstances_.clear();
         for (const auto& [iid, idata] : instances_) {
             if (hidden_.count(iid) || unpickable_.count(iid))
                 continue;
+            const auto geometry = parts_.find(idata.partId);
+            if (geometry != parts_.end() && geometry->second &&
+                    geometry->second->displayPlane) {
+                displayPlanePickInstances_.push_back(iid);
+                continue;
+            }
             Obol::picking::CadInstanceBVH::Entry e;
             e.worldBounds  = idata.worldBounds;
             e.instanceId   = iid;
@@ -228,19 +235,14 @@ void SoCADAssemblyImpl::rebuildBvhIfNeeded() {
 
 SbBox3f SoCADAssemblyImpl::partGeometryBounds(
             const Obol::PartGeometry& geom) {
-        SbBox3f local;
-        local.makeEmpty();
-        if (geom.conservativeBounds && !geom.conservativeBounds->isEmpty())
-            local.extendBy(*geom.conservativeBounds);
-        if (geom.points) { local.extendBy(geom.points->bounds); }
-        if (geom.wire)   { local.extendBy(geom.wire->bounds);   }
-        if (geom.shaded) { local.extendBy(geom.shaded->bounds); }
-        return local;
+        return Obol::cadPartGeometryBounds(geom);
     }
 
 bool SoCADAssemblyImpl::partGeometryBoundsEqual(
             const Obol::PartGeometry& left,
             const Obol::PartGeometry& right) {
+        if (left.displayPlane || right.displayPlane)
+            return false;
         const SbBox3f leftBounds = partGeometryBounds(left);
         const SbBox3f rightBounds = partGeometryBounds(right);
         if (leftBounds.isEmpty() || rightBounds.isEmpty())
@@ -254,7 +256,7 @@ bool SoCADAssemblyImpl::partGeometryBoundsEqual(
     // Compute world bounds for an instance from part geometry
 SbBox3f SoCADAssemblyImpl::computeWorldBounds(const Obol::PartGeometry& geom,
                                const SbMatrix& m) const {
-        const SbBox3f local = partGeometryBounds(geom);
+        const SbBox3f local = Obol::cadPartModelBounds(geom);
         if (local.isEmpty())
             return SbBox3f();
         // Transform all 8 corners
@@ -449,6 +451,7 @@ void SoCADAssemblyImpl::markDirty(const char *reason) {
         progressiveShadedPlanGroupByInstance_.clear();
         progressivePlanIndexByInstance_.clear();
         cachedPlanPartSpansByPart_.clear();
+        displayPlanePlanInstances_.clear();
         pendingInstanceAttributeIndices_.clear();
     }
 
@@ -611,6 +614,10 @@ bool SoCADAssemblyImpl::patchCachedInstanceStyle(Obol::InstanceId instance) {
             record.flags |= Obol::internal::CadInstanceColorOverride;
         else
             record.flags &= ~Obol::internal::CadInstanceColorOverride;
+        if (style.useGeometryColor)
+            record.flags &= ~Obol::internal::CadInstanceSuppressGeometryColor;
+        else
+            record.flags |= Obol::internal::CadInstanceSuppressGeometryColor;
         /*
          * Opacity participates in shaded cull-run construction, while line
          * width and stipple participate in wire draw-run construction.  A
@@ -637,6 +644,65 @@ bool SoCADAssemblyImpl::patchCachedInstanceStyle(Obol::InstanceId instance) {
         pendingInstanceAttributeIndices_.push_back(visibleIndex);
         return true;
     }
+
+void SoCADAssemblyImpl::projectDisplayPlanes(const SbMatrix& rootToClip,
+        const SbVec2s& viewportSize)
+{
+    using namespace Obol::internal;
+    bool changed = false;
+    bool visibilityChanged = false;
+    for (const Obol::InstanceId instance : displayPlanePlanInstances_) {
+        const auto retained = instances_.find(instance);
+        const auto index = progressivePlanIndexByInstance_.find(instance);
+        if (retained == instances_.end() ||
+                index == progressivePlanIndexByInstance_.end() ||
+                index->second >= cachedPlan_.visibleInstances.size())
+            continue;
+        CadVisibleInstance& visible = cachedPlan_.visibleInstances[index->second];
+        const auto geometry = parts_.find(retained->second.partId);
+        if (geometry == parts_.end() || !geometry->second ||
+                !geometry->second->displayPlane)
+            continue;
+        SbMatrix projected;
+        const bool valid = Obol::cadDisplayPlaneTransform(
+            *geometry->second->displayPlane, retained->second.localToRoot,
+            rootToClip, viewportSize, projected);
+        const bool wasHidden = (visible.flags & CadInstanceHidden) != 0;
+        const bool hidden = !valid || hidden_.count(instance) != 0;
+        const bool transformChanged = valid &&
+            std::memcmp(visible.transform.data(), projected[0],
+                sizeof(float) * 16) != 0;
+        if (hidden == wasHidden && !transformChanged)
+            continue;
+        if (hidden)
+            visible.flags |= CadInstanceHidden;
+        else
+            visible.flags &= ~CadInstanceHidden;
+        if (hidden != wasHidden) {
+            visibilityChanged = true;
+            if (visible.rgba[3] < 255) {
+                if (hidden && cachedPlan_.transparentVisibleInstanceCount)
+                    --cachedPlan_.transparentVisibleInstanceCount;
+                else if (!hidden)
+                    ++cachedPlan_.transparentVisibleInstanceCount;
+            }
+        }
+        if (valid) {
+            std::memcpy(visible.transform.data(), projected[0], sizeof(float) * 16);
+            SbBox3f bounds = Obol::cadPartGeometryBounds(*geometry->second);
+            bounds.transform(projected);
+            if (!bounds.isEmpty())
+                for (int axis = 0; axis < 3; ++axis) {
+                    visible.wbMin[axis] = bounds.getMin()[axis];
+                    visible.wbMax[axis] = bounds.getMax()[axis];
+                }
+        }
+        pendingInstanceAttributeIndices_.push_back(index->second);
+        changed = true;
+    }
+    if (changed)
+        finishSparsePresentationPatch(visibilityChanged);
+}
 
 void SoCADAssemblyImpl::finishSparsePresentationPatch(bool visibilityChanged) {
         /* A partially classified point-proxy scratch result contains copied
@@ -776,7 +842,7 @@ void SoCADAssemblyImpl::finishSparsePresentationPatch(bool visibilityChanged) {
             streamedTailCapacity);
         if (!buckets) {
             plan.wireItems.reserve(expectedSourceCount);
-            plan.pointItems.reserve(expectedSourceCount);
+            plan.unlitItems.reserve(expectedSourceCount);
             plan.shadedItems.reserve(expectedSourceCount);
             plan.requiredReps.reserve(expectedSourceCount * 2u);
         }
@@ -810,6 +876,8 @@ void SoCADAssemblyImpl::finishSparsePresentationPatch(bool visibilityChanged) {
                 (isSel ? CadInstanceSelected : 0u) |
                 (idata.style.hasColorOverride ?
                     CadInstanceColorOverride : 0u) |
+                (!idata.style.useGeometryColor ?
+                    CadInstanceSuppressGeometryColor : 0u) |
                 (isHidden ? CadInstanceHidden : 0u) |
                 (pointProxyProtected_.count(iid) ?
                     CadInstancePointProxyProtected : 0u) |
@@ -919,7 +987,7 @@ void SoCADAssemblyImpl::finishSparsePresentationPatch(bool visibilityChanged) {
              * requested model representation is shaded.  Omitting their wire
              * item until a shaded mesh exists leaves a cold large scene blank
              * despite a valid, visible coverage proxy. */
-            const bool needWireForPart = needWire ||
+            const bool needWireForPart = needWire || geom.shadedIsFill ||
                 (needShaded && geom.structuralProxy &&
                  geom.wire.has_value());
             CadPartBinding binding;
@@ -994,6 +1062,10 @@ void SoCADAssemblyImpl::finishSparsePresentationPatch(bool visibilityChanged) {
 
             // Wire draw item
             if (needWireForPart && geom.wire.has_value()) {
+                const bool authoredRasterStyle =
+                    geom.wire->hasAuthoredRasterStyle();
+                if (authoredRasterStyle)
+                    plan.hasCustomWireStyle = true;
                 CadDrawItem item;
                 item.rep.part  = pid;
                 item.rep.type  = geom.wire->derivesTriangleEdges() ?
@@ -1021,7 +1093,8 @@ void SoCADAssemblyImpl::finishSparsePresentationPatch(bool visibilityChanged) {
                     item.instanceCount = runEnd - runStart;
                     item.customWireStyle =
                         visAt(runStart).lineWidth != 1.0f ||
-                        visAt(runStart).linePattern != 0xffffu;
+                        visAt(runStart).linePattern != 0xffffu ||
+                        authoredRasterStyle;
                     plan.wireItems.push_back(item);
                     runStart = runEnd;
                 }
@@ -1031,19 +1104,23 @@ void SoCADAssemblyImpl::finishSparsePresentationPatch(bool visibilityChanged) {
                     wireHasUncollapsedInstances = true;
             }
 
-            if (geom.points.has_value() && !geom.points->positions.empty()) {
+            const auto appendUnlit = [&](CadRepType type) {
                 CadDrawItem item;
                 item.rep.part = pid;
-                item.rep.type = CadRepType::Points;
+                item.rep.type = type;
                 item.partIndex = partIndex;
                 item.baseInstance = static_cast<uint32_t>(groupBegin);
                 item.instanceCount = count;
-                plan.pointItems.push_back(item);
+                plan.unlitItems.push_back(item);
                 plan.requiredReps.push_back(item.rep);
-            }
+            };
+            if (geom.shadedIsFill)
+                appendUnlit(CadRepType::Triangles);
+            if (geom.points && !geom.points->positions.empty())
+                appendUnlit(CadRepType::Points);
 
             // Shaded draw item
-            if (needShaded && geom.shaded.has_value()) {
+            if (needShaded && geom.shaded.has_value() && !geom.shadedIsFill) {
                 const size_t itemBegin = plan.shadedItems.size();
                 uint32_t runStart = 0;
                 while (runStart < count) {
@@ -1123,6 +1200,7 @@ bool SoCADAssemblyImpl::rebuildProgressiveShadedPlanIndex(
         progressiveShadedPlanGroupByInstance_.clear();
         progressivePlanIndexByInstance_.clear();
         cachedPlanPartSpansByPart_.clear();
+        displayPlanePlanInstances_.clear();
         if (cachedPlan_.visibleInstances.empty())
             return true;
         progressivePlanIndexByInstance_.reserve(
@@ -1157,20 +1235,20 @@ bool SoCADAssemblyImpl::rebuildProgressiveShadedPlanIndex(
                 wireItemBegin[partIndex] = i;
             ++wireItemCount[partIndex];
         }
-        std::vector<size_t> pointItemBegin(
+        std::vector<size_t> unlitItemBegin(
             cachedPlan_.partBindings.size(), noItem);
-        std::vector<size_t> pointItemCount(
+        std::vector<size_t> unlitItemCount(
             cachedPlan_.partBindings.size(), 0);
-        for (size_t i = 0; i < cachedPlan_.pointItems.size(); ++i) {
+        for (size_t i = 0; i < cachedPlan_.unlitItems.size(); ++i) {
             if (abortRequested())
                 return false;
             const size_t partIndex =
-                cachedPlan_.pointItems[i].partIndex;
-            if (partIndex >= pointItemBegin.size())
+                cachedPlan_.unlitItems[i].partIndex;
+            if (partIndex >= unlitItemBegin.size())
                 continue;
-            if (pointItemBegin[partIndex] == noItem)
-                pointItemBegin[partIndex] = i;
-            ++pointItemCount[partIndex];
+            if (unlitItemBegin[partIndex] == noItem)
+                unlitItemBegin[partIndex] = i;
+            ++unlitItemCount[partIndex];
         }
         std::vector<size_t> shadedItemBegin(
             cachedPlan_.partBindings.size(), noItem);
@@ -1216,15 +1294,19 @@ bool SoCADAssemblyImpl::rebuildProgressiveShadedPlanIndex(
                 span.wireItemBegin = wireItemBegin[partIndex];
                 span.wireItemCount = wireItemCount[partIndex];
             }
-            if (pointItemBegin[partIndex] != noItem) {
-                span.pointItemBegin = pointItemBegin[partIndex];
-                span.pointItemCount = pointItemCount[partIndex];
+            if (unlitItemBegin[partIndex] != noItem) {
+                span.unlitItemBegin = unlitItemBegin[partIndex];
+                span.unlitItemCount = unlitItemCount[partIndex];
             }
             if (shadedItemBegin[partIndex] != noItem) {
                 span.shadedItemBegin = shadedItemBegin[partIndex];
                 span.shadedItemCount = shadedItemCount[partIndex];
             }
             cachedPlanPartSpansByPart_[part].push_back(span);
+            if (binding.geometry && binding.geometry->displayPlane)
+                for (size_t i = base; i < end; ++i)
+                    displayPlanePlanInstances_.insert(
+                        cachedPlan_.visibleInstances[i].instanceId);
             if (!cachedDrawModeHasShaded()) {
                 base = end;
                 continue;
@@ -1270,7 +1352,8 @@ bool SoCADAssemblyImpl::rebuildProgressiveShadedPlanIndex(
 bool SoCADAssemblyImpl::partGeometryPlanCompatible(
             const Obol::PartGeometry& oldGeometry,
             const Obol::PartGeometry& newGeometry) {
-        if (oldGeometry.points.has_value() !=
+        if (oldGeometry.shadedIsFill != newGeometry.shadedIsFill ||
+                oldGeometry.points.has_value() !=
                 newGeometry.points.has_value() ||
                 oldGeometry.wire.has_value() !=
                 newGeometry.wire.has_value() ||
@@ -1391,7 +1474,7 @@ bool SoCADAssemblyImpl::partGeometryPlanCompatible(
             cachedPlan_.visibleInstances.size();
         const size_t partBase = cachedPlan_.partBindings.size();
         const size_t wireItemBase = cachedPlan_.wireItems.size();
-        const size_t pointItemBase = cachedPlan_.pointItems.size();
+        const size_t unlitItemBase = cachedPlan_.unlitItems.size();
         const size_t shadedItemBase = cachedPlan_.shadedItems.size();
         if (visibleBase + delta.visibleInstances.size() >
                     std::numeric_limits<uint32_t>::max() ||
@@ -1427,15 +1510,15 @@ bool SoCADAssemblyImpl::partGeometryPlanCompatible(
                 wireBegin[partIndex] = i;
             ++wireCount[partIndex];
         }
-        std::vector<size_t> pointBegin(delta.partBindings.size(), noItem);
-        std::vector<size_t> pointCount(delta.partBindings.size(), 0);
-        for (size_t i = 0; i < delta.pointItems.size(); ++i) {
-            const size_t partIndex = delta.pointItems[i].partIndex;
-            if (partIndex >= pointBegin.size())
-                return fail("point-item-part-index");
-            if (pointBegin[partIndex] == noItem)
-                pointBegin[partIndex] = i;
-            ++pointCount[partIndex];
+        std::vector<size_t> unlitBegin(delta.partBindings.size(), noItem);
+        std::vector<size_t> unlitCount(delta.partBindings.size(), 0);
+        for (size_t i = 0; i < delta.unlitItems.size(); ++i) {
+            const size_t partIndex = delta.unlitItems[i].partIndex;
+            if (partIndex >= unlitBegin.size())
+                return fail("unlit-item-part-index");
+            if (unlitBegin[partIndex] == noItem)
+                unlitBegin[partIndex] = i;
+            ++unlitCount[partIndex];
         }
         std::vector<size_t> shadedBegin(delta.partBindings.size(), noItem);
         std::vector<size_t> shadedCount(delta.partBindings.size(), 0);
@@ -1472,10 +1555,10 @@ bool SoCADAssemblyImpl::partGeometryPlanCompatible(
                     wireItemBase + wireBegin[localPart];
                 span.wireItemCount = wireCount[localPart];
             }
-            if (pointBegin[localPart] != noItem) {
-                span.pointItemBegin =
-                    pointItemBase + pointBegin[localPart];
-                span.pointItemCount = pointCount[localPart];
+            if (unlitBegin[localPart] != noItem) {
+                span.unlitItemBegin =
+                    unlitItemBase + unlitBegin[localPart];
+                span.unlitItemCount = unlitCount[localPart];
             }
             if (shadedBegin[localPart] != noItem) {
                 span.shadedItemBegin =
@@ -1508,10 +1591,13 @@ bool SoCADAssemblyImpl::partGeometryPlanCompatible(
                             groupIndex;
                 progressiveShadedPlanGroups_.push_back(group);
             }
-            for (size_t i = localBase; i < localEnd; ++i)
-                progressivePlanIndexByInstance_[
-                    delta.visibleInstances[i].instanceId] =
-                        static_cast<uint32_t>(visibleBase + i);
+            for (size_t i = localBase; i < localEnd; ++i) {
+                const Obol::InstanceId instance = delta.visibleInstances[i].instanceId;
+                progressivePlanIndexByInstance_[instance] =
+                    static_cast<uint32_t>(visibleBase + i);
+                if (binding.geometry && binding.geometry->displayPlane)
+                    displayPlanePlanInstances_.insert(instance);
+            }
             localBase = localEnd;
         }
 
@@ -1532,7 +1618,7 @@ bool SoCADAssemblyImpl::partGeometryPlanCompatible(
             }
         };
         appendItems(cachedPlan_.wireItems, delta.wireItems);
-        appendItems(cachedPlan_.pointItems, delta.pointItems);
+        appendItems(cachedPlan_.unlitItems, delta.unlitItems);
         appendItems(cachedPlan_.shadedItems, delta.shadedItems);
         for (CadRepKey& rep : delta.requiredReps)
             cachedPlan_.requiredReps.push_back(std::move(rep));
@@ -1651,6 +1737,10 @@ bool SoCADAssemblyImpl::partGeometryPlanCompatible(
         const auto newGeometryFound = parts_.find(newPart);
         if (newGeometryFound == parts_.end() || !newGeometryFound->second)
             return false;
+        const auto& oldGeometry = cachedPlan_.partBindings[oldSpan.partIndex].geometry;
+        if (newGeometryFound->second->displayPlane ||
+                (oldGeometry && oldGeometry->displayPlane))
+            return false;
         const auto rangeIsValid = [](size_t size, size_t begin, size_t count) {
             return begin <= size && count <= size - begin;
         };
@@ -1658,8 +1748,8 @@ bool SoCADAssemblyImpl::partGeometryPlanCompatible(
                    cachedPlan_.wireItems.size(),
                    oldSpan.wireItemBegin, oldSpan.wireItemCount) &&
             rangeIsValid(
-                   cachedPlan_.pointItems.size(),
-                   oldSpan.pointItemBegin, oldSpan.pointItemCount) &&
+                   cachedPlan_.unlitItems.size(),
+                   oldSpan.unlitItemBegin, oldSpan.unlitItemCount) &&
             rangeIsValid(
                    cachedPlan_.shadedItems.size(),
                    oldSpan.shadedItemBegin, oldSpan.shadedItemCount);
@@ -1694,8 +1784,8 @@ bool SoCADAssemblyImpl::patchCachedInstancePartRebind(
                 cachedPlan_.wireItems, oldSpan.wireItemBegin,
                 oldSpan.wireItemCount) ||
                 !disableItems(
-                    cachedPlan_.pointItems, oldSpan.pointItemBegin,
-                    oldSpan.pointItemCount) ||
+                    cachedPlan_.unlitItems, oldSpan.unlitItemBegin,
+                    oldSpan.unlitItemCount) ||
                 !disableItems(
                     cachedPlan_.shadedItems, oldSpan.shadedItemBegin,
                     oldSpan.shadedItemCount))
@@ -1720,6 +1810,8 @@ bool SoCADAssemblyImpl::patchCachedInstancePartRebind(
             (selected_.count(instance) ? CadInstanceSelected : 0u) |
             (data.style.hasColorOverride ?
                 CadInstanceColorOverride : 0u) |
+            (!data.style.useGeometryColor ?
+                CadInstanceSuppressGeometryColor : 0u) |
             (hidden_.count(instance) ? CadInstanceHidden : 0u) |
             (pointProxyProtected_.count(instance) ?
                 CadInstancePointProxyProtected : 0u) |
@@ -1775,7 +1867,7 @@ bool SoCADAssemblyImpl::patchCachedInstancePartRebind(
         const bool needShaded = cachedDrawModeHasShaded();
         /* Match the full plan path: a temporary structural proxy remains a
          * wire extent in shaded mode until a shaded mesh supersedes it. */
-        const bool needWireForPart = needWire ||
+        const bool needWireForPart = needWire || geometry.shadedIsFill ||
             (needShaded && geometry.structuralProxy && geometry.wire);
         if ((needWireForPart && geometry.wire) ||
                 (needShaded && geometry.shaded) ||
@@ -1793,7 +1885,8 @@ bool SoCADAssemblyImpl::patchCachedInstancePartRebind(
             item.instanceCount = 1u;
             item.customWireStyle =
                 visible.lineWidth != 1.0f ||
-                visible.linePattern != 0xffffu;
+                visible.linePattern != 0xffffu ||
+                geometry.wire->hasAuthoredRasterStyle();
             newSpan.wireItemBegin = cachedPlan_.wireItems.size();
             newSpan.wireItemCount = 1u;
             cachedPlan_.wireItems.push_back(item);
@@ -1801,19 +1894,24 @@ bool SoCADAssemblyImpl::patchCachedInstancePartRebind(
             cachedPlan_.partPresentation[newPart].
                 wireHasUncollapsedInstances = true;
         }
-        if (geometry.points && !geometry.points->positions.empty()) {
+        newSpan.unlitItemBegin = cachedPlan_.unlitItems.size();
+        const auto appendUnlit = [&](CadRepType type) {
             CadDrawItem item;
             item.rep.part = newPart;
-            item.rep.type = CadRepType::Points;
+            item.rep.type = type;
             item.partIndex = oldSpan.partIndex;
             item.baseInstance = oldSpan.baseInstance;
             item.instanceCount = 1u;
-            newSpan.pointItemBegin = cachedPlan_.pointItems.size();
-            newSpan.pointItemCount = 1u;
-            cachedPlan_.pointItems.push_back(item);
+            ++newSpan.unlitItemCount;
+            cachedPlan_.unlitItems.push_back(item);
             cachedPlan_.requiredReps.push_back(item.rep);
-        }
-        if (needShaded && geometry.shaded) {
+        };
+        if (geometry.shadedIsFill)
+            appendUnlit(CadRepType::Triangles);
+        if (geometry.points && !geometry.points->positions.empty())
+            appendUnlit(CadRepType::Points);
+
+        if (needShaded && geometry.shaded && !geometry.shadedIsFill) {
             CadDrawItem item;
             item.rep.part = newPart;
             item.rep.type = CadRepType::Triangles;
@@ -1912,8 +2010,8 @@ bool SoCADAssemblyImpl::patchCachedInstancePartRebind(
          */
         cachedPlan_.wireItems.reserve(
             cachedPlan_.wireItems.size() + rebinds.size());
-        cachedPlan_.pointItems.reserve(
-            cachedPlan_.pointItems.size() + rebinds.size());
+        cachedPlan_.unlitItems.reserve(
+            cachedPlan_.unlitItems.size() + 2u * rebinds.size());
         cachedPlan_.shadedItems.reserve(
             cachedPlan_.shadedItems.size() + rebinds.size());
         cachedPlan_.requiredReps.reserve(
@@ -1994,7 +2092,8 @@ void SoCADAssemblyImpl::finishSparseStructuralPatch() {
                 return false;
             const auto& binding =
                 cachedPlan_.partBindings[span.partIndex];
-            if (!binding.geometry ||
+            if (!binding.geometry || binding.geometry->displayPlane ||
+                    geometryFound->second->displayPlane ||
                     !partGeometryPlanCompatible(
                         *binding.geometry, *geometryFound->second))
                 return false;

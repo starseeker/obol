@@ -342,22 +342,64 @@ captureWireRasterState(const SoGLContext *glue, bool hasLineStipple)
     return state;
 }
 
+CadResolvedWireStyle
+cadResolveWireStyle(const CadVisibleInstance& instance,
+                    const WireStyle& authored) noexcept
+{
+    CadResolvedWireStyle style;
+    style.rgba = instance.rgba;
+    style.lineWidth = cadWirePixelWidth(
+        instance.lineWidth, authored.widthScale);
+    if (authored.patternValid) {
+        style.linePattern = authored.linePattern;
+        style.linePatternFactor = std::max<uint16_t>(
+            1u, authored.linePatternFactor);
+    } else {
+        style.linePattern = instance.linePattern;
+        style.linePatternFactor = instance.linePatternFactor;
+    }
+    if (authored.colorValid &&
+            !(instance.flags & CadInstanceSuppressGeometryColor)) {
+        const auto pack = [](float component) {
+            return static_cast<uint8_t>(std::lround(
+                std::max(0.0f, std::min(1.0f, component)) * 255.0f));
+        };
+        style.rgba[0] = pack(authored.color[0]);
+        style.rgba[1] = pack(authored.color[1]);
+        style.rgba[2] = pack(authored.color[2]);
+        style.rgba[3] = static_cast<uint8_t>((
+            static_cast<unsigned int>(pack(authored.color[3])) *
+            instance.rgba[3] + 127u) / 255u);
+    }
+    return style;
+}
+
+void
+applyWireRasterStyle(const SoGLContext *glue,
+                     const CadResolvedWireStyle& style,
+                     bool hasLineStipple)
+{
+    glue->glLineWidth(std::max(1.0f, style.lineWidth));
+    if (!hasLineStipple)
+        return;
+    if (style.linePattern != 0xffffu) {
+        glue->glLineStipple(
+            std::max<GLint>(1, style.linePatternFactor),
+            style.linePattern);
+        glue->glEnable(GL_LINE_STIPPLE);
+    } else {
+        glue->glDisable(GL_LINE_STIPPLE);
+    }
+}
+
 void
 applyWireRasterStyle(const SoGLContext *glue,
                      const CadVisibleInstance& instance,
                      bool hasLineStipple)
 {
-    glue->glLineWidth(std::max(1.0f, instance.lineWidth));
-    if (!hasLineStipple)
-        return;
-    if (instance.linePattern != 0xffffu) {
-        glue->glLineStipple(
-            std::max<GLint>(1, instance.linePatternFactor),
-            instance.linePattern);
-        glue->glEnable(GL_LINE_STIPPLE);
-    } else {
-        glue->glDisable(GL_LINE_STIPPLE);
-    }
+    WireStyle authored;
+    applyWireRasterStyle(
+        glue, cadResolveWireStyle(instance, authored), hasLineStipple);
 }
 
 void
@@ -745,6 +787,7 @@ ensureProgressiveTriGpuImpl(
     std::vector<uint32_t> orientedIndices;
     if (indexed) {
         positions.reserve((static_cast<size_t>(maximumIndex) + 1) * 3);
+        normals.reserve((static_cast<size_t>(maximumIndex) + 1) * 3);
         for (size_t i = 0; i <= maximumIndex; ++i) {
             const SbVec3f point = cadProgressiveSnapPoint(
                 mesh.positions[i],
@@ -752,6 +795,7 @@ ensureProgressiveTriGpuImpl(
                 mesh.progressiveQuantizationMaximum,
                 quantization);
             executorAppendPackedPoint(positions, point);
+            executorAppendPackedPoint(normals, mesh.normals[i]);
         }
         orientedIndices.assign(mesh.indices.begin(),
             mesh.indices.begin() + static_cast<std::ptrdiff_t>(indexCount));
@@ -913,6 +957,39 @@ struct CadWireDrawRange {
     uint32_t segmentCount = 0;
 };
 
+template <typename Draw>
+static void withBoundWireVbo(const CadWireGpu *w, const SoGLContext *glue,
+                             GLint locPos, Draw draw)
+{
+    if (w->vao && glue->glBindVertexArray) {
+        glue->glBindVertexArray(w->vao);
+    } else {
+        glue->glBindBuffer(GL_ARRAY_BUFFER, w->posBuf);
+        glue->glVertexAttribPointerARB(static_cast<GLuint>(locPos), 3,
+                                       GL_FLOAT, GL_FALSE,
+                                       3 * sizeof(float), nullptr);
+        glue->glEnableVertexAttribArrayARB(static_cast<GLuint>(locPos));
+        if (!w->sequentialSegments)
+            glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, w->segIdxBuf);
+    }
+
+    draw();
+    {
+        GLenum err = glue->glGetError();
+        if (err != GL_NO_ERROR)
+            std::fprintf(stderr, "CadRendererGL: glDrawElements error: 0x%x\n", err);
+    }
+
+    if (w->vao && glue->glBindVertexArray) {
+        glue->glBindVertexArray(0);
+    } else {
+        glue->glDisableVertexAttribArrayARB(static_cast<GLuint>(locPos));
+        glue->glBindBuffer(GL_ARRAY_BUFFER, 0);
+        if (!w->sequentialSegments)
+            glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    }
+}
+
 // Bind a wire VBO once and submit the selected private-page ranges as one
 // multi-draw when available.  Chunks are residency units, not draw objects.
 static void bindAndDrawWireRanges(
@@ -946,49 +1023,25 @@ static void bindAndDrawWireRanges(
     }
     if (counts.empty()) return;
 
-    if (w->vao && glue->glBindVertexArray) {
-        glue->glBindVertexArray(w->vao);
-    } else {
-        glue->glBindBuffer(GL_ARRAY_BUFFER, w->posBuf);
-        glue->glVertexAttribPointerARB(static_cast<GLuint>(locPos), 3,
-                                       GL_FLOAT, GL_FALSE,
-                                       3 * sizeof(float), nullptr);
-        glue->glEnableVertexAttribArrayARB(static_cast<GLuint>(locPos));
-        if (!w->sequentialSegments)
-            glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, w->segIdxBuf);
-    }
-
-    if (w->sequentialSegments && counts.size() > 1 &&
-            glue->glMultiDrawArrays) {
-        SoGLContext_glMultiDrawArrays(glue, GL_LINES, firsts.data(),
-            counts.data(), static_cast<GLsizei>(counts.size()));
-    } else if (!w->sequentialSegments && counts.size() > 1 &&
-            glue->glMultiDrawElements) {
-        SoGLContext_glMultiDrawElements(glue, GL_LINES, counts.data(),
-            GL_UNSIGNED_INT, offsets.data(),
-            static_cast<GLsizei>(counts.size()));
-    } else if (w->sequentialSegments) {
-        for (size_t i = 0; i < counts.size(); ++i)
-            glue->glDrawArrays(GL_LINES, firsts[i], counts[i]);
-    } else {
-        for (size_t i = 0; i < counts.size(); ++i)
-            glue->glDrawElements(GL_LINES, counts[i], GL_UNSIGNED_INT,
-                offsets[i]);
-    }
-    {
-        GLenum err = glue->glGetError();
-        if (err != GL_NO_ERROR)
-            std::fprintf(stderr, "CadRendererGL: glDrawElements error: 0x%x\n", err);
-    }
-
-    if (w->vao && glue->glBindVertexArray) {
-        glue->glBindVertexArray(0);
-    } else {
-        glue->glDisableVertexAttribArrayARB(static_cast<GLuint>(locPos));
-        glue->glBindBuffer(GL_ARRAY_BUFFER, 0);
-        if (!w->sequentialSegments)
-            glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-    }
+    withBoundWireVbo(w, glue, locPos, [&]() {
+        if (w->sequentialSegments && counts.size() > 1 &&
+                glue->glMultiDrawArrays) {
+            SoGLContext_glMultiDrawArrays(glue, GL_LINES, firsts.data(),
+                counts.data(), static_cast<GLsizei>(counts.size()));
+        } else if (!w->sequentialSegments && counts.size() > 1 &&
+                glue->glMultiDrawElements) {
+            SoGLContext_glMultiDrawElements(glue, GL_LINES, counts.data(),
+                GL_UNSIGNED_INT, offsets.data(),
+                static_cast<GLsizei>(counts.size()));
+        } else if (w->sequentialSegments) {
+            for (size_t i = 0; i < counts.size(); ++i)
+                glue->glDrawArrays(GL_LINES, firsts[i], counts[i]);
+        } else {
+            for (size_t i = 0; i < counts.size(); ++i)
+                glue->glDrawElements(GL_LINES, counts[i], GL_UNSIGNED_INT,
+                    offsets[i]);
+        }
+    });
 }
 
 static void bindAndDrawWireRangesFixed(
@@ -1739,7 +1792,47 @@ void CadRendererGL::renderVboLoop(
                     submittedSegments = static_cast<uint64_t>(
                         (std::max)(0, segmentCount));
                 }
-                bindAndDrawWireRanges(w, glue, locPos, wireRanges);
+                if (geometry && geometry->wire && !geometry->wire->styleRuns.empty()) {
+                    submittedSegments = 0;
+                    withBoundWireVbo(w, glue, locPos, [&]() {
+                        for (const auto& range : wireRanges) {
+                            const bool complete = geometry->wire->forEachStyleRange(
+                                range.firstSegment, range.segmentCount,
+                                [&](size_t first, size_t count,
+                                    const WireStyle& authored) {
+                                    if (renderInterruptedAfter(deadlineWork, count))
+                                        return false;
+                                    const CadResolvedWireStyle resolved =
+                                        cadResolveWireStyle(inst, authored);
+                                    applyWireRasterStyle(
+                                        glue, resolved,
+                                        caps_.hasLineStipple);
+                                    const float color[4] = {
+                                        resolved.rgba[0] / 255.0f,
+                                        resolved.rgba[1] / 255.0f,
+                                        resolved.rgba[2] / 255.0f,
+                                        resolved.rgba[3] / 255.0f};
+                                    glue->glUniform4fvARB(
+                                        loc.color, 1, color);
+                                    if (w->sequentialSegments)
+                                        glue->glDrawArrays(GL_LINES,
+                                            static_cast<GLint>(first * 2u),
+                                            static_cast<GLsizei>(count * 2u));
+                                    else
+                                        glue->glDrawElements(GL_LINES,
+                                            static_cast<GLsizei>(count * 2u), GL_UNSIGNED_INT,
+                                            reinterpret_cast<const GLvoid *>(
+                                                static_cast<uintptr_t>(first) * 2u * sizeof(uint32_t)));
+                                    submittedSegments = cadSaturatingWorkAdd(
+                                        submittedSegments, count);
+                                    return true;
+                                });
+                            if (!complete) { interrupted = true; break; }
+                        }
+                    });
+                } else {
+                    bindAndDrawWireRanges(w, glue, locPos, wireRanges);
+                }
                 cadAccumulateRenderedWireWork(
                     lastRenderedWork_, submittedSegments);
             }
@@ -2413,17 +2506,36 @@ void CadRendererGL::renderFixedVboLoop(
                 const GLsizei bounded = static_cast<GLsizei>(
                     std::min<uint64_t>(count,
                         static_cast<uint64_t>(availableSegmentCount) - first));
-                if (wire->sequentialSegments)
-                    glue->glDrawArrays(GL_LINES,
-                        static_cast<GLint>(first * 2u), bounded * 2);
-                else
-                    glue->glDrawElements(GL_LINES, bounded * 2,
-                        GL_UNSIGNED_INT,
-                        reinterpret_cast<const GLvoid *>(
-                            static_cast<uintptr_t>(first) * 2u *
-                            sizeof(uint32_t)));
-                submittedSegments = cadSaturatingWorkAdd(
-                    submittedSegments, static_cast<uint64_t>(bounded));
+                const bool authoredStyles = geometry && geometry->wire &&
+                    !geometry->wire->styleRuns.empty();
+                const auto draw = [&](size_t begin, size_t segments,
+                                      const WireStyle& authored) {
+                    if (authoredStyles && renderInterruptedAfter(deadlineWork, segments))
+                        return false;
+                    const CadResolvedWireStyle resolved =
+                        cadResolveWireStyle(inst, authored);
+                    glue->glColor4ub(
+                        resolved.rgba[0], resolved.rgba[1],
+                        resolved.rgba[2], resolved.rgba[3]);
+                    applyWireRasterStyle(
+                        glue, resolved, caps_.hasLineStipple);
+                    if (wire->sequentialSegments)
+                        glue->glDrawArrays(GL_LINES,
+                            static_cast<GLint>(begin * 2u), static_cast<GLsizei>(segments * 2u));
+                    else
+                        glue->glDrawElements(GL_LINES, static_cast<GLsizei>(segments * 2u),
+                            GL_UNSIGNED_INT, reinterpret_cast<const GLvoid *>(
+                                static_cast<uintptr_t>(begin) * 2u * sizeof(uint32_t)));
+                    submittedSegments = cadSaturatingWorkAdd(submittedSegments, segments);
+                    return true;
+                };
+                if (authoredStyles) {
+                    if (!geometry->wire->forEachStyleRange(first, bounded, draw))
+                        interrupted = true;
+                } else {
+                    WireStyle authored;
+                    draw(first, bounded, authored);
+                }
             };
             if (progressive &&
                     progressive->hasAdaptiveProgressiveClusters()) {
@@ -2492,6 +2604,8 @@ void CadRendererGL::renderFixedVboLoop(
             }
             cadAccumulateRenderedWireWork(
                 lastRenderedWork_, submittedSegments);
+            if (interrupted)
+                break;
         }
         if (interrupted)
             break;
@@ -2503,6 +2617,9 @@ void CadRendererGL::renderFixedVboLoop(
     const GLboolean wasColorMaterial = glue->glIsEnabled(GL_COLOR_MATERIAL);
     GLint wasTwoSidedLighting = GL_FALSE;
     glue->glGetIntegerv(GL_LIGHT_MODEL_TWO_SIDE, &wasTwoSidedLighting);
+    GLint wasShadeModel = GL_SMOOTH;
+    glue->glGetIntegerv(GL_SHADE_MODEL, &wasShadeModel);
+    const bool constantFaceLighting = fixedLightingIsPositionIndependent(glue);
     if (!interrupted && drawShaded && !plan.shadedItems.empty()) {
         // CAD shading must not depend on the caller enabling GL_LIGHTING.
         glue->glEnable(GL_LIGHTING);
@@ -2611,6 +2728,12 @@ void CadRendererGL::renderFixedVboLoop(
             }
         }
 
+        /* Normal-free cuts expand one normal per face.  As in the flat
+         * atlas, directional lighting makes their vertex colors equal;
+         * preserve interpolation for authored normals in the same frame. */
+        glue->glShadeModel(constantFaceLighting && geometry &&
+                geometry->shaded && geometry->shaded->normals.empty() ?
+            GL_FLAT : wasShadeModel);
         bool normalArrayEnabled = false;
 
         for (uint32_t i = 0; i < item.instanceCount; ++i) {
@@ -2870,6 +2993,7 @@ void CadRendererGL::renderFixedVboLoop(
     if (wasColorMaterial) glue->glEnable(GL_COLOR_MATERIAL);
     else glue->glDisable(GL_COLOR_MATERIAL);
     glue->glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, wasTwoSidedLighting);
+    glue->glShadeModel(wasShadeModel);
     if (wasLighting) glue->glEnable(GL_LIGHTING);
     else glue->glDisable(GL_LIGHTING);
 
@@ -2975,45 +3099,57 @@ void CadRendererGL::renderImmediateMode(
             uint64_t submittedFlatSegments = 0;
             const auto drawFlatRange = [&](size_t firstSegment,
                                            size_t segmentCount) {
-              const size_t firstPoint = firstSegment * 2u;
-              const size_t available = firstPoint <
-                      wire.segmentPoints.size() ?
-                  (wire.segmentPoints.size() - firstPoint) / 2u : 0;
-              segmentCount = std::min(segmentCount, available);
-              if (!segmentCount)
-                  return;
-              const size_t endPoint = firstPoint + segmentCount * 2u;
-              size_t point = firstPoint;
-              while (point + 1 < endPoint) {
-                const size_t chunkEnd = std::min(
-                    endPoint, point + 512u);
-                const size_t segmentWork = (chunkEnd - point) / 2u;
-                if (renderInterruptedAfter(deadlineWork, segmentWork)) {
-                    interrupted = true;
-                    break;
-                }
-                glue->glBegin(GL_LINES);
-                for (; point + 1 < chunkEnd; point += 2) {
-                    const SbVec3f a = wire.isProgressive() ?
-                        cadProgressiveSnapPoint(wire.segmentPoints[point],
-                            wire.progressiveQuantizationMinimum,
-                            wire.progressiveQuantizationMaximum,
-                            wire.quantizationAtCut(drawLevel)) :
-                        wire.segmentPoints[point];
-                    const SbVec3f b = wire.isProgressive() ?
-                        cadProgressiveSnapPoint(
-                            wire.segmentPoints[point + 1],
-                            wire.progressiveQuantizationMinimum,
-                            wire.progressiveQuantizationMaximum,
-                            wire.quantizationAtCut(drawLevel)) :
-                        wire.segmentPoints[point + 1];
-                    glue->glVertex3f(a[0], a[1], a[2]);
-                    glue->glVertex3f(b[0], b[1], b[2]);
-                }
-                glue->glEnd();
-                submittedFlatSegments = cadSaturatingWorkAdd(
-                    submittedFlatSegments, segmentWork);
-              }
+                const size_t firstPoint = firstSegment * 2u;
+                const size_t available = firstPoint <
+                        wire.segmentPoints.size() ?
+                    (wire.segmentPoints.size() - firstPoint) / 2u : 0;
+                segmentCount = std::min(segmentCount, available);
+                if (!segmentCount)
+                    return;
+                wire.forEachStyleRange(firstSegment, segmentCount,
+                    [&](size_t runFirst, size_t runCount,
+                        const WireStyle& authored) {
+                        const CadResolvedWireStyle resolved =
+                            cadResolveWireStyle(inst, authored);
+                        glue->glColor4ub(
+                            resolved.rgba[0], resolved.rgba[1],
+                            resolved.rgba[2], resolved.rgba[3]);
+                        applyWireRasterStyle(
+                            glue, resolved, caps_.hasLineStipple);
+                        size_t point = runFirst * 2u;
+                        const size_t runEnd = (runFirst + runCount) * 2u;
+                        while (point + 1 < runEnd) {
+                            const size_t chunkEnd = std::min(
+                                runEnd, point + 512u);
+                            const size_t segmentWork = (chunkEnd - point) / 2u;
+                            if (renderInterruptedAfter(deadlineWork, segmentWork)) {
+                                interrupted = true;
+                                break;
+                            }
+                            glue->glBegin(GL_LINES);
+                            for (; point + 1 < chunkEnd; point += 2) {
+                                const SbVec3f a = wire.isProgressive() ?
+                                    cadProgressiveSnapPoint(wire.segmentPoints[point],
+                                        wire.progressiveQuantizationMinimum,
+                                        wire.progressiveQuantizationMaximum,
+                                        wire.quantizationAtCut(drawLevel)) :
+                                    wire.segmentPoints[point];
+                                const SbVec3f b = wire.isProgressive() ?
+                                    cadProgressiveSnapPoint(
+                                        wire.segmentPoints[point + 1],
+                                        wire.progressiveQuantizationMinimum,
+                                        wire.progressiveQuantizationMaximum,
+                                        wire.quantizationAtCut(drawLevel)) :
+                                    wire.segmentPoints[point + 1];
+                                glue->glVertex3f(a[0], a[1], a[2]);
+                                glue->glVertex3f(b[0], b[1], b[2]);
+                            }
+                            glue->glEnd();
+                            submittedFlatSegments = cadSaturatingWorkAdd(
+                                submittedFlatSegments, segmentWork);
+                        }
+                        return !interrupted;
+                    });
             };
             if (wire.hasAdaptiveProgressiveClusters()) {
                 for (const ProgressiveWireCluster& cluster :

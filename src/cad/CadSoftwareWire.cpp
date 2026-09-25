@@ -14,6 +14,7 @@
 
 #include "CadSoftwareWire.h"
 #include "CadProgressiveUtils.h"
+#include "CadRendererGLExecutorUtils.h"
 
 #include <Inventor/SoDB.h>
 #include <Inventor/SbViewportRegion.h>
@@ -143,15 +144,18 @@ cadSoftwarePutPixel(unsigned char *pixels, unsigned int width,
 static void
 cadSoftwareLine(unsigned char *pixels, unsigned int width,
                 unsigned int height, int x0, int y0, int x1, int y1,
-                const Obol::internal::CadVisibleInstance& instance)
+                const Obol::internal::CadResolvedWireStyle& style)
 {
-    std::array<uint8_t, 4> color = instance.rgba;
-    const int pixelWidth = std::max(1, static_cast<int>(
-        std::lround(instance.lineWidth)));
+    const std::array<uint8_t, 4>& color = style.rgba;
+    // A wider brush cannot add coverage beyond the framebuffer. Bound it
+    // before integer conversion, including finite authored widths above LONG_MAX.
+    const double pixelExtent = 2.0 * std::max(width, height);
+    const int pixelWidth = std::max(1, static_cast<int>(std::lround(
+        std::min(pixelExtent, double(style.lineWidth)))));
     const int lowOffset = -(pixelWidth - 1) / 2;
     const int highOffset = pixelWidth / 2;
     const unsigned int factor = std::max<unsigned int>(
-        1u, instance.linePatternFactor);
+        1u, style.linePatternFactor);
     int dx = std::abs(x1 - x0);
     int sx = x0 < x1 ? 1 : -1;
     int dy = -std::abs(y1 - y0);
@@ -160,9 +164,11 @@ cadSoftwareLine(unsigned char *pixels, unsigned int width,
     unsigned int step = 0;
     for (;;) {
         const unsigned int patternBit = (step / factor) & 15u;
-        if (instance.linePattern & (1u << patternBit)) {
-            for (int oy = lowOffset; oy <= highOffset; ++oy)
-                for (int ox = lowOffset; ox <= highOffset; ++ox)
+        if (style.linePattern & (1u << patternBit)) {
+            for (int oy = std::max(lowOffset, -y0);
+                    oy <= std::min(highOffset, int(height) - 1 - y0); ++oy)
+                for (int ox = std::max(lowOffset, -x0);
+                        ox <= std::min(highOffset, int(width) - 1 - x0); ++ox)
                     cadSoftwarePutPixel(pixels, width, height,
                                         x0 + ox, y0 + oy, color);
         }
@@ -179,8 +185,11 @@ cadSoftwareSegment(unsigned char *pixels, unsigned int width,
                    unsigned int height, const SbVec2s& origin,
                    const SbVec2s& size, const SbMatrix& transform,
                    const SbVec3f& p0, const SbVec3f& p1,
-                   const Obol::internal::CadVisibleInstance& instance)
+                   const Obol::internal::CadVisibleInstance& instance,
+                   const Obol::WireStyle& authored = Obol::WireStyle())
 {
+    const Obol::internal::CadResolvedWireStyle style =
+        Obol::internal::cadResolveWireStyle(instance, authored);
     const float *m = transform[0];
     if (m[3] == 0.0f && m[7] == 0.0f && m[11] == 0.0f && m[15] != 0.0f) {
         const double inverseW = 1.0 / m[15];
@@ -197,7 +206,7 @@ cadSoftwareSegment(unsigned char *pixels, unsigned int width,
             return;
         cadSoftwareLine(pixels, width, height,
             static_cast<int>(x0 + 0.5), static_cast<int>(y0 + 0.5),
-            static_cast<int>(x1 + 0.5), static_cast<int>(y1 + 0.5), instance);
+            static_cast<int>(x1 + 0.5), static_cast<int>(y1 + 0.5), style);
         return;
     }
 
@@ -212,7 +221,7 @@ cadSoftwareSegment(unsigned char *pixels, unsigned int width,
         (b.v[0] / b.v[3] * 0.5 + 0.5) * (size[0] - 1)));
     const int y1 = origin[1] + static_cast<int>(std::lround(
         (b.v[1] / b.v[3] * 0.5 + 0.5) * (size[1] - 1)));
-    cadSoftwareLine(pixels, width, height, x0, y0, x1, y1, instance);
+    cadSoftwareLine(pixels, width, height, x0, y0, x1, y1, style);
 }
 
 static void
@@ -331,6 +340,7 @@ cadRenderSoftwareWire(const Obol::internal::CadFramePlan& plan,
 {
     CadSoftwareWireRenderResult result;
     if (plan.wireItems.empty() || !plan.shadedItems.empty() ||
+            !plan.unlitItems.empty() ||
             viewState.wireframeOcclusion)
         return result;
     SoDB::ContextManager *manager = SoContextManagerElement::get(state);
@@ -477,7 +487,8 @@ cadRenderSoftwareWire(const Obol::internal::CadFramePlan& plan,
                     const SbVec3f b = cadSoftwareSnapPoint(
                         wire.segmentPoints[p + 1], wire, level);
                     cadSoftwareSegment(pixels, width, height, origin, size,
-                        transform, a, b, instance);
+                        transform, a, b, instance,
+                        wire.styleAtSegment(p / 2u));
                 }
                 instanceSegments = cadSoftwareWorkAdd(
                     instanceSegments, segmentCount);

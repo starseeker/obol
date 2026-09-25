@@ -51,6 +51,9 @@ namespace Obol {
 
 struct InstanceStyle {
     bool hasColorOverride = false;
+    /** False while selection, highlighting, or another application policy
+     * must replace colors authored on shared geometry. */
+    bool useGeometryColor = true;
     /** Linear RGBA components; every component must be in [0, 1]. */
     SbColor4f color = SbColor4f(0.8f, 0.8f, 0.8f, 1.0f);
     float lineWidth = 1.0f;

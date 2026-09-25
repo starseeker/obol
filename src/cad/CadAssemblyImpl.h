@@ -141,6 +141,9 @@ struct SoCADAssemblyImpl :
 
     void finishSparsePresentationPatch(bool visibilityChanged = false);
 
+    void projectDisplayPlanes(const SbMatrix& rootToClip,
+        const SbVec2s& viewportSize);
+
     /**
      * Build a CadFramePlan from the current instance and part databases.
      *

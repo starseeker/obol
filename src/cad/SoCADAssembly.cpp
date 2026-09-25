@@ -509,6 +509,9 @@ SoCADAssembly::initClass()
     if (SoCADAssembly::getClassTypeId() != SoType::badType())
         return;
     SO_NODE_INIT_CLASS(SoCADAssembly, SoNode, "Node");
+    // SoNode descendants inherit generic pick dispatch unless they register
+    // ray picking explicitly; overriding rayPick alone is not sufficient.
+    SoRayPickAction::addMethod(SoCADAssembly::getClassTypeId(), SoNode::rayPickS);
     SoCADDetail::initClass();
     SoCADViewState::initClass();
 }
@@ -638,7 +641,7 @@ void SoCADAssembly::reserveStreamingCapacity(size_t expectedOccurrences)
     impl_->cachedPlan_.visibleInstances.reserve(visibleCapacity);
     impl_->cachedPlan_.partBindings.reserve(expectedOccurrences + 1u);
     impl_->cachedPlan_.wireItems.reserve(expectedOccurrences);
-    impl_->cachedPlan_.pointItems.reserve(expectedOccurrences);
+    impl_->cachedPlan_.unlitItems.reserve(expectedOccurrences);
     impl_->cachedPlan_.shadedItems.reserve(expectedOccurrences);
     impl_->cachedPlan_.requiredReps.reserve(visibleCapacity);
 }
@@ -698,6 +701,8 @@ SoCADAssembly::clear()
     impl_->progressiveShadedPlanGroupByInstance_.clear();
     impl_->progressivePlanIndexByInstance_.clear();
     impl_->cachedPlanPartSpansByPart_.clear();
+    impl_->displayPlanePlanInstances_.clear();
+    impl_->displayPlanePickInstances_.clear();
     impl_->pendingInstanceAttributeIndices_.clear();
     impl_->cachedDrawMode_.reset();
     impl_->instanceBvh_ = Obol::picking::CadInstanceBVH();
@@ -713,18 +718,21 @@ SoCADAssembly::replaceScene(
     const std::vector<Obol::PartUpdate>& parts,
     const std::vector<Obol::InstanceUpdate>& instances)
 {
+    return replaceScene(parts, instances.size(),
+        [&instances](size_t index) { return instances[index]; });
+}
+
+Obol::CadSceneReplacementResult
+SoCADAssembly::replaceScene(
+    const std::vector<Obol::PartUpdate>& parts, size_t instanceCount,
+    const std::function<Obol::InstanceUpdate(size_t)>& instanceAt)
+{
     Obol::CadSceneReplacementResult result;
     result.geometry = Obol::cadValidatePartUpdates(parts);
     if (!result.geometry) {
         result.error = Obol::CadSceneReplacementError::Geometry;
         return result;
     }
-    result.instances = Obol::cadValidateInstanceUpdates(instances);
-    if (!result.instances) {
-        result.error = Obol::CadSceneReplacementError::Instances;
-        return result;
-    }
-
     /*
      * Construct the complete retained database before changing the live
      * scene.  Geometry remains shared, so this duplicates only lightweight
@@ -738,7 +746,7 @@ SoCADAssembly::replaceScene(
         replacement = std::make_unique<SoCADAssemblyImpl>();
         replacement->nextGeneration_ = impl_->nextGeneration_;
         const size_t occurrenceCapacity = std::max(
-            instances.size(), impl_->streamingOccurrenceCapacityHint_);
+            instanceCount, impl_->streamingOccurrenceCapacityHint_);
         replacement->parts_.reserve(parts.size());
         replacement->subpixelProxyCorners_.reserve(parts.size());
         replacement->partGeneration_.reserve(parts.size());
@@ -748,8 +756,17 @@ SoCADAssembly::replaceScene(
         for (const Obol::PartUpdate& part : parts)
             replacement->updatePartGeometry(
                 part.part, part.geometry.shared());
-        for (const Obol::InstanceUpdate& instance : instances)
+        for (size_t index = 0; index < instanceCount; ++index) {
+            const Obol::InstanceUpdate instance = instanceAt(index);
+            result.instances = Obol::cadValidateInstanceRecord(
+                instance.instance, instance.record);
+            if (!result.instances) {
+                result.instances.updateIndex = index;
+                result.error = Obol::CadSceneReplacementError::Instances;
+                return result;
+            }
             replacement->updateInstance(instance.instance, instance.record);
+        }
     } catch (const std::bad_alloc&) {
         result.error =
             Obol::CadSceneReplacementError::ResourceUnavailable;
@@ -2001,6 +2018,7 @@ SoCADAssembly::GLRender(SoGLRenderAction* action)
     }
 
     const SbViewportRegion& viewport = SoViewportRegionElement::get(state);
+    impl_->projectDisplayPlanes(viewProj, viewport.getViewportSizePixels());
     const SbViewVolume& viewVolume = SoViewVolumeElement::get(state);
     bool subpixelPreparationPerformed = false;
     const bool subpixelPreparationComplete =
@@ -2234,20 +2252,7 @@ SoCADAssembly::rayPick(SoRayPickAction* action)
             Obol::CadPickMode::Edge : Obol::CadPickMode::Triangle;
     }
 
-    // Convert the screen-space field to assembly-local units.  The instance
-    // BVH already owns the exact pickable aggregate bounds, avoiding an O(N)
-    // occurrence scan on every otherwise-clean pick.
-    float toleranceWS = viewState.edgePickTolerancePixels * 0.01f;
     SoState* state = action->getState();
-    if (state)
-        toleranceWS = Obol::internal::cadEdgePickTolerance(
-            SoViewVolumeElement::get(state),
-            SoViewportRegionElement::get(state).getViewportSizePixels(),
-            impl_->instanceBvh_.bounds(),
-            SoModelMatrixElement::get(state),
-            viewState.edgePickTolerancePixels);
-
-    Obol::picking::CadPickResult result;
     const int configuredCutCeiling = viewState.progressiveCutCeiling;
     const uint8_t pickCutCeiling =
         configuredCutCeiling >= 0 &&
@@ -2256,50 +2261,94 @@ SoCADAssembly::rayPick(SoRayPickAction* action)
         static_cast<uint8_t>(configuredCutCeiling) :
         Obol::ProgressiveCutUnspecified;
 
-    if (automaticPick || pickPolicy == Obol::CadPickMode::Edge ||
-            pickPolicy == Obol::CadPickMode::Hybrid) {
-        result = Obol::picking::CadPickQuery::pickPoint(
-            pickRay, impl_->instanceBvh_, impl_->parts_, toleranceWS,
-            &impl_->partPointBvhCache_);
-    }
+    const auto pickFrom = [&](const Obol::picking::CadInstanceBVH& bvh) {
+        const float toleranceWS = Obol::internal::cadEdgePickTolerance(
+            SoViewVolumeElement::get(state),
+            SoViewportRegionElement::get(state).getViewportSizePixels(),
+            bvh.bounds(), SoModelMatrixElement::get(state),
+            viewState.edgePickTolerancePixels);
+        Obol::picking::CadPickResult result;
+        if (automaticPick || pickPolicy == Obol::CadPickMode::Edge ||
+                pickPolicy == Obol::CadPickMode::Hybrid) {
+            result = Obol::picking::CadPickQuery::pickPoint(
+                pickRay, bvh, impl_->parts_, toleranceWS,
+                &impl_->partPointBvhCache_);
+        }
 
-    if (!result.valid && (pickPolicy == Obol::CadPickMode::Edge ||
-            pickPolicy == Obol::CadPickMode::Hybrid)) {
-        result = Obol::picking::CadPickQuery::pickEdge(
-            pickRay,
-            impl_->instanceBvh_,
-            impl_->parts_,
-            impl_->partEdgeBvhCache_,
-            toleranceWS,
-            pickCutCeiling,
-            &impl_->progressiveEdgeBvhCache_);
-    }
+        if (!result.valid && (pickPolicy == Obol::CadPickMode::Edge ||
+                pickPolicy == Obol::CadPickMode::Hybrid)) {
+            result = Obol::picking::CadPickQuery::pickEdge(
+                pickRay,
+                bvh,
+                impl_->parts_,
+                impl_->partEdgeBvhCache_,
+                toleranceWS,
+                pickCutCeiling,
+                &impl_->progressiveEdgeBvhCache_);
+        }
 
-    if (!result.valid && (pickPolicy == Obol::CadPickMode::Triangle ||
-            pickPolicy == Obol::CadPickMode::Hybrid)) {
-        result = Obol::picking::CadPickQuery::pickTriangle(
-            pickRay,
-            impl_->instanceBvh_,
-            impl_->parts_,
-            impl_->partTriBvhCache_,
-            toleranceWS,
-            pickCutCeiling,
-            &impl_->progressiveTriBvhCache_);
-    }
+        if (!result.valid && (automaticPick || pickPolicy == Obol::CadPickMode::Triangle ||
+                pickPolicy == Obol::CadPickMode::Hybrid)) {
+            result = Obol::picking::CadPickQuery::pickTriangle(
+                pickRay,
+                bvh,
+                impl_->parts_,
+                impl_->partTriBvhCache_,
+                toleranceWS,
+                pickCutCeiling,
+                &impl_->progressiveTriBvhCache_,
+                automaticPick && pickPolicy == Obol::CadPickMode::Edge);
+        }
 
-    if (!result.valid && pickPolicy == Obol::CadPickMode::Bounds) {
-        result = Obol::picking::CadPickQuery::pickBounds(
-            pickRay,
-            impl_->instanceBvh_,
-            toleranceWS);
-    }
+        if (!result.valid && pickPolicy == Obol::CadPickMode::Bounds) {
+            result = Obol::picking::CadPickQuery::pickBounds(
+                pickRay,
+                bvh,
+                toleranceWS);
+        }
 
-    // For PICK_HYBRID: also try bounds if triangle picking returned nothing.
-    if (!result.valid && pickPolicy == Obol::CadPickMode::Hybrid) {
-        result = Obol::picking::CadPickQuery::pickBounds(
-            pickRay,
-            impl_->instanceBvh_,
-            toleranceWS);
+        // For PICK_HYBRID: also try bounds if triangle picking returned nothing.
+        if (!result.valid && pickPolicy == Obol::CadPickMode::Hybrid) {
+            result = Obol::picking::CadPickQuery::pickBounds(
+                pickRay,
+                bvh,
+                toleranceWS);
+        }
+        return result;
+    };
+    Obol::picking::CadPickResult result = pickFrom(impl_->instanceBvh_);
+    if (!impl_->displayPlanePickInstances_.empty()) {
+        SbMatrix rootToClip = SoModelMatrixElement::get(state);
+        rootToClip.multRight(SoViewVolumeElement::get(state).getMatrix());
+        const SbVec2s viewportSize =
+            SoViewportRegionElement::get(state).getViewportSizePixels();
+        std::vector<Obol::picking::CadInstanceBVH::Entry> projectedEntries;
+        projectedEntries.reserve(impl_->displayPlanePickInstances_.size());
+        for (const Obol::InstanceId instance : impl_->displayPlanePickInstances_) {
+            const auto retained = impl_->instances_.find(instance);
+            if (retained == impl_->instances_.end())
+                continue;
+            const auto geometry = impl_->parts_.find(retained->second.partId);
+            if (geometry == impl_->parts_.end() || !geometry->second ||
+                    !geometry->second->displayPlane)
+                continue;
+            Obol::picking::CadInstanceBVH::Entry entry;
+            if (!Obol::cadDisplayPlaneTransform(*geometry->second->displayPlane,
+                    retained->second.localToRoot, rootToClip, viewportSize,
+                    entry.localToWorld))
+                continue;
+            entry.instanceId = instance;
+            entry.partId = retained->second.partId;
+            entry.lodCut = retained->second.lodCut;
+            entry.worldBounds = Obol::cadPartGeometryBounds(*geometry->second);
+            entry.worldBounds.transform(entry.localToWorld);
+            projectedEntries.push_back(entry);
+        }
+        Obol::picking::CadInstanceBVH projectedBvh;
+        projectedBvh.build(std::move(projectedEntries));
+        const auto projected = pickFrom(projectedBvh);
+        if (projected.valid && (!result.valid || projected.t < result.t))
+            result = projected;
     }
 
     if (!result.valid) return;
@@ -2354,7 +2403,22 @@ SoCADAssembly::getBoundingBox(SoGetBoundingBoxAction* action)
     for (const auto& [iid, idata] : impl_->instances_) {
         if (impl_->hidden_.count(iid))
             continue;
-        if (!idata.worldBounds.isEmpty()) {
+        const auto geometry = impl_->parts_.find(idata.partId);
+        if (geometry != impl_->parts_.end() && geometry->second &&
+                geometry->second->displayPlane) {
+            SoState* state = action->getState();
+            SbMatrix rootToClip = SoModelMatrixElement::get(state);
+            rootToClip.multRight(SoViewVolumeElement::get(state).getMatrix());
+            SbMatrix projected;
+            if (Obol::cadDisplayPlaneTransform(*geometry->second->displayPlane,
+                    idata.localToRoot, rootToClip,
+                    SoViewportRegionElement::get(state).getViewportSizePixels(),
+                    projected)) {
+                SbBox3f bounds = Obol::cadPartGeometryBounds(*geometry->second);
+                bounds.transform(projected);
+                worldBox.extendBy(bounds);
+            }
+        } else if (!idata.worldBounds.isEmpty()) {
             worldBox.extendBy(idata.worldBounds);
         }
     }

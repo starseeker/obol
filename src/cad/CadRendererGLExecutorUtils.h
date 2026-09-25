@@ -56,6 +56,13 @@ struct CadWireRasterState {
     GLint stippleFactor = 1;
 };
 
+struct CadResolvedWireStyle {
+    std::array<uint8_t, 4> rgba = {{204u, 204u, 204u, 255u}};
+    float lineWidth = 1.0f;
+    uint16_t linePattern = 0xffffu;
+    uint16_t linePatternFactor = 1u;
+};
+
 const float *executorPackedVec3fData(
     const std::vector<SbVec3f>& values);
 void executorAppendPackedPoint(
@@ -84,6 +91,11 @@ double executorProjectedBoxImportance(
     const SbMatrix& viewProjection) noexcept;
 CadWireRasterState captureWireRasterState(
     const SoGLContext *glue, bool hasLineStipple);
+CadResolvedWireStyle cadResolveWireStyle(
+    const CadVisibleInstance& instance, const WireStyle& authored) noexcept;
+void applyWireRasterStyle(
+    const SoGLContext *glue, const CadResolvedWireStyle& style,
+    bool hasLineStipple);
 void applyWireRasterStyle(
     const SoGLContext *glue, const CadVisibleInstance& instance,
     bool hasLineStipple);

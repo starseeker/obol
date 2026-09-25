@@ -3,6 +3,11 @@
  * @brief Lossless SoCADAssembly instance-record tests.
  */
 
+/* Qt defines emit as an empty macro.  Parse the public geometry header
+ * under that condition so callback parameter names remain macro-safe. */
+#define emit
+#include <Obol/cad/CadGeometry.h>
+#undef emit
 #include <Obol/cad/SoCADAssembly.h>
 #include <Obol/cad/CadViewState.h>
 #include "CadGpuResources.h"
@@ -13,11 +18,17 @@
 
 #include <Inventor/SoDB.h>
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
+#include <Inventor/actions/SoRayPickAction.h>
+#include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoOrthographicCamera.h>
+#include <Inventor/nodes/SoPerspectiveCamera.h>
+#include <Obol/cad/SoCADViewState.h>
 #include <Inventor/sensors/SoNodeSensor.h>
 
 #include <atomic>
 #include <limits>
 #include <memory>
+#include <new>
 #include <string>
 #include <type_traits>
 
@@ -896,6 +907,61 @@ TEST(CadInstanceRecords, CompleteReplacementRejectsBeforeClearingLiveScene)
         Obol::CadSceneReplacementError::ResourceUnavailable),
         "resource-unavailable");
 
+    size_t readCount = 0;
+    const std::vector<Obol::PartUpdate> parts = {
+        {firstPart, admitted.geometry, false}
+    };
+    const auto invalidReader = [&](size_t index) {
+        EXPECT_EQ(index, readCount++);
+        EXPECT_EQ(assembly->instanceCount(), 1u);
+        EXPECT_EQ(changeCount, committedChanges);
+        Obol::InstanceUpdate update;
+        update.instance = Obol::CadIdBuilder::instanceId(
+            "reader-instance-" + std::to_string(index));
+        update.record = index == 0 ? firstRecord : malformedRecord;
+        return update;
+    };
+    const auto invalidTail = assembly->replaceScene(parts, 2, invalidReader);
+    EXPECT_EQ(readCount, 2u);
+    EXPECT_EQ(invalidTail.error, Obol::CadSceneReplacementError::Instances);
+    EXPECT_EQ(invalidTail.instances.updateIndex, 1u);
+    EXPECT_TRUE(assembly->getInstanceRecord(firstInstance).has_value());
+    EXPECT_EQ(changeCount, committedChanges);
+
+    const auto exhausted = assembly->replaceScene(parts, 1,
+        [](size_t) -> Obol::InstanceUpdate { throw std::bad_alloc(); });
+    EXPECT_EQ(exhausted.error,
+        Obol::CadSceneReplacementError::ResourceUnavailable);
+    EXPECT_TRUE(assembly->getInstanceRecord(firstInstance).has_value());
+    EXPECT_EQ(changeCount, committedChanges);
+
+    readCount = 0;
+    const size_t replacementCount = 3;
+    const auto generated = assembly->replaceScene(parts, replacementCount,
+        [&](size_t index) {
+            EXPECT_EQ(index, readCount++);
+            EXPECT_EQ(changeCount, committedChanges);
+            Obol::InstanceUpdate update;
+            update.instance = Obol::CadIdBuilder::instanceId(
+                "reader-instance-" + std::to_string(index));
+            update.record = firstRecord;
+            update.record.localToRoot.setTranslate(
+                SbVec3f(static_cast<float>(index), 0.0f, 0.0f));
+            return update;
+        });
+    ASSERT_TRUE(generated);
+    EXPECT_EQ(readCount, replacementCount);
+    EXPECT_EQ(assembly->instanceCount(), replacementCount);
+    EXPECT_FALSE(assembly->getInstanceRecord(firstInstance).has_value());
+    EXPECT_GT(changeCount, committedChanges);
+    for (size_t index = 0; index < replacementCount; ++index) {
+        const auto record = assembly->getInstanceRecord(
+            Obol::CadIdBuilder::instanceId(
+                "reader-instance-" + std::to_string(index)));
+        ASSERT_TRUE(record.has_value());
+        EXPECT_FLOAT_EQ(record->localToRoot[3][0], static_cast<float>(index));
+    }
+
     changeSensor.detach();
     assembly->unref();
 }
@@ -1186,4 +1252,272 @@ TEST(CadInstanceRecords, UnpickableSetIgnoresUnknownIdsAndNoOpUpdates)
     assembly->unref();
 }
 
+
+TEST(CadAssemblyPicking, WireRayTraversalHonorsSelectionAndVisibility)
+{
+    SoCADAssembly::initClass();
+    auto *root = new SoSeparator;
+    root->ref();
+    const std::unique_ptr<SoSeparator, void (*)(SoSeparator *)> owner(
+        root, [](SoSeparator *node) { node->unref(); });
+    auto *view = new SoCADViewState;
+    view->drawMode = SoCADViewState::WIREFRAME;
+    root->addChild(view);
+    auto *assembly = new SoCADAssembly;
+    root->addChild(assembly);
+
+    Obol::PartGeometryBuilder builder;
+    Obol::WireRep wire;
+    wire.segmentPoints = {SbVec3f(-1, 0, 0), SbVec3f(1, 0, 0)};
+    wire.segmentIds = {1};
+    wire.bounds = SbBox3f(wire.segmentPoints.front(), wire.segmentPoints.back());
+    builder.wire = std::move(wire);
+    const auto geometry = Obol::cadAdmitPartGeometry(std::move(builder));
+    ASSERT_TRUE(geometry);
+    const auto part = Obol::CadIdBuilder::partId("pick-traversal-part");
+    const auto instance = Obol::CadIdBuilder::instanceId("pick-traversal-instance");
+    Obol::InstanceRecord record;
+    record.part = part;
+    record.localToRoot.setTranslate(SbVec3f(3, 0, 0));
+    ASSERT_TRUE(assembly->replaceScene({{part, geometry.geometry, false}}, {{instance, record}}));
+
+    const auto hit = [&] {
+        SoRayPickAction action(SbViewportRegion(128, 128));
+        action.setRay(SbVec3f(3, 0, 5), SbVec3f(0, 0, -1));
+        action.apply(root);
+        return action.getPickedPoint() != nullptr;
+    };
+    ASSERT_TRUE(hit());
+    assembly->setUnpickableInstances({instance});
+    EXPECT_FALSE(hit());
+    assembly->setUnpickableInstances({});
+    EXPECT_TRUE(hit());
+    assembly->setHiddenInstances({instance});
+    EXPECT_FALSE(hit());
+    assembly->setHiddenInstances({});
+    EXPECT_TRUE(hit());
+}
+
+TEST(CadDisplayPlane, ProjectionKeepsPixelOffsetsAcrossCamerasAndPlacements)
+{
+    Obol::CadDisplayPlane plane;
+    plane.anchor = SbVec3f(1, 2, 0);
+    plane.pixelsPerUnit = 2.0f;
+    SbMatrix placement;
+    placement.setTransform(SbVec3f(-1, -2, -3),
+        SbRotation(SbVec3f(0, 0, 1), 0.4f), SbVec3f(2, 3, 1));
+    for (const SbVec2s size : {SbVec2s(200, 100), SbVec2s(480, 320)}) {
+        for (const bool perspective : {false, true}) {
+            SbViewVolume volume;
+            if (perspective)
+                volume.perspective(0.7f, float(size[0]) / size[1], 1, 100);
+            else
+                volume.ortho(-5, 5, -3, 3, 1, 100);
+            volume.translateCamera(SbVec3f(0, 0, 10));
+            const SbMatrix projection = volume.getMatrix();
+            SbMatrix projected;
+            ASSERT_TRUE(Obol::cadDisplayPlaneTransform(plane, placement,
+                projection, size, projected));
+            SbVec3f anchor, offset;
+            placement.multVecMatrix(plane.anchor, anchor);
+            projection.multVecMatrix(anchor, anchor);
+            projected.multVecMatrix(SbVec3f(12, 7, 0), offset);
+            projection.multVecMatrix(offset, offset);
+            EXPECT_NEAR((offset[0] - anchor[0]) * size[0] * 0.5f, 24.0f, 0.001f);
+            EXPECT_NEAR((offset[1] - anchor[1]) * size[1] * 0.5f, 14.0f, 0.001f);
+            EXPECT_NEAR(offset[2], anchor[2], 0.0001f);
+        }
+    }
+    SbMatrix unchanged = placement;
+    EXPECT_FALSE(Obol::cadDisplayPlaneTransform(plane, placement,
+        SbMatrix::identity(), SbVec2s(0, 100), unchanged));
+    EXPECT_EQ(unchanged, placement);
+    plane.pixelsPerUnit = -1.0f;
+    Obol::PartGeometryBuilder invalid;
+    invalid.displayPlane = plane;
+    EXPECT_FALSE(Obol::cadAdmitPartGeometry(std::move(invalid)));
+}
+
+TEST(CadDisplayPlane, PickingAndBoundsFollowTheActiveCamera)
+{
+    SoCADAssembly::initClass();
+    auto *root = new SoSeparator;
+    root->ref();
+    const std::unique_ptr<SoSeparator, void (*)(SoSeparator *)> owner(
+        root, [](SoSeparator *node) { node->unref(); });
+    auto *camera = new SoOrthographicCamera;
+    camera->position = SbVec3f(0, 0, 10);
+    camera->nearDistance = 1.0f;
+    camera->farDistance = 100.0f;
+    root->addChild(camera);
+    auto *policy = new SoCADViewState;
+    policy->drawMode = SoCADViewState::WIREFRAME;
+    root->addChild(policy);
+    auto *assembly = new SoCADAssembly;
+    root->addChild(assembly);
+    Obol::PartGeometryBuilder builder;
+    builder.displayPlane = Obol::CadDisplayPlane();
+    Obol::WireRep wire;
+    wire.segmentPoints = {SbVec3f(20, 0, 0), SbVec3f(40, 0, 0)};
+    wire.bounds = SbBox3f(wire.segmentPoints.front(), wire.segmentPoints.back());
+    builder.wire = std::move(wire);
+    const auto admitted = Obol::cadAdmitPartGeometry(std::move(builder));
+    ASSERT_TRUE(admitted);
+    const auto part = Obol::CadIdBuilder::partId("display-plane-part");
+    const auto instance = Obol::CadIdBuilder::instanceId("display-plane-instance");
+    Obol::InstanceRecord record;
+    record.part = part;
+    ASSERT_TRUE(assembly->replaceScene({{part, admitted.geometry, false}}, {{instance, record}}));
+    const SbViewportRegion viewport(200, 200);
+    for (const float height : {4.0f, 8.0f, 4.0f}) {
+        camera->height = height;
+        SoGetBoundingBoxAction bounds(viewport);
+        bounds.apply(root);
+        EXPECT_NEAR(bounds.getBoundingBox().getMin()[0], height * 0.1f, 0.0001f);
+        EXPECT_NEAR(bounds.getBoundingBox().getMax()[0], height * 0.2f, 0.0001f);
+        SoRayPickAction hit(viewport);
+        hit.setPoint(SbVec2s(130, 100));
+        hit.setRadius(1.0f);
+        hit.apply(root);
+        EXPECT_NE(hit.getPickedPoint(), nullptr);
+        SoRayPickAction miss(viewport);
+        miss.setPoint(SbVec2s(180, 100));
+        miss.setRadius(1.0f);
+        miss.apply(root);
+        EXPECT_EQ(miss.getPickedPoint(), nullptr);
+        EXPECT_EQ(assembly->getInstanceRecord(instance)->localToRoot, SbMatrix::identity());
+    }
+}
+
 } // namespace
+
+TEST(CadWireStyles, AdmissionAndClippedRuns)
+{
+    Obol::PartGeometryBuilder builder;
+    Obol::WireRep wire;
+    wire.bounds = SbBox3f(SbVec3f(0, 0, 0), SbVec3f(4, 0, 0));
+    for (int i = 0; i < 4; ++i) {
+        wire.segmentPoints.emplace_back(float(i), 0, 0);
+        wire.segmentPoints.emplace_back(float(i + 1), 0, 0);
+    }
+    Obol::WireStyle wide;
+    wide.widthScale = 4.5f;
+    wide.colorValid = true;
+    wide.color = SbColor4f(1.0f, 0.25f, 0.0f, 0.75f);
+    wide.patternValid = true;
+    wide.linePattern = 0x1111u;
+    Obol::WireStyle narrow;
+    narrow.widthScale = 2.0f;
+    wire.styleRuns = {{1, wide}, {3, narrow}};
+    builder.wire = wire;
+    auto admitted = Obol::cadAdmitPartGeometry(builder);
+    ASSERT_TRUE(admitted);
+    const auto& retained = *admitted.geometry.get()->wire;
+    EXPECT_FLOAT_EQ(retained.styleAtSegment(0).widthScale, 1.0f);
+    EXPECT_FLOAT_EQ(retained.styleAtSegment(1).widthScale, 4.5f);
+    EXPECT_EQ(retained.styleAtSegment(1).color, wide.color);
+    EXPECT_EQ(retained.styleAtSegment(1).linePattern, 0x1111u);
+    EXPECT_FLOAT_EQ(retained.styleAtSegment(3).widthScale, 2.0f);
+    EXPECT_TRUE(retained.hasAuthoredRasterStyle());
+    std::vector<std::pair<size_t, size_t>> ranges;
+    ASSERT_TRUE(retained.forEachStyleRange(2, 2,
+        [&](size_t first, size_t count, const Obol::WireStyle&) {
+            ranges.emplace_back(first, count); return true;
+        }));
+    ASSERT_EQ(ranges.size(), 2u);
+    EXPECT_EQ(ranges[0], std::make_pair(size_t(2), size_t(1)));
+    EXPECT_EQ(ranges[1], std::make_pair(size_t(3), size_t(1)));
+    size_t visits = 0;
+    EXPECT_FALSE(retained.forEachStyleRange(0, 4,
+        [&](size_t, size_t, const Obol::WireStyle&) {
+            ++visits;
+            return false;
+        }));
+    EXPECT_EQ(visits, 1u);
+    const auto run = [](size_t first, float width) {
+        Obol::WireStyle style;
+        style.widthScale = width;
+        return Obol::WireStyleRun{first, style};
+    };
+    size_t invalidCase = 0;
+    for (const auto& invalid : std::vector<std::vector<Obol::WireStyleRun>>{
+            {run(4, 2)}, {run(2, 2), run(1, 3)},
+            {run(1, 2), run(1, 3)}, {run(0, 0)}, {run(0, -1)},
+            {run(0, std::numeric_limits<float>::infinity())},
+            {run(0, std::numeric_limits<float>::quiet_NaN())}}) {
+        builder.wire->styleRuns = invalid;
+        const auto rejected = Obol::cadAdmitPartGeometry(builder);
+        EXPECT_FALSE(rejected);
+        EXPECT_EQ(rejected.validation.error,
+            invalidCase < 3 ? Obol::CadGeometryError::InvalidWireStyle :
+                Obol::CadGeometryError::InvalidWireWidth);
+        ++invalidCase;
+    }
+
+    builder.wire = wire;
+    builder.wire->styleRuns[0].style.color[0] = 1.5f;
+    EXPECT_EQ(Obol::cadAdmitPartGeometry(builder).validation.error,
+        Obol::CadGeometryError::InvalidWireStyle);
+    builder.wire = wire;
+    builder.wire->styleRuns[0].style.linePatternFactor = 0;
+    EXPECT_EQ(Obol::cadAdmitPartGeometry(builder).validation.error,
+        Obol::CadGeometryError::InvalidWireStyle);
+}
+
+TEST(CadFillStyles, AdmissionAndClippedRuns)
+{
+    Obol::PartGeometryBuilder builder;
+    Obol::TriMesh mesh;
+    mesh.positions = {SbVec3f(0, 0, 0), SbVec3f(1, 0, 0),
+        SbVec3f(0, 1, 0)};
+    mesh.indices = {0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2};
+    mesh.bounds = SbBox3f(SbVec3f(0, 0, 0), SbVec3f(1, 1, 0));
+    Obol::FillStyle red;
+    red.colorValid = true;
+    red.color = SbColor4f(1, 0, 0, 0.5f);
+    Obol::FillStyle mask;
+    mask.backgroundMask = true;
+    mesh.styleRuns = {{1, red}, {2, mask}, {3, Obol::FillStyle()}};
+    builder.shaded = mesh;
+    builder.shadedIsFill = true;
+    auto admitted = Obol::cadAdmitPartGeometry(builder);
+    ASSERT_TRUE(admitted);
+    const auto& retained = *admitted.geometry.get()->shaded;
+    EXPECT_FALSE(retained.styleAtTriangle(0).colorValid);
+    EXPECT_EQ(retained.styleAtTriangle(1).color, red.color);
+    EXPECT_TRUE(retained.styleAtTriangle(2).backgroundMask);
+    EXPECT_FALSE(retained.styleAtTriangle(2).colorValid);
+    EXPECT_FALSE(retained.styleAtTriangle(3).colorValid);
+    std::vector<std::pair<size_t, size_t>> ranges;
+    ASSERT_TRUE(retained.forEachStyleRange(2, 2,
+        [&](size_t first, size_t count, const Obol::FillStyle&) {
+            ranges.emplace_back(first, count);
+            return true;
+        }));
+    ASSERT_EQ(ranges.size(), 2u);
+    EXPECT_EQ(ranges[0], std::make_pair(size_t(2), size_t(1)));
+    EXPECT_EQ(ranges[1], std::make_pair(size_t(3), size_t(1)));
+
+    builder.shaded->styleRuns = {{4, red}};
+    EXPECT_EQ(Obol::cadAdmitPartGeometry(builder).validation.error,
+        Obol::CadGeometryError::InvalidTriangleStyle);
+    builder.shaded->styleRuns = {{1, red}, {1, Obol::FillStyle()}};
+    EXPECT_EQ(Obol::cadAdmitPartGeometry(builder).validation.error,
+        Obol::CadGeometryError::InvalidTriangleStyle);
+    builder.shaded->styleRuns = {{0, red}};
+    builder.shaded->styleRuns[0].style.color[3] = -0.1f;
+    EXPECT_EQ(Obol::cadAdmitPartGeometry(builder).validation.error,
+        Obol::CadGeometryError::InvalidTriangleStyle);
+    builder.shaded->styleRuns = {{0, red}};
+    builder.shaded->styleRuns[0].style.backgroundMask = true;
+    EXPECT_EQ(Obol::cadAdmitPartGeometry(builder).validation.error,
+        Obol::CadGeometryError::InvalidTriangleStyle);
+    builder.shaded = mesh;
+    builder.shadedIsFill = false;
+    EXPECT_EQ(Obol::cadAdmitPartGeometry(builder).validation.error,
+        Obol::CadGeometryError::InvalidTriangleStyle);
+    builder.shadedIsFill = true;
+    builder.shaded->progressiveCuts.push_back(Obol::ProgressiveTriangleCut());
+    EXPECT_EQ(Obol::cadAdmitPartGeometry(builder).validation.error,
+        Obol::CadGeometryError::InvalidTriangleStyle);
+}

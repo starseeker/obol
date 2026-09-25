@@ -101,6 +101,7 @@
 #include <Obol/cad/CadViewState.h>
 
 #include <vector>
+#include <functional>
 #include <unordered_set>
 #include <algorithm>
 #include <optional>
@@ -204,6 +205,18 @@ public:
     [[nodiscard]] Obol::CadSceneReplacementResult replaceScene(
         const std::vector<Obol::PartUpdate>& parts,
         const std::vector<Obol::InstanceUpdate>& instances);
+
+    /**
+     * Construct a replacement directly from an indexed occurrence source.
+     * The reader runs synchronously once for each requested index, in order,
+     * before publication. It must not mutate this assembly. This avoids a
+     * second full occurrence vector when a view derives records from shared
+     * source data. A reader exception leaves the preceding scene unchanged;
+     * bad_alloc reports ResourceUnavailable, and other exceptions propagate.
+     */
+    [[nodiscard]] Obol::CadSceneReplacementResult replaceScene(
+        const std::vector<Obol::PartUpdate>& parts, size_t instanceCount,
+        const std::function<Obol::InstanceUpdate(size_t)>& instanceAt);
 
     /**
      * Validate a sparse transaction against the current retained scene.

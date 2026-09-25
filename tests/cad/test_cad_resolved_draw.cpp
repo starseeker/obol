@@ -52,7 +52,7 @@ oracleDrawable(const CadFramePlan& plan, const CadDrawItem& item,
     if (visible.partIndex != item.partIndex ||
             (visible.flags & CadInstanceHidden) != 0)
         return false;
-    return channel == CadDrawChannel::Points ||
+    return channel == CadDrawChannel::Unlit ||
         instanceIndex >= plan.subpixelProxyMask.size() ||
         plan.subpixelProxyMask[instanceIndex] == 0;
 }
@@ -64,7 +64,7 @@ testExhaustiveSparseResolution()
     uint64_t cases = 0;
     constexpr size_t slotCount = 5;
     constexpr CadDrawChannel channels[] = {
-        CadDrawChannel::Points,
+        CadDrawChannel::Unlit,
         CadDrawChannel::Wire,
         CadDrawChannel::Shaded
     };
@@ -192,12 +192,12 @@ TEST(CadResolvedDraw, PreservesSparseOwnershipAndProgressiveBoundaries)
     item.baseInstance = 0;
     item.instanceCount = 7; // last two slots are conservatively out of range
 
-    EXPECT_EQ(cadDrawableInstanceCount(plan, item, CadDrawChannel::Points), 3u);
+    EXPECT_EQ(cadDrawableInstanceCount(plan, item, CadDrawChannel::Unlit), 3u);
     EXPECT_EQ(cadDrawableInstanceCount(plan, item, CadDrawChannel::Wire), 2u);
     EXPECT_EQ(cadDrawableInstanceCount(plan, item, CadDrawChannel::Shaded), 2u);
     EXPECT_EQ(cadFirstDrawableInstance(plan, item, CadDrawChannel::Shaded), 0u);
     EXPECT_FALSE(cadInstanceDrawable(plan, item, 2, CadDrawChannel::Shaded));
-    EXPECT_TRUE(cadInstanceDrawable(plan, item, 2, CadDrawChannel::Points));
+    EXPECT_TRUE(cadInstanceDrawable(plan, item, 2, CadDrawChannel::Unlit));
     EXPECT_FALSE(cadInstanceDrawable(plan, item, 3, CadDrawChannel::Wire));
     EXPECT_FALSE(cadInstanceDrawable(plan, item, 6, CadDrawChannel::Wire));
 

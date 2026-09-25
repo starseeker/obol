@@ -35,7 +35,7 @@ namespace Obol {
 namespace internal {
 
 enum class CadDrawChannel : uint8_t {
-    Points,
+    Unlit,
     Wire,
     Shaded
 };
@@ -81,8 +81,8 @@ cadInstanceSubpixelReplaced(const CadFramePlan& plan,
 /**
  * Return whether one retained sparse slot contributes to this render channel.
  *
- * A subpixel proxy replaces wire and shaded geometry, but not authored point
- * geometry.  Hidden and rebound/tombstoned slots contribute to no channel.
+ * A subpixel proxy replaces wire and shaded geometry, but not authored points
+ * or filled drawing areas.  Hidden and rebound/tombstoned slots contribute to no channel.
  */
 inline bool
 cadInstanceDrawable(const CadFramePlan& plan, const CadDrawItem& item,
@@ -91,7 +91,7 @@ cadInstanceDrawable(const CadFramePlan& plan, const CadDrawItem& item,
     if (!cadDrawItemOwnsInstance(plan, item, instanceIndex) ||
             cadInstanceHidden(plan, instanceIndex))
         return false;
-    return channel == CadDrawChannel::Points ||
+    return channel == CadDrawChannel::Unlit ||
         !cadInstanceSubpixelReplaced(plan, instanceIndex);
 }
 

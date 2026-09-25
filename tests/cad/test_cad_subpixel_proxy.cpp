@@ -4,6 +4,12 @@
 #include "cad/CadFramePlan.h"
 #include "cad/CadGpuResources.h"
 
+#define OBOL_INTERNAL 1
+#include "glue/glp.h"
+
+#include <Inventor/nodes/SoCallback.h>
+#include <Inventor/nodes/SoPointLight.h>
+
 #include <Obol/cad/CadProjectedProxy.h>
 #include <Obol/cad/SoCADAssembly.h>
 #include <Obol/cad/SoCADViewState.h>
@@ -11,6 +17,7 @@
 
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/actions/SoGLRenderAction.h>
+#include <Inventor/actions/SoRayPickAction.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
 #include <Inventor/nodes/SoEnvironment.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
@@ -980,6 +987,206 @@ foregroundHalfStats(const SoOffscreenRenderer &renderer)
 }
 
 bool
+flatFaceLightingMatchesExplicitNormals(bool batch)
+{
+    struct LightingCase {
+        const char *name;
+        bool positional;
+        bool localViewer;
+        bool mixedNormals;
+        bool flatInput;
+    };
+    const LightingCase cases[] = {
+        {"directional", false, false, false, false},
+        {"positional", true, false, false, false},
+        {"local-viewer", false, true, false, false},
+        {"mixed-normals", false, false, true, false},
+        {"flat-input", false, false, false, true}
+    };
+    struct GlState {
+        bool localViewer = false;
+        GLint expectedShadeModel = GL_SMOOTH;
+        bool restored = false;
+    };
+    const auto configureGl = [](void *data, SoAction *action) {
+        if (!action->isOfType(SoGLRenderAction::getClassTypeId()))
+            return;
+        const auto *state = static_cast<const GlState *>(data);
+        const auto *renderAction = static_cast<SoGLRenderAction *>(action);
+        const SoGLContext *glue = SoGLContext_instance(
+            renderAction->getCacheContext());
+        glue->glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER,
+            state->localViewer ? GL_TRUE : GL_FALSE);
+        glue->glShadeModel(state->expectedShadeModel);
+    };
+    const auto inspectGl = [](void *data, SoAction *action) {
+        if (!action->isOfType(SoGLRenderAction::getClassTypeId()))
+            return;
+        auto *state = static_cast<GlState *>(data);
+        const auto *renderAction = static_cast<SoGLRenderAction *>(action);
+        const SoGLContext *glue = SoGLContext_instance(
+            renderAction->getCacheContext());
+        GLint shadeModel = 0;
+        glue->glGetIntegerv(GL_SHADE_MODEL, &shadeModel);
+        state->restored = shadeModel == state->expectedShadeModel;
+    };
+    constexpr int width = 192;
+    constexpr int height = 160;
+    constexpr size_t components = 3;
+    const auto renderCase = [&](const LightingCase& test,
+                                bool explicitNormals) {
+        std::vector<unsigned char> pixels;
+        SoSeparator *root = new SoSeparator;
+        root->ref();
+        SoOrthographicCamera *camera = new SoOrthographicCamera;
+        camera->position.setValue(0.0f, 0.0f, 5.0f);
+        camera->height = 2.4f;
+        camera->nearDistance = 0.1f;
+        camera->farDistance = 10.0f;
+        root->addChild(camera);
+        if (test.positional) {
+            SoPointLight *light = new SoPointLight;
+            light->location.setValue(-0.7f, 0.8f, 1.0f);
+            root->addChild(light);
+        } else {
+            SoDirectionalLight *key = new SoDirectionalLight;
+            key->direction.setValue(-0.3f, -0.4f, -1.0f);
+            root->addChild(key);
+            SoDirectionalLight *fill = new SoDirectionalLight;
+            fill->direction.setValue(0.6f, 0.2f, -1.0f);
+            fill->intensity = 0.3f;
+            root->addChild(fill);
+        }
+        GlState state;
+        state.localViewer = test.localViewer;
+        state.expectedShadeModel = test.flatInput ? GL_FLAT : GL_SMOOTH;
+        SoCallback *before = new SoCallback;
+        before->setCallback(configureGl, &state);
+        root->addChild(before);
+        SoCADAssembly *assembly = new SoCADAssembly;
+        setCadDrawMode(root, SoCADViewState::SHADED);
+        root->addChild(assembly);
+        SoCallback *after = new SoCallback;
+        after->setCallback(inspectGl, &state);
+        root->addChild(after);
+
+        /* The batch route requires 128 distinct parts.  Alternating windings
+         * exercise both sides; explicit constant normals provide the same
+         * lighting through the batch's smooth-normal path. */
+        constexpr unsigned columns = 16;
+        constexpr unsigned rows = 8;
+        for (unsigned partIndex = 0; partIndex < columns * rows; ++partIndex) {
+            const bool backFacing = partIndex % 2 != 0;
+            Obol::TriMesh mesh;
+            mesh.positions = {SbVec3f(-0.065f, -0.10f, 0.0f),
+                SbVec3f(0.065f, -0.10f, 0.0f), SbVec3f(0.0f, 0.10f, 0.0f)};
+            mesh.indices = backFacing ? std::vector<uint32_t>{0, 2, 1} :
+                std::vector<uint32_t>{0, 1, 2};
+            const float normalZ = backFacing ? -1.0f : 1.0f;
+            if (explicitNormals || (test.mixedNormals && backFacing))
+                mesh.normals.assign(mesh.positions.size(),
+                    SbVec3f(0.0f, 0.0f, normalZ));
+            if (test.mixedNormals && backFacing) {
+                mesh.normals[0] = SbVec3f(0.6f, 0.0f, -0.8f);
+                mesh.normals[1] = SbVec3f(-0.6f, 0.0f, -0.8f);
+            }
+            mesh.bounds.makeEmpty();
+            for (const auto& point : mesh.positions)
+                mesh.bounds.extendBy(point);
+            if (!batch) {
+                mesh.progressiveMinimumCut = 0;
+                mesh.progressiveResidentCut = 0;
+                setProgressiveCuts(mesh, 1, 3, 3);
+                /* Both references must prepare a cut, including meshes
+                 * whose explicit normals would allow an exact-cut bypass. */
+                mesh.progressiveCuts[0].quantization = {12, 12, 0};
+                mesh.progressiveQuantizationMinimum = mesh.bounds.getMin();
+                mesh.progressiveQuantizationMaximum = mesh.bounds.getMax();
+            }
+            Obol::PartGeometryBuilder geometry;
+            geometry.shaded = std::move(mesh);
+            geometry.shadedCullBackfaces = false;
+            const std::string name = "flat-face-" + std::to_string(partIndex);
+            const Obol::PartId part = Obol::CadIdBuilder::partId(name);
+            requireCadMutation(admitAndUpsertPart(assembly, part,
+                std::move(geometry)), name.c_str());
+            Obol::InstanceRecord instance;
+            instance.part = part;
+            instance.parent = Obol::CadIdBuilder::rootInstance();
+            instance.childName = name;
+            instance.localToRoot.setTranslate(
+                SbVec3f(-1.2f + 0.16f * (partIndex % columns),
+                    -0.875f + 0.25f * (partIndex / columns), 0.0f));
+            instance.style.hasColorOverride = true;
+            instance.style.color = SbColor4f(0.6f, 0.35f, 0.2f, 1.0f);
+            requireCadMutation(assembly->upsertInstanceAuto(instance),
+                name.c_str());
+        }
+        SoOffscreenRenderer renderer(SbViewportRegion(width, height));
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.setBackgroundColor(SbColor(0.0f, 0.0f, 0.0f));
+        if (render(renderer, root) && state.restored &&
+                assembly->lastRenderTier() == (batch ? 4 : 1) &&
+                assembly->presentationPreparationSnapshot().target.kind ==
+                    (batch ? Obol::CadPresentationPreparationKind::FlatShadedAtlas :
+                        Obol::CadPresentationPreparationKind::FixedFunctionCuts) &&
+                nonBlackPixels(renderer) > 100) {
+            const unsigned char *buffer = renderer.getBuffer();
+            pixels.assign(buffer, buffer + width * height * components);
+        }
+        root->unref();
+        return pixels;
+    };
+
+    struct EnvironmentSnapshot {
+        const char *name;
+        bool present;
+        std::string value;
+    } settings[] = {
+        {"OBOL_CAD_INDIRECT", false, {}},
+        {"OBOL_CAD_FLAT_SHADED", false, {}},
+        {"OBOL_CAD_SOFTWARE_GLSL", false, {}}
+    };
+    for (auto& setting : settings) {
+        const char *value = std::getenv(setting.name);
+        setting.present = value != nullptr;
+        setting.value = value ? value : "";
+    }
+    setTestEnvironment("OBOL_CAD_INDIRECT", "0", 1);
+    setTestEnvironment("OBOL_CAD_FLAT_SHADED", batch ? "1" : "0", 1);
+    setTestEnvironment("OBOL_CAD_SOFTWARE_GLSL", "0", 1);
+    bool matched = true;
+    for (const auto& test : cases) {
+        const auto face = renderCase(test, false);
+        const auto explicitNormals = renderCase(test, true);
+        if (face.empty() || face != explicitNormals) {
+            size_t differences = 0;
+            unsigned maximumDifference = 0;
+            const size_t sharedSize =
+                std::min(face.size(), explicitNormals.size());
+            for (size_t i = 0; i < sharedSize; ++i) {
+                const unsigned difference = std::abs(
+                    int(face[i]) - int(explicitNormals[i]));
+                differences += difference != 0;
+                maximumDifference = std::max(maximumDifference, difference);
+            }
+            std::fprintf(stderr,
+                "flat face lighting mismatch: %s sizes=%zu/%zu "
+                "channels=%zu max=%u\n", test.name, face.size(),
+                explicitNormals.size(), differences, maximumDifference);
+            matched = false;
+        }
+    }
+    for (const auto& setting : settings) {
+        if (setting.present)
+            setTestEnvironment(setting.name, setting.value.c_str(), 1);
+        else
+            unsetTestEnvironment(setting.name);
+    }
+    return matched;
+}
+
+bool
 normalFreeTwoSidedGlslMatchesFixed()
 {
     const char *previousGlsl = std::getenv("OBOL_CAD_SOFTWARE_GLSL");
@@ -1552,7 +1759,7 @@ transformedSpotlightStateAffectsBothPipelines()
 }
 
 bool
-indirectProgressiveAtlasGrows()
+indirectProgressiveAtlasGrows(bool ceilingOnly)
 {
     constexpr int partCount = 128;
     constexpr int trianglesPerPart = 300;
@@ -1623,12 +1830,28 @@ indirectProgressiveAtlasGrows()
             -44.0f + 8.0f * static_cast<float>(i % 12),
             -44.0f + 8.0f * static_cast<float>(i / 12),
             0.0f));
-        instance.lodCut = 0;
+        instance.lodCut = ceilingOnly ? 15 : 0;
         const Obol::InstanceId id =
             requireCadValue(assembly->upsertInstanceAuto(instance),
                 "progressive atlas instance").instance;
         richCuts.push_back({id, 15});
     }
+
+    const auto presentCut = [&](bool rich) {
+        if (ceilingOnly) {
+            cadViewState(root)->progressiveCutCeiling.setValue(
+                rich ? mesh.progressiveResidentCut : mesh.progressiveMinimumCut);
+        } else {
+            std::vector<Obol::InstanceLodUpdate> cuts = richCuts;
+            if (!rich) {
+                for (Obol::InstanceLodUpdate& update : cuts)
+                    update.lodCut = mesh.progressiveMinimumCut;
+            }
+            requireCadMutation(assembly->updateInstanceCuts(cuts),
+                "progressive atlas presentation cuts");
+        }
+    };
+    presentCut(false);
 
     const SbViewportRegion viewport(256, 256);
     SoOffscreenRenderer renderer(viewport);
@@ -1651,8 +1874,7 @@ indirectProgressiveAtlasGrows()
      */
     bool passed = coarseRendered;
     if (passed && coarseTier == 6) {
-        requireCadMutation(assembly->updateInstanceCuts(richCuts),
-            "progressive atlas cuts");
+        presentCut(true);
         const bool richRendered = render(renderer, root);
         const uint64_t richTriangles =
             assembly->lastRenderedTriangleCount();
@@ -1671,6 +1893,38 @@ indirectProgressiveAtlasGrows()
             resources.triangleAtlasPageCount > 0 &&
             resources.trackedBufferBytes >=
                 resources.triangleAtlasAllocatedBytes;
+        if (passed) {
+            /* A resident prefix can change presentation without changing its
+             * immutable generation or uploading geometry.  Prove that the
+             * retained commands restore the rich image, not just its counters. */
+            const size_t imageBytes = static_cast<size_t>(
+                viewport.getViewportSizePixels()[0]) *
+                viewport.getViewportSizePixels()[1] * 3u;
+            const std::vector<unsigned char> richImage(
+                renderer.getBuffer(), renderer.getBuffer() + imageBytes);
+            passed = nonBlackPixels(renderer) > 0;
+            presentCut(false);
+            passed = render(renderer, root) && passed &&
+                assembly->lastRenderTier() == 6 &&
+                assembly->lastRenderedTriangleCount() == coarseTriangles &&
+                std::memcmp(renderer.getBuffer(), richImage.data(),
+                    imageBytes) != 0;
+            presentCut(true);
+            passed = render(renderer, root) && passed &&
+                assembly->lastRenderTier() == 6 &&
+                assembly->lastRenderedTriangleCount() == expectedRich &&
+                std::memcmp(renderer.getBuffer(), richImage.data(),
+                    imageBytes) == 0;
+            const Obol::CadGpuResourceSnapshot restored =
+                assembly->gpuResourceSnapshot();
+            passed = passed && restored.frameSerial > resources.frameSerial &&
+                restored.triangleAtlasFullUploadBytes ==
+                    resources.triangleAtlasFullUploadBytes &&
+                restored.triangleAtlasSuffixUploadBytes ==
+                    resources.triangleAtlasSuffixUploadBytes &&
+                restored.triangleAtlasLineageReuseCount ==
+                    resources.triangleAtlasLineageReuseCount;
+        }
         if (!passed) {
             std::fprintf(stderr,
                 "indirect progressive atlas did not grow "
@@ -4648,6 +4902,16 @@ TEST_F(CadSubpixelProxyContracts, LifecycleAndStreamingStateRemainCoherent)
     EXPECT_EQ(runCadSubpixelProxyLifecycleContract(), 0);
 }
 
+TEST_F(CadSubpixelProxyContracts, FlatFaceLightingMatchesExplicitNormals)
+{
+    EXPECT_TRUE(flatFaceLightingMatchesExplicitNormals(true));
+}
+
+TEST_F(CadSubpixelProxyContracts, FixedCutFaceLightingMatchesExplicitNormals)
+{
+    EXPECT_TRUE(flatFaceLightingMatchesExplicitNormals(false));
+}
+
 TEST_F(CadSubpixelProxyContracts, NormalFreeTwoSidedGlslMatchesFixedPipeline)
 {
     EXPECT_TRUE(normalFreeTwoSidedGlslMatchesFixed());
@@ -4672,7 +4936,12 @@ TEST_F(CadSubpixelProxyContracts,
 
 TEST_F(CadSubpixelProxyContracts, IndirectProgressiveAtlasGrows)
 {
-    EXPECT_TRUE(indirectProgressiveAtlasGrows());
+    EXPECT_TRUE(indirectProgressiveAtlasGrows(false));
+}
+
+TEST_F(CadSubpixelProxyContracts, IndirectCeilingGrowsResidentAtlas)
+{
+    EXPECT_TRUE(indirectProgressiveAtlasGrows(true));
 }
 
 TEST_F(CadSubpixelProxyContracts, IndirectGenerationAppendsOnlyItsSuffix)
@@ -4770,4 +5039,514 @@ TEST_F(CadSubpixelProxyContracts, FixedCutPreparationDoesNotBecomeDrawCost)
 TEST_F(CadSubpixelProxyContracts, AssemblyDestructionReleasesGpuResources)
 {
     EXPECT_TRUE(assemblyDestructionReleasesGpuResourcesOnLiveContext());
+}
+
+TEST_F(CadSubpixelProxyContracts, DisplayPlanePixelsSurviveIndependentCameras)
+{
+    auto *assembly = new SoCADAssembly;
+    Obol::PartGeometryBuilder builder;
+    builder.displayPlane = Obol::CadDisplayPlane();
+    builder.displayPlane->anchor = SbVec3f(0.25f, -0.1f, 0.0f);
+    Obol::WireRep wire;
+    wire.segmentPoints = {
+        SbVec3f(0, 0, 0), SbVec3f(40, 0, 0),
+        SbVec3f(40, 0, 0), SbVec3f(40, 16, 0),
+        SbVec3f(40, 16, 0), SbVec3f(0, 16, 0),
+        SbVec3f(0, 16, 0), SbVec3f(0, 0, 0)};
+    wire.bounds = SbBox3f(SbVec3f(0, 0, 0), SbVec3f(40, 16, 0));
+    builder.wire = std::move(wire);
+    const auto geometry = Obol::cadAdmitPartGeometry(std::move(builder));
+    ASSERT_TRUE(geometry);
+    const auto part = Obol::CadIdBuilder::partId("pixel-plane");
+    const auto instance = Obol::CadIdBuilder::instanceId("pixel-plane-instance");
+    Obol::InstanceRecord record;
+    record.part = part;
+    record.localToRoot.setTransform(SbVec3f(0.3f, 0.2f, 0),
+        SbRotation(SbVec3f(0, 0, 1), 0.5f), SbVec3f(2, 3, 1));
+    ASSERT_TRUE(assembly->replaceScene({{part, geometry.geometry, false}}, {{instance, record}}));
+    std::array<SoSeparator *, 2> roots;
+    std::array<SoOrthographicCamera *, 2> cameras;
+    for (size_t view = 0; view < roots.size(); ++view) {
+        roots[view] = new SoSeparator;
+        roots[view]->ref();
+        cameras[view] = new SoOrthographicCamera;
+        cameras[view]->position = SbVec3f(0, 0, 10);
+        cameras[view]->nearDistance = 1.0f;
+        cameras[view]->farDistance = 100.0f;
+        cameras[view]->height = view == 0 ? 4.0f : 8.0f;
+        cameras[view]->orientation = SbRotation(SbVec3f(0, 0, 1), float(view) * 0.7f);
+        roots[view]->addChild(cameras[view]);
+        setCadDrawMode(roots[view], SoCADViewState::WIREFRAME);
+        roots[view]->addChild(assembly);
+    }
+    const auto release = [](std::array<SoSeparator *, 2> *nodes) {
+        for (SoSeparator *root : *nodes)
+            root->unref();
+    };
+    const std::unique_ptr<std::array<SoSeparator *, 2>, decltype(release)> owner(&roots, release);
+    uint64_t firstBuildCount = 0;
+    for (const int size : {200, 320, 200}) {
+        for (size_t view = 0; view < roots.size(); ++view) {
+            SoOffscreenRenderer renderer(SbViewportRegion(size, size));
+            renderer.setComponents(SoOffscreenRenderer::RGB);
+            renderer.setBackgroundColor(SbColor(0, 0, 0));
+            ASSERT_TRUE(render(renderer, roots[view]));
+            int minX = size, minY = size, maxX = -1, maxY = -1;
+            const unsigned char *pixels = renderer.getBuffer();
+            for (int y = 0; y < size; ++y)
+                for (int x = 0; x < size; ++x) {
+                    const size_t offset = (size_t(y) * size + x) * 3;
+                    if (pixels[offset] < 32 && pixels[offset + 1] < 32 && pixels[offset + 2] < 32)
+                        continue;
+                    minX = std::min(minX, x); minY = std::min(minY, y);
+                    maxX = std::max(maxX, x); maxY = std::max(maxY, y);
+                }
+            ASSERT_GE(maxX, minX);
+            EXPECT_NEAR(maxX - minX, 40, 2);
+            EXPECT_NEAR(maxY - minY, 16, 2);
+            SbVec3f anchor;
+            record.localToRoot.multVecMatrix(geometry.geometry.get()->displayPlane->anchor, anchor);
+            cameras[view]->getViewVolume(1.0f).projectToScreen(anchor, anchor);
+            EXPECT_NEAR(minX, anchor[0] * size, 2);
+            EXPECT_NEAR(minY, anchor[1] * size, 2);
+            if (!firstBuildCount)
+                firstBuildCount = assembly->framePlanBuildCount();
+            EXPECT_EQ(assembly->framePlanBuildCount(), firstBuildCount);
+            EXPECT_EQ(assembly->getInstanceRecord(instance)->localToRoot, record.localToRoot);
+        }
+    }
+}
+
+TEST_F(CadSubpixelProxyContracts, AuthoredWireStylesSurviveViewsAndRasterPaths)
+{
+    const char *previousGlsl = std::getenv("OBOL_CAD_SOFTWARE_GLSL");
+    const std::string savedGlsl = previousGlsl ? previousGlsl : "";
+    const bool hadGlsl = previousGlsl != nullptr;
+    const char *previousFlat = std::getenv("OBOL_CAD_FLAT_WIRE");
+    const std::string savedFlat = previousFlat ? previousFlat : "";
+    const bool hadFlat = previousFlat != nullptr;
+    const char *previousImmediate = std::getenv("OBOL_CAD_FORCE_IMMEDIATE");
+    const std::string savedImmediate = previousImmediate ? previousImmediate : "";
+    const bool hadImmediate = previousImmediate != nullptr;
+    const auto restore = [&](int *) {
+        if (hadGlsl) setTestEnvironment("OBOL_CAD_SOFTWARE_GLSL", savedGlsl.c_str(), 1);
+        else unsetTestEnvironment("OBOL_CAD_SOFTWARE_GLSL");
+        if (hadFlat) setTestEnvironment("OBOL_CAD_FLAT_WIRE", savedFlat.c_str(), 1);
+        else unsetTestEnvironment("OBOL_CAD_FLAT_WIRE");
+        if (hadImmediate) setTestEnvironment("OBOL_CAD_FORCE_IMMEDIATE", savedImmediate.c_str(), 1);
+        else unsetTestEnvironment("OBOL_CAD_FORCE_IMMEDIATE");
+    };
+    int unused = 0;
+    const std::unique_ptr<int, decltype(restore)> environment(&unused, restore);
+    setTestEnvironment("OBOL_CAD_FLAT_WIRE", "1", 1);
+    const std::array<float, 3> lineY = {{-0.6f, 0.0f, 0.6f}};
+    const std::array<int, 3> widths = {{5, 1, 3}};
+    const std::array<SbColor4f, 3> colors = {{
+        SbColor4f(1, 0, 0, 1), SbColor4f(0, 1, 0, 1),
+        SbColor4f(0, 0, 1, 1)}};
+    const std::array<uint16_t, 3> patterns = {{
+        0xffffu, 0x1111u, 0xffffu}};
+    struct Configuration { bool glsl; int partCount; bool adaptive; bool direct; bool immediate; };
+    // The flat renderer starts at 128 occurrences/parts. An adaptive companion
+    // prevents instancing and exercises the GLSL VBO route on capable contexts.
+    const Configuration configurations[] = {
+        {false, 1, false, false, false}, {true, 1, false, false, false},
+        {false, 128, false, false, false}, {true, 128, false, false, false},
+        {true, 1, true, false, false}, {false, 1, false, true, false},
+        {false, 1, false, false, true}
+    };
+    for (const auto& configuration : configurations) {
+        const bool glsl = configuration.glsl;
+        const int partCount = configuration.partCount;
+        setTestEnvironment("OBOL_CAD_SOFTWARE_GLSL", glsl ? "1" : "0", 1);
+        setTestEnvironment("OBOL_CAD_FORCE_IMMEDIATE", configuration.immediate ? "1" : "0", 1);
+        auto *root = new SoSeparator;
+        root->ref();
+        const auto release = [](SoSeparator *node) { node->unref(); };
+        const std::unique_ptr<SoSeparator, decltype(release)> owner(root, release);
+        auto *camera = new SoOrthographicCamera;
+        camera->position = SbVec3f(0, 0, 10);
+        camera->nearDistance = 1.0f;
+        camera->farDistance = 100.0f;
+        root->addChild(camera);
+        setCadDrawMode(root, SoCADViewState::WIREFRAME);
+        cadViewState(root)->softwareWireMode = configuration.direct ?
+            SoCADViewState::SOFTWARE_WIRE_FAST : SoCADViewState::SOFTWARE_WIRE_QUALITY;
+        auto *assembly = new SoCADAssembly;
+        root->addChild(assembly);
+        Obol::PartGeometryBuilder builder;
+        Obol::WireRep wire;
+        for (size_t i = 0; i < lineY.size(); ++i) {
+            wire.segmentPoints.emplace_back(-0.6f, lineY[i], 0);
+            wire.segmentPoints.emplace_back(0.6f, lineY[i], 0);
+            Obol::WireStyle style;
+            style.widthScale = float(widths[i]);
+            style.colorValid = true;
+            style.color = colors[i];
+            style.patternValid = true;
+            style.linePattern = patterns[i];
+            wire.styleRuns.push_back({i, style});
+        }
+        wire.bounds = SbBox3f(SbVec3f(-0.6f, -0.6f, 0), SbVec3f(0.6f, 0.6f, 0));
+        builder.wire = wire;
+        const auto geometry = Obol::cadAdmitPartGeometry(builder);
+        ASSERT_TRUE(geometry);
+        std::vector<Obol::PartUpdate> parts;
+        std::vector<Obol::InstanceUpdate> instances;
+        for (int i = 0; i < partCount; ++i) {
+            const std::string name = "width-part-" + std::to_string(i);
+            const auto part = Obol::CadIdBuilder::partId(name.c_str());
+            parts.push_back({part, geometry.geometry, false});
+            Obol::InstanceRecord record;
+            record.part = part;
+            record.style.hasColorOverride = true;
+            record.style.color = SbColor4f(1, 1, 1, 1);
+            instances.push_back({Obol::CadIdBuilder::instanceId(name.c_str()), record});
+        }
+        if (configuration.adaptive) {
+            Obol::PartGeometryBuilder companion;
+            Obol::WireRep progressive;
+            progressive.segmentPoints = {SbVec3f(0.8f, -0.2f, 0), SbVec3f(0.8f, 0.2f, 0)};
+            progressive.bounds = SbBox3f(progressive.segmentPoints[0], progressive.segmentPoints[1]);
+            progressive.progressiveCuts.resize(1);
+            progressive.progressiveCuts[0].segmentCount = 1;
+            progressive.progressiveMinimumCut = progressive.progressiveResidentCut = 0;
+            Obol::ProgressiveWireCluster cluster;
+            cluster.bounds = progressive.bounds;
+            cluster.residentCut = 0;
+            cluster.ranges.push_back({0, 1, 0});
+            progressive.progressiveClusters.push_back(cluster);
+            companion.wire = std::move(progressive);
+            const auto admitted = Obol::cadAdmitPartGeometry(companion);
+            ASSERT_TRUE(admitted);
+            const auto part = Obol::CadIdBuilder::partId("width-adaptive-companion");
+            parts.push_back({part, admitted.geometry, false});
+            Obol::InstanceRecord record;
+            record.part = part;
+            instances.push_back({Obol::CadIdBuilder::instanceId("width-adaptive-companion"), record});
+        }
+        ASSERT_TRUE(assembly->replaceScene(parts, instances));
+        const int imageSize = 200;
+        SoOffscreenRenderer renderer(SbViewportRegion(imageSize, imageSize));
+        renderer.setComponents(SoOffscreenRenderer::RGB);
+        renderer.setBackgroundColor(SbColor(0, 0, 0));
+        // Keep the context, IDs and positions while replacing only width runs.
+        for (bool replaced : {false, true}) {
+            const std::array<int, 3> expectedWidths = replaced ?
+                std::array<int, 3>{{2, 4, 1}} : widths;
+            if (replaced) {
+                for (size_t line = 0; line < expectedWidths.size(); ++line)
+                    builder.wire->styleRuns[line].style.widthScale =
+                        float(expectedWidths[line]);
+                const auto replacement = Obol::cadAdmitPartGeometry(builder);
+                ASSERT_TRUE(replacement);
+                std::vector<Obol::PartUpdate> updates;
+                for (int i = 0; i < partCount; ++i)
+                    updates.push_back({parts[i].part, replacement.geometry, false});
+                ASSERT_TRUE(assembly->upsertParts(updates));
+            }
+            for (int baseWidth : {1, 2}) {
+                std::vector<Obol::InstanceStyleUpdate> styles;
+                for (const auto& instance : instances) {
+                    auto style = instance.record.style;
+                    style.lineWidth = float(baseWidth);
+                    style.useGeometryColor = baseWidth == 1;
+                    styles.push_back({instance.instance, style});
+                }
+                ASSERT_TRUE(assembly->updateInstanceStyles(styles));
+                for (float height : {2.0f, 4.0f}) {
+                    camera->height = height;
+                    ASSERT_TRUE(render(renderer, root));
+                    std::fprintf(stderr, "wire styles glsl=%d parts=%d adaptive=%d immediate=%d replaced=%d base=%d height=%g tier=%d direct=%d\n",
+                        glsl, partCount, configuration.adaptive, configuration.immediate,
+                        replaced, baseWidth,
+                        double(height), assembly->lastRenderTier(), assembly->lastRenderUsedDirectSoftwareWire());
+                    if (partCount == 128) EXPECT_EQ(assembly->lastRenderTier(), 3);
+                    if (configuration.adaptive) EXPECT_EQ(assembly->lastRenderTier(), 1);
+                    if (configuration.immediate) EXPECT_EQ(assembly->lastRenderTier(), 0);
+                    const char *backend = std::getenv("OBOL_TEST_RENDER_BACKEND");
+                    EXPECT_EQ(assembly->lastRenderUsedDirectSoftwareWire(), configuration.direct &&
+                        backend && std::strcmp(backend, "swrast") == 0);
+                    const unsigned char *pixels = renderer.getBuffer();
+                    for (size_t line = 0; line < lineY.size(); ++line) {
+                        const int center = int((0.5f + lineY[line] / height) * imageSize);
+                        int covered = 0;
+                        size_t brightestOffset = 0;
+                        unsigned int brightest = 0;
+                        const int radius = 12;
+                        for (int x = imageSize / 2 - 8;
+                                x <= imageSize / 2 + 8; ++x) {
+                            int candidateCovered = 0;
+                            for (int y = center - radius;
+                                    y <= center + radius; ++y) {
+                                const size_t offset =
+                                    (size_t(y) * imageSize + x) * 3;
+                                const unsigned int intensity = std::max({
+                                    pixels[offset], pixels[offset + 1],
+                                    pixels[offset + 2]});
+                                if (intensity > 128)
+                                    ++candidateCovered;
+                                if (intensity > brightest) {
+                                    brightest = intensity;
+                                    brightestOffset = offset;
+                                }
+                            }
+                            covered = std::max(covered, candidateCovered);
+                        }
+                        EXPECT_NEAR(covered, expectedWidths[line] * baseWidth, 1)
+                            << "line " << line << " glsl " << glsl << " parts " << partCount;
+                        for (size_t channel = 0; channel < 3; ++channel) {
+                            if (baseWidth != 1)
+                                EXPECT_GT(pixels[brightestOffset + channel], 192);
+                            else if (channel == line)
+                                EXPECT_GT(pixels[brightestOffset + channel], 192);
+                            else
+                                EXPECT_LT(pixels[brightestOffset + channel], 32);
+                        }
+                        int patternedPixels = 0;
+                        int bestPatternedPixels = 0;
+                        const int halfSpan = std::max(
+                            2, int(0.6f / height * imageSize) - 2);
+                        for (int y = center - radius; y <= center + radius; ++y) {
+                            patternedPixels = 0;
+                            for (int x = imageSize / 2 - halfSpan;
+                                    x <= imageSize / 2 + halfSpan; ++x) {
+                                const size_t offset =
+                                    (size_t(y) * imageSize + x) * 3;
+                                if (std::max({pixels[offset], pixels[offset + 1],
+                                        pixels[offset + 2]}) > 128)
+                                    ++patternedPixels;
+                            }
+                            bestPatternedPixels =
+                                std::max(bestPatternedPixels, patternedPixels);
+                        }
+                        const int span = 2 * halfSpan + 1;
+                        if (line == 1) {
+                            EXPECT_GT(bestPatternedPixels, span / 8);
+                            /* A wide square software brush can close the
+                             * three-pixel gaps of this dotted mask.  Thin
+                             * strokes still provide the pattern witness. */
+                            if (expectedWidths[line] * baseWidth <= 2)
+                                EXPECT_LT(bestPatternedPixels, span * 3 / 4);
+                        } else {
+                            EXPECT_GT(bestPatternedPixels, span * 9 / 10);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+namespace {
+Obol::PartGeometryBuilder filledRing(bool screen)
+{
+    Obol::PartGeometryBuilder builder;
+    Obol::TriMesh mesh;
+    mesh.positions = {
+        SbVec3f(-0.8f, -0.8f, 0), SbVec3f(0.8f, -0.8f, 0),
+        SbVec3f(0.8f, 0.8f, 0), SbVec3f(-0.8f, 0.8f, 0),
+        SbVec3f(-0.3f, -0.3f, 0), SbVec3f(0.3f, -0.3f, 0),
+        SbVec3f(0.3f, 0.3f, 0), SbVec3f(-0.3f, 0.3f, 0)};
+    mesh.indices = {0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5,
+        2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7};
+    mesh.bounds = SbBox3f(SbVec3f(-0.8f, -0.8f, 0), SbVec3f(0.8f, 0.8f, 0));
+    builder.shaded = mesh;
+    builder.shadedIsFill = true;
+    if (screen) {
+        builder.displayPlane = Obol::CadDisplayPlane();
+        builder.displayPlane->pixelsPerUnit = 64.0f;
+    }
+    return builder;
+}
+}
+
+TEST_F(CadSubpixelProxyContracts, FilledAreasRejectIncompatibleGeometry)
+{
+    auto builder = filledRing(false);
+    EXPECT_TRUE(Obol::cadAdmitPartGeometry(builder));
+    Obol::FillStyle authored;
+    authored.colorValid = true;
+    authored.color = SbColor4f(1, 0, 0, 1);
+    builder.shaded->styleRuns.push_back({0, authored});
+    EXPECT_TRUE(Obol::cadAdmitPartGeometry(builder));
+    builder.shadedIsFill = false;
+    EXPECT_EQ(Obol::cadAdmitPartGeometry(builder).validation.error,
+        Obol::CadGeometryError::InvalidTriangleStyle);
+    builder.shadedIsFill = true;
+    builder.shaded->styleRuns[0].style.color[0] = 2.0f;
+    EXPECT_EQ(Obol::cadAdmitPartGeometry(builder).validation.error,
+        Obol::CadGeometryError::InvalidTriangleStyle);
+    builder.shaded->styleRuns.clear();
+    builder.shadedCullBackfaces = true;
+    EXPECT_EQ(Obol::cadAdmitPartGeometry(builder).validation.error, Obol::CadGeometryError::InvalidFill);
+    builder.shadedCullBackfaces = false;
+    builder.subpixelProxyEligible = true;
+    EXPECT_EQ(Obol::cadAdmitPartGeometry(builder).validation.error, Obol::CadGeometryError::InvalidFill);
+    builder.subpixelProxyEligible = false;
+    builder.shaded.reset();
+    EXPECT_EQ(Obol::cadAdmitPartGeometry(builder).validation.error, Obol::CadGeometryError::InvalidFill);
+}
+
+TEST_F(CadSubpixelProxyContracts, FilledAreasSurviveModesAndReplacement)
+{
+    const char *previousGlsl = std::getenv("OBOL_CAD_SOFTWARE_GLSL");
+    const std::string savedGlsl = previousGlsl ? previousGlsl : "";
+    const bool hadGlsl = previousGlsl != nullptr;
+    const auto restore = [&](int *) {
+        if (hadGlsl) setTestEnvironment("OBOL_CAD_SOFTWARE_GLSL", savedGlsl.c_str(), 1);
+        else unsetTestEnvironment("OBOL_CAD_SOFTWARE_GLSL");
+    };
+    int unused = 0;
+    const std::unique_ptr<int, decltype(restore)> environment(&unused, restore);
+    for (bool glsl : {false, true}) {
+        setTestEnvironment("OBOL_CAD_SOFTWARE_GLSL", glsl ? "1" : "0", 1);
+        for (bool screen : {false, true}) {
+            auto *root = new SoSeparator;
+            root->ref();
+            const auto release = [](SoSeparator *node) { node->unref(); };
+            const std::unique_ptr<SoSeparator, decltype(release)> owner(root, release);
+            auto *camera = new SoOrthographicCamera;
+            camera->position = SbVec3f(0, 0, 10);
+            camera->nearDistance = 1.0f;
+            camera->farDistance = 100.0f;
+            root->addChild(camera);
+            auto *view = cadViewState(root);
+            auto *assembly = new SoCADAssembly;
+            root->addChild(assembly);
+            auto builder = filledRing(screen);
+            // Exercise the shared unlit span with both a fill and a point;
+            // the stroke across the hole must remain visible in shaded mode.
+            Obol::WireRep wire;
+            wire.segmentPoints = {SbVec3f(-0.25f, -0.2f, 0), SbVec3f(0.25f, -0.2f, 0)};
+            wire.bounds = SbBox3f(wire.segmentPoints[0], wire.segmentPoints[1]);
+            builder.wire = wire;
+            Obol::PointRep points;
+            points.positions = {SbVec3f(0, 0.2f, 0)};
+            points.bounds = SbBox3f(points.positions[0], points.positions[0]);
+            builder.points = points;
+            const auto part = Obol::CadIdBuilder::partId("filled-ring");
+            const auto instance = Obol::CadIdBuilder::instanceId("filled-ring-instance");
+            Obol::InstanceRecord record;
+            record.part = part;
+            record.style.hasColorOverride = true;
+            record.style.color = SbColor4f(1, 1, 1, 1);
+            record.style.lineWidth = 3.0f;
+            ASSERT_TRUE(admitAndUpsertPart(assembly, part, builder));
+            ASSERT_TRUE(assembly->upsertInstances({{instance, record}}));
+            const int imageSize = 200;
+            SoOffscreenRenderer renderer(SbViewportRegion(imageSize, imageSize));
+            renderer.setComponents(SoOffscreenRenderer::RGB);
+            renderer.setBackgroundColor(SbColor(0, 0, 0));
+            for (bool fill : {true, false, true}) {
+                builder.shadedIsFill = fill;
+                builder.shaded->styleRuns.clear();
+                if (fill) {
+                    Obol::FillStyle style;
+                    style.colorValid = true;
+                    style.color = SbColor4f(1, 0, 0, 1);
+                    builder.shaded->styleRuns.push_back({0, style});
+                }
+                ASSERT_TRUE(admitAndUpsertPart(assembly, part, builder));
+                for (const auto mode : {SoCADViewState::WIREFRAME,
+                        SoCADViewState::SHADED, SoCADViewState::SHADED_WITH_EDGES,
+                        SoCADViewState::HIDDEN_LINE}) {
+                    view->drawMode = mode;
+                    for (bool fast : {false, true}) {
+                        view->softwareWireMode = fast ? SoCADViewState::SOFTWARE_WIRE_FAST :
+                            SoCADViewState::SOFTWARE_WIRE_QUALITY;
+                        for (float height : {2.0f, 4.0f}) {
+                            camera->height = height;
+                            SCOPED_TRACE(::testing::Message() << "fill=" << fill << " screen=" << screen
+                                << " glsl=" << glsl << " mode=" << mode << " fast=" << fast << " height=" << height);
+                            ASSERT_TRUE(render(renderer, root));
+                            EXPECT_FALSE(assembly->lastRenderUsedDirectSoftwareWire());
+                            const float scale = screen ? 64.0f : imageSize / height;
+                            const auto pixelAt = [&](float x, float y) {
+                                return SbVec2s(short(imageSize / 2 + x * scale), short(imageSize / 2 + y * scale));
+                            };
+                            const auto brightness = [&](const SbVec2s& pixel) {
+                                return renderer.getBuffer()[(size_t(pixel[1]) * imageSize + pixel[0]) * 3];
+                            };
+                            const auto channel = [&](const SbVec2s& pixel,
+                                    size_t component) {
+                                return renderer.getBuffer()[
+                                    (size_t(pixel[1]) * imageSize + pixel[0]) * 3 +
+                                    component];
+                            };
+                            EXPECT_LT(brightness(pixelAt(0.12f, 0.1f)), 8);
+                            if (fill) {
+                                EXPECT_GT(brightness(pixelAt(0.6f, 0.0f)), 220);
+                                EXPECT_LT(channel(pixelAt(0.6f, 0.0f), 1), 8);
+                                EXPECT_LT(channel(pixelAt(0.6f, 0.0f), 2), 8);
+                                EXPECT_GT(brightness(pixelAt(0.0f, -0.2f)), 220);
+                                EXPECT_GT(brightness(pixelAt(0.0f, 0.2f)), 220);
+                                EXPECT_EQ(assembly->lastRenderedWork().triangleCount, 8u);
+                            } else if (mode == SoCADViewState::WIREFRAME) {
+                                EXPECT_LT(brightness(pixelAt(0.6f, 0.0f)), 8);
+                            }
+                            SoRayPickAction pick(SbViewportRegion(imageSize, imageSize));
+                            pick.setPoint(pixelAt(0.6f, 0));
+                            pick.apply(root);
+                            EXPECT_EQ(pick.getPickedPoint() != nullptr,
+                                fill || mode != SoCADViewState::WIREFRAME);
+                            pick.setPoint(pixelAt(0.12f, 0.1f));
+                            pick.apply(root);
+                            EXPECT_EQ(pick.getPickedPoint(), nullptr);
+                        }
+                    }
+                }
+            }
+            record.style.useGeometryColor = false;
+            record.style.color = SbColor4f(0, 1, 0, 1);
+            ASSERT_TRUE(assembly->upsertInstances({{instance, record}}));
+            view->drawMode = SoCADViewState::WIREFRAME;
+            camera->height = 2.0f;
+            ASSERT_TRUE(render(renderer, root));
+            const float scale = screen ? 64.0f : imageSize / 2.0f;
+            const SbVec2s replacementPixel(
+                short(imageSize / 2 + 0.6f * scale), short(imageSize / 2));
+            const size_t replacementOffset =
+                (size_t(replacementPixel[1]) * imageSize + replacementPixel[0]) * 3;
+            EXPECT_LT(renderer.getBuffer()[replacementOffset], 8);
+            EXPECT_GT(renderer.getBuffer()[replacementOffset + 1], 220);
+            EXPECT_LT(renderer.getBuffer()[replacementOffset + 2], 8);
+
+            Obol::FillStyle backgroundMask;
+            backgroundMask.backgroundMask = true;
+            builder.shadedIsFill = true;
+            builder.shaded->styleRuns = {{0, backgroundMask}};
+            ASSERT_TRUE(admitAndUpsertPart(assembly, part, builder));
+            const SbColor backgroundBottom(0.1f, 0.2f, 0.7f);
+            const SbColor backgroundTop(0.7f, 0.8f, 0.1f);
+            renderer.setBackgroundGradient(backgroundBottom, backgroundTop);
+            for (const auto mode : {SoCADViewState::WIREFRAME,
+                    SoCADViewState::SHADED, SoCADViewState::SHADED_WITH_EDGES,
+                    SoCADViewState::HIDDEN_LINE}) {
+                view->drawMode = mode;
+                SCOPED_TRACE(::testing::Message() << "mask screen=" << screen
+                    << " glsl=" << glsl << " mode=" << mode);
+                ASSERT_TRUE(render(renderer, root));
+                for (float y : {-0.4f, 0.4f}) {
+                    const auto pixelAt = [&](float x) {
+                        return SbVec2s(short(imageSize / 2 + x * scale),
+                            short(imageSize / 2 + y * scale));
+                    };
+                    const SbVec2s masked = pixelAt(0.6f);
+                    const SbVec2s exposed = pixelAt(0.9f);
+                    for (size_t component = 0; component < 3; ++component) {
+                        const size_t maskedOffset =
+                            (size_t(masked[1]) * imageSize + masked[0]) * 3 +
+                            component;
+                        const size_t exposedOffset =
+                            (size_t(exposed[1]) * imageSize + exposed[0]) * 3 +
+                            component;
+                        EXPECT_NEAR(renderer.getBuffer()[maskedOffset],
+                            renderer.getBuffer()[exposedOffset], 5);
+                    }
+                }
+            }
+            renderer.clearBackgroundGradient();
+        }
+    }
 }

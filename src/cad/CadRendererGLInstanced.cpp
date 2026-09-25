@@ -188,6 +188,8 @@ void CadRendererGL::renderInstanced(
         struct WireLocations {
             GLint viewProjection = -1;
             GLint position = 0;
+            GLint geometryColor = -1;
+            GLint useGeometryColor = -1;
             GLint encodeScale = -1;
             GLint decodeScale = -1;
             GLint minimum = -1;
@@ -204,6 +206,12 @@ void CadRendererGL::renderInstanced(
                     programs[variant], "u_viewProj");
             locations[variant].position =
                 glue->glGetAttribLocationARB(programs[variant], "a_pos");
+            locations[variant].geometryColor =
+                glue->glGetUniformLocationARB(
+                    programs[variant], "u_geometryColor");
+            locations[variant].useGeometryColor =
+                glue->glGetUniformLocationARB(
+                    programs[variant], "u_useGeometryColor");
             if (locations[variant].position < 0)
                 locations[variant].position = 0;
         }
@@ -268,6 +276,11 @@ void CadRendererGL::renderInstanced(
                     cadInstanceDrawable(
                         plan, item, item.baseInstance + runEnd,
                         CadDrawChannel::Wire) &&
+                    ((plan.visibleInstances[
+                        item.baseInstance + runEnd].flags &
+                        CadInstanceSuppressGeometryColor) ==
+                     (levelInstance.flags &
+                        CadInstanceSuppressGeometryColor)) &&
                     (!progressive ||
                      cadResolvedProgressiveCut(
                         effectiveProgressiveCut(
@@ -341,23 +354,51 @@ void CadRendererGL::renderInstanced(
                 }
 
                 const GLsizei runCount = static_cast<GLsizei>(runEnd - runStart);
-                if (w->sequentialSegments) {
-                    glue->glDrawArraysInstanced(
-                                                GL_LINES, segmentFirst * 2,
-                                                segmentCount * 2,
-                                                runCount);
+                const bool authoredStyles = geometry && geometry->wire &&
+                    !geometry->wire->styleRuns.empty();
+                uint64_t submittedSegments = 0;
+                const auto draw = [&](size_t first, size_t count,
+                                      const WireStyle& authored) {
+                    if (authoredStyles && renderInterruptedAfter(deadlineWork, count))
+                        return false;
+                    const CadResolvedWireStyle resolved =
+                        cadResolveWireStyle(styleInst, authored);
+                    applyWireRasterStyle(
+                        glue, resolved, caps_.hasLineStipple);
+                    const float geometryColor[4] = {
+                        authored.color[0], authored.color[1],
+                        authored.color[2], authored.color[3]};
+                    glue->glUniform4fvARB(
+                        loc.geometryColor, 1, geometryColor);
+                    glue->glUniform1iARB(
+                        loc.useGeometryColor,
+                        authored.colorValid &&
+                        !(styleInst.flags &
+                            CadInstanceSuppressGeometryColor));
+                    if (w->sequentialSegments) {
+                        glue->glDrawArraysInstanced(GL_LINES,
+                            static_cast<GLint>(first * 2u),
+                            static_cast<GLsizei>(count * 2u), runCount);
+                    } else {
+                        glue->glDrawElementsInstanced(GL_LINES,
+                            static_cast<GLsizei>(count * 2u), GL_UNSIGNED_INT,
+                            reinterpret_cast<const GLvoid *>(
+                                static_cast<uintptr_t>(first) * 2u * sizeof(uint32_t)),
+                            runCount);
+                    }
+                    submittedSegments = cadSaturatingWorkAdd(submittedSegments, count);
+                    return true;
+                };
+                if (authoredStyles) {
+                    if (!geometry->wire->forEachStyleRange(
+                            segmentFirst, segmentCount, draw))
+                        interrupted = true;
                 } else {
-                    glue->glDrawElementsInstanced(
-                                                  GL_LINES, segmentCount * 2,
-                                                  GL_UNSIGNED_INT,
-                                                  reinterpret_cast<const GLvoid *>(
-                                                      static_cast<uintptr_t>(segmentFirst) * 2u *
-                                                      sizeof(uint32_t)),
-                                                  runCount);
+                    WireStyle authored;
+                    draw(segmentFirst, segmentCount, authored);
                 }
                 cadAccumulateRenderedWireWork(
-                    lastRenderedWork_,
-                    static_cast<uint64_t>(segmentCount),
+                    lastRenderedWork_, submittedSegments,
                     static_cast<uint64_t>(runCount));
 
                 if (w->vao && glue->glBindVertexArray) {
@@ -370,6 +411,8 @@ void CadRendererGL::renderInstanced(
                     if (!w->sequentialSegments)
                         glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
                 }
+                if (interrupted)
+                    break;
                 runStart = runEnd;
             }
             if (interrupted)

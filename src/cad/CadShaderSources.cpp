@@ -53,9 +53,19 @@ const char * const kWirePopVS1 =
     "}\n";
 
 const char * const kWireFS1 =
+    "uniform int u_backgroundMask;\n"
+    "uniform vec3 u_backgroundBottom;\n"
+    "uniform vec3 u_backgroundTop;\n"
+    "uniform vec2 u_backgroundViewport;\n"
     "varying vec4 v_color;\n"
     "void main() {\n"
-    "    gl_FragColor = v_color;\n"
+    "    if (u_backgroundMask != 0) {\n"
+    "        float height = max(u_backgroundViewport.y, 1.0);\n"
+    "        float t = clamp((gl_FragCoord.y - u_backgroundViewport.x) / height, 0.0, 1.0);\n"
+    "        gl_FragColor = vec4(mix(u_backgroundBottom, u_backgroundTop, t), 1.0);\n"
+    "    } else {\n"
+    "        gl_FragColor = v_color;\n"
+    "    }\n"
     "}\n";
 
 // View-local proxy points carry their own per-occurrence colour so thousands
@@ -364,10 +374,13 @@ const char * const kWireVS2 =
     "in mat4  a_instTransform;\n"  // locations: BASE_INST_LOC .. BASE_INST_LOC+3
     "in vec4  a_instColor;\n"      // location:  BASE_INST_LOC+4
     "uniform mat4 u_viewProj;\n"
+    "uniform vec4 u_geometryColor;\n"
+    "uniform int u_useGeometryColor;\n"
     "out vec4 v_color;\n"
     "void main() {\n"
     "    gl_Position = u_viewProj * a_instTransform * vec4(a_pos, 1.0);\n"
-    "    v_color = a_instColor;\n"
+    "    v_color = (u_useGeometryColor != 0) ?\n"
+    "        vec4(u_geometryColor.rgb, u_geometryColor.a * a_instColor.a) : a_instColor;\n"
     "}\n";
 
 const char * const kWirePopVS2 =
@@ -376,6 +389,8 @@ const char * const kWirePopVS2 =
     "in mat4  a_instTransform;\n"
     "in vec4  a_instColor;\n"
     "uniform mat4 u_viewProj;\n"
+    "uniform vec4 u_geometryColor;\n"
+    "uniform int u_useGeometryColor;\n"
     "uniform vec3 u_popEncodeScale;\n"
     "uniform vec3 u_popDecodeScale;\n"
     "uniform vec3 u_popMin;\n"
@@ -391,7 +406,8 @@ const char * const kWirePopVS2 =
     "    if (u_popEncodeScale.y > 0.0) p.y = snapped.y / u_popEncodeScale.y + u_popMin.y;\n"
     "    if (u_popEncodeScale.z > 0.0) p.z = snapped.z / u_popEncodeScale.z + u_popMin.z;\n"
     "    gl_Position = u_viewProj * a_instTransform * vec4(p, 1.0);\n"
-    "    v_color = a_instColor;\n"
+    "    v_color = (u_useGeometryColor != 0) ?\n"
+    "        vec4(u_geometryColor.rgb, u_geometryColor.a * a_instColor.a) : a_instColor;\n"
     "}\n";
 
 const char * const kWireFS2 =

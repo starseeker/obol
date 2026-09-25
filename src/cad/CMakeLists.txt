@@ -9,6 +9,7 @@
 
 set(CAD_SOURCES
     # Core CAD node
+    ${CMAKE_CURRENT_SOURCE_DIR}/CadDisplayPlane.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/CadGeometryValidation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/CadIds.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/CadPickTolerance.cpp

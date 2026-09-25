@@ -1230,6 +1230,27 @@ bool CadRendererGL::patchIndirectPreparedGeometry(
     return true;
 }
 
+const CadTriangleAtlasPart *CadRendererGL::prepareIndirectAtlasPrefix(
+        const CadPartBinding& binding,
+        uint32_t vertexCount, uint32_t indexCount,
+        const SoGLContext *glue)
+{
+    const TriMesh& mesh = *binding.geometry->shaded;
+    const CadTriangleAtlasPart *atlas =
+        gpuRes_->touchTriangleAtlasPart(
+            binding.part, binding.generation,
+            !mesh.normals.empty(), vertexCount, indexCount);
+    if (!atlas)
+        atlas = gpuRes_->upsertTriangleAtlasPart(
+            binding.part, binding.generation,
+            executorPackedVec3fData(mesh.positions),
+            executorPackedVec3fData(mesh.normals),
+            vertexCount, mesh.indices.data(), indexCount,
+            mesh.isProgressive(), mesh.progressiveLineage,
+            glue, caps_);
+    return atlas;
+}
+
 bool CadRendererGL::patchIndirectPreparedCeiling(
         const CadFramePlan& plan,
         const SoGLContext *glue)
@@ -1292,19 +1313,23 @@ bool CadRendererGL::patchIndirectPreparedCeiling(
                 plan.visibleInstances[sourceIndex].lodCut),
             mesh.progressiveMinimumCut,
             mesh.progressiveResidentCut);
-        const CadTriangleAtlasPart *atlas =
-            gpuRes_->triangleAtlasPart(
-                binding.part);
+        const uint32_t requestedVertices = static_cast<uint32_t>(
+            mesh.positionCountAtCut(level));
+        const uint32_t requestedIndices = static_cast<uint32_t>(
+            mesh.indexCountAtCut(level));
+        /* A renderer ceiling can expose a resident CPU suffix without an
+         * occurrence-cut or geometry-generation change.  Give it the same
+         * bounded GPU admission as an ordinary cut patch before treating a
+         * missing upload as memory pressure.  Relocation still falls back to
+         * exact preparation because retained command offsets have changed. */
+        const CadTriangleAtlasPart *atlas = prepareIndirectAtlasPrefix(
+            binding, requestedVertices, requestedIndices, glue);
         if (!atlas || atlas->page != demand.page ||
                 atlas->vertices.first !=
                     demand.vertexFirst ||
                 atlas->indices.first !=
                     demand.indexFirst)
             return false;
-        const uint32_t requestedVertices = static_cast<uint32_t>(
-            mesh.positionCountAtCut(level));
-        const uint32_t requestedIndices = static_cast<uint32_t>(
-            mesh.indexCountAtCut(level));
         const bool admissionPressure =
             requestedVertices > atlas->vertexCount ||
             requestedIndices > atlas->indexCount;
@@ -1558,19 +1583,8 @@ bool CadRendererGL::patchIndirectPreparedCuts(
         if (!requestedVertices || !requestedIndices)
             return false;
 
-        const CadTriangleAtlasPart *atlas =
-            gpuRes_->touchTriangleAtlasPart(
-                binding.part, binding.generation,
-                !mesh.normals.empty(),
-                requestedVertices, requestedIndices);
-        if (!atlas)
-            atlas = gpuRes_->upsertTriangleAtlasPart(
-                binding.part, binding.generation,
-                executorPackedVec3fData(mesh.positions),
-                executorPackedVec3fData(mesh.normals),
-                requestedVertices, mesh.indices.data(),
-                requestedIndices, true, mesh.progressiveLineage,
-                glue, caps_);
+        const CadTriangleAtlasPart *atlas = prepareIndirectAtlasPrefix(
+            binding, requestedVertices, requestedIndices, glue);
         if (!atlas || atlas->page != demand.page ||
                 atlas->vertices.first != demand.vertexFirst ||
                 atlas->indices.first != demand.indexFirst)

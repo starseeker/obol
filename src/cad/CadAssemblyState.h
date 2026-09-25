@@ -133,6 +133,7 @@ struct CadPickingIndex {
     std::mutex pickMutex_;
     Obol::picking::CadInstanceBVH instanceBvh_;
     bool bvhDirty_ = true;
+    std::vector<Obol::InstanceId> displayPlanePickInstances_;
     Obol::picking::CadPartPointBvhCache partPointBvhCache_;
     std::unordered_map<Obol::PartId, Obol::picking::CadPartEdgeBVH,
         std::hash<Obol::PartId>> partEdgeBvhCache_;
@@ -198,13 +199,16 @@ struct CadPlanCache {
         uint32_t instanceCount = 0;
         size_t wireItemBegin = 0;
         size_t wireItemCount = 0;
-        size_t pointItemBegin = 0;
-        size_t pointItemCount = 0;
+        size_t unlitItemBegin = 0;
+        size_t unlitItemCount = 0;
         size_t shadedItemBegin = 0;
         size_t shadedItemCount = 0;
     };
 
     Obol::internal::CadFramePlan cachedPlan_;
+    // Derived lookup: camera updates visit only display-plane occurrences.
+    std::unordered_set<Obol::InstanceId, std::hash<Obol::InstanceId>>
+        displayPlanePlanInstances_;
     std::vector<ProgressiveShadedPlanGroup> progressiveShadedPlanGroups_;
     std::unordered_map<Obol::InstanceId, size_t,
         std::hash<Obol::InstanceId>>

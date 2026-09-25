@@ -71,6 +71,13 @@ finite(const SbColor& value) noexcept
 }
 
 bool
+finite(const SbColor4f& value) noexcept
+{
+    return finite(value[0]) && finite(value[1]) &&
+        finite(value[2]) && finite(value[3]);
+}
+
+bool
 finite(const SbBox3f& bounds) noexcept
 {
     return bounds.isEmpty() ||
@@ -270,6 +277,23 @@ validateMesh(const Obol::TriMesh& mesh) noexcept
         if (mesh.indices[i] >= mesh.positions.size())
             return failure(CadGeometryError::InvalidVertexIndex, i);
 
+    if (!mesh.styleRuns.empty() && !mesh.progressiveCuts.empty())
+        return failure(CadGeometryError::InvalidTriangleStyle, 0);
+    for (size_t i = 0; i < mesh.styleRuns.size(); ++i) {
+        const auto& run = mesh.styleRuns[i];
+        if ((run.style.colorValid && run.style.backgroundMask) ||
+                (run.style.colorValid &&
+                (!finite(run.style.color) ||
+                 run.style.color[0] < 0.0f || run.style.color[0] > 1.0f ||
+                 run.style.color[1] < 0.0f || run.style.color[1] > 1.0f ||
+                 run.style.color[2] < 0.0f || run.style.color[2] > 1.0f ||
+                 run.style.color[3] < 0.0f || run.style.color[3] > 1.0f)) ||
+                run.firstTriangle >= mesh.triangleCount() ||
+                (i && run.firstTriangle <=
+                    mesh.styleRuns[i - 1].firstTriangle))
+            return failure(CadGeometryError::InvalidTriangleStyle, i);
+    }
+
     if (mesh.progressiveCuts.empty()) {
         if (mesh.progressiveMinimumCut != Obol::ProgressiveCutUnspecified ||
                 mesh.progressiveResidentCut !=
@@ -409,6 +433,26 @@ validateWire(const Obol::WireRep& wire) noexcept
             wire.segmentIds.size() != wire.segmentCount())
         return failure(CadGeometryError::InvalidAttributeCount,
             wire.segmentIds.size());
+    if (!wire.styleRuns.empty() &&
+            (triangleEdges || !wire.polylines.empty() ||
+             !wire.progressiveCuts.empty()))
+        return failure(CadGeometryError::InvalidWireStyle, 0);
+    for (size_t i = 0; i < wire.styleRuns.size(); ++i) {
+        const auto& run = wire.styleRuns[i];
+        if (!std::isfinite(run.style.widthScale) ||
+                run.style.widthScale <= 0.0f)
+            return failure(CadGeometryError::InvalidWireWidth, i);
+        if ((run.style.colorValid &&
+                (!finite(run.style.color) ||
+                 run.style.color[0] < 0.0f || run.style.color[0] > 1.0f ||
+                 run.style.color[1] < 0.0f || run.style.color[1] > 1.0f ||
+                 run.style.color[2] < 0.0f || run.style.color[2] > 1.0f ||
+                 run.style.color[3] < 0.0f || run.style.color[3] > 1.0f)) ||
+                run.style.linePatternFactor == 0 ||
+                run.firstSegment >= wire.segmentCount() ||
+                (i && run.firstSegment <= wire.styleRuns[i - 1].firstSegment))
+            return failure(CadGeometryError::InvalidWireStyle, i);
+    }
     for (size_t polylineIndex = 0;
             polylineIndex < wire.polylines.size(); ++polylineIndex)
         for (const SbVec3f& point : wire.polylines[polylineIndex].points) {
@@ -587,12 +631,14 @@ validatePoints(const Obol::PointRep& points) noexcept
 namespace Obol {
 
 PartGeometry::PartGeometry(PartGeometryBuilder&& builder) noexcept :
+    displayPlane(std::move(builder.displayPlane)),
     points(std::move(builder.points)),
     wire(std::move(builder.wire)),
     shaded(std::move(builder.shaded)),
     conservativeBounds(std::move(builder.conservativeBounds)),
     aggregateProxyCorners(std::move(builder.aggregateProxyCorners)),
     shadedCullBackfaces(builder.shadedCullBackfaces),
+    shadedIsFill(builder.shadedIsFill),
     subpixelProxyEligible(builder.subpixelProxyEligible),
     structuralProxy(builder.structuralProxy)
 {
@@ -602,6 +648,20 @@ template <typename Geometry>
 CadGeometryValidation
 validatePartGeometry(const Geometry& geometry) noexcept
 {
+    if (geometry.displayPlane &&
+            (!finite(geometry.displayPlane->anchor) ||
+             !finite(geometry.displayPlane->pixelsPerUnit) ||
+             geometry.displayPlane->pixelsPerUnit <= 0.0f))
+        return failure(CadGeometryError::NonFiniteValue, 0);
+    if (geometry.shadedIsFill &&
+            (!geometry.shaded || geometry.shaded->isProgressive() ||
+             geometry.shadedCullBackfaces || geometry.subpixelProxyEligible))
+        return failure(CadGeometryError::InvalidFill, 0);
+    if (geometry.shaded && !geometry.shadedIsFill &&
+            !geometry.shaded->styleRuns.empty())
+        return failure(CadGeometryError::InvalidTriangleStyle, 0);
+    if (geometry.displayPlane && geometry.subpixelProxyEligible)
+        return failure(CadGeometryError::InvalidSubpixelProxy, 0);
     if (geometry.conservativeBounds &&
             !finite(*geometry.conservativeBounds))
         return failure(CadGeometryError::NonFiniteValue, 0);
@@ -699,6 +759,14 @@ cadGeometryErrorName(CadGeometryError error) noexcept
         case CadGeometryError::InvalidPartId: return "invalid-part-id";
         case CadGeometryError::NullGeometry: return "null-geometry";
         case CadGeometryError::NonFiniteValue: return "non-finite-value";
+        case CadGeometryError::InvalidFill:
+            return "invalid-fill";
+        case CadGeometryError::InvalidWireWidth:
+            return "invalid-wire-width";
+        case CadGeometryError::InvalidWireStyle:
+            return "invalid-wire-style";
+        case CadGeometryError::InvalidTriangleStyle:
+            return "invalid-triangle-style";
         case CadGeometryError::InvalidAttributeCount:
             return "invalid-attribute-count";
         case CadGeometryError::InvalidPrimitiveCount:

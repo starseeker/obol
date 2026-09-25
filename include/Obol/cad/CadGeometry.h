@@ -38,8 +38,10 @@
  * @brief Immutable renderer geometry and progressive spatial metadata.
  */
 
+#include <Obol/cad/CadDisplayPlane.h>
 #include <Inventor/SbBox3f.h>
 #include <Inventor/SbColor.h>
+#include <Inventor/SbColor4f.h>
 #include <Inventor/SbVec3f.h>
 
 #include <Obol/cad/CadProgressive.h>
@@ -48,6 +50,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -117,6 +120,47 @@ struct WirePolyline {
     uint32_t edgeId = 0;
 };
 
+/** Authored presentation for a range in the explicit segment stream.
+ * Width multiplies the occurrence's base pixel width.  Authored color and
+ * pattern take precedence only while the occurrence permits geometry color;
+ * application emphasis can therefore replace color without changing shared
+ * geometry. */
+struct WireStyle {
+    float widthScale = 1.0f;
+    bool colorValid = false;
+    SbColor4f color = SbColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    bool patternValid = false;
+    uint16_t linePattern = 0xffffu;
+    uint16_t linePatternFactor = 1u;
+};
+
+/** A style change within the explicit segment stream. */
+struct WireStyleRun {
+    size_t firstSegment = 0;
+    WireStyle style;
+};
+
+/** Presentation for a range in a filled triangle stream. */
+struct FillStyle {
+    bool colorValid = false;
+    SbColor4f color = SbColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    /** Replace covered scene geometry with the active viewport background. */
+    bool backgroundMask = false;
+};
+
+/** A style change within the filled triangle stream. */
+struct FillStyleRun {
+    size_t firstTriangle = 0;
+    FillStyle style;
+};
+
+inline float cadWirePixelWidth(float baseWidth, float scale) noexcept
+{
+    return static_cast<float>((std::min)(
+        double(baseWidth) * scale,
+        double((std::numeric_limits<float>::max)())));
+}
+
 struct WireRep {
     std::vector<SbVec3f> segmentPoints;
 
@@ -127,6 +171,10 @@ struct WireRep {
     std::shared_ptr<const PartGeometry> triangleEdgeGeometry;
     size_t triangleEdgeSegmentCount = 0;
     std::vector<uint32_t> segmentIds;
+    /* Optional ordered style changes for explicit, non-progressive segments.
+     * Unspecified prefixes use the default style; polylines and
+     * triangle-derived edges use the occurrence style. */
+    std::vector<WireStyleRun> styleRuns;
     std::vector<WirePolyline> polylines;
     /* Must conservatively contain every resident point in this channel. */
     SbBox3f bounds;
@@ -148,6 +196,57 @@ struct WireRep {
     const TriMesh *triangleEdges() const noexcept;
     size_t segmentCount() const noexcept;
     bool derivesTriangleEdges() const noexcept;
+
+    /** Visit contiguous style ranges without allocating; false cancels. */
+    template <typename Visit>
+    bool forEachStyleRange(size_t first, size_t count, Visit visit) const
+    {
+        if (!count)
+            return true;
+        static const WireStyle defaultStyle;
+        if (styleRuns.empty())
+            return visit(first, count, defaultStyle);
+        if (first >= segmentCount())
+            return true;
+        count = (std::min)(count, segmentCount() - first);
+        const size_t end = first + count;
+        auto next = std::upper_bound(styleRuns.begin(), styleRuns.end(), first,
+            [](size_t segment, const WireStyleRun& run) {
+                return segment < run.firstSegment;
+            });
+        const WireStyle *style = next == styleRuns.begin() ?
+            &defaultStyle : &(next - 1)->style;
+        while (first < end) {
+            const size_t runEnd = next == styleRuns.end() ? end :
+                (std::min)(end, next->firstSegment);
+            if (!visit(first, runEnd - first, *style))
+                return false;
+            first = runEnd;
+            if (next != styleRuns.end())
+                style = &(next++)->style;
+        }
+        return true;
+    }
+
+    WireStyle styleAtSegment(size_t segment) const noexcept
+    {
+        WireStyle style;
+        forEachStyleRange(segment, 1,
+            [&style](size_t, size_t, const WireStyle& value) {
+                style = value;
+                return false;
+            });
+        return style;
+    }
+
+    bool hasAuthoredRasterStyle() const noexcept
+    {
+        return std::any_of(styleRuns.begin(), styleRuns.end(),
+            [](const WireStyleRun& run) {
+                return run.style.colorValid ||
+                    run.style.patternValid;
+            });
+    }
 
     bool isProgressive() const noexcept
     {
@@ -228,6 +327,9 @@ struct TriMesh {
     std::vector<SbVec3f> positions;
     std::vector<SbVec3f> normals;
     std::vector<uint32_t> indices;
+    /* Optional ordered color changes for non-progressive filled triangles.
+     * Unspecified prefixes use the occurrence color. */
+    std::vector<FillStyleRun> styleRuns;
     /* Must conservatively contain every resident position. */
     SbBox3f bounds;
 
@@ -244,6 +346,53 @@ struct TriMesh {
     /* A nonzero lineage certifies identical append-only position, normal,
      * and index prefixes across immutable generations. */
     uint64_t progressiveLineage = 0;
+
+    size_t triangleCount() const noexcept
+    {
+        return indices.size() / 3u;
+    }
+
+    /** Visit contiguous style ranges without allocating; false cancels. */
+    template <typename Visit>
+    bool forEachStyleRange(size_t first, size_t count, Visit visit) const
+    {
+        if (!count)
+            return true;
+        static const FillStyle defaultStyle;
+        if (styleRuns.empty())
+            return visit(first, count, defaultStyle);
+        if (first >= triangleCount())
+            return true;
+        count = (std::min)(count, triangleCount() - first);
+        const size_t end = first + count;
+        auto next = std::upper_bound(styleRuns.begin(), styleRuns.end(), first,
+            [](size_t triangle, const FillStyleRun& run) {
+                return triangle < run.firstTriangle;
+            });
+        const FillStyle *style = next == styleRuns.begin() ?
+            &defaultStyle : &(next - 1)->style;
+        while (first < end) {
+            const size_t runEnd = next == styleRuns.end() ? end :
+                (std::min)(end, next->firstTriangle);
+            if (!visit(first, runEnd - first, *style))
+                return false;
+            first = runEnd;
+            if (next != styleRuns.end())
+                style = &(next++)->style;
+        }
+        return true;
+    }
+
+    FillStyle styleAtTriangle(size_t triangle) const noexcept
+    {
+        FillStyle style;
+        forEachStyleRange(triangle, 1,
+            [&style](size_t, size_t, const FillStyle& value) {
+                style = value;
+                return false;
+            });
+        return style;
+    }
 
     bool isProgressive() const noexcept
     {
@@ -319,6 +468,7 @@ struct PointRep {
  * bounds and never invents a placeholder at the origin.
  */
 struct PartGeometryBuilder {
+    std::optional<CadDisplayPlane> displayPlane;
     std::optional<PointRep> points;
     std::optional<WireRep> wire;
     std::optional<TriMesh> shaded;
@@ -335,6 +485,11 @@ struct PartGeometryBuilder {
     /* Back-face culling is legal only for producer-verified, closed,
      * consistently oriented shaded topology. */
     bool shadedCullBackfaces = false;
+
+    /* The triangle channel contains filled drawing areas, not a lit surface.
+     * Fills and their wire strokes are visible in every draw mode. Fills draw
+     * before strokes, without back-face culling or subpixel replacement. */
+    bool shadedIsFill = false;
 
     /* Whole-occurrence aggregation may replace this presentation by one
      * depth-tested point while its complete conservative, shaded, point, or
@@ -362,12 +517,14 @@ public:
     PartGeometry(const PartGeometry&) = delete;
     PartGeometry& operator=(const PartGeometry&) = delete;
 
+    const std::optional<CadDisplayPlane> displayPlane;
     const std::optional<PointRep> points;
     const std::optional<WireRep> wire;
     const std::optional<TriMesh> shaded;
     const std::optional<SbBox3f> conservativeBounds;
     const std::optional<std::array<SbVec3f, 8>> aggregateProxyCorners;
     const bool shadedCullBackfaces;
+    const bool shadedIsFill;
     const bool subpixelProxyEligible;
     const bool structuralProxy;
 
