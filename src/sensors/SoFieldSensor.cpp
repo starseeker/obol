@@ -93,8 +93,10 @@ void
 SoFieldSensor::attach(SoField * field)
 {
   if (this->convict) this->detach();
-  this->convict = field;
+  // Allocation may fail before the field can register this sensor. Only
+  // publish attachment after registration so destruction can detach safely.
   field->addAuditor(this, SoNotRec::SENSOR);
+  this->convict = field;
   field->evaluate();
 }
 
@@ -139,7 +141,7 @@ SoFieldSensor::notify(SoNotList * l)
 {
   // Overridden to only propagate if the field that caused the
   // notification is the one this sensor is attached to.
-  if (l->getLastField() == this->convict) {
+  if (l->getLastField() == this->convict && l->handledFieldSensor != this) {
     inherited::notify(l);
   }
 }

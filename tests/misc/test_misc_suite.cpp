@@ -55,6 +55,10 @@
 #include <Inventor/SbMatrix.h>
 #include <Inventor/lists/SoTypeList.h>
 #include <Inventor/misc/SoChildList.h>
+#include <Inventor/lists/SoAuditorList.h>
+#include <Inventor/sensors/SoNodeSensor.h>
+#include <initializer_list>
+#include <memory>
 
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/nodes/SoSeparator.h>
@@ -422,4 +426,28 @@ TEST(MiscSuite, SoChildListRemoveByIndex)
                 (parent->getChild(0) == c1) &&
                 (parent->getChild(1) == c2)) << "SoChildList remove by index failed";
     parent->unref();
+}
+
+TEST(MiscSuite, AuditorSnapshotsReflectRemovalAndSensorDestruction)
+{
+    SoSeparator * root = new SoSeparator;
+    root->ref();
+    SoNodeSensor first, second;
+    auto third = std::make_unique<SoNodeSensor>();
+    first.attach(root); second.attach(root); third->attach(root);
+    const auto verify = [&](std::initializer_list<SoNodeSensor *> expected) {
+        const auto &auditors = root->getAuditors();
+        EXPECT_EQ(auditors.getLength(), static_cast<int>(expected.size()));
+        for (auto *sensor : expected)
+            EXPECT_GE(auditors.find(sensor, SoNotRec::SENSOR), 0);
+    };
+    verify({&first, &second, third.get()});
+    verify({&first, &second, third.get()});
+    second.detach();
+    verify({&first, third.get()});
+    third.reset();
+    verify({&first});
+    first.detach();
+    verify({});
+    root->unref();
 }

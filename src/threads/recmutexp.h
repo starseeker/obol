@@ -72,6 +72,15 @@ int cc_recmutex_internal_notify_unlock(void);
 
 #ifdef __cplusplus
 } /* extern "C" */
+
+class cc_notify_lock_guard {
+public:
+  cc_notify_lock_guard() { (void) cc_recmutex_internal_notify_lock(); }
+  ~cc_notify_lock_guard() { (void) cc_recmutex_internal_notify_unlock(); }
+
+  cc_notify_lock_guard(const cc_notify_lock_guard &) = delete;
+  cc_notify_lock_guard & operator=(const cc_notify_lock_guard &) = delete;
+};
 #endif /* __cplusplus */
 
 #endif /* ! CC_RECMUTEXP_H */

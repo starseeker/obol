@@ -71,6 +71,8 @@
 
 #include "fields/SoSubFieldP.h"
 
+#include <memory>
+
 // *************************************************************************
 
 /*!
@@ -147,18 +149,20 @@ SoSFEnum::initClass(void)
 void
 SoSFEnum::setEnums(const int num, const int * vals, const SbName * names)
 {
+  // Inputs may alias our current mappings, including self-assignment. Own
+  // both replacement arrays before retiring either current allocation.
+  auto values = std::make_unique<int[]>(num);
+  auto replacementNames = std::make_unique<SbName[]>(num);
+  for (int i = 0; i < num; i++) {
+    values[i] = vals[i];
+    replacementNames[i] = names[i];
+  }
   delete[] this->enumValues;
   delete[] this->enumNames;
-
-  this->enumValues = new int[num];
-  this->enumNames = new SbName[num];
+  this->enumValues = values.release();
+  this->enumNames = replacementNames.release();
   this->numEnums = num;
   this->legalValuesSet = TRUE;
-
-  for (int i = 0; i < this->numEnums; i++) {
-    this->enumValues[i] = vals[i];
-    this->enumNames[i] = names[i];
-  }
 }
 
 /*!
@@ -375,4 +379,3 @@ SoSFEnum::getEnum(const int idx, SbName & name) const
   name = this->enumNames[idx];
   return this->enumValues[idx];
 }
-

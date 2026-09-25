@@ -247,6 +247,30 @@ TEST(NodesSuite, SoNodeGetByName)
     cyl->unref();
 }
 
+TEST(NodesSuite, NameRegistryRenameOrderNormalizationAndRetirement)
+{
+    auto *first = new SoCube; first->ref();
+    auto *second = new SoCube; second->ref();
+    const SbName shared("name_registry_shared_test");
+    first->setName(shared); second->setName(shared);
+    EXPECT_EQ(SoNode::getByName(shared), second);
+    first->setName(shared);
+    EXPECT_EQ(SoNode::getByName(shared), first);
+    first->setName("9bad name");
+    EXPECT_EQ(first->getName(), SbName("_9bad_name"));
+    EXPECT_EQ(SoNode::getByName(shared), second);
+    EXPECT_EQ(SoNode::getByName("_9bad_name"), first);
+    first->setName("");
+    EXPECT_EQ(SoNode::getByName("_9bad_name"), nullptr);
+    SoBase::addName(first, "name_registry_raw_test");
+    EXPECT_EQ(SoNode::getByName("name_registry_raw_test"), first);
+    SoBase::removeName(first, "name_registry_raw_test");
+    EXPECT_EQ(first->getName(), SbName::empty());
+    first->unref(); second->unref();
+    EXPECT_EQ(SoNode::getByName(shared), nullptr);
+    EXPECT_EQ(SoNode::getByName("name_registry_raw_test"), nullptr);
+}
+
 // -----------------------------------------------------------------------
 // Geometry nodes: default field values
 // -----------------------------------------------------------------------

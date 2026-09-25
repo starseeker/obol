@@ -37,6 +37,8 @@
 
 #include <atomic>
 #include <shared_mutex>
+#include <memory>
+#include <unordered_map>
 
 class SoBase;
 class SoNode;
@@ -66,8 +68,10 @@ public:
   static const char EXTERNPROTO_KEYWORD[];
 
   static SbHash<const SoBase *, SoAuditorList *> * auditordict;
-  static SbHash<const char *, SbPList *> * name2obj;
-  static SbHash<const SoBase *, const char *> * obj2name;
+  using NameMap = std::unordered_map<const char *, std::unique_ptr<SbPList>>;
+  using ObjectNameMap = std::unordered_map<const SoBase *, const char *>;
+  static NameMap * name2obj;
+  static ObjectNameMap * obj2name;
 
   static SbBool trackbaseobjects;
   static SoBaseSet * allbaseobj; // maps from SoBase * to NULL

@@ -28,8 +28,10 @@
 #include <Inventor/lists/SoFieldList.h>
 #include <Inventor/nodes/SoCube.h>
 #include <Inventor/nodes/SoMaterial.h>
+#include <Inventor/sensors/SoFieldSensor.h>
 
 #include <cstdint>
+#include <stdexcept>
 
 TEST(Fields, ScalarValuesRoundTripWithoutConnections)
 {
@@ -115,6 +117,75 @@ TEST(Fields, MultiFieldsRetainCountOrderAndValues)
     EXPECT_FLOAT_EQ(editable_weights[2], 3.0f);
     editable_weights.deleteValues(1, -1);
     EXPECT_EQ(editable_weights.getNum(), 1);
+}
+
+TEST(Fields, PreparedMultiFieldReplacementDefersMutationAndNotification)
+{
+    SoMFInt32 field;
+    const std::int32_t original_values[] = {10, 20, 30, 40};
+    field.setValues(0, 4, original_values);
+
+    SoMFInt32 next;
+    const std::int32_t next_values[] = {7, 9};
+    next.setValues(0, 2, next_values);
+
+    struct Observer {
+	static void changed(void * data, SoSensor *)
+	{
+	    ++*static_cast<int *>(data);
+	}
+    };
+    int notifications = 0;
+    SoFieldSensor sensor(Observer::changed, &notifications);
+    sensor.setPriority(0);
+    sensor.attach(&field);
+
+    auto replacement = field.prepareValueReplacement(next);
+    ASSERT_NE(replacement, nullptr);
+    EXPECT_EQ(field.getNum(), 4);
+    EXPECT_EQ(field[0], 10);
+    EXPECT_EQ(notifications, 0);
+
+    replacement->commit();
+    ASSERT_EQ(field.getNum(), 2);
+    EXPECT_EQ(field[0], 7);
+    EXPECT_EQ(field[1], 9);
+    EXPECT_EQ(notifications, 0);
+
+    replacement->notify();
+    EXPECT_EQ(notifications, 1);
+    replacement->notify();
+    EXPECT_EQ(notifications, 1);
+
+    SoMFInt32 abandoned_values;
+    abandoned_values.set1Value(0, 99);
+    {
+	auto abandoned = field.prepareValueReplacement(abandoned_values);
+	ASSERT_NE(abandoned, nullptr);
+    }
+    ASSERT_EQ(field.getNum(), 2);
+    EXPECT_EQ(field[0], 7);
+    EXPECT_TRUE(field.isNotifyEnabled());
+    EXPECT_EQ(notifications, 1);
+
+    EXPECT_EQ(field.prepareValueReplacement(field), nullptr);
+    SoMFVec3f incompatible;
+    EXPECT_THROW(field.prepareValueReplacement(incompatible),
+	std::invalid_argument);
+
+    field.enableNotify(FALSE);
+    SoMFInt32 quiet_values;
+    const std::int32_t quiet_data[] = {11, 13, 17};
+    quiet_values.setValues(0, 3, quiet_data);
+    auto quiet_replacement = field.prepareValueReplacement(quiet_values);
+    ASSERT_NE(quiet_replacement, nullptr);
+    quiet_replacement->commit();
+    quiet_replacement->notify();
+    ASSERT_EQ(field.getNum(), 3);
+    EXPECT_EQ(field[2], 17);
+    EXPECT_FALSE(field.isNotifyEnabled());
+    EXPECT_EQ(notifications, 1);
+    field.enableNotify(TRUE);
 }
 
 TEST(Fields, NodeFieldsAndNodeOwnedFieldsPreserveReferencesAndValues)

@@ -60,6 +60,7 @@ public:
   void copy(const SbPList & l);
   SbPList & operator=(const SbPList & l);
   void fit(void);
+  void reserve(const int capacity);
 
   void append(void * item);
   int find(const void * item) const;

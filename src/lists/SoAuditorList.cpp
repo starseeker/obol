@@ -51,10 +51,6 @@
 #include "config.h"
 
 #include "threads/recmutexp.h"
-// we need this lock to avoid that auditors are added/removed by one
-// thread while another thread is notifying
-#define NOTIFY_LOCK (void) cc_recmutex_internal_notify_lock()
-#define NOTIFY_UNLOCK (void) cc_recmutex_internal_notify_unlock()
 
 #include <vector>
 #include <utility>
@@ -80,10 +76,9 @@ SoAuditorList::~SoAuditorList()
 void
 SoAuditorList::append(void * const auditor, const SoNotRec::Type type)
 {
-  NOTIFY_LOCK;
+  const cc_notify_lock_guard lock;
   SbPList::append(auditor);
   SbPList::append((void *)type);
-  NOTIFY_UNLOCK;
 }
 
 /*!
@@ -93,12 +88,11 @@ void
 SoAuditorList::set(const int index,
                    void * const auditor, const SoNotRec::Type type)
 {
-  NOTIFY_LOCK;
+  const cc_notify_lock_guard lock;
   assert(index >= 0 && index < this->getLength());
 
   SbPList::set(index * 2, auditor);
   SbPList::set(index * 2 + 1, (void *)type);
-  NOTIFY_UNLOCK;
 }
 
 /*!
@@ -150,11 +144,10 @@ SoAuditorList::getType(const int index) const
 void
 SoAuditorList::remove(const int index)
 {
-  NOTIFY_LOCK;
+  const cc_notify_lock_guard lock;
   assert(index >= 0 && index < this->getLength());
   SbPList::remove(index * 2); // ptr
   SbPList::remove(index * 2); // type
-  NOTIFY_UNLOCK;
 }
 
 /*!
@@ -177,14 +170,15 @@ SoAuditorList::remove(void * const auditor, const SoNotRec::Type type)
 void
 SoAuditorList::notify(SoNotList * l)
 {
-  // Build snapshot under lock so concurrent add/remove is safe.
-  NOTIFY_LOCK;
-  const int num = this->getLength();
   std::vector<std::pair<void *, SoNotRec::Type>> snap;
-  if (num > 1) snap.reserve(static_cast<size_t>(num));
-  for (int i = 0; i < num; i++)
-    snap.emplace_back(this->getObject(i), this->getType(i));
-  NOTIFY_UNLOCK;
+  {
+    const cc_notify_lock_guard lock;
+    const int count = this->getLength();
+    snap.reserve(static_cast<size_t>(count));
+    for (int i = 0; i < count; i++)
+      snap.emplace_back(this->getObject(i), this->getType(i));
+  }
+  const int num = static_cast<int>(snap.size());
 
   if (num == 1) {
     this->doNotify(l, snap[0].first, snap[0].second);
@@ -250,6 +244,3 @@ SoAuditorList::doNotify(SoNotList * l, const void * auditor, const SoNotRec::Typ
     assert(0 && "Unknown auditor type");
   }
 }
-
-#undef NOTIFY_LOCK
-#undef NOTIFY_UNLOCK

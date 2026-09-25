@@ -49,6 +49,8 @@
 
 #include <Inventor/fields/SoSFString.h>
 
+#include <utility>
+
 #include <Inventor/SoInput.h>
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/errors/SoReadError.h>
@@ -98,6 +100,17 @@ void
 SoSFString::setValue(const char * str)
 {
   this->setValue(SbString(str));
+}
+
+/*!
+  Transfer a prepared string without copying its storage. Field notifications
+  retain the usual setValue semantics and may allocate when enabled.
+*/
+void
+SoSFString::setValue(SbString && str)
+{
+  this->value = std::move(str);
+  this->valueChanged();
 }
 
 // *************************************************************************

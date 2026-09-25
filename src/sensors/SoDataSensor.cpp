@@ -114,6 +114,8 @@ SoDataSensor::~SoDataSensor(void)
 
   The sensor priority setting does not affect the delete callback.
   It will be called immediately, before the object is deleted.
+  Exceptions thrown by the callback are contained so object destruction
+  and automatic sensor detachment can finish.
 */
 void
 SoDataSensor::setDeleteCallback(SoSensorCB * function, void * data)
@@ -357,5 +359,13 @@ SoDataSensor::notify(SoNotList * l)
 void
 SoDataSensor::invokeDeleteCallback(void)
 {
-  if (this->cbfunc) this->cbfunc(this->cbdata, this);
+  if (!this->cbfunc) return;
+  // Deletion cannot roll back and this hook may run from a noexcept graph or
+  // field destructor.  Contain user exceptions so every sensor detaches and
+  // the referenced object reaches its terminal lifetime state.
+  try {
+    this->cbfunc(this->cbdata, this);
+  }
+  catch (...) {
+  }
 }

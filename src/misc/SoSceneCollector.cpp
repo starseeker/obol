@@ -633,6 +633,13 @@ src_cadAssemblyCB(void *ud, SoCallbackAction *action, const SoNode *node)
 
         SbMatrix localToWorld = instance->localToRoot;
         localToWorld.multRight(parentToWorld);
+        if (geometry->displayPlane &&
+                !Obol::cadDisplayPlaneTransform(*geometry->displayPlane,
+                    localToWorld,
+                    SoViewVolumeElement::get(action->getState()).getMatrix(),
+                    action->getViewportRegion().getViewportSizePixels(),
+                    localToWorld))
+            continue;
         const SbMatrix normalMatrix = localToWorld.inverse().transpose();
 
         SoScMaterial material;
@@ -653,6 +660,15 @@ src_cadAssemblyCB(void *ud, SoCallbackAction *action, const SoNode *node)
             material.diffuse[0] = instance->style.color[0];
             material.diffuse[1] = instance->style.color[1];
             material.diffuse[2] = instance->style.color[2];
+        }
+
+        if (geometry->shadedIsFill) {
+            for (int axis = 0; axis < 3; ++axis) {
+                material.emission[axis] = material.diffuse[axis];
+                material.diffuse[axis] = 0.0f;
+                material.ambient[axis] = 0.0f;
+                material.specular[axis] = 0.0f;
+            }
         }
 
         for (size_t index = 0; index + 2 < mesh.indices.size(); index += 3) {

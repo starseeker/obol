@@ -411,10 +411,18 @@ SoShape::rayPick(SoRayPickAction * action)
   if (this->shouldRayPick(action)) {
     this->computeObjectSpaceRay(action);
 
-    const std::lock_guard<std::recursive_mutex> guard(PRIVATE(this)->mutex);
-    if (!PRIVATE(this)->bboxcache ||
-        !PRIVATE(this)->bboxcache->isValid(action->getState()) ||
-        soshape_ray_intersect(action, PRIVATE(this)->bboxcache->getProjectedBox())) {
+    SbBool generate = TRUE;
+    {
+      const std::lock_guard<std::recursive_mutex> guard(PRIVATE(this)->mutex);
+      if (PRIVATE(this)->bboxcache &&
+          PRIVATE(this)->bboxcache->isValid(action->getState())) {
+        const SbBox3f box = PRIVATE(this)->bboxcache->getProjectedBox();
+        generate = soshape_ray_intersect(action, box);
+      }
+    }
+    // Primitive generation may create picked paths and send notifications.
+    // It must not run while the shape-cache mutex is held.
+    if (generate) {
       this->generatePrimitives(action);
     }
   }

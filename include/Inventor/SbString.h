@@ -95,6 +95,7 @@ public:
   }
 
   SbString(const SbString & s) = default;
+  SbString(SbString && s) noexcept = default;
 
   SbString(const int digits) : str_(std::to_string(digits)) {}
 
@@ -154,6 +155,7 @@ public:
   }
   
   SbString & operator=(const SbString & s) = default;
+  SbString & operator=(SbString && s) noexcept = default;
 
   SbString & operator+=(const char * s) {
     if (s) str_ += s;

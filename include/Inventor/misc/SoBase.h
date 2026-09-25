@@ -39,6 +39,7 @@
 #include <map>
 #include <atomic>
 #include <cstdint>
+#include <exception>
 
 class SbString;
 class SoBaseList;
@@ -141,11 +142,36 @@ protected:
   // constructor macros may release it early once that metadata is complete.
   class StaticDataLockGuard {
   public:
-    StaticDataLockGuard(void) : locked(TRUE) { SoBase::staticDataLock(); }
-    ~StaticDataLockGuard() { if (this->locked) SoBase::staticDataUnlock(); }
+    StaticDataLockGuard(void)
+      : ready(nullptr), locked(TRUE), publishes(FALSE), exceptions(std::uncaught_exceptions())
+    {
+      SoBase::staticDataLock();
+    }
 
-    void release(void) {
+    explicit StaticDataLockGuard(std::atomic<bool> & metadataready)
+      : ready(&metadataready), locked(FALSE), publishes(FALSE), exceptions(std::uncaught_exceptions())
+    {
+      if (metadataready.load(std::memory_order_acquire)) return;
+      SoBase::staticDataLock();
+      if (metadataready.load(std::memory_order_acquire)) {
+        SoBase::staticDataUnlock();
+        return;
+      }
+      this->locked = TRUE;
+      this->publishes = TRUE;
+    }
+
+    ~StaticDataLockGuard() {
+      if (!this->locked) return;
+      if (this->publishes && std::uncaught_exceptions() == this->exceptions)
+        this->ready->store(true, std::memory_order_release);
+      SoBase::staticDataUnlock();
+    }
+
+    void release(SbBool publish = TRUE) {
       if (this->locked) {
+        if (publish && this->publishes)
+          this->ready->store(true, std::memory_order_release);
         SoBase::staticDataUnlock();
         this->locked = FALSE;
       }
@@ -155,7 +181,10 @@ protected:
     StaticDataLockGuard(const StaticDataLockGuard &) = delete;
     StaticDataLockGuard & operator=(const StaticDataLockGuard &) = delete;
 
+    std::atomic<bool> * ready;
     SbBool locked;
+    SbBool publishes;
+    int exceptions;
   };
 
   virtual SoNotRec createNotRec(void);

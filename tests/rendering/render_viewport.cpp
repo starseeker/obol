@@ -13,6 +13,7 @@
  *   9. setSceneGraph(nullptr) clears the scene cleanly.
  *  10. getRoot() returns the internal SoSeparator (non-null).
  *  11. setCamera(nullptr) removes the camera cleanly.
+ *  12. Prepared camera replacement commits before observer notification.
  *
  * The rendered image is written to outputStem+".rgb".
  * The GTest scenario reports any failed contract.
@@ -20,6 +21,7 @@
 
 #include "headless_utils.h"
 #include "testlib/test_scenes.h"
+#include <Inventor/SoPath.h>
 #include <Inventor/SoViewport.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
@@ -29,6 +31,8 @@
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/events/SoKeyboardEvent.h>
 #include <Inventor/events/SoButtonEvent.h>
+#include <Inventor/sensors/SoNodeSensor.h>
+#include <Inventor/sensors/SoPathSensor.h>
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/SbVec2s.h>
 #include <cstdio>
@@ -122,6 +126,79 @@ static bool cameraRoundTripsAndClears()
     const bool installed = viewport.getCamera() == camera;
     viewport.setCamera(nullptr);
     return installed && viewport.getCamera() == nullptr;
+}
+
+struct CameraReplacementObservation {
+    static void changed(void *data, SoSensor *)
+    {
+        auto &self = *static_cast<CameraReplacementObservation *>(data);
+        ++self.calls;
+        self.coherent = self.coherent &&
+            self.viewport->getCamera() == self.next &&
+            self.viewport->getRoot()->getNumChildren() == 1 &&
+            self.viewport->getRoot()->getChild(0) == self.next &&
+            self.oldPath->getLength() == 1;
+    }
+
+    SoViewport *viewport = nullptr;
+    SoCamera *next = nullptr;
+    SoPath *oldPath = nullptr;
+    int calls = 0;
+    bool coherent = true;
+};
+
+static bool cameraReplacementPublishesCompleteState()
+{
+    SoViewport viewport;
+    SoPerspectiveCamera *oldCamera = new SoPerspectiveCamera;
+    viewport.setCamera(oldCamera);
+
+    SoPath *oldPath = new SoPath(viewport.getRoot());
+    oldPath->append(0);
+    oldPath->ref();
+    SoOrthographicCamera *nextCamera = new SoOrthographicCamera;
+    nextCamera->ref();
+
+    CameraReplacementObservation observation;
+    observation.viewport = &viewport;
+    observation.next = nextCamera;
+    observation.oldPath = oldPath;
+    SoNodeSensor rootSensor(CameraReplacementObservation::changed,
+        &observation);
+    rootSensor.setPriority(0);
+    rootSensor.attach(viewport.getRoot());
+    SoPathSensor pathSensor(CameraReplacementObservation::changed,
+        &observation);
+    pathSensor.setPriority(0);
+    pathSensor.attach(oldPath);
+
+    {
+        std::unique_ptr<SoViewport::CameraReplacement> abandoned =
+            viewport.prepareCameraReplacement(nextCamera);
+    }
+    bool ok = viewport.getCamera() == oldCamera &&
+        viewport.getRoot()->getNumChildren() == 1 &&
+        viewport.getRoot()->getChild(0) == oldCamera &&
+        oldPath->getLength() == 2 && observation.calls == 0;
+
+    std::unique_ptr<SoViewport::CameraReplacement> replacement =
+        viewport.prepareCameraReplacement(nextCamera);
+    ok = ok && replacement != nullptr;
+    replacement->commit();
+    ok = ok && viewport.getCamera() == nextCamera &&
+        viewport.getRoot()->getNumChildren() == 1 &&
+        viewport.getRoot()->getChild(0) == nextCamera &&
+        oldPath->getLength() == 1 && observation.calls == 0;
+    replacement->notify();
+    ok = ok && observation.calls >= 2 && observation.coherent &&
+        viewport.prepareCameraReplacement(nextCamera) == nullptr;
+
+    pathSensor.detach();
+    rootSensor.detach();
+    oldPath->unref();
+    viewport.setCamera(nullptr);
+    nextCamera->unref();
+    return ok;
 }
 
 static bool backgroundColorRoundTrips()
@@ -247,6 +324,8 @@ OBOL_RENDER_TEST_CASE(ViewportRenderTest, SubregionRoundTrips,
     "viewport_subregion", viewportRegionRoundTrips())
 OBOL_RENDER_TEST_CASE(ViewportRenderTest, CameraRoundTripsAndClears,
     "viewport_camera", cameraRoundTripsAndClears())
+OBOL_RENDER_TEST_CASE(ViewportRenderTest, CameraReplacementPublishesCompleteState,
+    "viewport_camera_publication", cameraReplacementPublishesCompleteState())
 OBOL_RENDER_TEST_CASE(ViewportRenderTest, BackgroundColorRoundTrips,
     "viewport_background", backgroundColorRoundTrips())
 OBOL_RENDER_TEST_CASE(ViewportRenderTest, PerspectiveViewRenders,

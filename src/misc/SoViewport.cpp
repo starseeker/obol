@@ -45,10 +45,15 @@
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/actions/SoHandleEventAction.h>
 #include <Inventor/events/SoEvent.h>
+#include <Inventor/misc/SoChildList.h>
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/errors/SoDebugError.h>
+
+#include <algorithm>
+#include <utility>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // Construction / destruction
@@ -150,23 +155,96 @@ SbVec2s SoViewport::getWindowSize() const
 
 void SoViewport::setCamera(SoCamera * camera)
 {
-    if (camera == camera_)
-        return;
+    std::unique_ptr<CameraReplacement> replacement =
+        this->prepareCameraReplacement(camera);
+    if (!replacement) return;
+    replacement->commit();
+    replacement->notify();
+}
 
-    if (camera_) {
-        if (root_->findChild(camera_) >= 0)
-            root_->removeChild(camera_);
-        camera_->unref();
-        camera_ = nullptr;
+class SoViewport::CameraReplacement::Impl {
+public:
+    Impl(SoViewport &target, SoCamera *camera, int requestedIndex)
+        : viewport(target), previous(target.camera_), next(camera)
+    {
+        std::vector<SoNode *> children;
+        children.reserve(static_cast<size_t>(target.root_->getNumChildren()) +
+            (camera ? 1u : 0u));
+        for (int i = 0; i < target.root_->getNumChildren(); ++i) {
+            SoNode *child = target.root_->getChild(i);
+            if (child == this->previous || child == this->next)
+                continue;
+            children.push_back(child);
+        }
+        if (this->next) {
+            const size_t index = std::min(
+                static_cast<size_t>(std::max(requestedIndex, 0)),
+                children.size());
+            children.insert(children.begin() +
+                static_cast<std::ptrdiff_t>(index), this->next);
+        }
+        this->root = target.root_->getChildren()->prepareReplacement(children);
+        if (this->next) this->next->ref();
     }
 
-    camera_ = camera;
-
-    if (camera_) {
-        camera_->ref();
-        // Camera must precede the scene graph in the root.
-        root_->insertChild(camera_, 0);
+    ~Impl()
+    {
+        if (this->committed) {
+            if (this->previous) this->previous->unref();
+        } else if (this->next) {
+            this->next->unref();
+        }
     }
+
+    void commit()
+    {
+        if (this->committed) return;
+        this->root->commit();
+        this->viewport.camera_ = this->next;
+        this->committed = true;
+    }
+
+    void notify()
+    {
+        if (!this->committed || this->notified) return;
+        this->notified = true;
+        this->root->notify();
+    }
+
+private:
+    SoViewport &viewport;
+    SoCamera *previous;
+    SoCamera *next;
+    std::unique_ptr<SoChildList::Replacement> root;
+    bool committed = false;
+    bool notified = false;
+};
+
+SoViewport::CameraReplacement::CameraReplacement(std::unique_ptr<Impl> state)
+    : impl(std::move(state))
+{
+}
+
+SoViewport::CameraReplacement::~CameraReplacement() = default;
+
+void SoViewport::CameraReplacement::commit()
+{
+    this->impl->commit();
+}
+
+void SoViewport::CameraReplacement::notify()
+{
+    this->impl->notify();
+}
+
+std::unique_ptr<SoViewport::CameraReplacement>
+SoViewport::prepareCameraReplacement(SoCamera *camera, int rootIndex)
+{
+    if (camera == this->camera_) return nullptr;
+    auto state = std::make_unique<CameraReplacement::Impl>(
+        *this, camera, rootIndex);
+    return std::unique_ptr<CameraReplacement>(
+        new CameraReplacement(std::move(state)));
 }
 
 SoCamera * SoViewport::getCamera() const

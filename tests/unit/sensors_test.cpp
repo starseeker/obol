@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -32,6 +33,40 @@ void incrementAtomic(void * user_data, SoSensor *)
     static_cast<std::atomic<int> *>(user_data)->fetch_add(
         1, std::memory_order_relaxed);
 }
+
+void throwFromDeleteCallback(void * user_data, SoSensor *)
+{
+    ++*static_cast<int *>(user_data);
+    throw std::runtime_error("delete callback failure");
+}
+
+template <typename Sensor>
+void armThrowingDeleteCallback(Sensor & sensor, int & calls)
+{
+    sensor.setDeleteCallback(throwFromDeleteCallback, &calls);
+}
+
+class TrackedCube : public SoCube {
+public:
+    explicit TrackedCube(bool & destroyed) : destroyedFlag(destroyed) {}
+    ~TrackedCube() override { this->destroyedFlag = true; }
+
+private:
+    bool & destroyedFlag;
+};
+
+class TrackedPath : public SoPath {
+public:
+    TrackedPath(SoNode * head, bool & destroyed)
+        : SoPath(head), destroyedFlag(destroyed)
+    {
+    }
+
+    ~TrackedPath() override { this->destroyedFlag = true; }
+
+private:
+    bool & destroyedFlag;
+};
 
 void processPendingSensors()
 {
@@ -99,6 +134,74 @@ TEST(Sensors, PathSensorAttachesFiresAndDetaches)
     EXPECT_EQ(sensor.getAttachedPath(), nullptr);
     path->unref();
     root->unref();
+}
+
+TEST(Sensors, ThrowingDeleteCallbacksDoNotInterruptObjectRetirement)
+{
+    {
+        bool destroyed = false;
+        int calls = 0;
+        SoNodeSensor sensor;
+        armThrowingDeleteCallback(sensor, calls);
+        auto * node = new TrackedCube(destroyed);
+        node->ref();
+        sensor.attach(node);
+
+        EXPECT_NO_THROW(node->unref());
+        EXPECT_TRUE(destroyed);
+        EXPECT_EQ(calls, 1);
+        EXPECT_EQ(sensor.getAttachedNode(), nullptr);
+    }
+
+    {
+        bool destroyed = false;
+        int calls = 0;
+        SoPathSensor sensor;
+        armThrowingDeleteCallback(sensor, calls);
+        auto * head = new SoSeparator;
+        head->ref();
+        auto * path = new TrackedPath(head, destroyed);
+        path->ref();
+        sensor.attach(path);
+
+        EXPECT_NO_THROW(path->unref());
+        EXPECT_TRUE(destroyed);
+        EXPECT_EQ(calls, 1);
+        EXPECT_EQ(sensor.getAttachedPath(), nullptr);
+        head->unref();
+    }
+
+    {
+        bool destroyed = false;
+        int calls = 0;
+        SoFieldSensor sensor;
+        armThrowingDeleteCallback(sensor, calls);
+        auto * node = new TrackedCube(destroyed);
+        node->ref();
+        sensor.attach(&node->width);
+
+        EXPECT_NO_THROW(node->unref());
+        EXPECT_TRUE(destroyed);
+        EXPECT_EQ(calls, 1);
+        EXPECT_EQ(sensor.getAttachedField(), nullptr);
+    }
+
+    {
+        bool destroyed = false;
+        int calls = 0;
+        SoNodeSensor sensor;
+        armThrowingDeleteCallback(sensor, calls);
+        auto * parent = new SoSeparator;
+        parent->ref();
+        auto * child = new TrackedCube(destroyed);
+        sensor.attach(child);
+        parent->addChild(child);
+
+        EXPECT_NO_THROW(parent->unref());
+        EXPECT_TRUE(destroyed);
+        EXPECT_EQ(calls, 1);
+        EXPECT_EQ(sensor.getAttachedNode(), nullptr);
+    }
 }
 
 TEST(Sensors, TimerSensorRetainsSchedulingConfiguration)

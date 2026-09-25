@@ -187,6 +187,16 @@ SbPList::operator=(const SbPList & l)
 }
 
 /*!
+  Reserve storage for at least \a capacity items without changing the length
+  or contents. Allocation failure leaves the current storage intact.
+*/
+void
+SbPList::reserve(const int capacity)
+{
+  if (capacity > this->itembuffersize) this->grow(capacity);
+}
+
+/*!
   Fit the allocated array exactly around the length of the list,
   discarding memory spent on unused pre-allocated array cells.
 
@@ -304,14 +314,15 @@ SbPList::expandlist(const int size) const
 void
 SbPList::grow(const int size)
 {
-  // Default behavior is to double array size.
-  if (size == -1) this->itembuffersize <<= 1;
-  else if (size <= this->itembuffersize) return;
-  else { this->itembuffersize = size; }
+  // Publish capacity only after allocation succeeds. Otherwise a retry
+  // would trust storage beyond the still-live old buffer.
+  const int nextsize = size == -1 ? this->itembuffersize << 1 : size;
+  if (nextsize <= this->itembuffersize) return;
 
-  void ** newbuffer = new void*[this->itembuffersize];
+  void ** newbuffer = new void*[nextsize];
   const int n = this->numitems;
   for (int i = 0; i < n; i++) newbuffer[i] = this->itembuffer[i];
   if (this->itembuffer != this->builtinbuffer) delete[] this->itembuffer;
   this->itembuffer = newbuffer;
+  this->itembuffersize = nextsize;
 }

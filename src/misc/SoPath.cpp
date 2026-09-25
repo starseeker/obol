@@ -171,9 +171,9 @@ SoPath::operator=(const SoPath & rhs)
 */
 SoPath::~SoPath(void)
 {
-  // Explicitly truncate() so the SoChildList::removePathAuditor()
-  // calls are made.
-  this->truncate(0);
+  // Retire child-list auditors without opening a notification transaction.
+  // Destruction must not dispatch unrelated queued callbacks during unwinding.
+  this->truncate(0, FALSE);
 }
 
 /*!

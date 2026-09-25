@@ -105,8 +105,9 @@ SoBaseList::~SoBaseList()
 void
 SoBaseList::append(SoBase * ptr)
 {
-  if (this->referencing && ptr) ptr->ref();
+  // Storage must exist before the list acquires its reference.
   SbPList::append(ptr);
+  if (this->referencing && ptr) ptr->ref();
 }
 
 /*!
@@ -121,8 +122,8 @@ SoBaseList::append(SoBase * ptr)
 void
 SoBaseList::insert(SoBase * ptr, const int addbefore)
 {
-  if (this->referencing && ptr) ptr->ref();
   SbPList::insert(ptr, addbefore);
+  if (this->referencing && ptr) ptr->ref();
 }
 
 /*!

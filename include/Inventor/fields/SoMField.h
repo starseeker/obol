@@ -35,6 +35,8 @@
 
 #include <Inventor/fields/SoField.h>
 
+#include <memory>
+
 class SoInput;
 class SoOutput;
 
@@ -62,6 +64,28 @@ public:
 
   int getNum(void) const;
   void setNum(const int num);
+
+  // Prepare a complete value-array replacement without changing this field.
+  // commit() swaps owned storage without allocation or notification. notify()
+  // restores the field's previous notification state and reports the completed
+  // value. Destroying an uncommitted replacement leaves this field unchanged.
+  // Keep the target field alive and otherwise unchanged until the replacement
+  // has been notified or destroyed.
+  class OBOL_DLL_API ValueReplacement {
+  public:
+    ~ValueReplacement();
+    ValueReplacement(const ValueReplacement &) = delete;
+    ValueReplacement & operator=(const ValueReplacement &) = delete;
+    void commit();
+    void notify();
+  private:
+    friend class SoMField;
+    class Impl;
+    explicit ValueReplacement(std::unique_ptr<Impl> state);
+    std::unique_ptr<Impl> impl;
+  };
+  std::unique_ptr<ValueReplacement> prepareValueReplacement(
+    const SoMField & values);
 
   virtual void deleteValues(int start, int num = -1);
   virtual void insertSpace(int start, int num);

@@ -72,8 +72,8 @@ SbHash<const SoBase *, SoAuditorList *> * SoBase::PImpl::auditordict = NULL;
 // pointer for each and every object, we'll cut down on a decent
 // amount of memory use this way (SoBase should be kept as slim as
 // possible, as any dead weight is brought along in a lot of objects).
-SbHash<const char *, SbPList *> * SoBase::PImpl::name2obj = NULL;
-SbHash<const SoBase *, const char *> * SoBase::PImpl::obj2name = NULL;
+SoBase::PImpl::NameMap * SoBase::PImpl::name2obj = NULL;
+SoBase::PImpl::ObjectNameMap * SoBase::PImpl::obj2name = NULL;
 
 // This is used for debugging purposes: it stores a pointer to all
 // SoBase-derived objects that have been allocated and not
@@ -106,16 +106,17 @@ SoBase::PImpl::readNode(SoInput * in)
 void
 SoBase::PImpl::removeName2Obj(SoBase * const base, const char * const name)
 {
-  SbHash<const char*, SbPList*>::const_iterator iter = SoBase::PImpl::name2obj->find(name);
-  SbBool found = (iter != SoBase::PImpl::name2obj->const_end());
+  auto iter = SoBase::PImpl::name2obj->find(name);
+  SbBool found = (iter != SoBase::PImpl::name2obj->end());
   assert(found);
   (void)found; /* avoid unused variable warning in release builds */
   
-  SbPList * l = iter->obj;
+  SbPList * l = iter->second.get();
 
   const int i = l->find(base);
   assert(i >= 0);
   l->remove(i);
+  if (l->getLength() == 0) SoBase::PImpl::name2obj->erase(iter);
 }
 
 // Remove a reference from an instance pointer to its associated name.

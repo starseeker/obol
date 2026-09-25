@@ -37,6 +37,7 @@
 #include <Inventor/actions/SoSubAction.h>
 #include <Inventor/SoDB.h>
 #include <Inventor/SbBasic.h>
+#include <Inventor/SbColor.h>
 #include <Inventor/SbViewportRegion.h>
 #include <cstdint>
 #include <Inventor/lists/SoPathList.h>
@@ -133,6 +134,13 @@ public:
 
   void setRenderingIsRemote(SbBool isremote);
   SbBool getRenderingIsRemote(void) const;
+
+  /** Publish the background already present in the active render target.
+   * Scene nodes that implement semantic blanking may reproduce this vertical
+   * gradient without owning framebuffer-clear policy. */
+  void setBackgroundColors(const SbColor & bottom, const SbColor & top);
+  void clearBackgroundColors(void);
+  SbBool getBackgroundColors(SbColor & bottom, SbColor & top) const;
 
   virtual void invalidateState(void);
 

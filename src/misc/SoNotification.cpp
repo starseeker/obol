@@ -53,7 +53,7 @@ SoNotList::SoNotList(void) :
   head(NULL), tail(NULL), firstnoderec(NULL), lastfield(NULL), lastengine(NULL),
   // this is used in SoNode::notify() to stop a notification
   // when a node has already been notified.
-  stamp(SoNode::getNextNodeId())
+  stamp(SoNode::getNextNodeId()), handledFieldSensor(NULL)
 {
 }
 

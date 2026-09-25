@@ -14,12 +14,26 @@
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoSphere.h>
 #include <Inventor/nodes/SoTransform.h>
+#include <Inventor/misc/SoChildList.h>
 
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace {
+
+class TrackedZeroReferenceSeparator : public SoSeparator {
+public:
+    explicit TrackedZeroReferenceSeparator(bool &destroyedFlag) :
+	destroyed(destroyedFlag)
+    {
+    }
+protected:
+    ~TrackedZeroReferenceSeparator() override { destroyed = true; }
+private:
+    bool &destroyed;
+};
 
 struct SceneDeleter {
     void operator()(SoSeparator * root) const
@@ -165,6 +179,39 @@ TEST(SceneGraphStructure, TransformAffectsFollowingGeometry)
     EXPECT_NEAR(box.getCenter()[0], 1.0f, 1.0e-5f);
     EXPECT_NEAR(box.getCenter()[1], 1.0f, 1.0e-5f);
     EXPECT_NEAR(box.getCenter()[2], 0.0f, 1.0e-5f);
+}
+
+TEST(SceneGraphStructure, PreparedChildEditsPreserveZeroReferenceParent)
+{
+    for (int operation = 0; operation < 3; ++operation) {
+	bool destroyed = false;
+	auto *parent = new TrackedZeroReferenceSeparator(destroyed);
+	parent->addChild(new SoCube);
+
+	if (operation == 0) {
+	    auto replacement = parent->getChildren()->prepareReplacement(
+		std::vector<SoNode *>{new SoSphere});
+	    replacement->commit();
+	    replacement->notify();
+	} else if (operation == 1) {
+	    auto removal = parent->getChildren()->prepareRemoval({0});
+	    removal->commit();
+	    removal->notify();
+	} else {
+	    auto abandoned = parent->getChildren()->prepareReplacement(
+		std::vector<SoNode *>{new SoSphere});
+	}
+
+	EXPECT_FALSE(destroyed);
+	if (!destroyed) {
+	    EXPECT_EQ(parent->getRefCount(), 0);
+	    EXPECT_EQ(parent->getNumChildren(), operation == 0 ? 1 :
+		(operation == 1 ? 0 : 1));
+	    parent->ref();
+	    parent->unref();
+	    EXPECT_TRUE(destroyed);
+	}
+    }
 }
 
 } // namespace

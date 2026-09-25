@@ -59,6 +59,7 @@ public:
   static void initClass(void);
 
   void setValue(const char * str);
+  void setValue(SbString && str);
 };
 
 #endif // !OBOL_SOSFSTRING_H

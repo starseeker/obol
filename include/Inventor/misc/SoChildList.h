@@ -35,6 +35,8 @@
 
 #include <Inventor/lists/SoNodeList.h>
 #include <Inventor/lists/SbList.h>
+#include <memory>
+#include <vector>
 
 class SoPath;
 class SoAction;
@@ -63,6 +65,51 @@ public:
   void append(SoNode * const node);
   void insert(SoNode * const ptr, const int addbefore);
   void remove(const int index);
+
+  // Prepare a removal on the owning scene thread. Indices must be sorted and
+  // unique. Keep this list unchanged until commit. Change notifications run in
+  // notify; deletion callbacks run when retained nodes and paths are released.
+  // A caller-owned parent at reference count zero remains alive after the
+  // prepared operation releases its temporary reference.
+  // Empty indices return null. Existing remove/truncate notification order is
+  // unchanged; this operation publishes the complete child/path state first.
+  class OBOL_DLL_API Removal {
+  public:
+    ~Removal();
+    Removal(const Removal &) = delete;
+    Removal & operator=(const Removal &) = delete;
+    void commit();
+    void notify();
+  private:
+    friend class SoChildList;
+    class Impl;
+    explicit Removal(std::unique_ptr<Impl> state);
+    std::unique_ptr<Impl> impl;
+  };
+  std::unique_ptr<Removal> prepareRemoval(std::vector<int> indices);
+
+  // Prepare the complete child order on the scene thread. Retain caller
+  // references to new nodes; keep nodes, this list and its audited paths
+  // unchanged until commit. Repeated nodes match old occurrences in order.
+  // Removed occurrence paths truncate; retained paths keep their node chains.
+  // Commit does not allocate or notify. notify attempts paths and parent after
+  // the complete graph is visible. Destruction releases retained node/path refs
+  // and preserves a caller-owned parent which began at reference count zero.
+  class OBOL_DLL_API Replacement {
+  public:
+    ~Replacement();
+    Replacement(const Replacement &) = delete;
+    Replacement &operator=(const Replacement &) = delete;
+    void commit();
+    void notify();
+  private:
+    friend class SoChildList;
+    class Impl;
+    explicit Replacement(std::unique_ptr<Impl> state);
+    std::unique_ptr<Impl> impl;
+  };
+  std::unique_ptr<Replacement> prepareReplacement(const std::vector<SoNode *> &children);
+
   void truncate(const int length);
   void copy(const SoChildList & cl);
   void set(const int index, SoNode * const node);
@@ -79,6 +126,7 @@ public:
   void removePathAuditor(SoPath * const path);
 
 private:
+  class PathChanges;
   SoNode * parent;
   SbList<SoPath *> auditors;
 };

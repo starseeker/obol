@@ -1086,14 +1086,24 @@ SoDB::isNotifying(void)
 void
 SoDB::endNotify(void)
 {
+  // Immediate callbacks may throw after the counter has already reached zero.
+  // The recursive notification lock still belongs to this call in that case.
+  struct Unlock {
+    ~Unlock() { (void) cc_recmutex_internal_notify_unlock(); }
+  } unlock;
   int newcount = SoDBP::notificationcounter.fetch_sub(1, std::memory_order_acq_rel) - 1;
   if (newcount == 0) {
     // Process zero-priority sensors after notification has been done.
     SoSensorManager * sm = SoDB::getSensorManager();
     if (sm->isDelaySensorPending()) sm->processImmediateQueue();
   }
-  (void) cc_recmutex_internal_notify_unlock();
+}
 
+void
+SoDBP::abortNotify(void) noexcept
+{
+  SoDBP::notificationcounter.fetch_sub(1, std::memory_order_acq_rel);
+  (void) cc_recmutex_internal_notify_unlock();
 }
 
 /*!

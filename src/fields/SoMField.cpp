@@ -246,6 +246,9 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
+#include <stdexcept>
+#include <utility>
 
 #include <Inventor/SoInput.h>
 #include <Inventor/SoOutput.h>
@@ -333,6 +336,81 @@ SoMField::SoMField(void)
 */
 SoMField::~SoMField()
 {
+}
+
+class SoMField::ValueReplacement::Impl {
+public:
+  Impl(SoMField & target, const SoMField & values) : field(target)
+  {
+    if (target.getTypeId() != values.getTypeId())
+      throw std::invalid_argument("multi-field replacement type mismatch");
+    this->prepared.reset(
+      static_cast<SoMField *>(target.getTypeId().createInstance()));
+    if (!this->prepared)
+      throw std::logic_error("multi-field type cannot create replacement");
+    this->prepared->copyFrom(values);
+
+    // Suppress direct field and containing-node observers until commit has
+    // installed every participant in the caller's larger publication.
+    this->notifications = target.enableNotify(FALSE);
+  }
+
+  ~Impl()
+  {
+    if (!this->restored) this->field.enableNotify(this->notifications);
+  }
+
+  void commit()
+  {
+    if (this->committed) return;
+    void * current = this->field.valuesPtr();
+    this->field.setValuesPtr(this->prepared->valuesPtr());
+    this->prepared->setValuesPtr(current);
+    std::swap(this->field.num, this->prepared->num);
+    std::swap(this->field.maxNum, this->prepared->maxNum);
+    std::swap(this->field.userDataIsUsed, this->prepared->userDataIsUsed);
+    this->committed = true;
+  }
+
+  void notify()
+  {
+    if (!this->committed || this->notified) return;
+    this->notified = true;
+    this->restore();
+    if (this->notifications) this->field.touch();
+  }
+
+private:
+  void restore()
+  {
+    if (this->restored) return;
+    this->field.enableNotify(this->notifications);
+    this->restored = true;
+  }
+
+  SoMField & field;
+  std::unique_ptr<SoMField> prepared;
+  SbBool notifications = FALSE;
+  bool committed = false;
+  bool notified = false;
+  bool restored = false;
+};
+
+SoMField::ValueReplacement::ValueReplacement(std::unique_ptr<Impl> state)
+  : impl(std::move(state)) { }
+SoMField::ValueReplacement::~ValueReplacement() = default;
+void SoMField::ValueReplacement::commit() { this->impl->commit(); }
+void SoMField::ValueReplacement::notify() { this->impl->notify(); }
+
+std::unique_ptr<SoMField::ValueReplacement>
+SoMField::prepareValueReplacement(const SoMField & values)
+{
+  if (this->getTypeId() != values.getTypeId())
+    throw std::invalid_argument("multi-field replacement type mismatch");
+  if (this->isSame(values)) return std::unique_ptr<ValueReplacement>();
+  auto state = std::make_unique<ValueReplacement::Impl>(*this, values);
+  return std::unique_ptr<ValueReplacement>(
+    new ValueReplacement(std::move(state)));
 }
 
 /*!

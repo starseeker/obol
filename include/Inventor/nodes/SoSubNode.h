@@ -84,7 +84,8 @@ private: \
   static SoFieldData * fieldData; \
   /* Counts number of instances of subclasses as well as "direct" */ \
   /* instances from non-abstract classes. */ \
-  static std::atomic<unsigned int> classinstances
+  static std::atomic<unsigned int> classinstances; \
+  static std::atomic<bool> classmetadataready
 
 
 // FIXME: document. 20000103 mortene.
@@ -117,6 +118,7 @@ SoType _class_::classTypeId STATIC_SOTYPE_INIT
 PRIVATE_NODE_TYPESYSTEM_SOURCE(_class_); \
  \
 std::atomic<unsigned int> _class_::classinstances{0}; \
+std::atomic<bool> _class_::classmetadataready{false}; \
 const SoFieldData ** _class_::parentFieldData = NULL; \
 SoFieldData * _class_::fieldData = NULL; \
  \
@@ -147,6 +149,7 @@ _class_::atexit_cleanup(void) \
   SoType::removeType(_class_::classTypeId.getName()); \
   _class_::classTypeId STATIC_SOTYPE_INIT; \
   _class_::classinstances = 0; \
+  _class_::classmetadataready.store(false, std::memory_order_release); \
 }
 
 // FIXME: document. 20000103 mortene.
@@ -190,12 +193,12 @@ _class_::createInstance(void * /*ctx*/) \
 
 // FIXME: document. 20000103 mortene.
 #define SO_NODE_CONSTRUCTOR(_class_) \
-  SoBase::StaticDataLockGuard obol_node_constructor_lock; \
+  SoBase::StaticDataLockGuard obol_node_constructor_lock(_class_::classmetadataready); \
   do { \
     SO_NODE_CONSTRUCTOR_NOLOCK(_class_); \
     /* Later instances can proceed concurrently once the first constructor */ \
     /* has published the complete per-class field and enum metadata. */ \
-    if (!SO_NODE_IS_FIRST_INSTANCE()) obol_node_constructor_lock.release(); \
+    if (!SO_NODE_IS_FIRST_INSTANCE()) obol_node_constructor_lock.release(FALSE); \
   } WHILE_0
 
 // *************************************************************************

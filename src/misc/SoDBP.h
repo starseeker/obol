@@ -78,6 +78,23 @@ public:
     static const char * OBOL_PROFILER_OVERLAY;
   };
 
+  // Failed propagation must release the global transaction without invoking
+  // more callbacks while its caller is unwinding.
+  static void abortNotify(void) noexcept;
+  class Notification {
+  public:
+    Notification() { SoDB::startNotify(); }
+    ~Notification() { if (this->active) SoDBP::abortNotify(); }
+    Notification(const Notification &) = delete;
+    Notification & operator=(const Notification &) = delete;
+    void finish() {
+      this->active = false;
+      SoDB::endNotify();
+    }
+  private:
+    bool active = true;
+  };
+
   static void clean(void);
   static void removeRealTimeFieldCB(void);
   static void updateRealTimeFieldCB(void * data, SoSensor * sensor);

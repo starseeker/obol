@@ -69,13 +69,13 @@
   } while (0)
 
 #define SO_NODE_INTERNAL_CONSTRUCTOR(_class_) \
-  SoBase::StaticDataLockGuard obol_node_constructor_lock; \
+  SoBase::StaticDataLockGuard obol_node_constructor_lock(_class_::classmetadataready); \
   do { \
     SO_NODE_CONSTRUCTOR_NOLOCK(_class_); \
     /* Restore value of isBuiltIn flag (which is set to FALSE */ \
     /* in the SO_NODE_CONSTRUCTOR() macro. */ \
     this->isBuiltIn = TRUE; \
-    if (!SO_NODE_IS_FIRST_INSTANCE()) obol_node_constructor_lock.release(); \
+    if (!SO_NODE_IS_FIRST_INSTANCE()) obol_node_constructor_lock.release(FALSE); \
   } while (0)
 
 

@@ -138,7 +138,7 @@ PRIVATE_KIT_SOURCE(_class_)
 
 
 #define SO_KIT_CONSTRUCTOR(_class_) \
-  SoBase::StaticDataLockGuard obol_kit_constructor_lock; \
+  SoBase::StaticDataLockGuard obol_kit_constructor_lock(_class_::classmetadataready); \
   do { \
     SO_NODE_CONSTRUCTOR_NOLOCK(_class_); \
     if (_class_::classcatalog == NULL) { \

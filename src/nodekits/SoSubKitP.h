@@ -58,7 +58,7 @@
 
 
 #define SO_KIT_INTERNAL_CONSTRUCTOR(_class_) \
-  SoBase::StaticDataLockGuard obol_kit_constructor_lock; \
+  SoBase::StaticDataLockGuard obol_kit_constructor_lock(_class_::classmetadataready); \
   do { \
     SO_NODE_CONSTRUCTOR_NOLOCK(_class_); \
     this->isBuiltIn = TRUE; \

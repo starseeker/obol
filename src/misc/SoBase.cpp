@@ -62,13 +62,17 @@
 #include <Inventor/misc/SoBase.h>
 
 #include <atomic>
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <mutex>
 #include <shared_mutex>
+#include <limits>
+#include <stdexcept>
 
 #include "CoinTidbits.h"
 #include <Inventor/SoDB.h>
+#include "misc/SoDBP.h"
 #include <Inventor/SoInput.h>
 #include <Inventor/SoOutput.h>
 #include <Inventor/engines/SoEngineOutput.h>
@@ -84,6 +88,7 @@
 
 #include "misc/SoBaseP.h"
 #include "nodes/SoUnknownNode.h"
+#include "threads/recmutexp.h"
 #include "fields/SoGlobalField.h"
 #include "misc/SbHash.h"
 #include "io/SoInputP.h"
@@ -239,10 +244,10 @@ SoBase::~SoBase()
     // objects can also reach the destructor through an explicit delete, so
     // this belongs here rather than only in destroy().
     if (SoBase::PImpl::obj2name && SoBase::PImpl::name2obj) {
-      SbHash<const SoBase *, const char *>::const_iterator nameiter =
+      auto nameiter =
         SoBase::PImpl::obj2name->find(this);
-      if (nameiter != SoBase::PImpl::obj2name->const_end()) {
-        const char * name = nameiter->obj;
+      if (nameiter != SoBase::PImpl::obj2name->end()) {
+        const char * name = nameiter->second;
         SoBase::PImpl::removeName2Obj(this, name);
         SoBase::PImpl::removeObj2Name(this, name);
       }
@@ -261,36 +266,6 @@ SoBase::~SoBase()
 #endif // OBOL_DEBUG
   }
   this->auditortree.clear(); // std::map cleanup
-}
-
-//
-// callback from auditortree that is used to add sensor
-// auditors to the list (closure).
-//
-static void
-sobase_sensor_add_cb(void * auditor, void * type, void * closure)
-{
-  SbList<SoDataSensor *> * auditingsensors =
-    (SbList<SoDataSensor*> *) closure;
-
-  // MSVC7 on 64-bit Windows wants to go through this type when
-  // casting from void*.
-  const uintptr_t tmp = (uintptr_t)type;
-  switch ((SoNotRec::Type) tmp) {
-  case SoNotRec::SENSOR:
-    auditingsensors->append((SoDataSensor *)auditor);
-    break;
-
-  case SoNotRec::FIELD:
-  case SoNotRec::ENGINE:
-  case SoNotRec::CONTAINER:
-  case SoNotRec::PARENT:
-    // FIXME: should any of these get special treatment? 20000402 mortene.
-    break;
-
-  default:
-    assert(0 && "Unknown auditor type");
-  }
 }
 
 /*!
@@ -319,18 +294,19 @@ SoBase::destroy(void)
   }
 #endif // OBOL_DEBUG
 
-  // Find all auditors that they need to cut off their link to this
-  // object. I believe this is necessary only for sensors.
-  SbList<SoDataSensor *> auditingsensors;
-  
-  // Traverse the std::map and call sobase_sensor_add_cb for each entry
-  for (const auto& pair : this->auditortree) {
-    sobase_sensor_add_cb(pair.first, pair.second, &auditingsensors);
+  // Detach from the live auditor tree without allocating a snapshot during
+  // last-reference release. A dying-reference callback may detach or destroy
+  // another sensor, so look up the next live entry after each callback.
+  while (true) {
+    const auto auditor = std::find_if(this->auditortree.begin(), this->auditortree.end(),
+      [](const auto & entry) {
+        return reinterpret_cast<uintptr_t>(entry.second) == SoNotRec::SENSOR;
+      });
+    if (auditor == this->auditortree.end()) break;
+    SoDataSensor * sensor = static_cast<SoDataSensor *>(auditor->first);
+    this->auditortree.erase(auditor);
+    sensor->dyingReference();
   }
-
-  // Notify sensors that we're dying.
-  for (int j = 0; j < auditingsensors.getLength(); j++)
-    auditingsensors[j]->dyingReference();
 
 #if OBOL_DEBUG && 0 // debug
   SoDebugError::postInfo("SoBase::destroy", "delete this %p", this);
@@ -371,8 +347,8 @@ SoBase::initClass(void)
 
   SoBase::classTypeId = SoType::createType(SoType::badType(), "Base");
 
-  SoBase::PImpl::name2obj = new SbHash<const char *, SbPList *>;
-  SoBase::PImpl::obj2name = new SbHash<const SoBase *, const char *>();
+  SoBase::PImpl::name2obj = new SoBase::PImpl::NameMap;
+  SoBase::PImpl::obj2name = new SoBase::PImpl::ObjectNameMap;
   SoBase::PImpl::refwriteprefix = new SbString("+");
   SoBase::PImpl::allbaseobj = new SoBaseSet;
 
@@ -403,16 +379,6 @@ SoBase::cleanClass(void)
 {
   assert(SoBase::PImpl::name2obj);
   assert(SoBase::PImpl::obj2name);
-
-  // Delete the SbPLists in the dictionaries.
-  for(
-      SbHash<const char *, SbPList *>::const_iterator iter =
-       SoBase::PImpl::name2obj->const_begin();
-      iter!=SoBase::PImpl::name2obj->const_end();
-      ++iter
-      ) {
-    delete iter->obj;
-  }
 
   delete SoBase::PImpl::allbaseobj; SoBase::PImpl::allbaseobj = NULL;
 
@@ -657,9 +623,9 @@ SoBase::getName(void) const
   assert(SoBase::PImpl::obj2name);
 
   std::shared_lock<std::shared_mutex> lock(SoBase::PImpl::base_dict_mutex);
-  SbHash<const SoBase *, const char *>::const_iterator tmp = SoBase::PImpl::obj2name->find(this);
-  SbBool found = (tmp != SoBase::PImpl::obj2name->const_end());
-  return SbName(found ? tmp->obj : "");
+  auto tmp = SoBase::PImpl::obj2name->find(this);
+  SbBool found = (tmp != SoBase::PImpl::obj2name->end());
+  return SbName(found ? tmp->second : "");
 }
 
 /*!
@@ -684,28 +650,7 @@ void
 SoBase::setName(const SbName & newname)
 {
 
-  // This may look peculiar, but it is useful in combination with the
-  // OBOL_DEBUG_TRACK_SOBASE_INSTANCES envvar to track down where
-  // un-deallocated SoBase-instances were allocated from. (I.e., run it
-  // in a debugger and check the backtrace.)  -mortene.
-
-  std::unique_lock<std::shared_mutex> lock(SoBase::PImpl::base_dict_mutex);
-
-  // Read old name directly from the dict (not via getName(), which would
-  // try to acquire a shared lock on the same mutex we already hold).
-  SbName oldName;
-  {
-    SbHash<const SoBase *, const char *>::const_iterator tmp =
-      SoBase::PImpl::obj2name->find(this);
-    oldName = SbName(tmp != SoBase::PImpl::obj2name->const_end() ? tmp->obj : "");
-  }
-
-  // remove old name first
-  if (oldName != SbName::empty()) SoBase::removeName(this, oldName.getString());
-
-  // semantics in the original SGI Inventor is to not build a separate
-  // name list for unnamed SoBase instances
-  if (newname == SbName::empty()) { return; }
+  if (newname == SbName::empty()) { SoBase::addName(this, ""); return; }
 
   // check for bad characters
   const char * str = newname.getString();
@@ -747,23 +692,50 @@ void
 SoBase::addName(SoBase * const b, const char * const name)
 {
   assert(name);
-
-  SbPList * l;
-  SbHash<const char*, SbPList*>::const_iterator tmp = SoBase::PImpl::name2obj->find(name);
-  if (tmp==SoBase::PImpl::name2obj->const_end()) {
-    // name not used before, create new list
-    l = new SbPList;
-    (*SoBase::PImpl::name2obj)[name] = l;
+  const SbName next(name);
+  const char * key = next.getString();
+  std::unique_lock<std::shared_mutex> lock(SoBase::PImpl::base_dict_mutex);
+  auto & names = *SoBase::PImpl::name2obj;
+  auto & objects = *SoBase::PImpl::obj2name;
+  const auto old = objects.find(b);
+  const char * previous = old != objects.end() ? old->second : nullptr;
+  if (next.getLength() == 0) {
+    if (previous) {
+      SoBase::PImpl::removeName2Obj(b, previous);
+      objects.erase(old);
+    }
+    return;
   }
-  else {
-    l = tmp->obj;
+
+  auto found = names.find(key);
+  bool inserted = false;
+  if (found == names.end()) {
+    auto list = std::make_unique<SbPList>();
+    list->reserve(1);
+    found = names.emplace(key, std::move(list)).first;
+    inserted = true;
+  } else {
+    const int length = found->second->getLength();
+    const bool grows = previous != key;
+    if (grows && length == std::numeric_limits<int>::max())
+      throw std::length_error("name registry exceeds list capacity");
+    found->second->reserve(length + int(grows));
   }
 
-  // append this to the list
-  l->append(b);
-
-  // set name of object. SbHash::put() will overwrite old name
-  (*SoBase::PImpl::obj2name)[b] = name;
+  // Allocate both dictionary entries and the destination list capacity before
+  // removing the preceding mapping. The remaining list/pointer writes cannot fail.
+  try {
+    auto object = objects.try_emplace(b, key).first;
+    if (previous == key) {
+      // Naming an object again makes it the last registered match.
+      found->second->remove(found->second->find(b));
+    } else if (previous) SoBase::PImpl::removeName2Obj(b, previous);
+    found->second->append(b);
+    object->second = key;
+  } catch (...) {
+    if (inserted) names.erase(found);
+    throw;
+  }
 }
 
 /*!
@@ -772,8 +744,10 @@ SoBase::addName(SoBase * const b, const char * const name)
 void
 SoBase::removeName(SoBase * const base, const char * const name)
 {
+  const SbName key(name);
+  std::unique_lock<std::shared_mutex> lock(SoBase::PImpl::base_dict_mutex);
   SoBase::PImpl::removeObj2Name(base, name);
-  SoBase::PImpl::removeName2Obj(base, name);
+  SoBase::PImpl::removeName2Obj(base, key.getString());
 }
 
 /*!
@@ -791,9 +765,9 @@ SoBase::startNotify(void)
   l.append(&rec);
   l.setLastType(SoNotRec::CONTAINER);
 
-  SoDB::startNotify();
+  SoDBP::Notification notification;
   this->notify(&l);
-  SoDB::endNotify();
+  notification.finish();
 }
 
 /*!
@@ -866,6 +840,9 @@ sobase_audlist_add(void * pointer, void * type, void * closure)
 const SoAuditorList &
 SoBase::getAuditors(void) const
 {
+  // Auditor list mutation uses the notification lock. Acquire it before the
+  // registry lock so callbacks can inspect auditors without reversing order.
+  const cc_notify_lock_guard notifylock;
   // Exclusive lock: this function lazily writes to auditordict (both the
   // initial dict creation and the per-object SoAuditorList entries).
   std::unique_lock<std::shared_mutex> lock(SoBase::PImpl::base_dict_mutex);
@@ -880,10 +857,8 @@ SoBase::getAuditors(void) const
     SoBase::PImpl::auditordict->find(this);
   if (iter!=SoBase::PImpl::auditordict->const_end()) {
     l = iter->obj;
-    // empty list before copying in new values
-    for (int i = 0; i < l->getLength(); i++) {
-      l->remove(i);
-    }
+    // Remove from the end so shrinking the list cannot skip retired auditors.
+    while (l->getLength() > 0) l->remove(l->getLength() - 1);
   }
   else {
     // Capture l before inserting so the loop below has a valid pointer.
@@ -978,10 +953,9 @@ SoBase *
 SoBase::getNamedBase(const SbName & name, SoType type)
 {
   std::shared_lock<std::shared_mutex> lock(SoBase::PImpl::base_dict_mutex);
-  SbHash<const char*, SbPList*>::const_iterator iter = 
-    SoBase::PImpl::name2obj->find((const char *)name);
-  if (iter!=SoBase::PImpl::name2obj->const_end()) {
-    SbPList * l = iter->obj;
+  auto iter = SoBase::PImpl::name2obj->find(name.getString());
+  if (iter!=SoBase::PImpl::name2obj->end()) {
+    SbPList * l = iter->second.get();
     if (l->getLength()) {
       SoBase * b = (SoBase *)((*l)[l->getLength() - 1]);
       if (b->isOfType(type)) {
@@ -1004,10 +978,9 @@ SoBase::getNamedBases(const SbName & name, SoBaseList & baselist, SoType type)
   int matches = 0;
 
   std::shared_lock<std::shared_mutex> lock(SoBase::PImpl::base_dict_mutex);
-  SbHash<const char*, SbPList*>::const_iterator iter = 
-    SoBase::PImpl::name2obj->find((const char *)name);
-  if (iter!=SoBase::PImpl::name2obj->const_end()) {
-    SbPList * l = iter->obj;
+  auto iter = SoBase::PImpl::name2obj->find(name.getString());
+  if (iter!=SoBase::PImpl::name2obj->end()) {
+    SbPList * l = iter->second.get();
     
     for (int i=0; i < l->getLength(); i++) {
       SoBase * b = (SoBase *)((*l)[i]);

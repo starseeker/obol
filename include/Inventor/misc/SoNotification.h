@@ -77,6 +77,10 @@ private:
   SoField * lastfield;
   SoEngineOutput * lastengine;
   SbUniqueId stamp;
+
+  friend class SoField;
+  friend class SoFieldSensor;
+  const class SoFieldSensor * handledFieldSensor;
 };
 
 #endif // !OBOL_SONOTIFICATION_H

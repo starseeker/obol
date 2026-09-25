@@ -87,6 +87,7 @@
 #include <atomic>
 #include <cassert>
 #include <mutex>
+#include <exception>
 #include <vector>
 
 #include "config.h"
@@ -284,9 +285,9 @@ SoSensorManager::insertDelaySensor(SoDelayQueueSensor * newentry)
   // sort them based on SoSensor::isBefore(), but just use a FIFO
   // strategy.
   if (newentry->getPriority() == 0) {
-    LOCK_IMMEDIATE_QUEUE(this);
+    const std::lock_guard<SbMutex> guard(
+      PRIVATE(this)->immediatemutex);
     PRIVATE(this)->immediatequeue.append(newentry);
-    UNLOCK_IMMEDIATE_QUEUE(this);
   }
   else {
     const std::lock_guard<std::recursive_mutex> guard(
@@ -709,11 +710,9 @@ SoSensorManager::processImmediateQueue(void)
   public:
     FlagReset(std::atomic<SbBool>& flag) : myflag(flag) {}
     ~FlagReset() {
-      if (this->myflag.load(std::memory_order_acquire)) {
-        SoDebugError::post("SoSensorManager::processImmediateQueue",
-                           "Unexpected function exit. Unhandled Exception?");
-        this->myflag = FALSE;
-      }
+      // The original callback exception propagates. Cleanup must not allocate
+      // a diagnostic while allocation failure is already being unwound.
+      this->myflag.store(FALSE, std::memory_order_release);
     }
     std::atomic<SbBool>& myflag;
   };
@@ -725,7 +724,8 @@ SoSensorManager::processImmediateQueue(void)
   // immediate sensors are processed. pederb, 2002-01-30
   int triggercnt = 0;
 
-  LOCK_IMMEDIATE_QUEUE(this);
+  std::unique_lock<SbMutex> queueLock(PRIVATE(this)->immediatemutex);
+  std::exception_ptr failure;
 
   while (PRIVATE(this)->immediatequeue.getLength()) {
 #if DEBUG_DELAY_SENSORHANDLING || 0 // debug
@@ -734,11 +734,14 @@ SoSensorManager::processImmediateQueue(void)
 #endif // debug
     SoSensor * sensor = PRIVATE(this)->immediatequeue[0];
     PRIVATE(this)->immediatequeue.remove(0);
-    UNLOCK_IMMEDIATE_QUEUE(this);
+    queueLock.unlock();
 
-    sensor->trigger();
+    // One failing observer must not strand the remaining immediate callbacks.
+    // The original exception propagates after this bounded queue pass.
+    try { sensor->trigger(); }
+    catch (...) { if (!failure) failure = std::current_exception(); }
 
-    LOCK_IMMEDIATE_QUEUE(this);
+    queueLock.lock();
     triggercnt++;
     if (triggercnt > 10000) break;
   }
@@ -748,9 +751,7 @@ SoSensorManager::processImmediateQueue(void)
                               "Infinite loop detected. Breaking out.");
 #endif // OBOL_DEBUG
   }
-  UNLOCK_IMMEDIATE_QUEUE(this);
-
-  PRIVATE(this)->processingimmediatequeue.store(FALSE, std::memory_order_release);
+  if (failure) std::rethrow_exception(failure);
 }
 
 /*!

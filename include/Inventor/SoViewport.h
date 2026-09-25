@@ -70,6 +70,8 @@
 #include <Inventor/SbColor.h>
 #include <Inventor/SbViewportRegion.h>
 
+#include <memory>
+
 class SoCamera;
 class SoNode;
 class SoSeparator;
@@ -122,6 +124,32 @@ public:
      */
     void      setCamera(SoCamera * camera);
     SoCamera* getCamera() const;
+
+    /**
+     * Prepared camera/root publication for owners which must coordinate this
+     * viewport with other live state.  Construction performs all allocation
+     * and retains both camera generations.  commit() changes the camera and
+     * complete root child order without callbacks; notify() then delivers the
+     * path and root notifications.  @a rootIndex names the camera's position
+     * in the final root order and is clamped to the available child count.
+     * Keep the viewport and its root unchanged until commit, and keep the
+     * viewport alive until the prepared operation is destroyed.
+     */
+    class OBOL_DLL_API CameraReplacement {
+    public:
+        ~CameraReplacement();
+        CameraReplacement(const CameraReplacement &) = delete;
+        CameraReplacement & operator=(const CameraReplacement &) = delete;
+        void commit();
+        void notify();
+    private:
+        friend class SoViewport;
+        class Impl;
+        explicit CameraReplacement(std::unique_ptr<Impl> state);
+        std::unique_ptr<Impl> impl;
+    };
+    std::unique_ptr<CameraReplacement> prepareCameraReplacement(
+        SoCamera * camera, int rootIndex = 0);
 
     // ---- View-all ----------------------------------------------------------
 

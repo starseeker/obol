@@ -740,9 +740,15 @@ pre_render_cb(void * userdata, SoGLRenderAction * action)
   // SoGLRenderAction::apply() initializes its state after renderFromBase()
   // sets up the action, so publish the per-renderer manager here, after state
   // initialization and before any scene nodes are traversed.
-  if (thisp)
+  if (thisp) {
     SoContextManagerElement::set(action->getState(),
                                  thisp->instanceContextManager);
+    const SbColor & bottom = thisp->has_gradient ?
+      thisp->gradient_bottom : thisp->backgroundcolor;
+    const SbColor & top = thisp->has_gradient ?
+      thisp->gradient_top : thisp->backgroundcolor;
+    action->setBackgroundColors(bottom, top);
+  }
   SoDB::ContextManager * manager = thisp ? thisp->instanceContextManager : NULL;
   unsigned char * softwarePixels = NULL;
   unsigned int softwareWidth = 0, softwareHeight = 0, softwareComponents = 0;

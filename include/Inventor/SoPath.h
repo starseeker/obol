@@ -135,6 +135,7 @@ private:
   SbBool firsthiddendirty;
   static SoType classTypeId;
 
+  friend class SoChildList;
   friend class SoFullPath;
   friend class SoNodeKitPath;
   friend class SoAction;

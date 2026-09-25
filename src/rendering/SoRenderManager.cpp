@@ -736,9 +736,12 @@ SoRenderManager::renderScene( SoGLRenderAction * action,
     if (clearmask & GL_COLOR_BUFFER_BIT) {
       if (PRIVATE(this)->isrgbmode) {
         const SbColor4f bgcol = PRIVATE(this)->backgroundcolor;
+        const SbColor background(bgcol[0], bgcol[1], bgcol[2]);
+        action->setBackgroundColors(background, background);
         SoGLContext_glClearColor(SoGLContext_instance(PRIVATE(this)->glaction->getCacheContext()), bgcol[0], bgcol[1], bgcol[2], bgcol[3]);
       }
       else {
+        action->clearBackgroundColors();
         SoGLContext_glClearIndex(SoGLContext_instance(PRIVATE(this)->glaction->getCacheContext()), (GLfloat) PRIVATE(this)->backgroundindex);
       }
     }

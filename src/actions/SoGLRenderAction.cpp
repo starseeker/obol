@@ -559,6 +559,9 @@ public:
   SbList<float> sorttranspobjdistances;
   SoGLRenderAction::TransparentDelayedObjectRenderType transpdelayedrendertype;
   SbBool renderingtranspbackfaces;
+  SbBool backgroundcolorset;
+  SbColor backgroundbottom;
+  SbColor backgroundtop;
 
   std::unique_ptr<SoGetBoundingBoxAction> bboxaction;
   SbVec2f updateorigin, updatesize;
@@ -733,6 +736,9 @@ SoGLRenderAction::SoGLRenderAction(const SbViewportRegion & viewportregion)
   PRIVATE(this)->transpobjdepthwrite = FALSE;
   PRIVATE(this)->transpdelayedrendertype = ONE_PASS;
   PRIVATE(this)->renderingtranspbackfaces = FALSE;
+  PRIVATE(this)->backgroundcolorset = FALSE;
+  PRIVATE(this)->backgroundbottom.setValue(0.0f, 0.0f, 0.0f);
+  PRIVATE(this)->backgroundtop.setValue(0.0f, 0.0f, 0.0f);
 
   PRIVATE(this)->sortedobjectstrategy = BBOX_CENTER;
   PRIVATE(this)->sortedobjectcb = NULL;
@@ -987,13 +993,14 @@ SoGLRenderAction::setCacheContext(const uint32_t context)
 {
   if (context != PRIVATE(this)->cachecontext) {
     if (PRIVATE(this)->contextmanager) {
-      coingl_unregister_context_manager(static_cast<int>(PRIVATE(this)->cachecontext));
-    }
-    PRIVATE(this)->cachecontext = context;
-    if (PRIVATE(this)->contextmanager) {
+      // Register first: unordered-map growth may throw, and failure must leave
+      // both the action key and its preceding registry entry intact.
       coingl_register_context_manager(static_cast<int>(context),
                                       PRIVATE(this)->contextmanager);
+      coingl_unregister_context_manager(
+        static_cast<int>(PRIVATE(this)->cachecontext));
     }
+    PRIVATE(this)->cachecontext = context;
     this->invalidateState();
   }
 }
@@ -1011,14 +1018,19 @@ void
 SoGLRenderAction::setContextManager(SoDB::ContextManager * manager)
 {
   if (manager == PRIVATE(this)->contextmanager) return;
-  if (PRIVATE(this)->contextmanager) {
-    coingl_unregister_context_manager(static_cast<int>(PRIVATE(this)->cachecontext));
-  }
-  PRIVATE(this)->contextmanager = manager;
   if (manager) {
+    // Register before changing the action.  Inserting a first manager may
+    // allocate; replacement updates the existing key without allocation.
+    // Either case leaves the old provider authoritative if registration
+    // cannot complete.
     coingl_register_context_manager(static_cast<int>(PRIVATE(this)->cachecontext),
                                     manager);
   }
+  else if (PRIVATE(this)->contextmanager) {
+    coingl_unregister_context_manager(
+      static_cast<int>(PRIVATE(this)->cachecontext));
+  }
+  PRIVATE(this)->contextmanager = manager;
   this->invalidateState();
 }
 
@@ -1474,6 +1486,30 @@ SoGLRenderAction::getRenderingIsRemote(void) const
     isdirect = PRIVATE(this)->rendering == SoGLRenderActionP::RENDERING_SET_DIRECT;
   }
   return !isdirect;
+}
+
+void
+SoGLRenderAction::setBackgroundColors(const SbColor & bottom,
+                                      const SbColor & top)
+{
+  PRIVATE(this)->backgroundbottom = bottom;
+  PRIVATE(this)->backgroundtop = top;
+  PRIVATE(this)->backgroundcolorset = TRUE;
+}
+
+void
+SoGLRenderAction::clearBackgroundColors(void)
+{
+  PRIVATE(this)->backgroundcolorset = FALSE;
+}
+
+SbBool
+SoGLRenderAction::getBackgroundColors(SbColor & bottom, SbColor & top) const
+{
+  if (!PRIVATE(this)->backgroundcolorset) return FALSE;
+  bottom = PRIVATE(this)->backgroundbottom;
+  top = PRIVATE(this)->backgroundtop;
+  return TRUE;
 }
 
 /*!

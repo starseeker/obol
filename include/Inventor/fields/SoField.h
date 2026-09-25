@@ -39,6 +39,7 @@
 class SbString;
 class SoEngineOutput;
 class SoFieldContainer;
+class SoFieldSensor;
 class SoFieldConverter;
 class SoFieldList;
 class SoInput;
@@ -113,6 +114,9 @@ public:
   SbBool shouldWrite(void) const;
 
   virtual void touch(void);
+  // Publish a committed value without repeating the attached sensor's effects.
+  // Only this notification omits the sensor; reentrant changes notify normally.
+  void touch(SoFieldSensor * handledSensor);
   virtual void startNotify(void);
   virtual void notify(SoNotList * nlist);
   SbBool enableNotify(SbBool on);
@@ -192,7 +196,9 @@ private:
   SoFieldConverter * createConverter(SoType from) const;
   SoFieldContainer * resolveWriteConnection(SbName & mastername) const;
 
+  class StatusReset;
   void notifyAuditors(SoNotList * l);
+  void startNotify(SoNotList & list);
 
   static SoType classTypeId;
 

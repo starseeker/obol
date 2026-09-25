@@ -43,6 +43,14 @@
 */
 
 #include <Inventor/misc/SoChildList.h>
+#include <Inventor/SoPath.h>
+#include <algorithm>
+#include <exception>
+#include <functional>
+#include <stdexcept>
+#include <utility>
+#include <limits>
+#include <unordered_map>
 #include <Inventor/actions/SoAction.h>
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/SbName.h>
@@ -91,7 +99,19 @@ SoChildList::SoChildList(SoNode * const parentptr, const SoChildList & cl)
 */
 SoChildList::~SoChildList()
 {
-  this->truncate(0);
+  // Retire the graph links without dispatching unrelated immediate callbacks
+  // from a destructor. Children still have list references while paths shrink.
+  if (this->parent) {
+    for (int i = 0; i < this->getLength(); ++i)
+      if ((*this)[i]) (*this)[i]->removeAuditor(this->parent, SoNotRec::PARENT);
+    for (int i = 0; i < this->auditors.getLength(); ++i) {
+      SoPath * path = this->auditors[i];
+      const int position = path->findNode(this->parent) + 1;
+      if (position > 0 && position < path->getFullLength())
+        path->truncate(position, FALSE);
+    }
+  }
+  this->SoNodeList::truncate(0);
 }
 
 /*!
@@ -107,6 +127,9 @@ SoChildList::~SoChildList()
 void
 SoChildList::append(SoNode * const node)
 {
+  // Complete storage preparation before installing the parent auditor. Once
+  // connected, publishing the list slot and its reference cannot allocate.
+  this->reserve(this->getLength() + 1);
   if (this->parent) {
     node->addAuditor(this->parent, SoNotRec::PARENT);
   }
@@ -180,6 +203,310 @@ SoChildList::remove(const int index)
     this->parent->startNotify();
   }
   SoNodeList::remove(index);
+}
+
+// Preparation owns only removal indices, affected paths and removed node
+// references. The child graph and path chains are never copied.
+namespace {
+void notify_child_edit(SoBase *object, std::exception_ptr &failure)
+{
+  try { object->startNotify(); }
+  catch (...) { if (!failure) failure = std::current_exception(); }
+}
+
+void release_prepared_parent(SoNode *parent, bool hadOwner)
+{
+  if (!parent) return;
+  if (hadOwner) parent->unref();
+  else parent->unrefNoDelete();
+}
+}
+
+class SoChildList::PathChanges {
+public:
+  template <typename Remap>
+  PathChanges(SoChildList &children, Remap remap)
+  {
+    this->changes.reserve(size_t(children.auditors.getLength()));
+    for (int i = 0; i < children.auditors.getLength(); ++i) {
+      SoPath *path = children.auditors[i];
+      const int parentPosition = path->findNode(children.parent);
+      if (parentPosition < 0)
+        throw std::logic_error("child path auditor does not contain its parent");
+      const int position = parentPosition + 1;
+      if (position == path->getFullLength()) continue;
+      const int oldIndex = path->getIndex(position);
+      const int nextIndex = remap(oldIndex);
+      if (nextIndex != oldIndex)
+        this->changes.push_back({path, position, nextIndex});
+    }
+    for (const Change &change : this->changes) change.path->ref();
+  }
+  ~PathChanges()
+  {
+    for (const Change &change : this->changes) change.path->unref();
+  }
+  void commit()
+  {
+    for (const Change &change : this->changes) {
+      if (change.index < 0) change.path->truncate(change.position, FALSE);
+      else change.path->indices[change.position] = change.index;
+    }
+  }
+  void notify(std::exception_ptr &failure)
+  {
+    for (const Change &change : this->changes)
+      if (change.index < 0) notify_child_edit(change.path, failure);
+  }
+private:
+  struct Change {
+    SoPath *path;
+    int position;
+    int index;
+  };
+  std::vector<Change> changes;
+};
+
+class SoChildList::Removal::Impl {
+public:
+  Impl(SoChildList & target, std::vector<int> removedIndices)
+    : children(target), indices(std::move(removedIndices)),
+      originalLength(target.getLength())
+  {
+    int previous = -1;
+    for (int index : this->indices) {
+      if (index <= previous || index >= this->originalLength)
+        throw std::invalid_argument("child removal indices must be sorted, unique and in range");
+      previous = index;
+    }
+    this->nodes.reserve(this->indices.size());
+    for (int index : this->indices) this->nodes.push_back(target[index]);
+
+    // One parent auditor covers every occurrence of a shared child. Disconnect
+    // it only if the removal leaves no occurrence of that child in this list.
+    this->unparented = this->nodes;
+    const std::less<SoNode *> ordered;
+    std::sort(this->unparented.begin(), this->unparented.end(), ordered);
+    this->unparented.erase(std::unique(this->unparented.begin(), this->unparented.end()),
+                          this->unparented.end());
+    std::vector<bool> retained(this->unparented.size(), false);
+    size_t removed = 0;
+    for (int i = 0; i < this->originalLength; ++i) {
+      if (removed < this->indices.size() && this->indices[removed] == i) {
+        ++removed;
+        continue;
+      }
+      const auto found = std::lower_bound(this->unparented.begin(),
+                                         this->unparented.end(), target[i], ordered);
+      if (found != this->unparented.end() && *found == target[i])
+        retained[size_t(found - this->unparented.begin())] = true;
+    }
+    size_t detached = 0;
+    for (size_t i = 0; i < this->unparented.size(); ++i)
+      if (!retained[i]) this->unparented[detached++] = this->unparented[i];
+    this->unparented.resize(detached);
+
+    this->paths = std::make_unique<PathChanges>(target, [this](int oldIndex) {
+      const auto found = std::lower_bound(this->indices.begin(), this->indices.end(), oldIndex);
+      return found != this->indices.end() && *found == oldIndex ? -1 :
+        oldIndex - int(found - this->indices.begin());
+    });
+    // Everything which can allocate is prepared before acquiring references.
+    // No retained node can die while its path and parent slots are compacted.
+    if (target.parent) {
+      this->parentHadOwner = target.parent->getRefCount() > 0;
+      target.parent->ref();
+    }
+    for (SoNode * node : this->nodes) if (node) node->ref();
+  }
+
+  ~Impl()
+  {
+    this->paths.reset();
+    for (SoNode * node : this->nodes) if (node) node->unref();
+    release_prepared_parent(this->children.parent, this->parentHadOwner);
+  }
+
+  void commit()
+  {
+    if (this->committed) return;
+    assert(this->children.getLength() == this->originalLength);
+    if (this->children.parent)
+      for (SoNode * node : this->unparented)
+        if (node) node->removeAuditor(this->children.parent, SoNotRec::PARENT);
+    this->paths->commit();
+    // Compact once, preserving order. Removed nodes and every kept node still
+    // have references while overwritten slots and the old tail are released.
+    int written = 0;
+    size_t removed = 0;
+    for (int i = 0; i < this->originalLength; ++i) {
+      if (removed < this->indices.size() && this->indices[removed] == i) {
+        ++removed;
+        continue;
+      }
+      if (written != i) this->children.SoNodeList::set(written, this->children[i]);
+      ++written;
+    }
+    this->children.SoNodeList::truncate(written);
+    this->committed = true;
+  }
+
+  void notify()
+  {
+    if (!this->committed || this->notified) return;
+    this->notified = true;
+    std::exception_ptr failure;
+    this->paths->notify(failure);
+    if (this->children.parent) notify_child_edit(this->children.parent, failure);
+    if (failure) std::rethrow_exception(failure);
+  }
+
+private:
+  SoChildList & children;
+  std::vector<int> indices;
+  int originalLength;
+  std::vector<SoNode *> nodes;
+  std::vector<SoNode *> unparented;
+  std::unique_ptr<PathChanges> paths;
+  bool parentHadOwner = false;
+  bool committed = false;
+  bool notified = false;
+};
+
+SoChildList::Removal::Removal(std::unique_ptr<Impl> state)
+  : impl(std::move(state)) { }
+SoChildList::Removal::~Removal() = default;
+void SoChildList::Removal::commit() { this->impl->commit(); }
+void SoChildList::Removal::notify() { this->impl->notify(); }
+
+std::unique_ptr<SoChildList::Removal>
+SoChildList::prepareRemoval(std::vector<int> indices)
+{
+  if (indices.empty()) return nullptr;
+  auto state = std::make_unique<Removal::Impl>(*this, std::move(indices));
+  return std::unique_ptr<Removal>(new Removal(std::move(state)));
+}
+
+class SoChildList::Replacement::Impl {
+public:
+  Impl(SoChildList &target, const std::vector<SoNode *> &next)
+    : children(target), originalLength(target.getLength())
+  {
+    if (next.size() > size_t(std::numeric_limits<int>::max()))
+      throw std::length_error("child replacement exceeds list capacity");
+    struct Positions {
+      std::vector<int> indices;
+      size_t matched = 0;
+    };
+    std::unordered_map<SoNode *, Positions> positions;
+    this->before.reserve(this->originalLength);
+    this->after.reserve(int(next.size()));
+    for (int i = 0; i < this->originalLength; ++i)
+      this->before.append(target[i]);
+    for (size_t i = 0; i < next.size(); ++i) {
+      if (!next[i]) throw std::invalid_argument("null replacement child");
+      this->after.append(next[i]);
+      positions[next[i]].indices.push_back(int(i));
+    }
+    std::vector<int> nextIndices(size_t(this->originalLength), -1);
+    this->unparented.reserve(size_t(this->originalLength));
+    for (int i = 0; i < this->originalLength; ++i) {
+      const auto found = positions.find(target[i]);
+      if (found == positions.end()) {
+        this->unparented.push_back(target[i]);
+      } else {
+        Positions &where = found->second;
+        if (where.matched < where.indices.size())
+          nextIndices[size_t(i)] = where.indices[where.matched];
+        ++where.matched;
+      }
+    }
+    std::sort(this->unparented.begin(), this->unparented.end(), std::less<SoNode *>());
+    this->unparented.erase(std::unique(this->unparented.begin(), this->unparented.end()),
+                          this->unparented.end());
+    this->paths = std::make_unique<PathChanges>(target,
+      [&nextIndices](int index) { return nextIndices.at(size_t(index)); });
+    target.reserve(int(next.size()));
+    this->attached.reserve(positions.size());
+    // Only unpublished links are added here. The caller holds the scene thread
+    // and keeps these nodes and audited paths unchanged through commit.
+    try {
+      if (target.parent) {
+        for (const auto &entry : positions) {
+          if (entry.second.matched) continue;
+          entry.first->addAuditor(target.parent, SoNotRec::PARENT);
+          this->attached.push_back(entry.first);
+        }
+      }
+    } catch (...) {
+      this->detachPreparedLinks();
+      throw;
+    }
+    if (target.parent) {
+      this->parentHadOwner = target.parent->getRefCount() > 0;
+      target.parent->ref();
+    }
+  }
+  ~Impl()
+  {
+    if (!this->committed) this->detachPreparedLinks();
+    this->paths.reset();
+    this->before.truncate(0);
+    this->after.truncate(0);
+    release_prepared_parent(this->children.parent, this->parentHadOwner);
+  }
+  void commit()
+  {
+    if (this->committed) return;
+    assert(this->children.getLength() == this->originalLength);
+    if (this->children.parent)
+      for (SoNode *node : this->unparented)
+        node->removeAuditor(this->children.parent, SoNotRec::PARENT);
+    this->paths->commit();
+    // Both lists retain their nodes until publication and notification finish.
+    this->children.SoNodeList::truncate(0);
+    for (int i = 0; i < this->after.getLength(); ++i)
+      this->children.SoNodeList::append(this->after[i]);
+    this->committed = true;
+  }
+  void notify()
+  {
+    if (!this->committed || this->notified) return;
+    this->notified = true;
+    std::exception_ptr failure;
+    this->paths->notify(failure);
+    if (this->children.parent) notify_child_edit(this->children.parent, failure);
+    if (failure) std::rethrow_exception(failure);
+  }
+private:
+  void detachPreparedLinks()
+  {
+    for (SoNode *node : this->attached)
+      node->removeAuditor(this->children.parent, SoNotRec::PARENT);
+  }
+  SoChildList &children;
+  int originalLength;
+  SoNodeList before;
+  SoNodeList after;
+  std::vector<SoNode *> unparented;
+  std::vector<SoNode *> attached;
+  std::unique_ptr<PathChanges> paths;
+  bool parentHadOwner = false;
+  bool committed = false;
+  bool notified = false;
+};
+
+SoChildList::Replacement::Replacement(std::unique_ptr<Impl> state)
+  : impl(std::move(state)) { }
+SoChildList::Replacement::~Replacement() = default;
+void SoChildList::Replacement::commit() { this->impl->commit(); }
+void SoChildList::Replacement::notify() { this->impl->notify(); }
+
+std::unique_ptr<SoChildList::Replacement>
+SoChildList::prepareReplacement(const std::vector<SoNode *> &children)
+{
+  auto state = std::make_unique<Replacement::Impl>(*this, children);
+  return std::unique_ptr<Replacement>(new Replacement(std::move(state)));
 }
 
 /*!

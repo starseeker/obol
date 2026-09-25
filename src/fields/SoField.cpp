@@ -111,6 +111,7 @@
 #include <Inventor/fields/SoFields.h>
 
 #include <Inventor/SoDB.h>
+#include "misc/SoDBP.h"
 #include <Inventor/SoInput.h>
 #include <Inventor/SoOutput.h>
 #include <Inventor/actions/SoWriteAction.h>
@@ -122,6 +123,7 @@
 #include <Inventor/misc/SoProtoInstance.h>
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/sensors/SoDataSensor.h>
+#include <Inventor/sensors/SoFieldSensor.h>
 
 #include "config.h"
 #include "SbBasicP.h"
@@ -160,7 +162,7 @@ sofield_string_realloc(void * buffer, size_t size)
 static const char IGNOREDCHAR = '~';
 static const char CONNECTIONCHAR = '=';
 /*
-  This class is used to aid in "multiplexing" the pointer member of
+  SoConnectStorage aids in "multiplexing" the pointer member of
   SoField. This is a way to achieve the goal of using minimum storage
   space for SoField classes in the default case (which is important,
   as fields are ubiquitous in Coin). The default case means no
@@ -170,6 +172,19 @@ static const char CONNECTIONCHAR = '=';
   SoConnectStorage pointer where the field container pointer used to
   be.
 */
+// These recursion flags belong to one propagation/evaluation attempt. Leaving
+// either set after a failed auditor would silently suppress later field edits.
+class SoField::StatusReset {
+public:
+  StatusReset(SoField & target, unsigned int flags) : field(target), bits(flags) { }
+  ~StatusReset() { this->field.clearStatusBits(this->bits); }
+  StatusReset(const StatusReset &) = delete;
+  StatusReset & operator=(const StatusReset &) = delete;
+private:
+  SoField & field;
+  unsigned int bits;
+};
+
 class SoConnectStorage {
 public:
   SoConnectStorage(SoFieldContainer * c, SoType t)
@@ -1288,6 +1303,21 @@ SoField::touch(void)
   if (this->container) this->startNotify();
 }
 
+void
+SoField::touch(SoFieldSensor * handledSensor)
+{
+  if (!handledSensor) {
+    this->touch();
+    return;
+  }
+  assert(handledSensor->getAttachedField() == this);
+  if (this->container) {
+    SoNotList list;
+    list.handledFieldSensor = handledSensor;
+    this->startNotify(list);
+  }
+}
+
 /*!
   Trigger a notification sequence.
 
@@ -1297,7 +1327,13 @@ SoField::touch(void)
 void
 SoField::startNotify(void)
 {
-  SoNotList l;
+  SoNotList list;
+  this->startNotify(list);
+}
+
+void
+SoField::startNotify(SoNotList & l)
+{
 #if OBOL_DEBUG_EXTRA
   int wLevel =
     SoConfigSettings::getInstance()->settingAsInt("OBOL_WARNING_LEVEL");
@@ -1306,9 +1342,9 @@ SoField::startNotify(void)
                          this, this->getTypeId().getName().getString(), &l);
 #endif //OBOL_DEBUG_EXTRA
 
-  SoDB::startNotify();
+  SoDBP::Notification notification;
   this->notify(&l);
-  SoDB::endNotify();
+  notification.finish();
 
 #if OBOL_DEBUG_EXTRA
   if (wLevel>=3)
@@ -1387,6 +1423,7 @@ SoField::notify(SoNotList * nlist)
   if (this->isNotifyEnabled()) {
     SoFieldContainer * cont = this->getContainer();
     this->setStatusBits(FLAG_ISNOTIFIED);
+    const StatusReset notified(*this, FLAG_ISNOTIFIED);
     SoNotRec notify_rec(createNotRec(cont));
     nlist->append(&notify_rec, this);
     nlist->setLastType(SoNotRec::CONTAINER);
@@ -1408,7 +1445,6 @@ SoField::notify(SoNotList * nlist)
     else {
       if (cont) cont->notify(nlist);
     }
-    this->clearStatusBits(FLAG_ISNOTIFIED);
   }
 
 #if OBOL_DEBUG_EXTRA
@@ -1467,8 +1503,17 @@ void
 SoField::addAuditor(void * f, SoNotRec::Type type)
 {
   this->extendStorageIfNecessary();
+  const int index = this->storage->auditors.getLength();
   this->storage->auditors.append(f, type);
-  this->connectionStatusChanged(+1);
+  try {
+    this->connectionStatusChanged(+1);
+  }
+  catch (...) {
+    // Callers acquire attachment ownership only after registration returns.
+    // Remove this addition if a custom connection hook rejects it.
+    this->storage->auditors.remove(index);
+    throw;
+  }
 }
 
 /*!
@@ -2354,6 +2399,7 @@ void
 SoField::valueChanged(SbBool resetdefault)
 {
   if (this->changeStatusBits(FLAG_READONLY, TRUE)) {
+    const StatusReset readonly(*this, FLAG_READONLY);
     this->setDirty(FALSE);
     if (resetdefault) this->setDefault(FALSE);
     // A disabled container with no direct field auditors has nowhere to
@@ -2368,7 +2414,6 @@ SoField::valueChanged(SbBool resetdefault)
     SoFieldContainer * fieldcontainer = this->getContainer();
     if ((fieldcontainer && fieldcontainer->isNotifyEnabled()) || hasauditors)
       this->startNotify();
-    this->clearStatusBits(FLAG_READONLY);
   }
 }
 
