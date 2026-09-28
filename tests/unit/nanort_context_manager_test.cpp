@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <Obol/cad/SoCADAssembly.h>
 #include <Obol/render/SoNanoRTContextManager.h>
 
 #include <Inventor/SbViewportRegion.h>
+#include <Inventor/SoSceneCollector.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
@@ -40,6 +42,20 @@ ScenePtr createScene(unsigned int width, unsigned int height)
   camera->viewAll(root, SbViewportRegion(static_cast<short>(width),
                                          static_cast<short>(height)));
   return ScenePtr(root);
+}
+
+TEST(SceneCollector, CollectsWithoutOptionalCADTypeRegistration)
+{
+  ASSERT_TRUE(SoCADAssembly::getClassTypeId().isBad());
+
+  constexpr unsigned int width = 32;
+  constexpr unsigned int height = 24;
+  ScenePtr root = createScene(width, height);
+  SoSceneCollector collector;
+  collector.collect(root.get(), SbViewportRegion(
+    static_cast<short>(width), static_cast<short>(height)));
+
+  EXPECT_FALSE(collector.getTriangles().empty());
 }
 
 TEST_P(NanoRTComponents, WritesOnlyTheRequestedPixelLayout)

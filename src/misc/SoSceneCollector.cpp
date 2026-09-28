@@ -502,10 +502,16 @@ SoSceneCollector::collectImpl(SoNode *              root,
     cba.addPreCallback(SoShape::getClassTypeId(),
                        src_shapePruneCB, nullptr);
 
-    // Retained CAD assemblies are not per-instance SoShape nodes.  Expand
-    // their immutable triangle payload directly for renderer-neutral backends.
-    cba.addPreCallback(SoCADAssembly::getClassTypeId(),
-                       src_cadAssemblyCB, &cbdata);
+    // SoCADAssembly is an optional node type that applications register with
+    // SoCADAssembly::initClass().  A collector must remain usable for ordinary
+    // scene graphs when that registration has not happened.
+    const SoType cadAssemblyType = SoCADAssembly::getClassTypeId();
+    if (!cadAssemblyType.isBad()) {
+        // Retained CAD assemblies are not per-instance SoShape nodes.  Expand
+        // their immutable triangle payload directly for renderer-neutral
+        // backends.
+        cba.addPreCallback(cadAssemblyType, src_cadAssemblyCB, &cbdata);
+    }
 
     // Proxy geometry: lines → cylinders
     cba.addPreCallback(SoLineSet::getClassTypeId(),
