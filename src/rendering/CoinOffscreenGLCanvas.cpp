@@ -385,8 +385,12 @@ CoinOffscreenGLCanvas::destructContext(void)
     // Clean up FBO resources before destroying context
     this->cleanupFBO();
     
+    // This removes the SoGLContext instance and its per-context manager
+    // registration.  Keep the native context current through that cleanup,
+    // then restore it directly: deactivateGLContext() would try to resolve
+    // the already-destroyed glue entry while unbinding the FBO.
     SoContextHandler::destructingContext(this->renderid);
-    this->deactivateGLContext();
+    mgr->restorePreviousContext(this->context);
   }
   else {
     if (CoinOffscreenGLCanvas::debug()) {
