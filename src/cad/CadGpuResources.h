@@ -700,9 +700,11 @@ public:
     /**
      * Start/end reference accounting for the retained triangle atlas.
      * Parts upserted between these calls are active in the current frame.
-     * End-of-frame maintenance applies delayed tail shrinking and inexpensive
-     * empty-page release; pressure reclamation happens synchronously during
-     * allocation so the configured byte ceiling is never exceeded.
+     * Near the configured ceiling, end-of-frame maintenance applies delayed
+     * tail shrinking and inactive-part release.  Below that threshold richer
+     * prefixes remain cached across views.  Exact pressure reclamation also
+     * happens synchronously during allocation, so the ceiling is never
+     * exceeded.
      */
     void beginTriangleAtlasFrame();
     void endTriangleAtlasFrame(const SoGLContext *glue);
@@ -730,9 +732,9 @@ public:
     /**
      * Preserve the already prepared atlas working set while an append-only
      * publication admits new parts.  Allocation may use free capacity or add
-     * pages, but fails rather than treating unscanned prepared parts as
-     * inactive eviction candidates.  The caller can then use the exact
-     * protection path under genuine memory pressure.
+     * pages, but fails at the configured ceiling rather than treating
+     * unscanned prepared parts as inactive eviction candidates.  The caller
+     * can then use the exact protection path under genuine memory pressure.
      */
     void deferTriangleAtlasReclamation() noexcept {
         triangleAtlasReclamationDeferred_ = true;

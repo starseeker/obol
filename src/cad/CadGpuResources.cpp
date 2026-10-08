@@ -66,6 +66,17 @@ using Obol::internal::CadAtlasRange;
 
 std::atomic<size_t> cadGpuResourceLiveInstances{0};
 
+constexpr size_t cadTriangleAtlasTargetPageBytes =
+    16u * 1024u * 1024u;
+constexpr uint32_t cadTriangleAtlasDefaultCommands = 4096u;
+
+static bool
+cadTriangleAtlasCanAllocate(size_t allocated, size_t requested,
+                            size_t budget) noexcept
+{
+    return requested <= budget && allocated <= budget - requested;
+}
+
 static size_t
 cadTriangleAtlasBudget()
 {
@@ -341,6 +352,66 @@ progressiveBufferCapacity(GLsizei required, GLsizei current,
     const GLsizei doubled =
         current > maximum / 2 ? maximum : current * 2;
     return std::max(required, doubled);
+}
+
+struct CadTriangleAtlasPageLayout {
+    uint32_t vertexCapacity = 0;
+    uint32_t indexCapacity = 0;
+    uint32_t indirectCapacity = cadTriangleAtlasDefaultCommands;
+    size_t allocatedBytes = 0;
+    bool dedicated = false;
+};
+
+static CadTriangleAtlasPageLayout
+cadTriangleAtlasPageLayout(uint32_t vertexReserve,
+                           uint32_t indexReserve, bool hasNormals)
+{
+    CadTriangleAtlasPageLayout layout;
+    const size_t vertexStrideBytes = hasNormals ? 24u : 12u;
+    const size_t requestBytes =
+        static_cast<size_t>(vertexReserve) * vertexStrideBytes +
+        static_cast<size_t>(indexReserve) * sizeof(uint32_t);
+    layout.dedicated =
+        requestBytes > cadTriangleAtlasTargetPageBytes / 2u;
+    layout.vertexCapacity = vertexReserve;
+    layout.indexCapacity = indexReserve;
+    if (!layout.dedicated) {
+        const size_t commandBytes =
+            static_cast<size_t>(layout.indirectCapacity) *
+                sizeof(CadDrawElementsIndirectCommand);
+        const size_t payloadBytes =
+            cadTriangleAtlasTargetPageBytes > commandBytes ?
+                cadTriangleAtlasTargetPageBytes - commandBytes :
+                cadTriangleAtlasTargetPageBytes;
+        const long double indexRatio =
+            static_cast<long double>(indexReserve) /
+            static_cast<long double>(
+                std::max<uint32_t>(1u, vertexReserve));
+        const long double bytesPerVertex =
+            static_cast<long double>(vertexStrideBytes) +
+            indexRatio * sizeof(uint32_t);
+        const uint64_t shapedVertices = static_cast<uint64_t>(
+            static_cast<long double>(payloadBytes) / bytesPerVertex);
+        layout.vertexCapacity = cadAtlasRoundUp(
+            static_cast<uint32_t>(std::min<uint64_t>(
+                std::max<uint64_t>(shapedVertices, vertexReserve),
+                std::numeric_limits<uint32_t>::max())), 64u);
+        const uint64_t shapedIndices = static_cast<uint64_t>(
+            static_cast<long double>(layout.vertexCapacity) *
+            indexRatio);
+        layout.indexCapacity = cadAtlasRoundUp(
+            static_cast<uint32_t>(std::min<uint64_t>(
+                std::max<uint64_t>(shapedIndices, indexReserve),
+                std::numeric_limits<uint32_t>::max())), 192u);
+    }
+
+    layout.allocatedBytes =
+        static_cast<size_t>(layout.vertexCapacity) *
+            (hasNormals ? 2u : 1u) * 3u * sizeof(float) +
+        static_cast<size_t>(layout.indexCapacity) * sizeof(uint32_t) +
+        static_cast<size_t>(layout.indirectCapacity) *
+            sizeof(CadDrawElementsIndirectCommand);
+    return layout;
 }
 
 static bool
@@ -2206,63 +2277,9 @@ const CadTriangleAtlasPart *CadGpuResources::upsertTriangleAtlasPart(
                 }
             }
 
-            constexpr size_t targetPageBytes =
-                16u * 1024u * 1024u;
-            constexpr uint32_t defaultCommands = 4096u;
-            const size_t vertexStrideBytes =
-                hasNormals ? 24u : 12u;
-            const size_t requestBytes =
-                static_cast<size_t>(vertexReserve) *
-                    vertexStrideBytes +
-                static_cast<size_t>(indexReserve) *
-                    sizeof(uint32_t);
-            const bool dedicated =
-                requestBytes > targetPageBytes / 2u;
-            uint32_t pageVertices = vertexReserve;
-            uint32_t pageIndices = indexReserve;
-            if (!dedicated) {
-                const size_t commandBytes =
-                    static_cast<size_t>(defaultCommands) *
-                        sizeof(CadDrawElementsIndirectCommand);
-                const size_t payloadBytes =
-                    targetPageBytes > commandBytes ?
-                        targetPageBytes - commandBytes :
-                        targetPageBytes;
-                const long double indexRatio =
-                    static_cast<long double>(indexReserve) /
-                    static_cast<long double>(
-                        std::max<uint32_t>(1u, vertexReserve));
-                const long double bytesPerVertex =
-                    static_cast<long double>(vertexStrideBytes) +
-                    indexRatio * sizeof(uint32_t);
-                const uint64_t shapedVertices =
-                    static_cast<uint64_t>(
-                        static_cast<long double>(payloadBytes) /
-                        bytesPerVertex);
-                pageVertices = cadAtlasRoundUp(
-                    static_cast<uint32_t>(std::min<uint64_t>(
-                        std::max<uint64_t>(
-                            shapedVertices, vertexReserve),
-                        std::numeric_limits<uint32_t>::max())),
-                    64u);
-                const uint64_t shapedIndices =
-                    static_cast<uint64_t>(
-                        static_cast<long double>(pageVertices) *
-                        indexRatio);
-                pageIndices = cadAtlasRoundUp(
-                    static_cast<uint32_t>(std::min<uint64_t>(
-                        std::max<uint64_t>(
-                            shapedIndices, indexReserve),
-                        std::numeric_limits<uint32_t>::max())),
-                    192u);
-            }
-            CadTriangleAtlasPage plannedPage;
-            plannedPage.vertexCapacity = pageVertices;
-            plannedPage.indexCapacity = pageIndices;
-            plannedPage.indirectCapacity = defaultCommands;
-            plannedPage.storesNormals = hasNormals;
-            const size_t replacementPageBytes =
-                plannedPage.allocatedBytes();
+            const CadTriangleAtlasPageLayout pageLayout =
+                cadTriangleAtlasPageLayout(
+                    vertexReserve, indexReserve, hasNormals);
             size_t allocatedAfterRelease =
                 triangleAtlasAllocatedBytes_;
             const CadTriangleAtlasPage *previousPage =
@@ -2275,10 +2292,8 @@ const CadTriangleAtlasPart *CadGpuResources::upsertTriangleAtlasPart(
                         allocatedAfterRelease - releasedBytes : 0;
             }
             const size_t budget = triangleAtlasBudgetBytes_;
-            const bool replacementPageFits =
-                replacementPageBytes <= budget &&
-                allocatedAfterRelease <=
-                    budget - replacementPageBytes;
+            const bool replacementPageFits = cadTriangleAtlasCanAllocate(
+                allocatedAfterRelease, pageLayout.allocatedBytes, budget);
 
             if (existingRangeFits || replacementPageFits) {
                 releaseTriangleAtlasPart(pid, glue);
@@ -2354,15 +2369,25 @@ const CadTriangleAtlasPart *CadGpuResources::upsertTriangleAtlasPart(
         }
         return bestPage;
     };
+    const CadTriangleAtlasPageLayout pageLayout =
+        cadTriangleAtlasPageLayout(
+            vertexReserve, indexReserve, hasNormals);
+    const auto newPageFitsBudget = [&]() {
+        return cadTriangleAtlasCanAllocate(
+            triangleAtlasAllocatedBytes_, pageLayout.allocatedBytes,
+            triangleAtlasBudgetBytes_);
+    };
 
     uint32_t pageIndex = findPage();
-    if (pageIndex == UINT32_MAX &&
+    if (pageIndex == UINT32_MAX && !newPageFitsBudget() &&
             !triangleAtlasReclamationDeferred_ &&
             triangleAtlasInactiveSweepFrame_ != triangleAtlasFrame_) {
         /*
-         * Allocation pressure first retires parts absent from this frame.
-         * This is also what makes erasing a sub-path reclaimable without
-         * disturbing a shared part still referenced by another occurrence.
+         * At the allocation ceiling, retire parts absent from this frame.
+         * If another page still fits, preserve them as a latency cache for a
+         * later view and use the available budget instead.  This is also what
+         * makes erasing a sub-path reclaimable without disturbing a shared
+         * part still referenced by another occurrence.
          *
          * The renderer touches every retained visible consumer before it
          * starts admitting new parts.  Consequently one complete sweep is
@@ -2388,7 +2413,7 @@ const CadTriangleAtlasPart *CadGpuResources::upsertTriangleAtlasPart(
             ++triangleAtlasReclamationCount_;
             releaseTriangleAtlasPart(victim.second, glue);
             pageIndex = findPage();
-            if (pageIndex != UINT32_MAX)
+            if (pageIndex != UINT32_MAX || newPageFitsBudget())
                 break;
         }
     }
@@ -2424,54 +2449,17 @@ const CadTriangleAtlasPart *CadGpuResources::upsertTriangleAtlasPart(
          * Smaller ratio-adaptive pages also bound internal fragmentation
          * while preserving hundreds of commands per MDI submission.
          */
-        constexpr size_t targetPageBytes = 16u * 1024u * 1024u;
-        constexpr uint32_t defaultCommands = 4096u;
-        const size_t vertexStrideBytes = hasNormals ? 24u : 12u;
-        const size_t requestBytes =
-            static_cast<size_t>(vertexReserve) * vertexStrideBytes +
-            static_cast<size_t>(indexReserve) * sizeof(uint32_t);
-        const bool dedicated = requestBytes > targetPageBytes / 2u;
-        uint32_t pageVertices = vertexReserve;
-        uint32_t pageIndices = indexReserve;
-        if (!dedicated) {
-            const size_t commandBytes =
-                static_cast<size_t>(defaultCommands) *
-                sizeof(CadDrawElementsIndirectCommand);
-            const size_t payloadBytes = targetPageBytes > commandBytes ?
-                targetPageBytes - commandBytes : targetPageBytes;
-            const long double indexRatio =
-                static_cast<long double>(indexReserve) /
-                static_cast<long double>(std::max<uint32_t>(
-                    1u, vertexReserve));
-            const long double bytesPerVertex =
-                static_cast<long double>(vertexStrideBytes) +
-                indexRatio * sizeof(uint32_t);
-            const uint64_t shapedVertices = static_cast<uint64_t>(
-                static_cast<long double>(payloadBytes) / bytesPerVertex);
-            pageVertices = cadAtlasRoundUp(
-                static_cast<uint32_t>(std::min<uint64_t>(
-                    std::max<uint64_t>(shapedVertices, vertexReserve),
-                    std::numeric_limits<uint32_t>::max())), 64u);
-            const uint64_t shapedIndices = static_cast<uint64_t>(
-                static_cast<long double>(pageVertices) * indexRatio);
-            pageIndices = cadAtlasRoundUp(
-                static_cast<uint32_t>(std::min<uint64_t>(
-                    std::max<uint64_t>(shapedIndices, indexReserve),
-                    std::numeric_limits<uint32_t>::max())), 192u);
-        }
-
         std::unique_ptr<CadTriangleAtlasPage> page(
             new CadTriangleAtlasPage);
-        page->vertexCapacity = pageVertices;
-        page->indexCapacity = pageIndices;
-        page->indirectCapacity = defaultCommands;
-        page->dedicated = dedicated;
+        page->vertexCapacity = pageLayout.vertexCapacity;
+        page->indexCapacity = pageLayout.indexCapacity;
+        page->indirectCapacity = pageLayout.indirectCapacity;
+        page->dedicated = pageLayout.dedicated;
         page->storesNormals = hasNormals;
-        page->freeVertices.push_back({0u, pageVertices});
-        page->freeIndices.push_back({0u, pageIndices});
-        page->largestFreeVertexCapacity = pageVertices;
-        page->largestFreeIndexCapacity = pageIndices;
-        const size_t pageBytes = page->allocatedBytes();
+        page->freeVertices.push_back({0u, pageLayout.vertexCapacity});
+        page->freeIndices.push_back({0u, pageLayout.indexCapacity});
+        page->largestFreeVertexCapacity = pageLayout.vertexCapacity;
+        page->largestFreeIndexCapacity = pageLayout.indexCapacity;
 
         /*
          * Delete empty retained pages before admitting new storage.  Empty
@@ -2485,35 +2473,39 @@ const CadTriangleAtlasPart *CadGpuResources::upsertTriangleAtlasPart(
                 deleteTriangleAtlasPage(i, glue);
         }
         const size_t budget = triangleAtlasBudgetBytes_;
-        if (pageBytes > budget ||
-                triangleAtlasAllocatedBytes_ > budget - pageBytes)
+        if (!cadTriangleAtlasCanAllocate(
+                triangleAtlasAllocatedBytes_,
+                pageLayout.allocatedBytes, budget))
             return nullptr;
 
         glue->glGenBuffers(1, &page->posBuf);
         glue->glBindBuffer(GL_ARRAY_BUFFER, page->posBuf);
         glue->glBufferData(
             GL_ARRAY_BUFFER,
-            static_cast<GLsizeiptr>(pageVertices) * 3 * sizeof(float),
+            static_cast<GLsizeiptr>(pageLayout.vertexCapacity) *
+                3 * sizeof(float),
             nullptr, GL_DYNAMIC_DRAW);
         if (page->storesNormals) {
             glue->glGenBuffers(1, &page->normBuf);
             glue->glBindBuffer(GL_ARRAY_BUFFER, page->normBuf);
             glue->glBufferData(
                 GL_ARRAY_BUFFER,
-                static_cast<GLsizeiptr>(pageVertices) * 3 * sizeof(float),
+                static_cast<GLsizeiptr>(pageLayout.vertexCapacity) *
+                    3 * sizeof(float),
                 nullptr, GL_DYNAMIC_DRAW);
         }
         glue->glGenBuffers(1, &page->idxBuf);
         glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, page->idxBuf);
         glue->glBufferData(
             GL_ELEMENT_ARRAY_BUFFER,
-            static_cast<GLsizeiptr>(pageIndices) * sizeof(uint32_t),
+            static_cast<GLsizeiptr>(pageLayout.indexCapacity) *
+                sizeof(uint32_t),
             nullptr, GL_DYNAMIC_DRAW);
         glue->glGenBuffers(1, &page->indirectBuf);
         glue->glBindBuffer(GL_DRAW_INDIRECT_BUFFER, page->indirectBuf);
         glue->glBufferData(
             GL_DRAW_INDIRECT_BUFFER,
-            static_cast<GLsizeiptr>(defaultCommands) *
+            static_cast<GLsizeiptr>(pageLayout.indirectCapacity) *
                 sizeof(CadDrawElementsIndirectCommand),
             nullptr, GL_STREAM_DRAW);
         glue->glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -2530,7 +2522,7 @@ const CadTriangleAtlasPart *CadGpuResources::upsertTriangleAtlasPart(
         }
         if (pageIndex == triangleAtlasPages_.size())
             triangleAtlasPages_.push_back(std::move(page));
-        triangleAtlasAllocatedBytes_ += pageBytes;
+        triangleAtlasAllocatedBytes_ += pageLayout.allocatedBytes;
         ++triangleAtlasPageCount_;
         bumpTriangleAtlasRevision();
     }
@@ -2648,11 +2640,21 @@ void CadGpuResources::endTriangleAtlasFrame(const SoGLContext *glue)
         triangleAtlasMaintenanceDeferred_ = false;
         return;
     }
-    /* CPU resident-prefix compaction already has a 750 ms quiet-view gate.
-     * Keeping a second six-second/120-frame GPU delay retained obsolete
-     * reservations indefinitely in an event-driven stable view.  Eight
-     * completed presentations still absorb transient level oscillation while
-     * allowing normal calibration/handoff frames to return GPU memory. */
+    /* The atlas is also a view-to-view latency cache.  Lower presentation
+     * demand changes draw ranges, but it must not discard an uploaded richer
+     * prefix while another ordinary page still fits below the configured
+     * ceiling.  Exact allocation failures perform request-sized reclamation
+     * synchronously, including for dedicated pages larger than this ordinary
+     * headroom test. */
+    if (cadTriangleAtlasCanAllocate(
+            triangleAtlasAllocatedBytes_,
+            cadTriangleAtlasTargetPageBytes,
+            triangleAtlasBudgetBytes_))
+        return;
+
+    /* Once capacity is tight, eight completed presentations absorb transient
+     * level oscillation before shrinking tails.  Long-unused parts get a much
+     * larger grace period so a brief camera excursion remains a GPU hit. */
     constexpr uint64_t shrinkDelayFrames = 8u;
     constexpr uint64_t unusedRetentionFrames = 600u;
 

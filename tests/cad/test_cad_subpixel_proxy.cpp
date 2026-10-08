@@ -1764,6 +1764,25 @@ indirectProgressiveAtlasGrows(bool ceilingOnly)
     constexpr int partCount = 128;
     constexpr int trianglesPerPart = 300;
 
+    struct EnvironmentSnapshot {
+        const char *name;
+        bool present;
+        std::string value;
+    } settings[] = {
+        {"OBOL_CAD_INDIRECT", false, std::string()},
+        {"OBOL_CAD_ATLAS_MB", false, std::string()},
+        {"OBOL_CAD_ATLAS_VALIDATION_FRAMES", false, std::string()}
+    };
+    for (EnvironmentSnapshot& setting : settings) {
+        const char *value = std::getenv(setting.name);
+        setting.present = value != nullptr;
+        if (value)
+            setting.value = value;
+    }
+    setTestEnvironment("OBOL_CAD_INDIRECT", "1", 1);
+    setTestEnvironment("OBOL_CAD_ATLAS_MB", "64", 1);
+    setTestEnvironment("OBOL_CAD_ATLAS_VALIDATION_FRAMES", "1", 1);
+
     SoSeparator *root = new SoSeparator;
     root->ref();
     SoOrthographicCamera *camera = new SoOrthographicCamera;
@@ -1858,11 +1877,6 @@ indirectProgressiveAtlasGrows(bool ceilingOnly)
     renderer.setComponents(SoOffscreenRenderer::RGB);
     renderer.setBackgroundColor(SbColor(0.0f, 0.0f, 0.0f));
 
-    const char *previousIndirect = std::getenv("OBOL_CAD_INDIRECT");
-    const bool hadPreviousIndirect = previousIndirect != nullptr;
-    const std::string previousIndirectValue =
-        previousIndirect ? previousIndirect : "";
-    setTestEnvironment("OBOL_CAD_INDIRECT", "1", 1);
     const bool coarseRendered = render(renderer, root);
     const int coarseTier = assembly->lastRenderTier();
     const uint64_t coarseTriangles =
@@ -1924,6 +1938,30 @@ indirectProgressiveAtlasGrows(bool ceilingOnly)
                     resources.triangleAtlasSuffixUploadBytes &&
                 restored.triangleAtlasLineageReuseCount ==
                     resources.triangleAtlasLineageReuseCount;
+            if (passed) {
+                /* Repeated lower demand changes only the draw cut while
+                 * capacity is healthy.  It must not shrink the uploaded
+                 * prefix and force a later zoom to upload it again. */
+                presentCut(false);
+                for (int frame = 0; frame < 24 && passed; ++frame)
+                    passed = render(renderer, root);
+                const Obol::CadGpuResourceSnapshot retained =
+                    assembly->gpuResourceSnapshot();
+                passed = passed && retained.triangleAtlasLiveBytes ==
+                        resources.triangleAtlasLiveBytes &&
+                    retained.triangleAtlasAllocatedBytes ==
+                        resources.triangleAtlasAllocatedBytes &&
+                    retained.triangleAtlasReclamationCount ==
+                        resources.triangleAtlasReclamationCount;
+                presentCut(true);
+                passed = render(renderer, root) && passed;
+                const Obol::CadGpuResourceSnapshot warm =
+                    assembly->gpuResourceSnapshot();
+                passed = passed && warm.triangleAtlasFullUploadBytes ==
+                        resources.triangleAtlasFullUploadBytes &&
+                    warm.triangleAtlasSuffixUploadBytes ==
+                        resources.triangleAtlasSuffixUploadBytes;
+            }
         }
         if (!passed) {
             std::fprintf(stderr,
@@ -1936,12 +1974,153 @@ indirectProgressiveAtlasGrows(bool ceilingOnly)
         }
     }
 
-    if (hadPreviousIndirect)
-        setTestEnvironment("OBOL_CAD_INDIRECT",
-            previousIndirectValue.c_str(), 1);
-    else
-        unsetTestEnvironment("OBOL_CAD_INDIRECT");
     root->unref();
+    for (const EnvironmentSnapshot& setting : settings) {
+        if (setting.present)
+            setTestEnvironment(setting.name, setting.value.c_str(), 1);
+        else
+            unsetTestEnvironment(setting.name);
+    }
+    return passed;
+}
+
+bool
+indirectAtlasRetainsInactivePartsBelowBudget()
+{
+    struct EnvironmentSnapshot {
+        const char *name;
+        bool present;
+        std::string value;
+    } settings[] = {
+        {"OBOL_CAD_INDIRECT", false, std::string()},
+        {"OBOL_CAD_ATLAS_MB", false, std::string()}
+    };
+    for (EnvironmentSnapshot& setting : settings) {
+        const char *value = std::getenv(setting.name);
+        setting.present = value != nullptr;
+        if (value)
+            setting.value = value;
+    }
+    setTestEnvironment("OBOL_CAD_INDIRECT", "1", 1);
+    setTestEnvironment("OBOL_CAD_ATLAS_MB", "64", 1);
+
+    SoSeparator *root = new SoSeparator;
+    root->ref();
+    SoOrthographicCamera *camera = new SoOrthographicCamera;
+    camera->position.setValue(0.0f, 0.0f, 10.0f);
+    camera->nearDistance.setValue(0.1f);
+    camera->farDistance.setValue(100.0f);
+    camera->height.setValue(4.0f);
+    root->addChild(camera);
+    root->addChild(new SoDirectionalLight);
+    SoCADAssembly *assembly = new SoCADAssembly;
+    setCadDrawMode(root, SoCADViewState::SHADED);
+    root->addChild(assembly);
+
+    /* Unreferenced vertices make each atlas allocation larger than half an
+     * ordinary page without making the raster workload large.  Each part is
+     * therefore placed on its own dedicated page. */
+    constexpr size_t vertexCount = 700000u;
+    Obol::TriMesh mesh;
+    mesh.positions.resize(vertexCount, SbVec3f(0.0f, 0.0f, 0.0f));
+    mesh.positions[0].setValue(-1.0f, -1.0f, 0.0f);
+    mesh.positions[1].setValue(1.0f, -1.0f, 0.0f);
+    mesh.positions[2].setValue(0.0f, 1.0f, 0.0f);
+    mesh.indices = {0u, 1u, 2u};
+    mesh.bounds.makeEmpty();
+    mesh.bounds.extendBy(SbVec3f(-1.0f, -1.0f, 0.0f));
+    mesh.bounds.extendBy(SbVec3f(1.0f, 1.0f, 0.0f));
+
+    Obol::PartGeometryBuilder builder;
+    builder.shaded = std::move(mesh);
+    const auto admitted = requireCadValue(
+        Obol::cadAdmitPartGeometry(std::move(builder)),
+        "inactive atlas retention admission").geometry;
+    const Obol::PartId firstPart =
+        Obol::CadIdBuilder::partId("atlas-retained-first");
+    const Obol::PartId secondPart =
+        Obol::CadIdBuilder::partId("atlas-retained-second");
+    requireCadMutation(assembly->upsertParts({
+        {firstPart, admitted}, {secondPart, admitted}}),
+        "inactive atlas retention parts");
+
+    const auto addInstance = [&](Obol::PartId part, const char *name) {
+        Obol::InstanceRecord instance;
+        instance.part = part;
+        instance.parent = Obol::CadIdBuilder::rootInstance();
+        instance.childName = name;
+        instance.localToRoot.makeIdentity();
+        return requireCadValue(assembly->upsertInstanceAuto(instance),
+            "inactive atlas retention instance").instance;
+    };
+
+    const Obol::InstanceId firstInstance =
+        addInstance(firstPart, "atlas-retained-first");
+    const SbViewportRegion viewport(64, 64);
+    SoOffscreenRenderer renderer(viewport);
+    renderer.setComponents(SoOffscreenRenderer::RGB);
+    renderer.setBackgroundColor(SbColor(0.0f, 0.0f, 0.0f));
+
+    bool passed = render(renderer, root);
+    const int tier = assembly->lastRenderTier();
+    if (passed && tier == 6) {
+        const Obol::CadGpuResourceSnapshot first =
+            assembly->gpuResourceSnapshot();
+        assembly->removeInstance(firstInstance);
+        const Obol::InstanceId secondInstance =
+            addInstance(secondPart, "atlas-retained-second");
+        passed = render(renderer, root);
+        const Obol::CadGpuResourceSnapshot second =
+            assembly->gpuResourceSnapshot();
+        passed = passed && second.triangleAtlasPartCount == 2u &&
+            second.triangleAtlasPageCount == 2u &&
+            second.triangleAtlasAllocatedBytes >
+                first.triangleAtlasAllocatedBytes &&
+            second.triangleAtlasAllocatedBytes <=
+                second.triangleAtlasBudgetBytes &&
+            second.triangleAtlasReclamationCount ==
+                first.triangleAtlasReclamationCount;
+
+        assembly->removeInstance(secondInstance);
+        (void)addInstance(firstPart, "atlas-retained-first-restored");
+        passed = render(renderer, root) && passed;
+        const Obol::CadGpuResourceSnapshot restored =
+            assembly->gpuResourceSnapshot();
+        passed = passed && restored.triangleAtlasFullUploadBytes ==
+                second.triangleAtlasFullUploadBytes &&
+            restored.triangleAtlasPartCount == 2u &&
+            restored.triangleAtlasReclamationCount ==
+                second.triangleAtlasReclamationCount;
+        if (!passed)
+            std::fprintf(stderr,
+                "inactive atlas part was not retained below budget "
+                "(tier=%d parts=%zu/%zu pages=%zu/%zu allocated=%zu/%zu "
+                "budget=%zu reclaims=%llu/%llu uploads=%llu/%llu)\n",
+                tier,
+                first.triangleAtlasPartCount,
+                restored.triangleAtlasPartCount,
+                first.triangleAtlasPageCount,
+                restored.triangleAtlasPageCount,
+                first.triangleAtlasAllocatedBytes,
+                restored.triangleAtlasAllocatedBytes,
+                restored.triangleAtlasBudgetBytes,
+                static_cast<unsigned long long>(
+                    first.triangleAtlasReclamationCount),
+                static_cast<unsigned long long>(
+                    restored.triangleAtlasReclamationCount),
+                static_cast<unsigned long long>(
+                    second.triangleAtlasFullUploadBytes),
+                static_cast<unsigned long long>(
+                    restored.triangleAtlasFullUploadBytes));
+    }
+
+    root->unref();
+    for (const EnvironmentSnapshot& setting : settings) {
+        if (setting.present)
+            setTestEnvironment(setting.name, setting.value.c_str(), 1);
+        else
+            unsetTestEnvironment(setting.name);
+    }
     return passed;
 }
 
@@ -4942,6 +5121,11 @@ TEST_F(CadSubpixelProxyContracts, IndirectProgressiveAtlasGrows)
 TEST_F(CadSubpixelProxyContracts, IndirectCeilingGrowsResidentAtlas)
 {
     EXPECT_TRUE(indirectProgressiveAtlasGrows(true));
+}
+
+TEST_F(CadSubpixelProxyContracts, IndirectAtlasRetainsInactivePartsBelowBudget)
+{
+    EXPECT_TRUE(indirectAtlasRetainsInactivePartsBelowBudget());
 }
 
 TEST_F(CadSubpixelProxyContracts, IndirectGenerationAppendsOnlyItsSuffix)
